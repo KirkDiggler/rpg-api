@@ -252,6 +252,69 @@ func standingToProto(s sdk.Standing) sessionpb.Standing {
 	}
 }
 
+func lifeStateToProto(s sdk.LifeState) sessionpb.LifeState {
+	switch s {
+	case sdk.LifeStateConscious:
+		return sessionpb.LifeState_LIFE_STATE_CONSCIOUS
+	case sdk.LifeStateDying:
+		return sessionpb.LifeState_LIFE_STATE_DYING
+	case sdk.LifeStateStabilized:
+		return sessionpb.LifeState_LIFE_STATE_STABILIZED
+	case sdk.LifeStateDead:
+		return sessionpb.LifeState_LIFE_STATE_DEAD
+	case sdk.LifeStateDefeated:
+		return sessionpb.LifeState_LIFE_STATE_DEFEATED
+	default:
+		return sessionpb.LifeState_LIFE_STATE_UNSPECIFIED
+	}
+}
+
+func deathSaveProgressToProto(p *sdk.DeathSaveProgress) *sessionpb.DeathSaveProgress {
+	if p == nil {
+		return nil
+	}
+	return &sessionpb.DeathSaveProgress{
+		Successes:         int32(p.Successes),
+		Failures:          int32(p.Failures),
+		SuccessesNeeded:   int32(p.SuccessesNeeded),
+		FailuresRemaining: int32(p.FailuresRemaining),
+		Stabilized:        p.Stabilized,
+		Dead:              p.Dead,
+	}
+}
+
+func deathSaveOutcomeToProto(o sdk.DeathSaveOutcome) sessionpb.DeathSaveOutcome {
+	switch o {
+	case sdk.DeathSaveOutcomeSuccess:
+		return sessionpb.DeathSaveOutcome_DEATH_SAVE_OUTCOME_SUCCESS
+	case sdk.DeathSaveOutcomeFailure:
+		return sessionpb.DeathSaveOutcome_DEATH_SAVE_OUTCOME_FAILURE
+	case sdk.DeathSaveOutcomeCriticalFail:
+		return sessionpb.DeathSaveOutcome_DEATH_SAVE_OUTCOME_CRITICAL_FAILURE
+	case sdk.DeathSaveOutcomeStabilized:
+		return sessionpb.DeathSaveOutcome_DEATH_SAVE_OUTCOME_STABILIZED
+	case sdk.DeathSaveOutcomeDead:
+		return sessionpb.DeathSaveOutcome_DEATH_SAVE_OUTCOME_DEAD
+	case sdk.DeathSaveOutcomeRecovered:
+		return sessionpb.DeathSaveOutcome_DEATH_SAVE_OUTCOME_RECOVERED
+	default:
+		return sessionpb.DeathSaveOutcome_DEATH_SAVE_OUTCOME_UNSPECIFIED
+	}
+}
+
+func deathSaveContinuationToProto(c sdk.DeathSaveContinuation) sessionpb.DeathSaveContinuation {
+	switch c {
+	case sdk.DeathSaveContinuationEndTurn:
+		return sessionpb.DeathSaveContinuation_DEATH_SAVE_CONTINUATION_END_TURN
+	case sdk.DeathSaveContinuationKeepTurn:
+		return sessionpb.DeathSaveContinuation_DEATH_SAVE_CONTINUATION_KEEP_TURN
+	case sdk.DeathSaveContinuationAlreadyAdvanced:
+		return sessionpb.DeathSaveContinuation_DEATH_SAVE_CONTINUATION_ALREADY_ADVANCED
+	default:
+		return sessionpb.DeathSaveContinuation_DEATH_SAVE_CONTINUATION_UNSPECIFIED
+	}
+}
+
 func reportToProto(r sdk.Report) *sessionpb.Report {
 	return &sessionpb.Report{Subject: r.Subject, Payload: r.Payload, Seen: seenToProto(r.Seen)}
 }
@@ -467,6 +530,8 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_ACTIVATED
 	case sdk.EventActivationResult:
 		return sessionpb.EventKind_EVENT_KIND_ACTIVATION_RESULT
+	case sdk.EventDeathSave:
+		return sessionpb.EventKind_EVENT_KIND_DEATH_SAVE_ROLLED
 	case sdk.EventDoorRevealed:
 		return sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED
 	case sdk.EventRegionRevealed:
@@ -538,6 +603,16 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		evt.Body = &sessionpb.Event_TurnEnded{TurnEnded: &sessionpb.TurnEnded{Member: b.Member, Next: b.Next}}
 	case sdk.DownedBody:
 		evt.Body = &sessionpb.Event_Downed{Downed: &sessionpb.Downed{Member: b.Member}}
+	case sdk.DeathSaveBody:
+		evt.Body = &sessionpb.Event_DeathSaveRolled{DeathSaveRolled: &sessionpb.DeathSaveRolled{
+			Actor: b.Actor, Roll: int32(b.Roll), Outcome: deathSaveOutcomeToProto(b.Outcome),
+			SuccessesAdded: int32(b.SuccessesAdded), FailuresAdded: int32(b.FailuresAdded),
+			Successes: int32(b.Successes), Failures: int32(b.Failures),
+			SuccessesNeeded: int32(b.SuccessesNeeded), FailuresRemaining: int32(b.FailuresRemaining),
+			Stabilized: b.Stabilized, Dead: b.Dead, Recovered: b.Recovered,
+			HpRestored: int32(b.HPRestored), Continuation: deathSaveContinuationToProto(b.Continuation),
+			PresentationId: b.PresentationID,
+		}}
 	case sdk.StruckBody:
 		evt.Body = &sessionpb.Event_Struck{Struck: &sessionpb.Struck{
 			Attacker:            b.Attacker,
@@ -872,6 +947,8 @@ func verbToProto(v sdk.Verb) sessionpb.Verb {
 		return sessionpb.Verb_VERB_END_TURN
 	case sdk.VerbActivate:
 		return sessionpb.Verb_VERB_ACTIVATE
+	case sdk.VerbDeathSave:
+		return sessionpb.Verb_VERB_DEATH_SAVE
 	default:
 		return sessionpb.Verb_VERB_UNSPECIFIED
 	}
@@ -963,6 +1040,9 @@ func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
 	}
 	if d.Ability != nil {
 		out.Ability = abilityRefToProto(*d.Ability)
+	}
+	if d.DeathSave != nil {
+		out.DeathSave = deathSaveRefToProto(*d.DeathSave)
 	}
 	return out
 }
@@ -1217,6 +1297,10 @@ func abilityRefToProto(a sdk.AbilityRef) *sessionpb.AbilityRef {
 	return &sessionpb.AbilityRef{Ref: a.Ref, Name: a.Name}
 }
 
+func deathSaveRefToProto(d sdk.DeathSaveRef) *sessionpb.DeathSaveRef {
+	return &sessionpb.DeathSaveRef{Name: d.Name}
+}
+
 // attackRefToProto mirrors session.AttackRef field-for-field (rpg-toolkit#866):
 // what was swung, always populated -- AttackOutput.Attack and the Struck/
 // Missed event bodies carry it as a value, never a pointer, so this always
@@ -1235,11 +1319,13 @@ func attackRefToProto(a sdk.AttackRef) *sessionpb.AttackRef {
 // member's turn.
 func participantToProto(p sdk.Participant) *sessionpb.Participant {
 	return &sessionpb.Participant{
-		Member:   p.Member,
-		Name:     p.Name,
-		Kind:     memberKindToProto(p.Kind),
-		Standing: standingToProto(p.Standing),
-		Active:   p.Active,
+		Member:     p.Member,
+		Name:       p.Name,
+		Kind:       memberKindToProto(p.Kind),
+		Standing:   standingToProto(p.Standing),
+		Active:     p.Active,
+		LifeState:  lifeStateToProto(p.LifeState),
+		DeathSaves: deathSaveProgressToProto(p.DeathSaves),
 	}
 }
 

@@ -324,6 +324,7 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	// wiring.
 	sessOrch, err := sessionorch.New(sessionorch.Config{
 		Redis: ts.redisClient, Characters: charRepo, TTL: 24 * time.Hour,
+		PresentationIDs: idgen.NewSequential("presentation"),
 	})
 	if err != nil {
 		return fmt.Errorf("session orchestrator: %w", err)

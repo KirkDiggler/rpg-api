@@ -19,6 +19,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/dice"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
+	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
@@ -48,6 +49,12 @@ type Config struct {
 	// fight, exactly as session.Roller's own doc describes) without this
 	// package's callers reaching past it into the SDK's construction.
 	Dice sdk.Roller
+
+	// PresentationIDs supplies opaque shared-die correlation tokens. Optional:
+	// nil selects a UUID generator in production. Tests supply a sequential
+	// generator so token identity is deterministic without deriving it from a
+	// Story or recipient-local sequence.
+	PresentationIDs sdk.PresentationIDGenerator
 }
 
 // turnDriver answers "what happens when the clock lands on a member with no
@@ -93,14 +100,20 @@ func New(cfg Config) (*Orchestrator, error) {
 		roller = &dice.CryptoRoller{}
 	}
 
+	presentationIDs := cfg.PresentationIDs
+	if presentationIDs == nil {
+		presentationIDs = idgen.NewUUID("presentation-")
+	}
+
 	broker := NewBroker()
 	mgr, err := sdk.NewManager(&sdk.Config{
-		Sessions:   NewSessionRepository(cfg.Redis, cfg.TTL),
-		Encounters: NewEncounterRepository(cfg.Redis, cfg.TTL),
-		Characters: NewCharacterRepository(cfg.Characters),
-		Events:     broker,
-		Dice:       roller,
-		TurnDriver: turnDriver,
+		PresentationIDs: presentationIDs,
+		Sessions:        NewSessionRepository(cfg.Redis, cfg.TTL),
+		Encounters:      NewEncounterRepository(cfg.Redis, cfg.TTL),
+		Characters:      NewCharacterRepository(cfg.Characters),
+		Events:          broker,
+		Dice:            roller,
+		TurnDriver:      turnDriver,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("construct session manager: %w", err)

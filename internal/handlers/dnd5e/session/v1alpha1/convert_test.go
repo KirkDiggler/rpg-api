@@ -1075,13 +1075,34 @@ func TestShortfallToProto_Populated(t *testing.T) {
 
 func TestParticipantToProto(t *testing.T) {
 	got := participantToProto(sdk.Participant{
-		Member: "char-1", Name: "Aldric", Kind: sdk.KindPlayer, Standing: sdk.StandingUp, Active: true,
+		Member: "char-1", Name: "Aldric", Kind: sdk.KindPlayer, Standing: sdk.StandingDowned, Active: true,
+		LifeState:  sdk.LifeStateDying,
+		DeathSaves: &sdk.DeathSaveProgress{Successes: 1, Failures: 2, SuccessesNeeded: 2, FailuresRemaining: 1},
 	})
 	require.Equal(t, "char-1", got.GetMember())
 	require.Equal(t, "Aldric", got.GetName())
 	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_PLAYER, got.GetKind())
-	require.Equal(t, sessionpb.Standing_STANDING_UP, got.GetStanding())
+	require.Equal(t, sessionpb.Standing_STANDING_DOWNED, got.GetStanding())
 	require.True(t, got.GetActive())
+	require.Equal(t, sessionpb.LifeState_LIFE_STATE_DYING, got.GetLifeState())
+	require.Equal(t, int32(1), got.GetDeathSaves().GetSuccesses())
+	require.Equal(t, int32(2), got.GetDeathSaves().GetFailures())
+	require.Equal(t, int32(2), got.GetDeathSaves().GetSuccessesNeeded())
+	require.Equal(t, int32(1), got.GetDeathSaves().GetFailuresRemaining())
+}
+
+func TestDeclarationToProto_CarriesDeathSaveIdentity(t *testing.T) {
+	got := declarationToProto(sdk.Declaration{
+		Verb: sdk.VerbDeathSave, Slot: sdk.SlotNone, Available: true,
+		ID: "save-selector", TargetKind: sdk.TargetNone,
+		DeathSave: &sdk.DeathSaveRef{Name: "Death Saving Throw"},
+	})
+	require.Equal(t, sessionpb.Verb_VERB_DEATH_SAVE, got.GetVerb())
+	require.Equal(t, sessionpb.Slot_SLOT_NONE, got.GetSlot())
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_NONE, got.GetTargetKind())
+	require.Equal(t, "Death Saving Throw", got.GetDeathSave().GetName())
+	require.Nil(t, got.GetAttack())
+	require.Nil(t, got.GetAbility())
 }
 
 // TestParticipantsToProto_NilOrEmpty_StaysNonNilEmpty mirrors

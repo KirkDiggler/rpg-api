@@ -36,6 +36,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	sessionhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 )
@@ -382,6 +383,7 @@ func newAcceptanceHarnessWithDice(t *testing.T, roller sdk.Roller) *acceptanceHa
 	// "a test wires a fixed one and gets a reproducible fight").
 	orch, err := sessionorch.New(sessionorch.Config{
 		Redis: client, Characters: charRepo, TTL: 24 * time.Hour, Dice: roller,
+		PresentationIDs: idgen.NewSequential("presentation"),
 	})
 	require.NoError(t, err)
 

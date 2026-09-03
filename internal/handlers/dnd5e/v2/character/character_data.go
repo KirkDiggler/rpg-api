@@ -5,10 +5,14 @@ package character
 // toolkit's EquipmentView and StatusView.
 
 import (
-	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
-	orchcharacter "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
+	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
+
+	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
+	orchcharacter "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 )
 
 const (
@@ -102,6 +106,8 @@ func mapStatus(cd *encounterv2pb.CharacterData, view *orchcharacter.View) {
 		Max:     int32(view.Status.HitPoints.Maximum),
 	}
 	cd.BaseSpeedFeet = int32(view.Status.BaseSpeedFeet)
+	cd.LifeState = ownerLifeStateToProto(view.Status.LifeState)
+	cd.DeathSaves = ownerDeathSaveProgressToProto(view.Status.DeathSaves)
 
 	cd.Features = make([]*encounterv2pb.FeatureView, 0, len(view.Status.Features))
 	for _, feature := range view.Status.Features {
@@ -131,6 +137,37 @@ func mapStatus(cd *encounterv2pb.CharacterData, view *orchcharacter.View) {
 			Current: int32(resource.Current),
 			Maximum: int32(resource.Maximum),
 		})
+	}
+}
+
+func ownerLifeStateToProto(state combat.LifeState) sessionpb.LifeState {
+	switch state {
+	case combat.LifeStateConscious:
+		return sessionpb.LifeState_LIFE_STATE_CONSCIOUS
+	case combat.LifeStateDying:
+		return sessionpb.LifeState_LIFE_STATE_DYING
+	case combat.LifeStateStabilized:
+		return sessionpb.LifeState_LIFE_STATE_STABILIZED
+	case combat.LifeStateDead:
+		return sessionpb.LifeState_LIFE_STATE_DEAD
+	case combat.LifeStateDefeated:
+		return sessionpb.LifeState_LIFE_STATE_DEFEATED
+	default:
+		return sessionpb.LifeState_LIFE_STATE_UNSPECIFIED
+	}
+}
+
+func ownerDeathSaveProgressToProto(progress *tkcharacter.DeathSaveProgress) *sessionpb.DeathSaveProgress {
+	if progress == nil {
+		return nil
+	}
+	return &sessionpb.DeathSaveProgress{
+		Successes:         int32(progress.Successes),
+		Failures:          int32(progress.Failures),
+		SuccessesNeeded:   int32(progress.SuccessesNeeded),
+		FailuresRemaining: int32(progress.FailuresRemaining),
+		Stabilized:        progress.Stabilized,
+		Dead:              progress.Dead,
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	characterpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
@@ -22,6 +23,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
@@ -723,6 +725,25 @@ func (s *HandlerTestSuite) TestVerifyCallerOwnsCharacter_MissingAndForeign_Ident
 		"a missing character and a foreign one must be indistinguishable by message text")
 	s.Assert().NotContains(missingSt.Message(), "repository",
 		"the repository's own wording must never reach the caller")
+}
+
+func (s *HandlerTestSuite) TestBuildCharacterData_MapsExplicitDeadLifeStateAndProviderProgress() {
+	cd := BuildCharacterData(&orchcharacter.View{Status: &character.StatusView{
+		LifeState: combat.LifeStateDead,
+		DeathSaves: &character.DeathSaveProgress{
+			Successes: 1, Failures: 3, SuccessesNeeded: 2, FailuresRemaining: 0,
+			Dead: true,
+		},
+	}})
+
+	s.Require().NotNil(cd)
+	s.Equal(sessionpb.LifeState_LIFE_STATE_DEAD, cd.GetLifeState())
+	s.Require().NotNil(cd.GetDeathSaves(), "owner projection retains Dead progress from the provider view")
+	s.Equal(int32(1), cd.GetDeathSaves().GetSuccesses())
+	s.Equal(int32(3), cd.GetDeathSaves().GetFailures())
+	s.Equal(int32(2), cd.GetDeathSaves().GetSuccessesNeeded())
+	s.Zero(cd.GetDeathSaves().GetFailuresRemaining())
+	s.True(cd.GetDeathSaves().GetDead())
 }
 
 func (s *HandlerTestSuite) assertOwnerIdentity(
