@@ -69,7 +69,7 @@ var pairFormSeams = [][4]int{
 // A DOOR MOVED WITHIN THE SEAM, and that is why this compares the UNION rather
 // than the walls alone. Under the pair form each door opened a straight
 // west-east crossing, whose side midpoint lies half a width from the two
-// columns' centres; no thin line passes through a flat-side midpoint (design
+// columns' centers; no thin line passes through a flat-side midpoint (design
 // F16), so each door moved one row onto the slanted midpoint the wall actually
 // crosses. The set is the same thirty steps; which one of them stands open
 // moved by one. The doorway assertions below pin where it moved to, so this
@@ -149,7 +149,7 @@ func (s *ReferenceTombSuite) TestTheSeamsAreTwoSegmentsAndNothingIsSealed() {
 	s.Require().Len(atlas.Segments, 2, "two authored walls, two lines to draw")
 
 	// Authored [5,7]+[0.25,0.375] to [6,0]+[-0.25,-0.375], and the same shape
-	// ten columns over. A side midpoint is exactly half a step from the centre
+	// ten columns over. A side midpoint is exactly half a step from the center
 	// it belongs to, which is where the halves come from.
 	s.Equal(tkencounter.AxialPointF{Q: 2, R: 7.5}, atlas.Segments[0].From)
 	s.Equal(tkencounter.AxialPointF{Q: 6, R: -0.5}, atlas.Segments[0].To)

@@ -326,7 +326,7 @@ func (s *SessionStackSuite) TestStartEncounter_TheTombReachesTheWire() {
 //
 // The endpoints are literals for the reason every other projection literal in
 // this repository is one: reading them back out of the projection under test
-// would assert nothing. A side midpoint is exactly half a step from the centre
+// would assert nothing. A side midpoint is exactly half a step from the center
 // it belongs to, which is where the halves come from.
 func (s *SessionStackSuite) TestStartEncounter_GetAtlasServesTheSeamsAsTwoLines() {
 	s.seedCharacter("char-alice", "alice", "Alice")

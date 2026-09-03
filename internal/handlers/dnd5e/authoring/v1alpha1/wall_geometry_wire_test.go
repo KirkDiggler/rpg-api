@@ -45,7 +45,7 @@ func (s *WallGeometryWireSuite) SetupTest() {
 // TestPutDungeon_AHalvedCellIsStillFloorAndStillOwned pins what sealing does
 // NOT do to the wire.
 //
-// A wall drawn through a cell's centre takes the cell's footing away and
+// A wall drawn through a cell's center takes the cell's footing away and
 // nothing else: it keeps its region, and a host must draw it exactly as it
 // draws the floor beside it. So it is still in the flat cell list and still in
 // its region's cells, and an implementation that "helpfully" dropped a sealed
@@ -111,9 +111,9 @@ func (s *WallGeometryWireSuite) TestPutDungeon_AHalvedCellIsStillFloorAndStillOw
 	s.False(sealed[at(1, 1)],
 		"[1,1] is the odd-row cell the line runs ALONGSIDE rather than through, and stays standable")
 
-	// And the line itself, once, as the author drew it: centre of [1,0] to
-	// centre of [1,2], which are the axial cells (1,0) and (0,2) -- an offset
-	// grid shears when it becomes axial, and a centre carries no half.
+	// And the line itself, once, as the author drew it: center of [1,0] to
+	// center of [1,2], which are the axial cells (1,0) and (0,2) -- an offset
+	// grid shears when it becomes axial, and a center carries no half.
 	s.Require().Len(resp.GetAtlas().GetSegments(), 1, "one authored wall, one line to draw")
 	segment := resp.GetAtlas().GetSegments()[0]
 	s.Equal(at(1, 0).x, segment.GetFrom().GetQ())

@@ -4,7 +4,7 @@ package dungeonstest
 const HalvedRoomKey = "halved-room"
 
 // HalvedRoomYAML is the smallest dungeon that SEALS a cell: one four-by-three
-// room with a single wall drawn straight through two of its cells' centres
+// room with a single wall drawn straight through two of its cells' centers
 // (rpg-project#360, wall-geometry design F14 and §5.2 as amended).
 //
 // It exists because sealing is the fact region membership stopped implying.
@@ -43,15 +43,15 @@ regions:
 start: [0, 1]
 
 # Straight down the flat side between columns 0 and 1, which in a pointy-top
-# grid runs through the centre of the even-row cells on it and along the side
+# grid runs through the center of the even-row cells on it and along the side
 # of the odd-row ones. [1,0] and [1,2] are halved; [1,1] is left whole.
 walls:
   - start: { cell: [1,0], offset: [0, 0] }
     end:   { cell: [1,2], offset: [0, 0] }
-    name: the centre line
+    name: the center line
 `
 
-// HalvedRoomSealedCells are the two cells the centre line runs through, in
+// HalvedRoomSealedCells are the two cells the center line runs through, in
 // authored [col,row] offset pairs. Floor, owned by the vault, and unstandable.
 var HalvedRoomSealedCells = [][2]int{{1, 0}, {1, 2}}
 
