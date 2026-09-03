@@ -75,7 +75,28 @@ type allStanding struct{}
 // name is `down`, and reading it the other way round would report a healthy
 // party as a wiped one.
 func (allStanding) Standing(_ []tkencounter.MemberID) ([]tkencounter.MemberID, error) {
-	return nil, nil
+	return []tkencounter.MemberID{}, nil // nobody is down, said as an empty list, never nil with a nil error
+}
+
+// Assess says the same thing in the fuller vocabulary encounter/v0.51.0 asks
+// of a Standing capability (toolkit#1453): nobody is down, so everybody is up,
+// conscious, in contact, and waiting. Contact is what makes a member count as
+// a side of a fight, so the false zero value would dissolve every fight this
+// suite forms -- see sessionworld.nobodyDown.Assess, which is the same stand-in
+// for the same reason.
+func (allStanding) Assess(members []tkencounter.MemberID) (*tkencounter.ParticipationAssessment, error) {
+	out := &tkencounter.ParticipationAssessment{
+		Members: make([]tkencounter.MemberParticipation, 0, len(members)),
+	}
+	for _, id := range members {
+		out.Members = append(out.Members, tkencounter.MemberParticipation{
+			Member:    id,
+			Contact:   true,
+			Conscious: true,
+			Turn:      tkencounter.TurnParticipationWait,
+		})
+	}
+	return out, nil
 }
 
 type allSeeing struct{}

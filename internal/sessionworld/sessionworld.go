@@ -350,9 +350,41 @@ type nobodyDown struct{}
 
 // Standing reports who is DOWN, not who is up -- the interface's own parameter
 // is named down, and reading it backwards would report a healthy party as a
-// wiped one. Nobody has been hit yet in a world this new, so: nobody.
+// wiped one. Nobody has been hit yet in a world this new, so: nobody, said as
+// an empty list rather than a nil one. A nil slice with a nil error is the
+// shape this repo never returns: a caller cannot tell "nobody is down" from
+// "nothing was answered".
 func (nobodyDown) Standing(_ []tkencounter.MemberID) ([]tkencounter.MemberID, error) {
-	return nil, nil
+	return []tkencounter.MemberID{}, nil
+}
+
+// Assess is the richer half of the same answer, required of a Standing
+// capability since encounter/v0.51.0 (toolkit#1453): NewEncounter refuses a
+// Standing that is not also a Participation. It says exactly what Standing
+// above says, in the fuller vocabulary -- nobody is down, so everybody is up,
+// conscious, IN CONTACT, and waiting for their player or driver -- which is
+// the session package's own bridge answer for an undowned member, verbatim
+// (session.standingSeam.Assess).
+//
+// CONTACT IS TRUE ON PURPOSE. It is what decides whether a member counts as a
+// side of a fight (encounter.fightIsDecided), so answering false would dissolve
+// every fight the moment it formed, quietly, and this stand-in would be making
+// a ruling instead of standing in for one. Party-defeat and keep-turn-order
+// stay false: they are group policy the rulebook owns, and nothing here rules
+// on them.
+func (nobodyDown) Assess(members []tkencounter.MemberID) (*tkencounter.ParticipationAssessment, error) {
+	out := &tkencounter.ParticipationAssessment{
+		Members: make([]tkencounter.MemberParticipation, 0, len(members)),
+	}
+	for _, id := range members {
+		out.Members = append(out.Members, tkencounter.MemberParticipation{
+			Member:    id,
+			Contact:   true,
+			Conscious: true,
+			Turn:      tkencounter.TurnParticipationWait,
+		})
+	}
+	return out, nil
 }
 
 type nobodySees struct{}
@@ -395,5 +427,5 @@ type nobodyPerceives struct{}
 // fix (rpg-api#887). See the comment above [orderAsGiven] for the full
 // reasoning.
 func (nobodyPerceives) Perceivers(*tkencounter.PerceiversInput) ([]tkencounter.MemberID, error) {
-	return nil, nil
+	return []tkencounter.MemberID{}, nil // nobody, as an empty list: never nil with a nil error
 }

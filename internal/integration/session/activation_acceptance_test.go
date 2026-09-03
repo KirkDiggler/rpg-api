@@ -1,11 +1,8 @@
 package session_test
 
 import (
-	"bytes"
 	"context"
-	cryptorand "crypto/rand"
 	"encoding/json"
-	"sync"
 	"testing"
 	"time"
 
@@ -29,24 +26,6 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
-
-// activationCryptoReaderMu serializes the narrow crypto/rand replacement used
-// below. Second Wind still rolls through dice's package default
-// (rpg-toolkit#1427); this acceptance pins exact story facts without fixing
-// that separate provider seam. The helper restores the process-global reader
-// before releasing the lock, even when the activating call fails.
-var activationCryptoReaderMu sync.Mutex
-
-func activateWithCryptoByte(value byte, activate func() error) error {
-	activationCryptoReaderMu.Lock()
-	defer activationCryptoReaderMu.Unlock()
-
-	original := cryptorand.Reader
-	cryptorand.Reader = bytes.NewReader([]byte{value})
-	defer func() { cryptorand.Reader = original }()
-
-	return activate()
-}
 
 // ragingBarbarian is a level-1 barbarian carrying Rage, with a weapon so the
 // Attack declaration compiles beside the activations.
@@ -370,9 +349,10 @@ func requireSecondWindActivationEvents(t *testing.T, events []*sessionpb.Event) 
 	require.NotNil(t, healing)
 	require.Equal(t, "alice", healing.GetTarget())
 	require.Equal(t, int32(2), healing.GetAmount())
-	require.Equal(t, int32(7), healing.GetRequested())
-	require.Equal(t, int32(6), healing.GetRoll())
-	require.Equal(t, int32(1), healing.GetModifier())
+	require.Equal(t, int32(11), healing.GetRequested())
+	require.Equal(t, int32(10), healing.GetRoll(),
+		"the supplied roller answers the top face of the d10")
+	require.Equal(t, int32(1), healing.GetModifier(), "plus the fighter's level")
 	require.Equal(t, "dnd5e:features:second_wind", healing.GetSourceRef())
 	require.Equal(t, "Second Wind", healing.GetSourceName())
 	require.Equal(t, int32(8), healing.GetHpBefore())
@@ -427,11 +407,15 @@ func TestAcceptance_SecondWindActivationEventsAndHealingCrossTheWire(t *testing.
 	waitForLive(t, h.manager.Broker, "acceptance-run", "alice", stream)
 	baseline := len(stream.snapshot())
 
-	err = activateWithCryptoByte(5, func() error {
-		_, activateErr := h.handler.Activate(ctx, &sessionpb.ActivateRequest{
-			Session: "acceptance-run", Member: "alice", DeclarationId: secondWind.GetId(),
-		})
-		return activateErr
+	// No dice rigging: Second Wind rolls through the roller this harness
+	// SUPPLIES (testDice, always the top face), which is what closing
+	// rpg-toolkit#1427 changed. It used to reach crypto/rand's process-global
+	// reader behind the composition's back, and this test used to swap that
+	// reader out to pin a story fact. Nothing to swap now -- the supplied
+	// capability is the only source, so the d10 is a 10 and the numbers below
+	// are that.
+	_, err = h.handler.Activate(ctx, &sessionpb.ActivateRequest{
+		Session: "acceptance-run", Member: "alice", DeclarationId: secondWind.GetId(),
 	})
 	require.NoError(t, err)
 

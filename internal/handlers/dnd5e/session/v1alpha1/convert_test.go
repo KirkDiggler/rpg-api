@@ -415,13 +415,28 @@ func richStruckEvent() sdk.Event {
 			Attacker: "char-1", Target: "goblin-1", Roll: 18, Total: 21, Against: 13, Damage: 6,
 			Attack:   sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
 			Critical: true,
+			// Roll-shaped facts live in Roll since session/v0.50.0
+			// (toolkit#1470); the scalars beside it are a legacy READ path a
+			// newly produced body never fills, so a fixture that used them
+			// would be testing a decode of old storage rather than the
+			// conversion this file is about.
 			DamageComponents: []sdk.DamageComponent{
 				{
-					Source: "weapon", SourceRef: "dnd5e:weapons:longsword", Dice: "1d8",
-					FinalRolls: []int{4}, DamageType: sdk.DamageSlashing,
+					Source: "weapon",
+					Roll: sdk.RollComponent{
+						Source: sdk.RollSource{Ref: "dnd5e:weapons:longsword", Name: "Longsword"},
+						Dice: &sdk.DiceTrace{
+							Notation: "1d8", DieSize: 8,
+							OriginalRolls: []int{4}, FinalRolls: []int{4}, Subtotal: 4,
+						},
+					},
+					DamageType: sdk.DamageSlashing,
 				},
 				{
-					Source: "monster_trait", SourceRef: "dnd5e:monster_traits:immunity",
+					Source: "monster_trait",
+					Roll: sdk.RollComponent{
+						Source: sdk.RollSource{Ref: "dnd5e:monster_traits:immunity", Name: "Immunity"},
+					},
 					DamageType: sdk.DamageSlashing, Multiplier: &immunity,
 				},
 			},
@@ -503,14 +518,38 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 	})
 
 	t.Run("HealingApplied", func(t *testing.T) {
+		fighterLevel := 1
 		got := eventToProto(sdk.Event{
 			Kind: sdk.EventActivationResult,
 			Body: sdk.ActivationResultBody{
 				Actor: "alice",
+				// Roll and Modifier come off Calculation, for the same reason
+				// the struck fixture above builds a Roll: a body this SDK
+				// produces carries the trace and leaves the two scalars zero.
 				HealingApplied: &sdk.HealingAppliedBody{
-					Target: "alice", Amount: 2, Requested: 7, Roll: 6, Modifier: 1,
+					Target: "alice", Amount: 2, Requested: 7,
 					SourceRef: "dnd5e:features:second_wind", SourceName: "Second Wind",
 					HPBefore: 8, HPAfter: 10,
+					Calculation: &sdk.RollCalculation{
+						Components: []sdk.RollComponent{
+							{
+								Source: sdk.RollSource{
+									Ref: "dnd5e:features:second_wind", Name: "Second Wind",
+								},
+								Dice: &sdk.DiceTrace{
+									Notation: "d10", DieSize: 10,
+									OriginalRolls: []int{6}, FinalRolls: []int{6}, Subtotal: 6,
+								},
+							},
+							{
+								Source: sdk.RollSource{
+									Ref: "dnd5e:classes:fighter", Name: "Fighter", Label: "Fighter level",
+								},
+								Modifier: &fighterLevel,
+							},
+						},
+						Total: 7,
+					},
 				},
 			},
 		})

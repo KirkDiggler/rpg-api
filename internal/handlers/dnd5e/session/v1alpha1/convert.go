@@ -330,6 +330,36 @@ func atlasDoorwaysToProto(ds []sdk.AtlasDoorway) []*sessionpb.AtlasDoorway {
 	return out
 }
 
+// atlasSegmentToProto mirrors one authored wall AS THE LINE IT IS. Both ends
+// are already fractional axial in the atlas's own frame -- the same frame every
+// cell on the wire lives in -- so nothing here converts anything, for the
+// reason AtlasToProto's own doc gives: a hex is embedded in the plane in
+// exactly one place, and it is not this one.
+//
+// PRESENTATION, BESIDE THE MECHANICAL TRUTH, NOT INSTEAD OF IT. Boundaries and
+// doorways are unchanged and remain what a member may and may not do; this is
+// the line those crossings came from, which a client draws instead of chaining
+// them back into runs under a straightness tolerance. A door's gap is the
+// client's own arithmetic from the doorway it already has.
+func atlasSegmentToProto(s sdk.AtlasSegment) *sessionpb.AtlasSegment {
+	return &sessionpb.AtlasSegment{
+		From: &sessionpb.AxialPoint{Q: s.From.Q, R: s.From.R},
+		To:   &sessionpb.AxialPoint{Q: s.To.Q, R: s.To.R},
+		// Narrowed to the SAME width AtlasBoundary.height crosses on, so a
+		// client never compares a float32 0.7 against a float64 0.7. 0 = not
+		// authored = standard height, the same contract as the boundary's.
+		Height: float32(s.Height),
+	}
+}
+
+func atlasSegmentsToProto(ss []sdk.AtlasSegment) []*sessionpb.AtlasSegment {
+	out := make([]*sessionpb.AtlasSegment, len(ss))
+	for i, s := range ss {
+		out[i] = atlasSegmentToProto(s)
+	}
+	return out
+}
+
 // eventKindToProto mirrors sdk.EventKind onto the wire enum. A kind this
 // build does not recognize -- either the SDK's own EventUnknown (a beat the
 // TOOLKIT did not recognize, delivered on purpose) or, in principle, some
@@ -508,10 +538,44 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			Doorways: atlasDoorwaysToProto(b.Doorways),
 		}}
 	case sdk.RegionRevealedBody:
+		// Segments and Sealed do NOT mean the same shape of thing here, and a
+		// client that treats them alike will draw the wrong room. Both are
+		// carried verbatim; neither is recomputed here.
+		//
+		// SEGMENTS IS A DIFFERENCE, and adds: the walls this recipient did not
+		// have and now does. A wall already presented to them for any reason --
+		// the seam their own concealed door hides in, or one footing on floor
+		// they can already see -- is deliberately absent, because it is not news
+		// and they are already drawing it. So this is append-to-cache, never
+		// replace-for-region. It HAS to be a difference: a segment carries no
+		// footprint on purpose, so there is no way to ask which cells a wall
+		// stands on without leaking what the doorway list withholds. No wall
+		// ever leaves, so the atlas after a reveal is the atlas before it union
+		// this.
+		//
+		// SEALED IS SCOPED, AND REPLACES, and the scoping is load-bearing rather
+		// than a style choice: a client swaps out the revealed region's cells
+		// and keeps every other sealed cell it had. Cells LEAVE this list. A
+		// non-knower's sealed list already holds some of the hidden room's own
+		// cells -- the footing of the walls presented to them (design C18),
+		// which reaches them as ownerless floor, and ownerless floor is floor
+		// nobody stands on -- and the moment the room is theirs those same cells
+		// are ordinary standable floor. A client that appended would leave a
+		// room it can see permanently unwalkable at its edges. So the atlas
+		// after a reveal is (the atlas before it, less the revealed region's
+		// cells) union this, which is why the beat carries the region's cells
+		// beside it. A difference could only ever add, and this field has to be
+		// able to take away.
+		sealed := make([]*sessionpb.Position, len(b.Sealed))
+		for i, c := range b.Sealed {
+			sealed[i] = positionToProto(c)
+		}
 		evt.Body = &sessionpb.Event_RegionRevealed{RegionRevealed: &sessionpb.RegionRevealed{
 			Region:     atlasRegionToProto(b.Region),
 			Props:      atlasPropsToProto(b.Props),
 			Boundaries: atlasBoundariesToProto(b.Boundaries),
+			Segments:   atlasSegmentsToProto(b.Segments),
+			Sealed:     sealed,
 		}}
 	default:
 		// nil (no typed body for this kind) or a body type this build does
@@ -565,16 +629,48 @@ func activationResultBodyToProto(body sdk.ActivationResultBody) *sessionpb.Activ
 	return result
 }
 
+// healingAppliedBodyToProto mirrors a heal onto the wire. Roll and Modifier
+// come out of Calculation for the same reason damageComponentsToProto's do:
+// the scalars beside it are the LEGACY READ path and a newly produced body
+// leaves them zero (session/v0.50.0, toolkit#1470). Requested is not a roll
+// fact and was never moved.
 func healingAppliedBodyToProto(body *sdk.HealingAppliedBody) *sessionpb.HealingApplied {
 	if body == nil {
 		return nil
 	}
+	roll, modifier := rollAndModifierOf(body.Calculation)
 	return &sessionpb.HealingApplied{
 		Target: body.Target, Amount: int32(body.Amount), Requested: int32(body.Requested),
-		Roll: int32(body.Roll), Modifier: int32(body.Modifier),
+		Roll: roll, Modifier: modifier, //nolint:staticcheck // deprecated on the wire; the current client still reads them
 		SourceRef: body.SourceRef, SourceName: body.SourceName,
 		HpBefore: int32(body.HPBefore), HpAfter: int32(body.HPAfter),
 	}
+}
+
+// rollAndModifierOf flattens a sourced roll calculation into the two scalars
+// this wire has carried since before traces existed: what the dice came to,
+// and what was added to them.
+//
+// SUMMED ACROSS COMPONENTS, because the wire's two fields are one number each
+// and a calculation may hold several sourced parts -- a heal's die and the
+// class level that adds to it are two components of one roll. Summing is what
+// the scalars always meant; picking one component and calling it "the roll"
+// would silently drop the others. A nil calculation is a body with no roll
+// behind it and answers zero for both, which is what a reader already renders
+// for "nothing was rolled".
+func rollAndModifierOf(calculation *sdk.RollCalculation) (roll, modifier int32) {
+	if calculation == nil {
+		return 0, 0
+	}
+	for _, component := range calculation.Components {
+		if component.Dice != nil {
+			roll += int32(component.Dice.Subtotal)
+		}
+		if component.Modifier != nil {
+			modifier += int32(*component.Modifier)
+		}
+	}
+	return roll, modifier
 }
 
 func conditionAppliedBodyToProto(body *sdk.ConditionAppliedBody) *sessionpb.ConditionApplied {
@@ -630,6 +726,14 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 		cells[i] = positionToProto(c)
 	}
 	props := atlasPropsToProto(a.Props)
+	// Sealed cells are cells: same absolute frame, same converter, and every
+	// one of them is in Cells above as well. Sealed floor is still floor --
+	// drawn and lit like the floor beside it -- and this list only says whose
+	// feet may not go there.
+	sealed := make([]*sessionpb.Position, len(a.Sealed))
+	for i, c := range a.Sealed {
+		sealed[i] = positionToProto(c)
+	}
 	return &sessionpb.GetAtlasResponse{
 		Grid:       gridKindToProto(a.Grid),
 		Layout:     hexLayoutToProto(a.Layout),
@@ -638,6 +742,8 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 		Boundaries: atlasBoundariesToProto(a.Boundaries),
 		Doorways:   atlasDoorwaysToProto(a.Doorways),
 		Regions:    atlasRegionsToProto(a.Regions),
+		Segments:   atlasSegmentsToProto(a.Segments),
+		Sealed:     sealed,
 	}
 }
 
@@ -926,12 +1032,38 @@ func damageTypeToProto(d sdk.DamageType) sessionpb.DamageType {
 	}
 }
 
+// damageComponentsToProto mirrors the SDK's damage components onto the wire.
+//
+// EVERY ROLL FACT NOW COMES OUT OF Roll, not out of the scalars beside it
+// (session/v0.50.0, toolkit#1470). DamageComponent kept SourceRef, Dice,
+// FinalRolls and FlatBonus as a LEGACY READ path -- the strict decoder fills
+// them only when it reads a payload persisted before roll traces existed, and
+// a newly produced body carries none of them. Reading them here is what made
+// three acceptance tests report an empty source ref against a component that
+// plainly had one.
+//
+// The wire is unchanged, and deliberately: these four fields are exactly the
+// four facts the trace holds, one level down. What the trace holds and the
+// wire does not -- original faces before a reroll, the rerolls and their
+// sources, which faces were kept -- is a WIDER message than this one and is
+// not smuggled into these fields; carrying it is its own piece of work.
 func damageComponentsToProto(in []sdk.DamageComponent) []*sessionpb.DamageComponent {
 	out := make([]*sessionpb.DamageComponent, len(in))
 	for i, component := range in {
-		rolls := make([]int32, len(component.FinalRolls))
-		for j, roll := range component.FinalRolls {
-			rolls[j] = int32(roll)
+		var (
+			notation string
+			rolls    []int32
+		)
+		if dice := component.Roll.Dice; dice != nil {
+			notation = dice.Notation
+			rolls = make([]int32, len(dice.FinalRolls))
+			for j, roll := range dice.FinalRolls {
+				rolls[j] = int32(roll)
+			}
+		}
+		var flatBonus int32
+		if component.Roll.Modifier != nil {
+			flatBonus = int32(*component.Roll.Modifier)
 		}
 		var multiplier *float64
 		if component.Multiplier != nil {
@@ -939,8 +1071,11 @@ func damageComponentsToProto(in []sdk.DamageComponent) []*sessionpb.DamageCompon
 			multiplier = &value
 		}
 		out[i] = &sessionpb.DamageComponent{
-			Source: component.Source, SourceRef: component.SourceRef, Dice: component.Dice,
-			FinalRolls: rolls, FlatBonus: int32(component.FlatBonus),
+			// SourceRef, FinalRolls and FlatBonus are deprecated on the wire (the
+			// roll-traces lane replaces them with the trace); the client still reads them.
+			//nolint:staticcheck // deprecated wire fields, filled on purpose
+			Source: component.Source, SourceRef: component.Roll.Source.Ref, Dice: notation,
+			FinalRolls: rolls, FlatBonus: flatBonus, //nolint:staticcheck // see above
 			DamageType: damageTypeToProto(component.DamageType), Multiplier: multiplier,
 		}
 	}
