@@ -1,8 +1,8 @@
 ---
 name: character handler
 description: gRPC handler for CharacterService — character creation, management, and data loading
-updated: 2026-09-01
-confidence: medium-high — #869 hair draft/finalization/Get/List mapping verified through focused handler tests and the Docker-backed character integration flow; older converter debt retains its stated caveats
+updated: 2026-09-04
+confidence: medium-high — #897 complete Appearance conversion/delegation and Data-owned persistence are verified by focused handler/converter tests and Docker-backed character integration
 ---
 
 # character handler
@@ -13,22 +13,20 @@ The character handler is the gRPC adapter for `CharacterService`. It covers the 
 
 `UpdateRace` translates `CHOICE_CATEGORY_TOOLS` through the same canonical proto-to-toolkit tool converter used by class choices and passes the resulting selection IDs into `RaceChoices.Tools`. The toolkit remains responsible for validating Dwarf choice eligibility and completeness. Handler coverage pins Smith's Tools translation, while the character integration suite drives Dwarf race selection through `FinalizeDraft` to prevent a successful-but-discarded choice regression.
 
-## Production hair customization (#869)
+## Complete Appearance delegation (#897)
 
 `UpdateAppearance` is creation-only: its request names a draft, never a finalized
-character. The handler validates the complete wire payload before invoking the
-orchestrator, then maps the shared customization proto through
-`internal/converters/customization`; it does not interpret provider refs.
+character. The handler checks only the request envelope, converts the complete wire
+Appearance through `internal/converters/customization`, delegates once, translates
+toolkit errors, and converts the returned authoritative `DraftData`. It does not
+validate provider refs, colors, roughness, defaults, or oneof semantics.
 
-Appearance is an API-owned envelope outside toolkit `character.Data`. Draft reads,
-`UpdateAppearance`, `FinalizeDraft`, `GetCharacter`, and `ListCharacters` return the
-same typed hair semantics: nil slot pointer means provider default, `none` is explicit,
-`style_ref` is exact, and optional `color_srgb`/`roughness` preserve scalar presence
-(including present zero). Finalization returns both the reconstructed toolkit character
-and the persisted API-owned Appearance so the finalization response does not drop it.
-A Docker `redis:7-alpine` integration test completes a Dwarf Fighter and proves the
-exact payload across update, reload, finalization, and final character read; it also
-proves invalid roughness is refused before repository mutation.
+Appearance is nested in toolkit `character.Data`/`DraftData`. Draft reads,
+`UpdateAppearance`, `FinalizeDraft`, `GetCharacter`, `ListCharacters`, and equipment
+responses all project `Data.Appearance` directly. The converter preserves nil/empty
+messages, style/none/malformed oneofs, optional scalar presence including zero, and
+both outfit channels; deprecated string fields remain inert. Toolkit `Draft.SetAppearance`
+owns refusal before the repository update.
 
 ## Shared strict character application (#844)
 
@@ -42,8 +40,8 @@ latest record. This handler does not inspect feature/condition JSON, derive stat
 duplicate toolkit rules.
 
 The orchestrator output carries both the actual persisted post-state entity and its
-matching detached View. Legacy Equip/Unequip convert the entity directly with Appearance;
-they no longer call `GetCharacter` after a successful write. Internal strict projection
+matching detached View. Legacy Equip/Unequip convert the persisted entity's nested
+`Data.Appearance`; they no longer call `GetCharacter` after a successful write. Internal strict projection
 failures become generic INTERNAL `character data unavailable` at this boundary.
 
 The owner-private `CharacterData` contract is translated only by
@@ -52,9 +50,9 @@ class/race refs, equipment, level, HP, speed, structured feature/condition refs,
 optional resource/source presence, and non-magical resources are copied from detached
 values. The v1alpha1 handler does not grow a parallel converter for those fields.
 
-The current branch pins proto generated commit `4a54bd51df0e6459b2908d8f054978cb451416bc`,
-`rulebooks/dnd5e` v0.124.0, `rulebooks/dnd5e/session` v0.41.0, and
-`rulebooks/dnd5e/resolution` v0.25.0. The session module is consumed directly by the
+The current branch pins proto generated commit `883dd221a6cdf724df8d5d993d897e0c8a3358ab`,
+`rulebooks/dnd5e` v0.136.0, `rulebooks/dnd5e/session` v0.53.0, and
+`rulebooks/dnd5e/resolution` v0.31.0. The session module is consumed directly by the
 separate `SessionService` handler.
 
 ## Files
@@ -71,7 +69,7 @@ separate `SessionService` handler.
 - `GetRequirements` — returns pending choices for a draft
 - `SetName` / `SetRace` / `SetClass` / `SetBackground` / `SetAbilityScores` — draft updates
 - `SetAbilityScoresFromRolls` — assigns pre-rolled ability scores to draft
-- `UpdateAppearance` — validates and sets creation-draft hair appearance
+- `UpdateAppearance` — delegates complete creation-draft Appearance to the toolkit
 - `ValidateDraft` / `FinalizeDraft` — validation and finalization
 - `GetCharacter` / `ListCharacters` / `DeleteCharacter` — character CRUD
 - `EquipItem` / `UnequipItem` — equipment slot management

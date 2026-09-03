@@ -1,8 +1,8 @@
 ---
 name: rpg-api architecture overview
 description: Request flow, layer rules, component map, and cross-repo boundaries for rpg-api
-updated: 2026-08-28
-confidence: medium-high — #852 refreshed the session-stack service map for SessionPresentationService wiring; older character/component debt still retains its stated caveats
+updated: 2026-09-04
+confidence: medium-high — #897 refreshed character Appearance ownership, conversion, and storage boundaries; older component debt retains its stated caveats
 ---
 
 # rpg-api architecture overview
@@ -108,7 +108,7 @@ Components are local prototypes pending graduation to rpg-toolkit. They implemen
 | Dungeon component | `internal/components/dungeon/` | Procedural dungeon generation | Wrong repo (audit debt #5, untouched by #642); zero production callers as of #642 |
 | Spawner component | `internal/components/spawner/` | Entity placement adapter | Thin; delegates to toolkit; zero production callers as of #642 |
 | Auth | `internal/auth/` | Discord token validation + caching | Dev mode for local/tests |
-| Entities | `internal/entities/` | Domain structs (Character, CharacterDraft, Appearance) | Proto-free as of #642 |
+| Entities | `internal/entities/` | Thin wrappers around toolkit Character/Data and DraftData | Proto-free; Appearance is nested in toolkit data |
 | ~~Encounter repo v2~~ | `internal/repositories/encounters/v2/` | DELETED | See `components/encounter.md` |
 | Character repo | `internal/repositories/character/` | Character persistence | Redis — only durable store predating the v2 vertical |
 | Character draft repo | `internal/repositories/character_draft/` | Draft character state | Redis |
@@ -141,7 +141,7 @@ repo~~ / ~~Encounter log repo~~ — all DELETED (rpg-api#642, 2026-07-13).
 - ~~Dungeon room generation: room shapes, perimeter walls, feature layouts via `components/dungeon`~~ — component still exists (untouched by #642) but has zero production callers as of this PR; see `components/dungeon-component.md`.
 
 **What rpg-api persists:**
-- `character.Data` (toolkit type) serialized to Redis — character state is owned by the toolkit type.
+- Thin `entities.Character`/`CharacterDraft` wrappers serialized to Redis; toolkit `Data`/`DraftData`, including nested Appearance, own character state.
 - Toolkit session/encounter state owned by `rulebooks/dnd5e/session.Manager` — Redis-backed through `internal/orchestrators/session`, 24h TTL.
 - Lobby state — Redis-backed via `internal/repositories/lobby`.
 - Roster rows — Redis-backed via `internal/repositories/roster`, shared by SessionService and SessionPresentationService access checks.

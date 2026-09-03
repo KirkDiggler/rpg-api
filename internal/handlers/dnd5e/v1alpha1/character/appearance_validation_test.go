@@ -3,7 +3,6 @@ package character
 import (
 	"context"
 	"math"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -15,282 +14,178 @@ import (
 
 	customizationpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/customization/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/entities"
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	customizationconverter "github.com/KirkDiggler/rpg-api/internal/converters/customization"
 	characterorchestrator "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
+	"github.com/KirkDiggler/rpg-toolkit/rpgerr"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 )
 
-func TestUpdateAppearance_ValidFullRequestMutatesAndReturnsStoredDraft(t *testing.T) {
+func TestUpdateAppearance_DelegatesCompleteAppearanceAndReturnsServiceDraft(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	service := charactermock.NewMockService(ctrl)
 	handler, err := NewHandler(&HandlerConfig{CharacterService: service})
 	require.NoError(t, err)
 
-	const draftID = "draft-hair"
-	request := validUpdateAppearanceRequest(draftID)
-	appearance := &entities.Appearance{
-		Hair: &entities.HairCustomization{
-			Scalp: &entities.StyleSelection{
-				Kind:     entities.StyleSelectionKindStyle,
-				StyleRef: "modular-fantasy-hero:hair:38",
+	const draftID = "draft-appearance"
+	requestAppearance := &dnd5ev1alpha1.Appearance{
+		Hair: &customizationpb.HairCustomization{
+			Scalp: &customizationpb.StyleSelection{
+				Selection: &customizationpb.StyleSelection_StyleRef{StyleRef: "unknown:hair:ok"},
 			},
-			FacialHair: &entities.StyleSelection{Kind: entities.StyleSelectionKindNone},
-			ColorSRGB:  proto.Uint32(0x5A3825),
-			Roughness:  proto.Float32(0.72),
+			FacialHair: &customizationpb.StyleSelection{
+				Selection: &customizationpb.StyleSelection_None{None: &emptypb.Empty{}},
+			},
+			ColorSrgb: proto.Uint32(0),
+			Roughness: proto.Float32(0),
+		},
+		Outfit: &customizationpb.OutfitCustomization{
+			PrimaryColorSrgb:   proto.Uint32(0x102030),
+			SecondaryColorSrgb: proto.Uint32(0x405060),
+		},
+	}
+	expectedAppearance := customizationconverter.ProtoToToolkit(requestAppearance)
+	storedDraft := &toolkitchar.DraftData{ID: draftID, Appearance: expectedAppearance}
+
+	service.EXPECT().SetAppearance(gomock.Any(), &characterorchestrator.SetAppearanceInput{
+		DraftID:    draftID,
+		Appearance: expectedAppearance,
+	}).Return(&characterorchestrator.SetAppearanceOutput{Draft: storedDraft}, nil)
+
+	response, err := handler.UpdateAppearance(context.Background(), &dnd5ev1alpha1.UpdateAppearanceRequest{
+		DraftId:    draftID,
+		Appearance: requestAppearance,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, response.GetDraft())
+	require.True(t, proto.Equal(requestAppearance, response.GetDraft().GetAppearance()))
+}
+
+func TestUpdateAppearance_DelegatesMalformedSemanticsToToolkit(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	service := charactermock.NewMockService(ctrl)
+	handler, err := NewHandler(&HandlerConfig{CharacterService: service})
+	require.NoError(t, err)
+
+	const draftID = "draft-malformed"
+	requestAppearance := &dnd5ev1alpha1.Appearance{
+		Hair: &customizationpb.HairCustomization{
+			Scalp:     &customizationpb.StyleSelection{},
+			ColorSrgb: proto.Uint32(0x1000000),
+			Roughness: proto.Float32(float32(math.NaN())),
+		},
+		Outfit: &customizationpb.OutfitCustomization{
+			PrimaryColorSrgb: proto.Uint32(0x1000000),
 		},
 	}
 
-	gomock.InOrder(
-		service.EXPECT().
-			SetAppearance(gomock.Any(), &characterorchestrator.SetAppearanceInput{
-				DraftID:    draftID,
-				Appearance: appearance,
-			}).
-			Return(&characterorchestrator.SetAppearanceOutput{Appearance: appearance}, nil),
-		service.EXPECT().
-			GetDraft(gomock.Any(), &characterorchestrator.GetDraftInput{DraftID: draftID}).
-			Return(&characterorchestrator.GetDraftOutput{
-				Draft: &entities.CharacterDraft{
-					Data:       &toolkitchar.DraftData{ID: draftID},
-					Appearance: appearance,
-				},
-			}, nil),
+	service.EXPECT().SetAppearance(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, input *characterorchestrator.SetAppearanceInput) (*characterorchestrator.SetAppearanceOutput, error) {
+			require.Equal(t, draftID, input.DraftID)
+			require.Equal(t, customization.StyleSelectionKind(""), input.Appearance.Hair.Scalp.Kind)
+			require.Equal(t, uint32(0x1000000), *input.Appearance.Hair.ColorSRGB)
+			require.True(t, math.IsNaN(float64(*input.Appearance.Hair.Roughness)))
+			require.Equal(t, uint32(0x1000000), *input.Appearance.Outfit.PrimaryColorSRGB)
+			return &characterorchestrator.SetAppearanceOutput{Draft: &toolkitchar.DraftData{
+				ID:         draftID,
+				Appearance: input.Appearance,
+			}}, nil
+		},
 	)
+
+	response, err := handler.UpdateAppearance(context.Background(), &dnd5ev1alpha1.UpdateAppearanceRequest{
+		DraftId:    draftID,
+		Appearance: requestAppearance,
+	})
+	require.NoError(t, err)
+	require.Equal(t, draftID, response.GetDraft().GetId())
+	require.NotNil(t, response.GetDraft().GetAppearance().GetHair().GetScalp())
+	require.Nil(t, response.GetDraft().GetAppearance().GetHair().GetScalp().GetSelection())
+	require.Equal(t, uint32(0x1000000), response.GetDraft().GetAppearance().GetHair().GetColorSrgb())
+	require.True(t, math.IsNaN(float64(response.GetDraft().GetAppearance().GetHair().GetRoughness())))
+	require.Equal(t, uint32(0x1000000), response.GetDraft().GetAppearance().GetOutfit().GetPrimaryColorSrgb())
+}
+
+func TestUpdateAppearance_UsesReturnedDraftWithoutRefetch(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	service := charactermock.NewMockService(ctrl)
+	handler, err := NewHandler(&HandlerConfig{CharacterService: service})
+	require.NoError(t, err)
+
+	const draftID = "draft-no-refetch"
+	request := &dnd5ev1alpha1.UpdateAppearanceRequest{
+		DraftId:    draftID,
+		Appearance: &dnd5ev1alpha1.Appearance{},
+	}
+	service.EXPECT().SetAppearance(gomock.Any(), gomock.Any()).Return(&characterorchestrator.SetAppearanceOutput{
+		Draft: &toolkitchar.DraftData{ID: draftID, Name: "stored-name", Appearance: &customization.Appearance{}},
+	}, nil)
 
 	response, err := handler.UpdateAppearance(context.Background(), request)
 	require.NoError(t, err)
-	require.Equal(t, draftID, response.GetDraft().GetId())
-	require.Equal(t, "modular-fantasy-hero:hair:38", response.GetDraft().GetAppearance().GetHair().GetScalp().GetStyleRef())
-	require.NotNil(t, response.GetDraft().GetAppearance().GetHair().GetFacialHair().GetNone())
-	require.Equal(t, uint32(0x5A3825), response.GetDraft().GetAppearance().GetHair().GetColorSrgb())
-	require.InDelta(t, 0.72, response.GetDraft().GetAppearance().GetHair().GetRoughness(), 0.000001)
+	require.Equal(t, "stored-name", response.GetDraft().GetName())
 }
 
-func TestUpdateAppearance_ValidBoundaryAndDefaultStates(t *testing.T) {
-	const draftID = "draft-hair-boundaries"
-	maxLengthStyleRef := strings.Repeat("é", maxStyleRefBytes/2)
-	require.Len(t, []byte(maxLengthStyleRef), maxStyleRefBytes)
-
+func TestUpdateAppearance_RejectsOnlyTransportEnvelopeFailures(t *testing.T) {
 	tests := []struct {
-		name             string
-		protoAppearance  *dnd5ev1alpha1.Appearance
-		entityAppearance *entities.Appearance
-		assertProto      func(*testing.T, *dnd5ev1alpha1.Appearance)
+		name string
+		req  *dnd5ev1alpha1.UpdateAppearanceRequest
+		msg  string
 	}{
-		{
-			name: "256-byte style ref",
-			protoAppearance: &dnd5ev1alpha1.Appearance{
-				Hair: &customizationpb.HairCustomization{
-					Scalp: &customizationpb.StyleSelection{
-						Selection: &customizationpb.StyleSelection_StyleRef{StyleRef: maxLengthStyleRef},
-					},
-				},
-			},
-			entityAppearance: &entities.Appearance{
-				Hair: &entities.HairCustomization{
-					Scalp: &entities.StyleSelection{
-						Kind:     entities.StyleSelectionKindStyle,
-						StyleRef: maxLengthStyleRef,
-					},
-				},
-			},
-			assertProto: func(t *testing.T, appearance *dnd5ev1alpha1.Appearance) {
-				t.Helper()
-				require.NotNil(t, appearance.GetHair().GetScalp())
-				require.Equal(t, maxLengthStyleRef, appearance.GetHair().GetScalp().GetStyleRef())
-				require.Len(t, []byte(appearance.GetHair().GetScalp().GetStyleRef()), maxStyleRefBytes)
-			},
-		},
-		{
-			name: "RGB24 maximum",
-			protoAppearance: &dnd5ev1alpha1.Appearance{
-				Hair: &customizationpb.HairCustomization{ColorSrgb: proto.Uint32(maxColorSRGB)},
-			},
-			entityAppearance: &entities.Appearance{
-				Hair: &entities.HairCustomization{ColorSRGB: proto.Uint32(maxColorSRGB)},
-			},
-			assertProto: func(t *testing.T, appearance *dnd5ev1alpha1.Appearance) {
-				t.Helper()
-				require.NotNil(t, appearance.GetHair().ColorSrgb)
-				require.Equal(t, uint32(maxColorSRGB), appearance.GetHair().GetColorSrgb())
-			},
-		},
-		{
-			name: "roughness zero present",
-			protoAppearance: &dnd5ev1alpha1.Appearance{
-				Hair: &customizationpb.HairCustomization{Roughness: proto.Float32(0)},
-			},
-			entityAppearance: &entities.Appearance{
-				Hair: &entities.HairCustomization{Roughness: proto.Float32(0)},
-			},
-			assertProto: func(t *testing.T, appearance *dnd5ev1alpha1.Appearance) {
-				t.Helper()
-				require.NotNil(t, appearance.GetHair().Roughness)
-				require.Zero(t, appearance.GetHair().GetRoughness())
-			},
-		},
-		{
-			name: "roughness one present",
-			protoAppearance: &dnd5ev1alpha1.Appearance{
-				Hair: &customizationpb.HairCustomization{Roughness: proto.Float32(1)},
-			},
-			entityAppearance: &entities.Appearance{
-				Hair: &entities.HairCustomization{Roughness: proto.Float32(1)},
-			},
-			assertProto: func(t *testing.T, appearance *dnd5ev1alpha1.Appearance) {
-				t.Helper()
-				require.NotNil(t, appearance.GetHair().Roughness)
-				require.Equal(t, float32(1), appearance.GetHair().GetRoughness())
-			},
-		},
-		{
-			name:             "nil hair uses provider defaults",
-			protoAppearance:  &dnd5ev1alpha1.Appearance{},
-			entityAppearance: &entities.Appearance{},
-			assertProto: func(t *testing.T, appearance *dnd5ev1alpha1.Appearance) {
-				t.Helper()
-				require.Nil(t, appearance.GetHair())
-			},
-		},
-		{
-			name: "nil slots use provider defaults",
-			protoAppearance: &dnd5ev1alpha1.Appearance{
-				Hair: &customizationpb.HairCustomization{},
-			},
-			entityAppearance: &entities.Appearance{
-				Hair: &entities.HairCustomization{},
-			},
-			assertProto: func(t *testing.T, appearance *dnd5ev1alpha1.Appearance) {
-				t.Helper()
-				require.NotNil(t, appearance.GetHair())
-				require.Nil(t, appearance.GetHair().GetScalp())
-				require.Nil(t, appearance.GetHair().GetFacialHair())
-				require.Nil(t, appearance.GetHair().ColorSrgb)
-				require.Nil(t, appearance.GetHair().Roughness)
-			},
-		},
+		{name: "nil request", req: nil, msg: "request is required"},
+		{name: "missing draft", req: &dnd5ev1alpha1.UpdateAppearanceRequest{Appearance: &dnd5ev1alpha1.Appearance{}}, msg: "draft_id is required"},
+		{name: "missing appearance", req: &dnd5ev1alpha1.UpdateAppearanceRequest{DraftId: "draft-1"}, msg: "appearance is required"},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			service := charactermock.NewMockService(ctrl)
 			handler, err := NewHandler(&HandlerConfig{CharacterService: service})
 			require.NoError(t, err)
 
-			gomock.InOrder(
-				service.EXPECT().
-					SetAppearance(gomock.Any(), gomock.Any()).
-					DoAndReturn(func(_ context.Context, input *characterorchestrator.SetAppearanceInput) (*characterorchestrator.SetAppearanceOutput, error) {
-						require.Equal(t, draftID, input.DraftID)
-						require.Equal(t, test.entityAppearance, input.Appearance)
-						return &characterorchestrator.SetAppearanceOutput{Appearance: input.Appearance}, nil
-					}),
-				service.EXPECT().
-					GetDraft(gomock.Any(), &characterorchestrator.GetDraftInput{DraftID: draftID}).
-					Return(&characterorchestrator.GetDraftOutput{
-						Draft: &entities.CharacterDraft{
-							Data:       &toolkitchar.DraftData{ID: draftID},
-							Appearance: test.entityAppearance,
-						},
-					}, nil),
-			)
-
-			response, err := handler.UpdateAppearance(context.Background(), &dnd5ev1alpha1.UpdateAppearanceRequest{
-				DraftId:    draftID,
-				Appearance: test.protoAppearance,
-			})
-			require.NoError(t, err)
-			require.NotNil(t, response.GetDraft().GetAppearance())
-			test.assertProto(t, response.GetDraft().GetAppearance())
-		})
-	}
-}
-
-func TestUpdateAppearance_InvalidRequestsRefuseBeforeMutation(t *testing.T) {
-	malformedSelection := validUpdateAppearanceRequest("draft-hair")
-	malformedSelection.Appearance.Hair.Scalp = &customizationpb.StyleSelection{}
-
-	emptyStyleRef := validUpdateAppearanceRequest("draft-hair")
-	emptyStyleRef.Appearance.Hair.Scalp = &customizationpb.StyleSelection{
-		Selection: &customizationpb.StyleSelection_StyleRef{},
-	}
-
-	oversizedStyleRef := validUpdateAppearanceRequest("draft-hair")
-	oversizedStyleRef.Appearance.Hair.Scalp = &customizationpb.StyleSelection{
-		Selection: &customizationpb.StyleSelection_StyleRef{StyleRef: strings.Repeat("é", 129)},
-	}
-
-	invalidColor := validUpdateAppearanceRequest("draft-hair")
-	invalidColor.Appearance.Hair.ColorSrgb = proto.Uint32(0x1000000)
-
-	negativeRoughness := validUpdateAppearanceRequest("draft-hair")
-	negativeRoughness.Appearance.Hair.Roughness = proto.Float32(-0.0001)
-
-	overOneRoughness := validUpdateAppearanceRequest("draft-hair")
-	overOneRoughness.Appearance.Hair.Roughness = proto.Float32(1.0001)
-
-	nanRoughness := validUpdateAppearanceRequest("draft-hair")
-	nanRoughness.Appearance.Hair.Roughness = proto.Float32(float32(math.NaN()))
-
-	positiveInfinityRoughness := validUpdateAppearanceRequest("draft-hair")
-	positiveInfinityRoughness.Appearance.Hair.Roughness = proto.Float32(float32(math.Inf(1)))
-
-	negativeInfinityRoughness := validUpdateAppearanceRequest("draft-hair")
-	negativeInfinityRoughness.Appearance.Hair.Roughness = proto.Float32(float32(math.Inf(-1)))
-
-	tests := []struct {
-		name    string
-		request *dnd5ev1alpha1.UpdateAppearanceRequest
-		message string
-	}{
-		{name: "nil request", request: nil, message: "request is required"},
-		{name: "empty draft id", request: validUpdateAppearanceRequest(""), message: "draft_id is required"},
-		{name: "nil appearance", request: &dnd5ev1alpha1.UpdateAppearanceRequest{DraftId: "draft-hair"}, message: "appearance is required"},
-		{name: "present selection without oneof", request: malformedSelection, message: "appearance.hair.scalp.selection is required"},
-		{name: "empty style ref", request: emptyStyleRef, message: "appearance.hair.scalp.style_ref is required"},
-		{name: "style ref over 256 UTF-8 bytes", request: oversizedStyleRef, message: "appearance.hair.scalp.style_ref must be at most 256 bytes"},
-		{name: "color outside RGB24", request: invalidColor, message: "appearance.hair.color_srgb must be between 0 and 0xFFFFFF"},
-		{name: "negative roughness", request: negativeRoughness, message: "appearance.hair.roughness must be finite and between 0 and 1"},
-		{name: "roughness over one", request: overOneRoughness, message: "appearance.hair.roughness must be finite and between 0 and 1"},
-		{name: "NaN roughness", request: nanRoughness, message: "appearance.hair.roughness must be finite and between 0 and 1"},
-		{name: "positive infinity roughness", request: positiveInfinityRoughness, message: "appearance.hair.roughness must be finite and between 0 and 1"},
-		{name: "negative infinity roughness", request: negativeInfinityRoughness, message: "appearance.hair.roughness must be finite and between 0 and 1"},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			service := charactermock.NewMockService(ctrl)
-			handler, err := NewHandler(&HandlerConfig{CharacterService: service})
-			require.NoError(t, err)
-
-			response, err := handler.UpdateAppearance(context.Background(), test.request)
+			response, err := handler.UpdateAppearance(context.Background(), tt.req)
 			require.Nil(t, response)
-			require.Error(t, err)
 			require.Equal(t, codes.InvalidArgument, status.Code(err))
-			require.Equal(t, test.message, status.Convert(err).Message())
+			require.Equal(t, tt.msg, status.Convert(err).Message())
 		})
 	}
 }
 
-func validUpdateAppearanceRequest(draftID string) *dnd5ev1alpha1.UpdateAppearanceRequest {
-	return &dnd5ev1alpha1.UpdateAppearanceRequest{
-		DraftId: draftID,
-		Appearance: &dnd5ev1alpha1.Appearance{
-			Hair: &customizationpb.HairCustomization{
-				Scalp: &customizationpb.StyleSelection{
-					Selection: &customizationpb.StyleSelection_StyleRef{
-						StyleRef: "modular-fantasy-hero:hair:38",
-					},
-				},
-				FacialHair: &customizationpb.StyleSelection{
-					Selection: &customizationpb.StyleSelection_None{None: &emptypb.Empty{}},
-				},
-				ColorSrgb: proto.Uint32(0x5A3825),
-				Roughness: proto.Float32(0.72),
-			},
-		},
-	}
+func TestUpdateAppearance_NotFoundUsesLegacyMessage(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	service := charactermock.NewMockService(ctrl)
+	handler, err := NewHandler(&HandlerConfig{CharacterService: service})
+	require.NoError(t, err)
+
+	service.EXPECT().SetAppearance(gomock.Any(), gomock.Any()).Return(nil,
+		apierr.NotFound("draft storage record missing"))
+
+	response, err := handler.UpdateAppearance(context.Background(), &dnd5ev1alpha1.UpdateAppearanceRequest{
+		DraftId:    "draft-missing",
+		Appearance: &dnd5ev1alpha1.Appearance{},
+	})
+	require.Nil(t, response)
+	require.Equal(t, codes.NotFound, status.Code(err))
+	require.Equal(t, "draft not found", status.Convert(err).Message())
+}
+
+func TestUpdateAppearance_TranslatesToolkitErrors(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	service := charactermock.NewMockService(ctrl)
+	handler, err := NewHandler(&HandlerConfig{CharacterService: service})
+	require.NoError(t, err)
+
+	service.EXPECT().SetAppearance(gomock.Any(), gomock.Any()).Return(nil,
+		rpgerr.New(rpgerr.CodeInvalidArgument, "appearance.hair.scalp.selection is required"))
+
+	response, err := handler.UpdateAppearance(context.Background(), &dnd5ev1alpha1.UpdateAppearanceRequest{
+		DraftId:    "draft-error",
+		Appearance: &dnd5ev1alpha1.Appearance{},
+	})
+	require.Nil(t, response)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.Equal(t, "appearance.hair.scalp.selection is required", status.Convert(err).Message())
 }

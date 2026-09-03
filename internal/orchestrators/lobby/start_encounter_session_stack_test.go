@@ -25,6 +25,7 @@ import (
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
@@ -638,8 +639,7 @@ func (s *SessionStackSuite) TestStartEncounter_FirstAdmissionPersistsCompleteLon
 		"the temporary condition removes itself")
 	s.Equal(backgrounds.Soldier, gotFighter.BackgroundID)
 	s.Equal(fighter.Data.CreatedAt, gotFighter.CreatedAt)
-	s.Equal(fighterAppearance, fighterRecord.Character.Appearance,
-		"the SDK adapter replaces Data without dropping the API-owned appearance envelope")
+	s.Equal(fighterAppearance, fighterRecord.Character.Data.Appearance)
 
 	barbarianRecord, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-p2"})
 	s.Require().NoError(err)
@@ -662,7 +662,7 @@ func (s *SessionStackSuite) TestStartEncounter_FirstAdmissionPersistsCompleteLon
 		"Raging ends on the normal long rest")
 	s.Equal(backgrounds.Outlander, gotBarbarian.BackgroundID)
 	s.Equal(barbarian.Data.CreatedAt, gotBarbarian.CreatedAt)
-	s.Equal(barbarianAppearance, barbarianRecord.Character.Appearance)
+	s.Equal(barbarianAppearance, barbarianRecord.Character.Data.Appearance)
 }
 
 // TestStartEncounter_StartSessionFailureLeavesCharacterUntouched proves the
@@ -715,7 +715,7 @@ func (s *SessionStackSuite) TestStartEncounter_StartSessionFailureLeavesCharacte
 	s.Zero(countedCharacters.updates, "the character adapter cannot save before Join")
 }
 
-func (s *SessionStackSuite) spentFighter(id, playerID string) (*entities.Character, *entities.Appearance) {
+func (s *SessionStackSuite) spentFighter(id, playerID string) (*entities.Character, *customization.Appearance) {
 	secondWind, err := json.Marshal(features.SecondWindData{
 		Ref: refs.Features.SecondWind(), ID: id + "-second-wind", Name: "Second Wind",
 		Level: 4, CharacterID: id, Uses: 0, MaxUses: 1,
@@ -735,8 +735,8 @@ func (s *SessionStackSuite) spentFighter(id, playerID string) (*entities.Charact
 	createdAt := time.Date(2026, time.August, 14, 9, 30, 0, 0, time.UTC)
 	color := uint32(0x8A4B2A)
 	roughness := float32(0.35)
-	appearance := &entities.Appearance{Hair: &entities.HairCustomization{
-		Scalp:     &entities.StyleSelection{Kind: entities.StyleSelectionKindStyle, StyleRef: "dnd5e:hair:short"},
+	appearance := &customization.Appearance{Hair: &customization.HairCustomization{
+		Scalp:     &customization.StyleSelection{Kind: customization.StyleSelectionStyle, StyleRef: "dnd5e:hair:short"},
 		ColorSRGB: &color, Roughness: &roughness,
 	}}
 	return &entities.Character{Data: &tkcharacter.Data{
@@ -761,10 +761,11 @@ func (s *SessionStackSuite) spentFighter(id, playerID string) (*entities.Charact
 		Features:   []json.RawMessage{secondWind},
 		Conditions: []json.RawMessage{defense, opportunity, prone},
 		CreatedAt:  createdAt,
-	}, Appearance: appearance}, appearance
+		Appearance: appearance,
+	}}, appearance
 }
 
-func (s *SessionStackSuite) spentBarbarian(id, playerID string) (*entities.Character, *entities.Appearance) {
+func (s *SessionStackSuite) spentBarbarian(id, playerID string) (*entities.Character, *customization.Appearance) {
 	unarmoredDefense, err := json.Marshal(conditions.UnarmoredDefenseData{
 		Ref: refs.Conditions.UnarmoredDefense(), Type: string(conditions.UnarmoredDefenseBarbarian),
 		MemberID: id, Source: refs.Classes.Barbarian().String(),
@@ -779,10 +780,10 @@ func (s *SessionStackSuite) spentBarbarian(id, playerID string) (*entities.Chara
 	createdAt := time.Date(2026, time.August, 15, 10, 45, 0, 0, time.UTC)
 	color := uint32(0x24150D)
 	roughness := float32(0.8)
-	appearance := &entities.Appearance{Hair: &entities.HairCustomization{
-		Scalp: &entities.StyleSelection{Kind: entities.StyleSelectionKindNone},
-		FacialHair: &entities.StyleSelection{
-			Kind: entities.StyleSelectionKindStyle, StyleRef: "dnd5e:facial-hair:braided-beard",
+	appearance := &customization.Appearance{Hair: &customization.HairCustomization{
+		Scalp: &customization.StyleSelection{Kind: customization.StyleSelectionNone},
+		FacialHair: &customization.StyleSelection{
+			Kind: customization.StyleSelectionStyle, StyleRef: "dnd5e:facial-hair:braided-beard",
 		},
 		ColorSRGB: &color, Roughness: &roughness,
 	}}
@@ -802,7 +803,8 @@ func (s *SessionStackSuite) spentBarbarian(id, playerID string) (*entities.Chara
 		},
 		Conditions: []json.RawMessage{unarmoredDefense, raging},
 		CreatedAt:  createdAt,
-	}, Appearance: appearance}, appearance
+		Appearance: appearance,
+	}}, appearance
 }
 
 func effectWithRef(t *testing.T, blobs []json.RawMessage, want *core.Ref) json.RawMessage {

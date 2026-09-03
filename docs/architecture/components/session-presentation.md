@@ -1,8 +1,8 @@
 ---
 name: session presentation
 description: SessionPresentationService v1alpha1 — live-only shared dice throw choreography for a started session
-updated: 2026-09-01
-confidence: medium-high — #869 adds exact public roster hair projection and Redis-backed session character-write preservation evidence; dice side-channel evidence is unchanged and still lacks a browser walkthrough
+updated: 2026-09-04
+confidence: medium-high — #897 moves Appearance into toolkit character Data; dice side-channel evidence is unchanged and still lacks a browser walkthrough
 ---
 
 # session presentation
@@ -119,8 +119,8 @@ inventory, resources, and conditions have no roster projection. The seated calle
 class/race freshness, and monster identity behavior are unchanged.
 
 A Redis-backed integration test also writes toolkit character Data through the session
-SDK repository adapter before reading the roster. The write preserves the API-owned
-Appearance envelope and the roster returns its exact style/none/color/roughness values.
+SDK repository adapter before reading the roster. The write preserves nested
+`Data.Appearance` and the roster returns its exact style/none/color/roughness values.
 
 ## Story/toolkit boundary
 

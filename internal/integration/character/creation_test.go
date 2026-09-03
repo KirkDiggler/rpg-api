@@ -301,16 +301,22 @@ func (s *CharacterCreationSuite) completeDwarfFighterDraft(ctx context.Context) 
 }
 
 func hairTestAppearance(roughness float32) *dnd5ev1alpha1.Appearance {
-	return &dnd5ev1alpha1.Appearance{Hair: &customizationpb.HairCustomization{
-		Scalp: &customizationpb.StyleSelection{Selection: &customizationpb.StyleSelection_StyleRef{
-			StyleRef: "modular-fantasy-hero:hair:38",
-		}},
-		FacialHair: &customizationpb.StyleSelection{Selection: &customizationpb.StyleSelection_None{
-			None: &emptypb.Empty{},
-		}},
-		ColorSrgb: proto.Uint32(0x123456),
-		Roughness: proto.Float32(roughness),
-	}}
+	return &dnd5ev1alpha1.Appearance{
+		Hair: &customizationpb.HairCustomization{
+			Scalp: &customizationpb.StyleSelection{Selection: &customizationpb.StyleSelection_StyleRef{
+				StyleRef: "modular-fantasy-hero:hair:38",
+			}},
+			FacialHair: &customizationpb.StyleSelection{Selection: &customizationpb.StyleSelection_None{
+				None: &emptypb.Empty{},
+			}},
+			ColorSrgb: proto.Uint32(0x123456),
+			Roughness: proto.Float32(roughness),
+		},
+		Outfit: &customizationpb.OutfitCustomization{
+			PrimaryColorSrgb:   proto.Uint32(0),
+			SecondaryColorSrgb: proto.Uint32(0xFFFFFF),
+		},
+	}
 }
 
 func requireHairTestAppearance(t *testing.T, appearance *dnd5ev1alpha1.Appearance) {
@@ -324,6 +330,12 @@ func requireHairTestAppearance(t *testing.T, appearance *dnd5ev1alpha1.Appearanc
 	require.Equal(t, uint32(0x123456), hair.GetColorSrgb())
 	require.NotNil(t, hair.Roughness)
 	require.InDelta(t, 0.33, hair.GetRoughness(), 0.000001)
+	outfit := appearance.GetOutfit()
+	require.NotNil(t, outfit)
+	require.NotNil(t, outfit.PrimaryColorSrgb)
+	require.Zero(t, outfit.GetPrimaryColorSrgb())
+	require.NotNil(t, outfit.SecondaryColorSrgb)
+	require.Equal(t, uint32(0xFFFFFF), outfit.GetSecondaryColorSrgb())
 }
 
 func requireDefaultZeroHairAppearance(t *testing.T, appearance *dnd5ev1alpha1.Appearance) {

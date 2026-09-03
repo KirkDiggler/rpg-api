@@ -22,6 +22,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/proficiencies"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
@@ -335,15 +336,12 @@ func armedFighter(id, playerID string) *tkcharacter.Data {
 	}
 }
 
-func acceptanceHairAppearance() *entities.Appearance {
+func acceptanceHairAppearance() *customization.Appearance {
 	color := uint32(0x123456)
 	roughness := float32(0.33)
-	return &entities.Appearance{Hair: &entities.HairCustomization{
-		Scalp: &entities.StyleSelection{
-			Kind:     entities.StyleSelectionKindStyle,
-			StyleRef: "modular-fantasy-hero:hair:38",
-		},
-		FacialHair: &entities.StyleSelection{Kind: entities.StyleSelectionKindNone},
+	return &customization.Appearance{Hair: &customization.HairCustomization{
+		Scalp:      &customization.StyleSelection{Kind: customization.StyleSelectionStyle, StyleRef: "modular-fantasy-hero:hair:38"},
+		FacialHair: &customization.StyleSelection{Kind: customization.StyleSelectionNone},
 		ColorSRGB:  &color,
 		Roughness:  &roughness,
 	}}
@@ -630,15 +628,17 @@ func TestGetRoster_ServesTheLaunchWrittenRow(t *testing.T) {
 
 	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
 		Character: &entities.Character{
-			Data:       armedFighter("alice", "player-alice"),
-			Appearance: appearance,
+			Data: func() *tkcharacter.Data {
+				data := armedFighter("alice", "player-alice")
+				data.Appearance = appearance
+				return data
+			}(),
 		},
 	})
 	require.NoError(t, err)
 
 	// Exercise the adapter the toolkit session Manager writes through, backed
-	// by the real character Redis repository rather than a mock. The SDK owns
-	// only Data; the API-owned Appearance envelope must survive its save.
+	// by the real character Redis repository rather than a mock.
 	sessionCharacters := sessionorch.NewCharacterRepository(h.charRepo)
 	loaded, err := sessionCharacters.GetCharacter(context.Background(), "alice")
 	require.NoError(t, err)
@@ -648,13 +648,13 @@ func TestGetRoster_ServesTheLaunchWrittenRow(t *testing.T) {
 
 	stored, err := h.charRepo.Get(context.Background(), characterrepo.GetInput{ID: "alice"})
 	require.NoError(t, err)
-	require.Equal(t, appearance, stored.Character.Appearance)
-	require.NotSame(t, appearance, stored.Character.Appearance)
-	require.NotSame(t, appearance.Hair, stored.Character.Appearance.Hair)
-	require.NotSame(t, appearance.Hair.Scalp, stored.Character.Appearance.Hair.Scalp)
-	require.NotSame(t, appearance.Hair.FacialHair, stored.Character.Appearance.Hair.FacialHair)
-	require.NotSame(t, appearance.Hair.ColorSRGB, stored.Character.Appearance.Hair.ColorSRGB)
-	require.NotSame(t, appearance.Hair.Roughness, stored.Character.Appearance.Hair.Roughness)
+	require.Equal(t, appearance, stored.Character.Data.Appearance)
+	require.NotSame(t, appearance, stored.Character.Data.Appearance)
+	require.NotSame(t, appearance.Hair, stored.Character.Data.Appearance.Hair)
+	require.NotSame(t, appearance.Hair.Scalp, stored.Character.Data.Appearance.Hair.Scalp)
+	require.NotSame(t, appearance.Hair.FacialHair, stored.Character.Data.Appearance.Hair.FacialHair)
+	require.NotSame(t, appearance.Hair.ColorSRGB, stored.Character.Data.Appearance.Hair.ColorSRGB)
+	require.NotSame(t, appearance.Hair.Roughness, stored.Character.Data.Appearance.Hair.Roughness)
 
 	require.NoError(t, h.rosterRepo.Save(context.Background(), &rosterrepo.Data{
 		EncounterID: "roster-run",

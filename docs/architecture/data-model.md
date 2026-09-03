@@ -1,8 +1,8 @@
 ---
 name: rpg-api data model
 description: Entities, relationships, storage schemas, and known gaps in the data layer
-updated: 2026-07-13
-confidence: medium — Character/CharacterDraft/DiceSession/Position sections verified by reading current entity files; the v1 encounter/dungeon entity model this doc used to describe is deleted (rpg-api#642) and not yet replaced with a v2 description here (follow-up)
+updated: 2026-09-04
+confidence: medium-high — Character/CharacterDraft Appearance storage is verified against current toolkit-owned entities and Redis tests; the v1 encounter/dungeon entity model this doc used to describe remains deleted (rpg-api#642)
 ---
 
 # rpg-api data model
@@ -60,7 +60,11 @@ Key fields of `character.Data` (toolkit-owned):
 - `DeathSaveState` — successes/failures/stabilized/dead
 - `Features` — class features (rage uses, second wind, etc.)
 
-**Appearance** (`entities/appearance.go`) is stored separately alongside character data in the character repo. It holds cosmetic fields (skin tone, primary/secondary color, eye color) that are not part of the toolkit type.
+**Appearance** is `customization.Appearance` nested in toolkit `character.Data` and
+`character.DraftData`. The API has no separate Appearance/Hair/Style entity; Redis
+stores it as part of the thin `entities.Character`/`CharacterDraft` wrapper's nested
+`Data` value. The shared converter preserves optional and malformed wire shape while
+toolkit owns semantic validation.
 
 **Storage:** Redis key `character:{id}` (verified via `repositories/character/redis.go`). No TTL observed — characters persist indefinitely.
 
@@ -261,10 +265,10 @@ The old `entities.Position` (float64) and `dungeon.Position` (int) types — and
 ## Redis key schema (character repos)
 
 Character repository (`repositories/character/redis.go`):
-- `character:{id}` — JSON-serialized `character.Data` + `Appearance`
+- `character:{id}` — JSON-serialized `entities.Character` wrapping toolkit `character.Data`
 
 Character draft repository (`repositories/character_draft/redis.go`):
-- `character_draft:{playerID}:{draftID}` — JSON-serialized draft state
+- `draft:{draftID}` — JSON-serialized `entities.CharacterDraft` wrapping toolkit `character.DraftData`
 - `character_drafts:{playerID}` — set of draft IDs per player
 
 Dice session repository (`repositories/dice_session/redis.go`):

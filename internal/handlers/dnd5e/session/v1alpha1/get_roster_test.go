@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
@@ -41,7 +42,7 @@ type rosterCharacter struct {
 	name       string
 	class      string
 	race       string
-	appearance *entities.Appearance
+	appearance *customization.Appearance
 }
 
 // charactersOf serves complete character records while roster assertions stay
@@ -56,25 +57,26 @@ func charactersOf(ctrl *gomock.Controller, rows map[string]rosterCharacter) char
 			}
 			return &characterrepo.GetOutput{Character: &entities.Character{
 				Data: &tkcharacter.Data{
-					ID: in.ID, PlayerID: row.owner, Name: row.name,
-					ClassID: row.class, RaceID: races.Race(row.race), HitPoints: 99,
+					ID:         in.ID,
+					PlayerID:   row.owner,
+					Name:       row.name,
+					ClassID:    row.class,
+					RaceID:     races.Race(row.race),
+					HitPoints:  99,
+					Appearance: row.appearance,
 				},
-				Appearance: row.appearance,
 			}}, nil
 		},
 	).AnyTimes()
 	return repo
 }
 
-func rosterHairAppearance() *entities.Appearance {
+func rosterHairAppearance() *customization.Appearance {
 	color := uint32(0x123456)
 	roughness := float32(0.33)
-	return &entities.Appearance{Hair: &entities.HairCustomization{
-		Scalp: &entities.StyleSelection{
-			Kind:     entities.StyleSelectionKindStyle,
-			StyleRef: "modular-fantasy-hero:hair:38",
-		},
-		FacialHair: &entities.StyleSelection{Kind: entities.StyleSelectionKindNone},
+	return &customization.Appearance{Hair: &customization.HairCustomization{
+		Scalp:      &customization.StyleSelection{Kind: customization.StyleSelectionStyle, StyleRef: "modular-fantasy-hero:hair:38"},
+		FacialHair: &customization.StyleSelection{Kind: customization.StyleSelectionNone},
 		ColorSRGB:  &color,
 		Roughness:  &roughness,
 	}}

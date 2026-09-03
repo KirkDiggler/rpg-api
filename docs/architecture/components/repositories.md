@@ -1,8 +1,8 @@
 ---
 name: repositories
 description: All data access components — interface definitions, implementations, and storage schemas
-updated: 2026-08-28
-confidence: high — #852 verified Redis roster/presentation repository roles against code and cross-instance integration; older repository notes retain stated caveats
+updated: 2026-09-04
+confidence: high — #897 verified nested toolkit Appearance Redis/session storage through focused repository and adapter tests; older repository notes retain stated caveats
 ---
 
 # repositories
@@ -36,8 +36,9 @@ Interface methods use value Input and pointer Output types: `Create`, `Get`, `Up
 an opaque version derived from the stored bytes. `PatchEquipmentInput` carries the
 expected version/equipment plus only the proposed EquipmentSlots and cached ArmorClass.
 
-**Storage:** `character:{id}` — JSON-serialized `character.Data` + `Appearance` (stored
-together), with player/session index keys.
+**Storage:** `character:{id}` — JSON-serialized `entities.Character`, whose only
+field is toolkit `character.Data` (including nested `Data.Appearance`), with
+player/session index keys.
 
 `PatchEquipment` uses Redis WATCH/MULTI. A stale equipment map returns ABORTED. A changed
 version with unchanged equipment returns the latest entity without writing so the
@@ -53,7 +54,9 @@ Used by: character, lobby, and session orchestration plus owner/public projectio
 
 Interface methods: `Create`, `Get`, `List`, `Update`, `Delete`.
 
-**Storage:** Redis keys per draft. Handles in-progress character creation state. Less tested than character repo — no integration tests that specifically exercise draft lifecycle.
+**Storage:** Redis keys per draft. JSON stores the thin `entities.CharacterDraft`
+wrapper around toolkit `character.DraftData`, including nested Appearance. Focused
+Redis tests cover complete Appearance and present-zero optional values.
 
 ## Dice session repository
 

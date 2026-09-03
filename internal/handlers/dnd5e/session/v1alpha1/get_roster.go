@@ -62,8 +62,9 @@ func (h *Handler) GetRoster(ctx context.Context, req *sessionpb.GetRosterRequest
 				seated = true
 			}
 			customization := &sessionpb.Customization{}
-			if got.Character.Appearance != nil && got.Character.Appearance.Hair != nil {
-				customization.Hair = customizationconverter.EntityToProto(got.Character.Appearance.Hair)
+			if appearance := customizationconverter.ToolkitToProto(data.Appearance); appearance != nil {
+				customization.Hair = appearance.Hair
+				customization.Outfit = appearance.Outfit
 			}
 			members = append(members, &sessionpb.PublicMemberInfo{
 				Id:   m.ID,

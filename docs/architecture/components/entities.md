@@ -1,8 +1,8 @@
 ---
 name: entities
 description: Proto-free API domain envelopes and customization data
-updated: 2026-09-01
-confidence: high — #869 typed hair values, JSON presence, finalization, and clone isolation verified by focused and integration tests
+updated: 2026-09-04
+confidence: high — #897 complete toolkit-owned Appearance shape, JSON presence, finalization, clone isolation, and Docker-backed integration verified
 ---
 
 # entities
@@ -15,31 +15,22 @@ remain in rpg-toolkit.
 
 | File | Purpose | Proto contamination? |
 |---|---|---|
-| `character.go` | Toolkit `character.Data` plus API-owned Appearance | No |
-| `character_draft.go` | Toolkit draft data plus API-owned Appearance | No |
-| `appearance.go` | Provider-neutral typed hair customization | No |
+| `character.go` | Storage wrapper around toolkit `character.Data` | No |
+| `character_draft.go` | Storage wrapper around toolkit draft data | No |
 
-## Character envelope
+## Toolkit-owned character data
 
-`entities.Character` and `entities.CharacterDraft` keep `Appearance` beside,
-not inside, toolkit data. Redis serializes the complete API envelope, while
-session SDK writes replace only `Character.Data`. This preserves cosmetic state
-without teaching rpg-toolkit about presentation.
-
-## Hair semantics (#869)
-
-`Appearance.Hair` is optional. Within hair:
-
-- a nil `Scalp` or `FacialHair` pointer means provider default;
-- `StyleSelectionKindNone` means explicit no style;
-- `StyleSelectionKindStyle` carries an exact provider-owned `StyleRef`;
-- `ColorSRGB *uint32` and `Roughness *float32` retain optional presence, so a
-  present zero is distinct from omission.
+`entities.Character` and `entities.CharacterDraft` are storage wrappers only;
+their sole field is respectively `*character.Data` or `*character.DraftData`.
+Appearance is nested in those toolkit data types and Redis serializes that shape
+directly. The session SDK therefore saves complete `Data`, including Appearance,
+without an API-side preservation envelope.
 
 The shared converter at `internal/converters/customization` is the only
-proto/entity mapping used by character handlers and public session roster
-projection. API-owned clone helpers deep-copy hair, both selections, and both
-optional scalar pointers so clone mutation cannot change its source.
+proto↔toolkit Appearance mapping used by character handlers and the temporary
+public session roster projection. It preserves nil/empty nested messages,
+selection oneofs, optional scalar presence, and present zero values. Validation
+and provider interpretation remain in rpg-toolkit.
 
 ## Boundary status
 
