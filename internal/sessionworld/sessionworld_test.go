@@ -501,24 +501,28 @@ key: ` + key + `
 name: Concealed Seam
 orientation: pointy
 void: opaque
-start: [0, 0]
+start: [0, 1]
 regions:
   - id: entrance
     name: Entrance
     archetype: test
     lighting: { intensity: 1 }
     cells:
-      - [[0,0]]
+      - [[0,1]]
   - id: vault
     name: Vault
     archetype: test
     lighting: { intensity: 1 }
     concealed: true
     cells:
-      - [[1,0]]
+      - [[1,1]]
+walls:
+  - start: { cell: [1,0], offset: [0, 0] }
+    end:   { cell: [1,2], offset: [0, 0] }
+    name: the hidden seam
 doors:
   - id: hidden-door
-    edges: [[[0,0],[1,0]]]
+    at: { cell: [0,1], offset: [0.5, 0] }
     ` + doorState + `
     concealed: [{ ability: perception, dc: 15 }]
 `

@@ -40,14 +40,14 @@ scenery:
 
 start: [1, 1]
 
-# The seam between the vault and the rubble: every crossing the two columns
-# share.
+# The seam between the vault and the rubble: ONE LINE (rpg-project#360). A
+# quarter line up the rubble column's west side, blocking the same five
+# crossings the pair form spelled out and leaving every cell either side
+# standable.
 walls:
-  - [[2,0],[3,0]]
-  - [[2,1],[3,0]]
-  - [[2,1],[3,1]]
-  - [[2,1],[3,2]]
-  - [[2,2],[3,2]]
+  - start: { cell: [3,2], offset: [-0.25, 0.375] }
+    end:   { cell: [3,0], offset: [-0.25, -0.375] }
+    name: the vault seam
 
 # A prop may stand on scenery.
 place:
