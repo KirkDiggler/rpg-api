@@ -17,6 +17,12 @@ const HalvedRoomKey = "halved-room"
 // Deliberately the thick flat-side line rather than the tomb's quarter lines.
 // The tomb seals nothing -- that is what makes it the right default -- so
 // nothing in the shipped content would ever exercise this.
+//
+// WALLS ARE ONE PRODUCER OF SEALING, NOT THE ONLY ONE. Sealed floor is every
+// cell nobody can stand on: scenery, which SceneryStripYAML beside this file
+// authors, and the cells a wall runs through. This fixture authors no scenery
+// precisely so its sealed list is the wall's doing and nothing else, which is
+// what makes the assertion about it worth making.
 const HalvedRoomYAML = `# A room with a wall drawn through the middle of it.
 version: 2
 key: halved-room
