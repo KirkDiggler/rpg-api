@@ -31,6 +31,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/saves"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
@@ -381,17 +382,10 @@ func (s *SessionStackSuite) TestStartEncounter_ExplicitDefaultKeyIsTheTomb() {
 	s.Require().NoError(err, "the captain is in it, so it is the tomb")
 }
 
-// TestStartEncounter_PlaysADungeonTheAuthorPut is the builder's loop from the
-// lobby's side: a dungeon that arrived through Put (not the shipped tree) is
-// the one a session starts on, and its atlas reaches the wire.
-func (s *SessionStackSuite) TestStartEncounter_PlaysADungeonTheAuthorPut() {
-	registry, _ := dungeonstest.Scratch(s.T())
-	tomb, err := registry.Get(s.ctx, dungeons.DefaultKey)
-	s.Require().NoError(err)
-	crypt := bytes.Replace(tomb.YAML, []byte("key: reference-tomb"), []byte("key: crypt"), 1)
-	res, err := registry.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: crypt})
-	s.Require().NoError(err)
-	s.Require().Empty(res.Errors)
+// lobbyOver is SetupTest's orchestrator over a different content registry,
+// for the tests that play a dungeon the author Put rather than a shipped one.
+func (s *SessionStackSuite) lobbyOver(registry dungeons.Registry) *lobbyorch.Orchestrator {
+	s.T().Helper()
 
 	orch, err := lobbyorch.New(&lobbyorch.Config{
 		LobbyRepo:            s.lobbyRepo,
@@ -405,6 +399,23 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysADungeonTheAuthorPut() {
 		RosterRepo:           rosterrepo.NewInMemory(),
 	})
 	s.Require().NoError(err)
+
+	return orch
+}
+
+// TestStartEncounter_PlaysADungeonTheAuthorPut is the builder's loop from the
+// lobby's side: a dungeon that arrived through Put (not the shipped tree) is
+// the one a session starts on, and its atlas reaches the wire.
+func (s *SessionStackSuite) TestStartEncounter_PlaysADungeonTheAuthorPut() {
+	registry, _ := dungeonstest.Scratch(s.T())
+	tomb, err := registry.Get(s.ctx, dungeons.DefaultKey)
+	s.Require().NoError(err)
+	crypt := bytes.Replace(tomb.YAML, []byte("key: reference-tomb"), []byte("key: crypt"), 1)
+	res, err := registry.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: crypt})
+	s.Require().NoError(err)
+	s.Require().Empty(res.Errors)
+
+	orch := s.lobbyOver(registry)
 
 	s.seedCharacter("char-alice", "alice", "Alice")
 	s.seedReadyLobby("lobby-1", "alice")
@@ -424,6 +435,52 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysADungeonTheAuthorPut() {
 	s.Equal(res.Entry.Atlas.Regions, atlas.Regions, "and the same regions")
 	s.Require().NotEmpty(atlas.Doorways)
 	s.True(strings.HasPrefix(atlas.Doorways[0].Door, "crypt"), "doorway %q is minted under the authored key, not the tomb's", atlas.Doorways[0].Door)
+}
+
+// TestStartEncounter_GetAtlasServesSceneryAsFloorNobodyOwns is rpg-api#898's
+// second acceptance at the seam it names: not PutDungeon's compiled answer,
+// but the atlas a STARTED SESSION serves to a member -- what GetAtlas returns.
+//
+// Scenery rides the flat Cells list and nothing else says it (wall-geometry
+// design §5.1, "no change" on the wire for slice 1). So the whole claim is
+// this: the strip is in Cells, and the strip is in no region's cells.
+func (s *SessionStackSuite) TestStartEncounter_GetAtlasServesSceneryAsFloorNobodyOwns() {
+	registry, _ := dungeonstest.Scratch(s.T())
+	res, err := registry.Put(s.ctx, &dungeons.PutInput{
+		Key: dungeonstest.SceneryStripKey, YAML: []byte(dungeonstest.SceneryStripYAML),
+	})
+	s.Require().NoError(err)
+	s.Require().Empty(res.Errors, "the scenery file must compile: %v", res.Errors)
+
+	s.seedCharacter("char-alice", "alice", "Alice")
+	s.seedReadyLobby("lobby-1", "alice")
+
+	out, err := s.lobbyOver(registry).StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: dungeonstest.SceneryStripKey,
+	})
+	s.Require().NoError(err)
+
+	atlas, err := s.sessOrch.Manager.Atlas(s.ctx, &sdk.AtlasInput{Session: out.EncounterID, Member: "char-alice"})
+	s.Require().NoError(err)
+
+	floor := make(map[spatial.Position]bool, len(atlas.Cells))
+	for _, c := range atlas.Cells {
+		floor[c] = true
+	}
+	owned := make(map[spatial.Position]bool)
+	for _, r := range atlas.Regions {
+		for _, c := range r.Cells {
+			owned[c] = true
+		}
+	}
+	s.Len(atlas.Cells, 12, "nine cells of vault and three of scenery")
+	s.Len(owned, 9, "and only the vault's nine are owned")
+
+	for _, at := range dungeonstest.SceneryStripSceneryCells {
+		c := tkencounter.HexCellAt(tkencounter.HexesArePointyTop(), at[0], at[1])
+		s.True(floor[c], "scenery cell %v reached the wire as floor", at)
+		s.False(owned[c], "and no region claims it")
+	}
 }
 
 func (s *SessionStackSuite) TestListDungeons_ReadsTheRegistry() {
