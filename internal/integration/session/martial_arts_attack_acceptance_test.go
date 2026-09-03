@@ -132,8 +132,10 @@ func TestAcceptance_QuarterstaffAttackGrantsBonusUnarmedStrike(t *testing.T) {
 	}
 	require.NotNil(t, weaponComponent)
 	require.Equal(t, "dnd5e:weapons:unarmed-strike", weaponComponent.GetSourceRef())
-	require.Equal(t, "1d4", weaponComponent.GetDice(),
-		"the level-1 Martial Arts condition replaces the ordinary unarmed die")
+	require.Equal(t, "d4", weaponComponent.GetDice(),
+		"the level-1 Martial Arts condition replaces the ordinary unarmed die -- "+
+			"written the dice package's normalized way, which is what the roll trace "+
+			"records and this wire now carries verbatim (session/v0.50.0)")
 	require.NotNil(t, abilityComponent)
 	require.Equal(t, refs.Abilities.Dexterity().String(), abilityComponent.GetSourceRef())
 	require.Equal(t, int32(4), abilityComponent.GetFlatBonus())

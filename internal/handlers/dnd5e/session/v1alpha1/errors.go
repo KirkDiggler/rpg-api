@@ -198,6 +198,12 @@ func statusError(err error) error {
 	// is mapped so that the day something else compiles a price, the failure
 	// has a name that is not a lie.
 	//
+	// ErrBadNPC joins at session/v0.49.0: stored npc.Data that cannot be used
+	// as given. It is ErrBadCharacter's shape one content type over -- stored
+	// content the host wrote and the SDK cannot build from -- so it belongs
+	// beside it rather than in the INVALID_ARGUMENT bucket, where it would
+	// blame the caller for a row nobody in this request wrote.
+	//
 	// ErrBadTurnOutcome is the same shape again: a TurnDriver answered with a
 	// TurnOutcome the composition's adapter does not recognize, which is this
 	// package's OWN vocabulary going stale against itself, not a caller
@@ -207,6 +213,7 @@ func statusError(err error) error {
 	case errors.Is(err, sdk.ErrBadRepository),
 		errors.Is(err, sdk.ErrBadCost),
 		errors.Is(err, sdk.ErrBadCharacter),
+		errors.Is(err, sdk.ErrBadNPC),
 		errors.Is(err, sdk.ErrInvalidSession),
 		errors.Is(err, sdk.ErrNilConfig),
 		errors.Is(err, sdk.ErrIncompleteConfig),

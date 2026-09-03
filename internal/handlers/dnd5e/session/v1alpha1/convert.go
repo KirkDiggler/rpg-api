@@ -565,16 +565,48 @@ func activationResultBodyToProto(body sdk.ActivationResultBody) *sessionpb.Activ
 	return result
 }
 
+// healingAppliedBodyToProto mirrors a heal onto the wire. Roll and Modifier
+// come out of Calculation for the same reason damageComponentsToProto's do:
+// the scalars beside it are the LEGACY READ path and a newly produced body
+// leaves them zero (session/v0.50.0, toolkit#1470). Requested is not a roll
+// fact and was never moved.
 func healingAppliedBodyToProto(body *sdk.HealingAppliedBody) *sessionpb.HealingApplied {
 	if body == nil {
 		return nil
 	}
+	roll, modifier := rollAndModifierOf(body.Calculation)
 	return &sessionpb.HealingApplied{
 		Target: body.Target, Amount: int32(body.Amount), Requested: int32(body.Requested),
-		Roll: int32(body.Roll), Modifier: int32(body.Modifier),
+		Roll: roll, Modifier: modifier,
 		SourceRef: body.SourceRef, SourceName: body.SourceName,
 		HpBefore: int32(body.HPBefore), HpAfter: int32(body.HPAfter),
 	}
+}
+
+// rollAndModifierOf flattens a sourced roll calculation into the two scalars
+// this wire has carried since before traces existed: what the dice came to,
+// and what was added to them.
+//
+// SUMMED ACROSS COMPONENTS, because the wire's two fields are one number each
+// and a calculation may hold several sourced parts -- a heal's die and the
+// class level that adds to it are two components of one roll. Summing is what
+// the scalars always meant; picking one component and calling it "the roll"
+// would silently drop the others. A nil calculation is a body with no roll
+// behind it and answers zero for both, which is what a reader already renders
+// for "nothing was rolled".
+func rollAndModifierOf(calculation *sdk.RollCalculation) (roll, modifier int32) {
+	if calculation == nil {
+		return 0, 0
+	}
+	for _, component := range calculation.Components {
+		if component.Dice != nil {
+			roll += int32(component.Dice.Subtotal)
+		}
+		if component.Modifier != nil {
+			modifier += int32(*component.Modifier)
+		}
+	}
+	return roll, modifier
 }
 
 func conditionAppliedBodyToProto(body *sdk.ConditionAppliedBody) *sessionpb.ConditionApplied {
@@ -926,12 +958,38 @@ func damageTypeToProto(d sdk.DamageType) sessionpb.DamageType {
 	}
 }
 
+// damageComponentsToProto mirrors the SDK's damage components onto the wire.
+//
+// EVERY ROLL FACT NOW COMES OUT OF Roll, not out of the scalars beside it
+// (session/v0.50.0, toolkit#1470). DamageComponent kept SourceRef, Dice,
+// FinalRolls and FlatBonus as a LEGACY READ path -- the strict decoder fills
+// them only when it reads a payload persisted before roll traces existed, and
+// a newly produced body carries none of them. Reading them here is what made
+// three acceptance tests report an empty source ref against a component that
+// plainly had one.
+//
+// The wire is unchanged, and deliberately: these four fields are exactly the
+// four facts the trace holds, one level down. What the trace holds and the
+// wire does not -- original faces before a reroll, the rerolls and their
+// sources, which faces were kept -- is a WIDER message than this one and is
+// not smuggled into these fields; carrying it is its own piece of work.
 func damageComponentsToProto(in []sdk.DamageComponent) []*sessionpb.DamageComponent {
 	out := make([]*sessionpb.DamageComponent, len(in))
 	for i, component := range in {
-		rolls := make([]int32, len(component.FinalRolls))
-		for j, roll := range component.FinalRolls {
-			rolls[j] = int32(roll)
+		var (
+			notation string
+			rolls    []int32
+		)
+		if dice := component.Roll.Dice; dice != nil {
+			notation = dice.Notation
+			rolls = make([]int32, len(dice.FinalRolls))
+			for j, roll := range dice.FinalRolls {
+				rolls[j] = int32(roll)
+			}
+		}
+		var flatBonus int32
+		if component.Roll.Modifier != nil {
+			flatBonus = int32(*component.Roll.Modifier)
 		}
 		var multiplier *float64
 		if component.Multiplier != nil {
@@ -939,8 +997,8 @@ func damageComponentsToProto(in []sdk.DamageComponent) []*sessionpb.DamageCompon
 			multiplier = &value
 		}
 		out[i] = &sessionpb.DamageComponent{
-			Source: component.Source, SourceRef: component.SourceRef, Dice: component.Dice,
-			FinalRolls: rolls, FlatBonus: int32(component.FlatBonus),
+			Source: component.Source, SourceRef: component.Roll.Source.Ref, Dice: notation,
+			FinalRolls: rolls, FlatBonus: flatBonus,
 			DamageType: damageTypeToProto(component.DamageType), Multiplier: multiplier,
 		}
 	}

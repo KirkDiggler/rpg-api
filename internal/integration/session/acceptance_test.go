@@ -78,6 +78,27 @@ func (allStanding) Standing(_ []tkencounter.MemberID) ([]tkencounter.MemberID, e
 	return nil, nil
 }
 
+// Assess says the same thing in the fuller vocabulary encounter/v0.51.0 asks
+// of a Standing capability (toolkit#1453): nobody is down, so everybody is up,
+// conscious, in contact, and waiting. Contact is what makes a member count as
+// a side of a fight, so the false zero value would dissolve every fight this
+// suite forms -- see sessionworld.nobodyDown.Assess, which is the same stand-in
+// for the same reason.
+func (allStanding) Assess(members []tkencounter.MemberID) (*tkencounter.ParticipationAssessment, error) {
+	out := &tkencounter.ParticipationAssessment{
+		Members: make([]tkencounter.MemberParticipation, 0, len(members)),
+	}
+	for _, id := range members {
+		out.Members = append(out.Members, tkencounter.MemberParticipation{
+			Member:    id,
+			Contact:   true,
+			Conscious: true,
+			Turn:      tkencounter.TurnParticipationWait,
+		})
+	}
+	return out, nil
+}
+
 type allSeeing struct{}
 
 func (allSeeing) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberID]int, error) {
