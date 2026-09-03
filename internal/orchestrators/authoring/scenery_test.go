@@ -2,6 +2,8 @@ package authoring_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -27,6 +29,10 @@ type ScenerySuite struct {
 
 	ctx  context.Context
 	orch *authoringorch.Orchestrator
+
+	// dir is the content directory the registry writes through, so a test can
+	// read what PutDungeon actually persisted rather than what it remembers.
+	dir string
 }
 
 func TestScenerySuite(t *testing.T) {
@@ -36,10 +42,11 @@ func TestScenerySuite(t *testing.T) {
 func (s *ScenerySuite) SetupTest() {
 	s.ctx = context.Background()
 
-	registry, _ := dungeonstest.Scratch(s.T())
+	registry, dir := dungeonstest.Scratch(s.T())
 	orch, err := authoringorch.New(&authoringorch.Config{Dungeons: registry})
 	s.Require().NoError(err)
 	s.orch = orch
+	s.dir = dir
 }
 
 // put stores the scenery fixture and returns the compiled answer, failing the
@@ -72,13 +79,24 @@ func cell(col, row int) spatial.Position {
 // #898's acceptance. The registry never re-marshals a file, and scenery must
 // not be the exception: what comes back is the bytes that went in, comments,
 // spacing and the `scenery:` block included.
+//
+// Asked of BOTH things a Put leaves behind, because they are written by
+// different lines and only one of them survives a restart: the entry
+// GetDungeon reads, and the file on disk the registry writes atomically. A
+// test that checked only the in-memory entry would pass on a registry that
+// persisted something else entirely.
 func (s *ScenerySuite) TestPutDungeon_AFileWithSceneryRoundTripsVerbatim() {
 	s.put()
 
 	got, err := s.orch.GetDungeon(s.ctx, &authoringorch.GetDungeonInput{Key: dungeonstest.SceneryStripKey})
 	s.Require().NoError(err)
 	s.Equal(dungeonstest.SceneryStripYAML, string(got.YAML),
-		"the stored file is the authored file, byte for byte")
+		"what GetDungeon serves is the authored file, byte for byte")
+
+	onDisk, err := os.ReadFile(filepath.Join(s.dir, dungeonstest.SceneryStripKey+".yaml"))
+	s.Require().NoError(err)
+	s.Equal(dungeonstest.SceneryStripYAML, string(onDisk),
+		"and so is what PutDungeon persisted, `scenery:` block included")
 }
 
 // TestPutDungeon_SceneryIsFloorInNoRegion is the second half: the atlas
