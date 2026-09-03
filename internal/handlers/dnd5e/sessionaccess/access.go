@@ -8,10 +8,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
-	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 )
 
 const (
@@ -21,29 +22,35 @@ const (
 	errCallerDoesNotControl         = "caller does not control this member"
 	errCallerNotSeated              = "caller is not seated in this session"
 	errCharactersRepositoryRequired = "session access: characters repository is required"
-	errRosterRepositoryRequired     = "session access: roster repository is required"
-	rosterMemberNoCharacterFmt      = "roster member %q has no character record"
-	sessionHasNoRosterFmt           = "session %q has no roster"
-	loadRosterForSessionFmt         = "load roster for session %q: %v"
+	errRosterReaderRequired         = "session access: roster reader is required"
 	memberNotFoundFmt               = "member %q not found"
 	loadMemberFmt                   = "load member %q: %v"
 )
+
+// RosterReader is the narrow Session SDK read needed by the access gates.
+// *session.Manager satisfies it directly; keeping the interface here avoids
+// making authorization depend on the concrete manager or on API-owned storage.
+type RosterReader interface {
+	Roster(context.Context, *sdk.RosterInput) (*sdk.RosterOutput, error)
+}
 
 // Access centralizes the session handler's caller/member/session authorization
 // checks so multiple presentation RPCs can share the exact same gate.
 type Access struct {
 	characters characterrepo.Repository
-	roster     rosterrepo.Repository
+	roster     RosterReader
 }
 
-// New constructs an Access gate over the character and roster repositories.
-func New(characters characterrepo.Repository, roster rosterrepo.Repository) (*Access, error) {
+// New constructs an Access gate over the character repository and Session
+// SDK roster reader.
+func New(characters characterrepo.Repository, roster RosterReader) (*Access, error) {
 	if characters == nil {
 		return nil, errors.New(errCharactersRepositoryRequired)
 	}
-	if roster == nil {
-		return nil, errors.New(errRosterRepositoryRequired)
-	}
+	// The roster reader is optional for CallerActingAs, whose existing
+	// ownership gate does not require session membership. Production wiring
+	// always supplies the Session Manager so CallerSeated and
+	// CallerMemberSeated can use it.
 	return &Access{characters: characters, roster: roster}, nil
 }
 
@@ -59,8 +66,9 @@ func (a *Access) CallerActingAs(ctx context.Context, member string) error {
 	return a.verifyMemberOwnership(ctx, playerID, member)
 }
 
-// CallerSeated verifies the authenticated caller owns at least one player seat
-// in session's roster.
+// CallerSeated verifies the authenticated caller is seated in session. The
+// Session SDK owns membership and caller-seat authorization; this gate does
+// not enumerate character records.
 func (a *Access) CallerSeated(ctx context.Context, session string) error {
 	playerID, err := authenticatedPlayerID(ctx)
 	if err != nil {
@@ -69,11 +77,12 @@ func (a *Access) CallerSeated(ctx context.Context, session string) error {
 	if session == "" {
 		return status.Error(codes.InvalidArgument, errSessionRequired)
 	}
-	return a.callerSeated(ctx, session, playerID)
+	_, err = a.readRoster(ctx, session, playerID)
+	return err
 }
 
 // CallerMemberSeated verifies the authenticated caller controls member and
-// that the same member is seated in session as a player row.
+// that the same member is seated in session as an exact player row.
 func (a *Access) CallerMemberSeated(ctx context.Context, session, member string) error {
 	playerID, err := authenticatedPlayerID(ctx)
 	if err != nil {
@@ -90,12 +99,12 @@ func (a *Access) CallerMemberSeated(ctx context.Context, session, member string)
 		return ownershipErr
 	}
 
-	row, err := a.loadRoster(ctx, session)
+	roster, err := a.readRoster(ctx, session, playerID)
 	if err != nil {
 		return err
 	}
-	for _, m := range row.Members {
-		if m.ID == member && m.Kind == rosterrepo.KindPlayer {
+	for _, seated := range roster.Members {
+		if seated.ID == member && seated.Kind == sdk.KindPlayer {
 			return nil
 		}
 	}
@@ -127,34 +136,27 @@ func (a *Access) verifyMemberOwnership(ctx context.Context, playerID, member str
 	return nil
 }
 
-func (a *Access) callerSeated(ctx context.Context, session, playerID string) error {
-	row, err := a.loadRoster(ctx, session)
+func (a *Access) readRoster(ctx context.Context, session, playerID string) (*sdk.RosterOutput, error) {
+	if a.roster == nil {
+		return nil, status.Error(codes.Internal, errRosterReaderRequired)
+	}
+	out, err := a.roster.Roster(ctx, &sdk.RosterInput{Session: session, Player: playerID})
 	if err != nil {
-		return err
+		return nil, rosterError(err)
 	}
-
-	for _, m := range row.Members {
-		if m.Kind != rosterrepo.KindPlayer {
-			continue
-		}
-		got, err := a.characters.Get(ctx, characterrepo.GetInput{ID: m.ID})
-		if err != nil || got == nil || got.Character == nil || got.Character.Data == nil {
-			return status.Errorf(codes.Internal, rosterMemberNoCharacterFmt, m.ID)
-		}
-		if got.Character.Data.PlayerID == playerID {
-			return nil
-		}
+	if out == nil {
+		return nil, status.Error(codes.Internal, "roster returned no output")
 	}
-	return status.Error(codes.PermissionDenied, errCallerNotSeated)
+	return out, nil
 }
 
-func (a *Access) loadRoster(ctx context.Context, session string) (*rosterrepo.Data, error) {
-	row, err := a.roster.Get(ctx, session)
-	if err != nil {
-		if errors.Is(err, rosterrepo.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, sessionHasNoRosterFmt, session)
-		}
-		return nil, status.Errorf(codes.Internal, loadRosterForSessionFmt, session, err)
+func rosterError(err error) error {
+	switch {
+	case errors.Is(err, sdk.ErrNoSession), errors.Is(err, sdk.ErrNoEncounter), errors.Is(err, sdk.ErrNoCharacter):
+		return status.Error(codes.NotFound, err.Error())
+	case errors.Is(err, sdk.ErrNotSeated):
+		return status.Error(codes.PermissionDenied, err.Error())
+	default:
+		return status.Error(codes.Internal, err.Error())
 	}
-	return row, nil
 }

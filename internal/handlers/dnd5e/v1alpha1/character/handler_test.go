@@ -17,6 +17,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
@@ -242,7 +243,10 @@ func (s *HandlerTestSuite) TestGetCharacter_IncludesEquipmentSlotsAndHairAppeara
 	s.mockService.EXPECT().
 		GetCharacter(s.ctx, &character.GetCharacterInput{CharacterID: characterID}).
 		Return(&character.GetCharacterOutput{Character: &entities.Character{
-			Data: charData, Appearance: appearance,
+			Data: func() *toolkitchar.Data {
+				charData.Appearance = appearance
+				return charData
+			}(),
 		}}, nil)
 
 	resp, err := s.handler.GetCharacter(s.ctx, req)
@@ -267,8 +271,7 @@ func (s *HandlerTestSuite) TestListCharacters_IncludesHairAppearance() {
 		PlayerID: "player-1",
 	}).Return(&character.ListCharactersOutput{
 		Characters: []*entities.Character{{
-			Data:       &toolkitchar.Data{ID: "char-123", Name: "Test Fighter"},
-			Appearance: appearance,
+			Data: &toolkitchar.Data{ID: "char-123", Name: "Test Fighter", Appearance: appearance},
 		}},
 		TotalSize: 1,
 	}, nil)
@@ -279,18 +282,23 @@ func (s *HandlerTestSuite) TestListCharacters_IncludesHairAppearance() {
 	s.assertHairAppearance(resp.GetCharacters()[0].GetAppearance())
 }
 
-func handlerHairAppearance() *entities.Appearance {
+func handlerHairAppearance() *customization.Appearance {
 	color := uint32(0x123456)
 	roughness := float32(0.33)
-	return &entities.Appearance{Hair: &entities.HairCustomization{
-		Scalp: &entities.StyleSelection{
-			Kind:     entities.StyleSelectionKindStyle,
-			StyleRef: "modular-fantasy-hero:hair:38",
+	primary := uint32(0)
+	secondary := uint32(0xFFFFFF)
+	return &customization.Appearance{
+		Hair: &customization.HairCustomization{
+			Scalp:      &customization.StyleSelection{Kind: customization.StyleSelectionStyle, StyleRef: "modular-fantasy-hero:hair:38"},
+			FacialHair: &customization.StyleSelection{Kind: customization.StyleSelectionNone},
+			ColorSRGB:  &color,
+			Roughness:  &roughness,
 		},
-		FacialHair: &entities.StyleSelection{Kind: entities.StyleSelectionKindNone},
-		ColorSRGB:  &color,
-		Roughness:  &roughness,
-	}}
+		Outfit: &customization.OutfitCustomization{
+			PrimaryColorSRGB:   &primary,
+			SecondaryColorSRGB: &secondary,
+		},
+	}
 }
 
 func (s *HandlerTestSuite) assertHairAppearance(appearance *dnd5ev1alpha1.Appearance) {
@@ -303,6 +311,12 @@ func (s *HandlerTestSuite) assertHairAppearance(appearance *dnd5ev1alpha1.Appear
 	s.Equal(uint32(0x123456), hair.GetColorSrgb())
 	s.Require().NotNil(hair.Roughness)
 	s.InDelta(0.33, hair.GetRoughness(), 0.000001)
+	outfit := appearance.GetOutfit()
+	s.Require().NotNil(outfit)
+	s.Require().NotNil(outfit.PrimaryColorSrgb)
+	s.Zero(outfit.GetPrimaryColorSrgb())
+	s.Require().NotNil(outfit.SecondaryColorSrgb)
+	s.Equal(uint32(0xFFFFFF), outfit.GetSecondaryColorSrgb())
 }
 
 func (s *HandlerTestSuite) TestGetCharacter_InvalidRequest() {
@@ -375,14 +389,9 @@ func (s *HandlerTestSuite) TestEquipItem_ReturnsPersistedPostStateWithoutRefetch
 			EquipmentSlots: toolkitchar.EquipmentSlots{
 				toolkitchar.SlotMainHand: "longsword",
 			},
-		},
-		Appearance: &entities.Appearance{
-			Hair: &entities.HairCustomization{
-				Scalp: &entities.StyleSelection{
-					Kind:     entities.StyleSelectionKindStyle,
-					StyleRef: "modular-fantasy-hero:hair:38",
-				},
-			},
+			Appearance: &customization.Appearance{Hair: &customization.HairCustomization{
+				Scalp: &customization.StyleSelection{Kind: customization.StyleSelectionStyle, StyleRef: "modular-fantasy-hero:hair:38"},
+			}},
 		},
 	}
 

@@ -20,7 +20,7 @@ import (
 
 func TestInteract_Unauthenticated_Errors(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	_, err := h.Interact(context.Background(), &sessionpb.InteractRequest{})
 	requireCode(t, err, codes.Unauthenticated)
 }
@@ -44,7 +44,7 @@ func TestInteract_HappyPath_ReturnsDescriptor(t *testing.T) {
 			Seq: 42,
 		}, nil)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.Interact(ctx, &sessionpb.InteractRequest{
 		Session: "sess-1", Actor: "char-1", Target: "demo-merchant-1", Range: 2,
@@ -69,7 +69,7 @@ func TestInteract_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	mgr.EXPECT().Interact(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrOutOfRange)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.Interact(ctx, &sessionpb.InteractRequest{Session: "sess-1", Actor: "char-1", Target: "demo-merchant-1"})
 	// FailedPrecondition, not NotFound: the actor and target both exist, the
@@ -87,7 +87,7 @@ func TestInteract_ForeignActor_IsRefusedBeforeTheSDK(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
-	h := &Handler{manager: mgr, characters: ownedCharacterRepo(ctrl, "goblin-1", "someone-else"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: ownedCharacterRepo(ctrl, "goblin-1", "someone-else")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.Interact(ctx, &sessionpb.InteractRequest{Session: "sess-1", Actor: "goblin-1", Target: "demo-merchant-1"})
 	requireCode(t, err, codes.PermissionDenied)
@@ -97,7 +97,7 @@ func TestInteract_EmptyActor_IsRefused(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.Interact(ctx, &sessionpb.InteractRequest{Session: "sess-1", Target: "demo-merchant-1"})
 	requireCode(t, err, codes.InvalidArgument)

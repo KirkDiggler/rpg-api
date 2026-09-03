@@ -13,7 +13,6 @@ import (
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
-	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 )
 
 func TestNew_MissingManager_Errors(t *testing.T) {
@@ -21,7 +20,6 @@ func TestNew_MissingManager_Errors(t *testing.T) {
 	_, err := New(&HandlerConfig{
 		Broker:     sessionorch.NewBroker(),
 		Characters: charactermock.NewMockRepository(ctrl),
-		Roster:     rosterrepo.NewInMemory(),
 	})
 	require.Error(t, err)
 }
@@ -31,7 +29,6 @@ func TestNew_MissingBroker_Errors(t *testing.T) {
 	_, err := New(&HandlerConfig{
 		Manager:    sessionv1alpha1mock.NewMockManager(ctrl),
 		Characters: charactermock.NewMockRepository(ctrl),
-		Roster:     rosterrepo.NewInMemory(),
 	})
 	require.Error(t, err)
 }
@@ -41,19 +38,19 @@ func TestNew_MissingCharacters_Errors(t *testing.T) {
 	_, err := New(&HandlerConfig{
 		Manager: sessionv1alpha1mock.NewMockManager(ctrl),
 		Broker:  sessionorch.NewBroker(),
-		Roster:  rosterrepo.NewInMemory(),
 	})
 	require.Error(t, err)
 }
 
-func TestNew_MissingRoster_Errors(t *testing.T) {
+func TestNew_WithoutRosterDependency_Succeeds(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	_, err := New(&HandlerConfig{
+	h, err := New(&HandlerConfig{
 		Manager:    sessionv1alpha1mock.NewMockManager(ctrl),
 		Broker:     sessionorch.NewBroker(),
 		Characters: charactermock.NewMockRepository(ctrl),
 	})
-	require.Error(t, err)
+	require.NoError(t, err)
+	require.NotNil(t, h)
 }
 
 func TestNew_NilConfig_Errors(t *testing.T) {
@@ -67,7 +64,6 @@ func TestNew_EverythingSupplied_Succeeds(t *testing.T) {
 		Manager:    sessionv1alpha1mock.NewMockManager(ctrl),
 		Broker:     sessionorch.NewBroker(),
 		Characters: charactermock.NewMockRepository(ctrl),
-		Roster:     rosterrepo.NewInMemory(),
 	})
 	require.NoError(t, err)
 	require.NotNil(t, h)
@@ -91,8 +87,8 @@ func TestAuthenticatedPlayerID_Absent_ReturnsUnauthenticated(t *testing.T) {
 func TestAccessGate_LiteralHandlerBuildsSharedAccess(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	h := &Handler{
+		manager:    sessionv1alpha1mock.NewMockManager(ctrl),
 		characters: charactermock.NewMockRepository(ctrl),
-		roster:     rosterrepo.NewInMemory(),
 	}
 
 	gate, err := h.accessGate()

@@ -1,8 +1,8 @@
 ---
 name: session presentation
 description: SessionPresentationService v1alpha1 — live-only shared dice throw choreography for a started session
-updated: 2026-09-01
-confidence: medium-high — #869 adds exact public roster hair projection and Redis-backed session character-write preservation evidence; dice side-channel evidence is unchanged and still lacks a browser walkthrough
+updated: 2026-09-04
+confidence: medium-high — #897 moves Appearance into toolkit character Data; dice side-channel evidence is unchanged and still lacks a browser walkthrough
 ---
 
 # session presentation
@@ -37,17 +37,17 @@ internal/repositories/sessionpresentation/              Redis SET/PUBLISH + SUBS
 
 Production (`cmd/server/server.go`) and the integration harness construct:
 
-1. the Redis-backed roster repository shared with `LobbyService.StartEncounter`;
-2. one shared `sessionaccess.Access` over the character repository and roster;
+1. the Session SDK Manager shared with `LobbyService.StartEncounter`;
+2. one shared `sessionaccess.Access` over the character repository and SDK roster reader;
 3. the `SessionService` handler with that access;
 4. the Redis presentation repository and orchestrator;
 5. the presentation handler with the same access; and
 6. service registration plus health status for exactly
    `dnd5e.api.session.presentation.v1alpha1.SessionPresentationService`.
 
-The test harness also exposes `SessionClient`, `SessionPresentationClient`,
-`HealthClient`, and `RosterRepo` so integration tests can prove the real wire
-and storage paths rather than bypassing the gate.
+The test harness exposes `SessionClient`, `SessionPresentationClient`, and
+`HealthClient`; integration tests prove the real wire and Session SDK state rather
+than bypassing the gate.
 
 ## Auth and access
 
@@ -57,11 +57,11 @@ service:
 
 - `Unauthenticated` when auth did not inject a player ID;
 - `InvalidArgument` for empty `session` or `member`;
-- `NotFound` when the character/member or roster row is absent;
+- `NotFound` when the character/member, session, or encounter is absent;
 - `PermissionDenied` when the caller does not own `member` or owns no player
   row seated in the session.
 
-The seated check reads the launch-written Redis roster row. Server B accepting a
+The seated check calls the Session SDK roster reader. Server B accepting a
 stream for Bob after server A launched the lobby is therefore a production-gate
 proof, not an in-memory test shortcut.
 
@@ -104,23 +104,21 @@ live-only by design: a subscriber that connects after a publish does not receive
 old choreography. Stream context cancellation closes the Redis subscription and
 the handler returns without appending anything to session history.
 
-## Public roster customization (#869)
+## Public roster customization (#897)
 
-`SessionService.GetRoster` projects public player hair into the always-present
-`PublicMemberInfo.Customization` shelf. It reads the character record fresh and calls
-the same `internal/converters/customization.EntityToProto` converter used at the
-character boundary; it does not duplicate selection or optional-presence logic.
-Players with nil Appearance/Hair keep an empty shelf. Monster rows always keep an empty
-shelf.
+`SessionService.GetRoster` delegates once to `session.Manager.Roster` and maps its
+public player and monster output into the wire response. The flat Hair, Outfit, and
+Style values are copied field-for-field, including nil/present optional scalars and
+explicit zero; malformed values are not revalidated or interpreted here. Players with
+empty customization and monsters retain an always-present empty `Customization` shelf.
 
-Only public visual identity is projected: name, class/race refs, and hair for players;
-authored ref/name for monsters. Toolkit sheet fields such as hit points, ability scores,
-inventory, resources, and conditions have no roster projection. The seated caller gate,
-class/race freshness, and monster identity behavior are unchanged.
+Only public visual identity is projected: name, class/race refs, and customization for
+players; authored ref/name for monsters. Toolkit sheet fields such as hit points,
+ability scores, inventory, resources, and conditions have no roster projection. The
+Session SDK owns member loading and seating authorization.
 
-A Redis-backed integration test also writes toolkit character Data through the session
-SDK repository adapter before reading the roster. The write preserves the API-owned
-Appearance envelope and the roster returns its exact style/none/color/roughness values.
+The Session integration test starts a real SDK session, joins a player, spawns a monster,
+and reads the roster through the handler, including Hair and explicit-zero Outfit colors.
 
 ## Story/toolkit boundary
 

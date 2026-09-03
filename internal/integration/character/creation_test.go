@@ -110,6 +110,46 @@ func (s *CharacterCreationSuite) assertOwnerItemQuantity(
 	s.Failf("missing owner inventory item", "expected %s in CharacterData inventory", itemID)
 }
 
+// TestUpdateAppearance_HidesForeignDraftExistence proves the RPC cannot be
+// used to distinguish a nonexistent draft from another player's draft.
+func TestUpdateAppearance_HidesForeignDraftExistence(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	release := sharedRedis.Lease()
+	defer release()
+
+	server, err := harness.NewWithRedis(ctx, nil, sharedRedis.Addr)
+	require.NoError(t, err)
+	defer server.Close()
+	require.NoError(t, server.FlushRedis(ctx))
+
+	ownerCtx := metadata.AppendToOutgoingContext(ctx, "authorization", "Dev appearance-owner")
+	foreignCtx := metadata.AppendToOutgoingContext(ctx, "authorization", "Dev appearance-foreign")
+	created, err := server.CharacterClient.CreateDraft(ownerCtx, &dnd5ev1alpha1.CreateDraftRequest{})
+	require.NoError(t, err)
+
+	appearance := &dnd5ev1alpha1.Appearance{}
+	_, missingErr := server.CharacterClient.UpdateAppearance(foreignCtx, &dnd5ev1alpha1.UpdateAppearanceRequest{
+		DraftId:    "draft-missing",
+		Appearance: appearance,
+	})
+	_, foreignErr := server.CharacterClient.UpdateAppearance(foreignCtx, &dnd5ev1alpha1.UpdateAppearanceRequest{
+		DraftId:    created.GetDraft().GetId(),
+		Appearance: appearance,
+	})
+
+	require.Error(t, missingErr)
+	require.Error(t, foreignErr)
+	require.Equal(t, codes.NotFound, status.Code(missingErr))
+	require.Equal(t, status.Code(missingErr), status.Code(foreignErr))
+	require.Equal(t, status.Convert(missingErr).Message(), status.Convert(foreignErr).Message())
+	require.Equal(t, "draft not found", status.Convert(foreignErr).Message())
+}
+
 func TestHairCustomization_PersistsDraftFinalizationAndGetCharacter(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -301,16 +341,22 @@ func (s *CharacterCreationSuite) completeDwarfFighterDraft(ctx context.Context) 
 }
 
 func hairTestAppearance(roughness float32) *dnd5ev1alpha1.Appearance {
-	return &dnd5ev1alpha1.Appearance{Hair: &customizationpb.HairCustomization{
-		Scalp: &customizationpb.StyleSelection{Selection: &customizationpb.StyleSelection_StyleRef{
-			StyleRef: "modular-fantasy-hero:hair:38",
-		}},
-		FacialHair: &customizationpb.StyleSelection{Selection: &customizationpb.StyleSelection_None{
-			None: &emptypb.Empty{},
-		}},
-		ColorSrgb: proto.Uint32(0x123456),
-		Roughness: proto.Float32(roughness),
-	}}
+	return &dnd5ev1alpha1.Appearance{
+		Hair: &customizationpb.HairCustomization{
+			Scalp: &customizationpb.StyleSelection{Selection: &customizationpb.StyleSelection_StyleRef{
+				StyleRef: "modular-fantasy-hero:hair:38",
+			}},
+			FacialHair: &customizationpb.StyleSelection{Selection: &customizationpb.StyleSelection_None{
+				None: &emptypb.Empty{},
+			}},
+			ColorSrgb: proto.Uint32(0x123456),
+			Roughness: proto.Float32(roughness),
+		},
+		Outfit: &customizationpb.OutfitCustomization{
+			PrimaryColorSrgb:   proto.Uint32(0),
+			SecondaryColorSrgb: proto.Uint32(0xFFFFFF),
+		},
+	}
 }
 
 func requireHairTestAppearance(t *testing.T, appearance *dnd5ev1alpha1.Appearance) {
@@ -324,6 +370,12 @@ func requireHairTestAppearance(t *testing.T, appearance *dnd5ev1alpha1.Appearanc
 	require.Equal(t, uint32(0x123456), hair.GetColorSrgb())
 	require.NotNil(t, hair.Roughness)
 	require.InDelta(t, 0.33, hair.GetRoughness(), 0.000001)
+	outfit := appearance.GetOutfit()
+	require.NotNil(t, outfit)
+	require.NotNil(t, outfit.PrimaryColorSrgb)
+	require.Zero(t, outfit.GetPrimaryColorSrgb())
+	require.NotNil(t, outfit.SecondaryColorSrgb)
+	require.Equal(t, uint32(0xFFFFFF), outfit.GetSecondaryColorSrgb())
 }
 
 func requireDefaultZeroHairAppearance(t *testing.T, appearance *dnd5ev1alpha1.Appearance) {

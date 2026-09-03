@@ -46,7 +46,7 @@ func (s *HandlerSuite) TestPublishDiceThrow_AccessRunsBeforeServiceAndConvertsEx
 	})
 	s.Require().NoError(err)
 	s.True(proto.Equal(s.testProtoPlan(), resp.GetPlan()), "expected exact published plan conversion")
-	s.Equal([]string{"characters.Get", "roster.Get", "service.Publish"}, order.Steps())
+	s.Equal([]string{"characters.Get", "roster.Roster", "service.Publish"}, order.Steps())
 }
 
 func (s *HandlerSuite) TestPublishDiceThrow_ServiceErrorsMapToStatuses() {

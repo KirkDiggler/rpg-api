@@ -5,9 +5,7 @@ import (
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
-// Character represents a complete character in the rpg-api layer.
-// It wraps the toolkit's character data and adds API-specific fields like appearance.
+// Character is the API storage wrapper around toolkit character data.
 type Character struct {
-	Data       *toolkitchar.Data `json:"data"`
-	Appearance *Appearance       `json:"appearance,omitempty"`
+	Data *toolkitchar.Data `json:"data"`
 }

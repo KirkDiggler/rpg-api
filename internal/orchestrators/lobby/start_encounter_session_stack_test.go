@@ -25,6 +25,7 @@ import (
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
@@ -44,7 +45,6 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
-	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 )
 
 // SessionStackSuite proves StartEncounter's new-stack branch in isolation:
@@ -63,7 +63,6 @@ type SessionStackSuite struct {
 	broker      *lobbyorch.Broker
 	sessOrch    *sessionorch.Orchestrator
 	orch        *lobbyorch.Orchestrator
-	rosterRepo  rosterrepo.Repository
 }
 
 func (s *SessionStackSuite) SetupTest() {
@@ -84,7 +83,6 @@ func (s *SessionStackSuite) SetupTest() {
 
 	s.lobbyRepo = lobbyrepo.NewInMemory()
 	s.broker = lobbyorch.NewBroker()
-	s.rosterRepo = rosterrepo.NewInMemory()
 
 	orch, err := lobbyorch.New(&lobbyorch.Config{
 		LobbyRepo:            s.lobbyRepo,
@@ -95,7 +93,6 @@ func (s *SessionStackSuite) SetupTest() {
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		SessionManager:       sessOrch.Manager,
 		Dungeons:             dungeonstest.Shipped(s.T()),
-		RosterRepo:           s.rosterRepo,
 	})
 	s.Require().NoError(err)
 	s.orch = orch
@@ -159,14 +156,10 @@ func (s *SessionStackSuite) TestStartEncounter_BuildsAGenuineNewStackSession() {
 	s.Equal(out.EncounterID, lobbyData.EncounterID)
 }
 
-// TestStartEncounter_WritesTheRosterRow pins the launch-written roster
-// (rpg-project#264, ideas/characters/presentation): the one moment that knows
-// every member and every authored spawn persists identity facts for GetRoster
-// to read back. Player rows are id-only (name and refs are read fresh from the
-// character record at serve time — pinned by the ABSENCE of a stored name
-// here); monster rows carry the authored ref and the name the spawn itself
-// reported, so the roster can never drift from what sightings call them.
-func (s *SessionStackSuite) TestStartEncounter_WritesTheRosterRow() {
+// TestStartEncounter_SDKRosterIsAuthoritative proves launch does not create a
+// second roster record: the Session SDK reports the players and authored
+// monsters that StartEncounter joined and spawned.
+func (s *SessionStackSuite) TestStartEncounter_SDKRosterIsAuthoritative() {
 	s.seedCharacter("char-alice", "alice", "Alice")
 	s.seedCharacter("char-bob", "bob", "Bob")
 	s.seedReadyLobby("lobby-1", "alice", "bob")
@@ -176,33 +169,26 @@ func (s *SessionStackSuite) TestStartEncounter_WritesTheRosterRow() {
 	})
 	s.Require().NoError(err)
 
-	row, err := s.rosterRepo.Get(s.ctx, out.EncounterID)
+	roster, err := s.sessOrch.Manager.Roster(s.ctx, &sdk.RosterInput{
+		Session: out.EncounterID, Player: "alice",
+	})
 	s.Require().NoError(err)
-	s.Equal(out.EncounterID, row.EncounterID)
+	s.Require().NotNil(roster)
 
-	players := make([]rosterrepo.Member, 0)
-	monsters := make([]rosterrepo.Member, 0)
-	for _, m := range row.Members {
-		switch m.Kind {
-		case rosterrepo.KindPlayer:
-			players = append(players, m)
-		case rosterrepo.KindMonster:
-			monsters = append(monsters, m)
+	players := make([]string, 0)
+	monsters := make([]string, 0)
+	for _, member := range roster.Members {
+		switch member.Kind {
+		case sdk.KindPlayer:
+			players = append(players, member.ID)
+		case sdk.KindMonster:
+			monsters = append(monsters, member.ID)
 		default:
-			s.Failf("kind", "member %q has unspecified kind", m.ID)
+			s.Failf("kind", "member %q has unspecified kind", member.ID)
 		}
 	}
-
-	s.Equal([]rosterrepo.Member{
-		{ID: "char-alice", Kind: rosterrepo.KindPlayer},
-		{ID: "char-bob", Kind: rosterrepo.KindPlayer},
-	}, players, "player rows are identity-only, in join order, with nothing stored that the character record owns")
-
-	s.Require().NotEmpty(monsters, "the authored tomb has a garrison; its spawns must be on the roster")
-	for _, m := range monsters {
-		s.NotEmpty(m.Ref, "monster %q must carry its authored ref", m.ID)
-		s.NotEmpty(m.Name, "monster %q must carry the spawn-reported name", m.ID)
-	}
+	s.Equal([]string{"char-alice", "char-bob"}, players)
+	s.Require().NotEmpty(monsters, "the authored tomb has a garrison")
 }
 
 // TestStartEncounter_SeatsTheTombsWholeGarrison checks that starting on the new
@@ -496,7 +482,6 @@ func (s *SessionStackSuite) lobbyOver(registry dungeons.Registry) *lobbyorch.Orc
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		SessionManager:       s.sessOrch.Manager,
 		Dungeons:             registry,
-		RosterRepo:           rosterrepo.NewInMemory(),
 	})
 	s.Require().NoError(err)
 
@@ -638,8 +623,7 @@ func (s *SessionStackSuite) TestStartEncounter_FirstAdmissionPersistsCompleteLon
 		"the temporary condition removes itself")
 	s.Equal(backgrounds.Soldier, gotFighter.BackgroundID)
 	s.Equal(fighter.Data.CreatedAt, gotFighter.CreatedAt)
-	s.Equal(fighterAppearance, fighterRecord.Character.Appearance,
-		"the SDK adapter replaces Data without dropping the API-owned appearance envelope")
+	s.Equal(fighterAppearance, fighterRecord.Character.Data.Appearance)
 
 	barbarianRecord, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-p2"})
 	s.Require().NoError(err)
@@ -662,7 +646,7 @@ func (s *SessionStackSuite) TestStartEncounter_FirstAdmissionPersistsCompleteLon
 		"Raging ends on the normal long rest")
 	s.Equal(backgrounds.Outlander, gotBarbarian.BackgroundID)
 	s.Equal(barbarian.Data.CreatedAt, gotBarbarian.CreatedAt)
-	s.Equal(barbarianAppearance, barbarianRecord.Character.Appearance)
+	s.Equal(barbarianAppearance, barbarianRecord.Character.Data.Appearance)
 }
 
 // TestStartEncounter_StartSessionFailureLeavesCharacterUntouched proves the
@@ -697,7 +681,7 @@ func (s *SessionStackSuite) TestStartEncounter_StartSessionFailureLeavesCharacte
 		LobbyRepo: s.lobbyRepo, LobbyBroker: s.broker, CharacterRepo: countedCharacters,
 		LobbyIDGenerator: idgen.NewSequential("lobby"), JoinRefGenerator: idgen.NewSequential("ref"),
 		EncounterIDGenerator: idgen.NewSequential("enc"), SessionManager: manager,
-		Dungeons: dungeonstest.Shipped(s.T()), RosterRepo: rosterrepo.NewInMemory(),
+		Dungeons: dungeonstest.Shipped(s.T()),
 	})
 	s.Require().NoError(err)
 
@@ -715,7 +699,7 @@ func (s *SessionStackSuite) TestStartEncounter_StartSessionFailureLeavesCharacte
 	s.Zero(countedCharacters.updates, "the character adapter cannot save before Join")
 }
 
-func (s *SessionStackSuite) spentFighter(id, playerID string) (*entities.Character, *entities.Appearance) {
+func (s *SessionStackSuite) spentFighter(id, playerID string) (*entities.Character, *customization.Appearance) {
 	secondWind, err := json.Marshal(features.SecondWindData{
 		Ref: refs.Features.SecondWind(), ID: id + "-second-wind", Name: "Second Wind",
 		Level: 4, CharacterID: id, Uses: 0, MaxUses: 1,
@@ -735,8 +719,8 @@ func (s *SessionStackSuite) spentFighter(id, playerID string) (*entities.Charact
 	createdAt := time.Date(2026, time.August, 14, 9, 30, 0, 0, time.UTC)
 	color := uint32(0x8A4B2A)
 	roughness := float32(0.35)
-	appearance := &entities.Appearance{Hair: &entities.HairCustomization{
-		Scalp:     &entities.StyleSelection{Kind: entities.StyleSelectionKindStyle, StyleRef: "dnd5e:hair:short"},
+	appearance := &customization.Appearance{Hair: &customization.HairCustomization{
+		Scalp:     &customization.StyleSelection{Kind: customization.StyleSelectionStyle, StyleRef: "dnd5e:hair:short"},
 		ColorSRGB: &color, Roughness: &roughness,
 	}}
 	return &entities.Character{Data: &tkcharacter.Data{
@@ -761,10 +745,11 @@ func (s *SessionStackSuite) spentFighter(id, playerID string) (*entities.Charact
 		Features:   []json.RawMessage{secondWind},
 		Conditions: []json.RawMessage{defense, opportunity, prone},
 		CreatedAt:  createdAt,
-	}, Appearance: appearance}, appearance
+		Appearance: appearance,
+	}}, appearance
 }
 
-func (s *SessionStackSuite) spentBarbarian(id, playerID string) (*entities.Character, *entities.Appearance) {
+func (s *SessionStackSuite) spentBarbarian(id, playerID string) (*entities.Character, *customization.Appearance) {
 	unarmoredDefense, err := json.Marshal(conditions.UnarmoredDefenseData{
 		Ref: refs.Conditions.UnarmoredDefense(), Type: string(conditions.UnarmoredDefenseBarbarian),
 		MemberID: id, Source: refs.Classes.Barbarian().String(),
@@ -779,10 +764,10 @@ func (s *SessionStackSuite) spentBarbarian(id, playerID string) (*entities.Chara
 	createdAt := time.Date(2026, time.August, 15, 10, 45, 0, 0, time.UTC)
 	color := uint32(0x24150D)
 	roughness := float32(0.8)
-	appearance := &entities.Appearance{Hair: &entities.HairCustomization{
-		Scalp: &entities.StyleSelection{Kind: entities.StyleSelectionKindNone},
-		FacialHair: &entities.StyleSelection{
-			Kind: entities.StyleSelectionKindStyle, StyleRef: "dnd5e:facial-hair:braided-beard",
+	appearance := &customization.Appearance{Hair: &customization.HairCustomization{
+		Scalp: &customization.StyleSelection{Kind: customization.StyleSelectionNone},
+		FacialHair: &customization.StyleSelection{
+			Kind: customization.StyleSelectionStyle, StyleRef: "dnd5e:facial-hair:braided-beard",
 		},
 		ColorSRGB: &color, Roughness: &roughness,
 	}}
@@ -802,7 +787,8 @@ func (s *SessionStackSuite) spentBarbarian(id, playerID string) (*entities.Chara
 		},
 		Conditions: []json.RawMessage{unarmoredDefense, raging},
 		CreatedAt:  createdAt,
-	}, Appearance: appearance}, appearance
+		Appearance: appearance,
+	}}, appearance
 }
 
 func effectWithRef(t *testing.T, blobs []json.RawMessage, want *core.Ref) json.RawMessage {

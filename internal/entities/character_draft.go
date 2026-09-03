@@ -5,9 +5,7 @@ import (
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
-// CharacterDraft represents a character draft in the rpg-api layer.
-// It wraps the toolkit's draft data and adds API-specific fields like appearance.
+// CharacterDraft is the API storage wrapper around toolkit draft data.
 type CharacterDraft struct {
-	Data       *toolkitchar.DraftData `json:"data"`
-	Appearance *Appearance            `json:"appearance,omitempty"`
+	Data *toolkitchar.DraftData `json:"data"`
 }

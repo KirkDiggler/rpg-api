@@ -49,7 +49,7 @@ func (s *HandlerSuite) TestStreamDiceThrows_AccessRunsBeforeSubscribeAndForwards
 	got := stream.WaitForSend(s.T())
 	s.True(proto.Equal(s.testProtoPlan(), got), "expected exact streamed plan conversion")
 	s.Require().NoError(<-done)
-	s.Equal([]string{"characters.Get", "roster.Get", "service.Subscribe"}, order.Steps())
+	s.Equal([]string{"characters.Get", "roster.Roster", "service.Subscribe"}, order.Steps())
 	s.Equal(int32(1), sub.closeCalls.Load())
 }
 
