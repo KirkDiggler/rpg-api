@@ -330,6 +330,36 @@ func atlasDoorwaysToProto(ds []sdk.AtlasDoorway) []*sessionpb.AtlasDoorway {
 	return out
 }
 
+// atlasSegmentToProto mirrors one authored wall AS THE LINE IT IS. Both ends
+// are already fractional axial in the atlas's own frame -- the same frame every
+// cell on the wire lives in -- so nothing here converts anything, for the
+// reason AtlasToProto's own doc gives: a hex is embedded in the plane in
+// exactly one place, and it is not this one.
+//
+// PRESENTATION, BESIDE THE MECHANICAL TRUTH, NOT INSTEAD OF IT. Boundaries and
+// doorways are unchanged and remain what a member may and may not do; this is
+// the line those crossings came from, which a client draws instead of chaining
+// them back into runs under a straightness tolerance. A door's gap is the
+// client's own arithmetic from the doorway it already has.
+func atlasSegmentToProto(s sdk.AtlasSegment) *sessionpb.AtlasSegment {
+	return &sessionpb.AtlasSegment{
+		From: &sessionpb.AxialPoint{Q: s.From.Q, R: s.From.R},
+		To:   &sessionpb.AxialPoint{Q: s.To.Q, R: s.To.R},
+		// Narrowed to the SAME width AtlasBoundary.height crosses on, so a
+		// client never compares a float32 0.7 against a float64 0.7. 0 = not
+		// authored = standard height, the same contract as the boundary's.
+		Height: float32(s.Height),
+	}
+}
+
+func atlasSegmentsToProto(ss []sdk.AtlasSegment) []*sessionpb.AtlasSegment {
+	out := make([]*sessionpb.AtlasSegment, len(ss))
+	for i, s := range ss {
+		out[i] = atlasSegmentToProto(s)
+	}
+	return out
+}
+
 // eventKindToProto mirrors sdk.EventKind onto the wire enum. A kind this
 // build does not recognize -- either the SDK's own EventUnknown (a beat the
 // TOOLKIT did not recognize, delivered on purpose) or, in principle, some
@@ -662,6 +692,14 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 		cells[i] = positionToProto(c)
 	}
 	props := atlasPropsToProto(a.Props)
+	// Sealed cells are cells: same absolute frame, same converter, and every
+	// one of them is in Cells above as well. Sealed floor is still floor --
+	// drawn and lit like the floor beside it -- and this list only says whose
+	// feet may not go there.
+	sealed := make([]*sessionpb.Position, len(a.Sealed))
+	for i, c := range a.Sealed {
+		sealed[i] = positionToProto(c)
+	}
 	return &sessionpb.GetAtlasResponse{
 		Grid:       gridKindToProto(a.Grid),
 		Layout:     hexLayoutToProto(a.Layout),
@@ -670,6 +708,8 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 		Boundaries: atlasBoundariesToProto(a.Boundaries),
 		Doorways:   atlasDoorwaysToProto(a.Doorways),
 		Regions:    atlasRegionsToProto(a.Regions),
+		Segments:   atlasSegmentsToProto(a.Segments),
+		Sealed:     sealed,
 	}
 }
 

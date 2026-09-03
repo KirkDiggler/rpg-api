@@ -99,6 +99,28 @@ func (s *WallGeometryWireSuite) TestPutDungeon_AHalvedCellIsStillFloorAndStillOw
 		s.Truef(blocked[orderedPair(at(step[0], step[1]), at(step[2], step[3]))],
 			"the step [%d,%d] to [%d,%d] must be blocked", step[0], step[1], step[2], step[3])
 	}
+
+	// The two halved cells are the WHOLE of what `sealed` says, and it says it
+	// about cells that are also in `cells` and in the vault above: sealed floor
+	// is still floor.
+	sealed := cellsOf(resp.GetAtlas().GetSealed())
+	s.Len(sealed, 2)
+	for _, c := range dungeonstest.HalvedRoomSealedCells {
+		s.True(sealed[at(c[0], c[1])], "halved cell %v is on the wire as sealed", c)
+	}
+	s.False(sealed[at(1, 1)],
+		"[1,1] is the odd-row cell the line runs ALONGSIDE rather than through, and stays standable")
+
+	// And the line itself, once, as the author drew it: centre of [1,0] to
+	// centre of [1,2], which are the axial cells (1,0) and (0,2) -- an offset
+	// grid shears when it becomes axial, and a centre carries no half.
+	s.Require().Len(resp.GetAtlas().GetSegments(), 1, "one authored wall, one line to draw")
+	segment := resp.GetAtlas().GetSegments()[0]
+	s.Equal(at(1, 0).x, segment.GetFrom().GetQ())
+	s.Equal(at(1, 0).y, segment.GetFrom().GetR())
+	s.Equal(at(1, 2).x, segment.GetTo().GetQ())
+	s.Equal(at(1, 2).y, segment.GetTo().GetR())
+	s.Zero(segment.GetHeight(), "no height authored, and 0 means standard rather than flat")
 }
 
 // orderedPair normalizes two cells into a comparable unordered pair: which way

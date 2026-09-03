@@ -314,6 +314,67 @@ func (s *SessionStackSuite) TestStartEncounter_TheTombReachesTheWire() {
 	s.False(coffin.BlocksLineOfSight, "and seen over")
 }
 
+// TestStartEncounter_GetAtlasServesTheSeamsAsTwoLines is rpg-api#899's
+// acceptance at the seam it names: not PutDungeon's compiled answer, but the
+// atlas a STARTED SESSION serves to a member -- what GetAtlas returns.
+//
+// Two authored walls, two lines, and nothing sealed. The tomb's seams are
+// quarter lines: they run a quarter of a hex's width inside the column they
+// cut and leave every cell either side standable, which is what makes them the
+// right default and also means nothing shipped exercises sealing (the
+// halved-room fixture at the authoring wire does that).
+//
+// The endpoints are literals for the reason every other projection literal in
+// this repository is one: reading them back out of the projection under test
+// would assert nothing. A side midpoint is exactly half a step from the centre
+// it belongs to, which is where the halves come from.
+func (s *SessionStackSuite) TestStartEncounter_GetAtlasServesTheSeamsAsTwoLines() {
+	s.seedCharacter("char-alice", "alice", "Alice")
+	s.seedReadyLobby("lobby-1", "alice")
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-1",
+	})
+	s.Require().NoError(err)
+
+	atlas, err := s.sessOrch.Manager.Atlas(s.ctx, &sdk.AtlasInput{Session: out.EncounterID, Member: "char-alice"})
+	s.Require().NoError(err)
+
+	s.Require().Len(atlas.Segments, 2, "the entrance seam and the tomb seam, one line each")
+	s.Equal(sdk.AxialPointF{Q: 2, R: 7.5}, atlas.Segments[0].From)
+	s.Equal(sdk.AxialPointF{Q: 6, R: -0.5}, atlas.Segments[0].To)
+	s.Equal(sdk.AxialPointF{Q: 12, R: 7.5}, atlas.Segments[1].From)
+	s.Equal(sdk.AxialPointF{Q: 16, R: -0.5}, atlas.Segments[1].To)
+	for i, segment := range atlas.Segments {
+		s.Zerof(segment.Height, "segment %d authors no height, and 0 means standard rather than flat", i)
+	}
+
+	s.Empty(atlas.Sealed, "quarter lines leave every cell they pass standable")
+
+	// And the doors are still the ways through, on the crossings the lines
+	// actually cross: one row along from where the deleted pair form had them,
+	// between the same two rooms either side.
+	where := map[string][2]spatial.Position{}
+	for _, d := range atlas.Doorways {
+		where[d.Door] = [2]spatial.Position{d.From, d.To}
+	}
+	s.Require().Len(where, 2)
+	s.Equal(
+		[2]spatial.Position{
+			tkencounter.HexCellAt(tkencounter.HexesArePointyTop(), 5, 3),
+			tkencounter.HexCellAt(tkencounter.HexesArePointyTop(), 6, 4),
+		},
+		where["reference-tomb/entrance-hall"],
+		"the entrance door opens the slanted crossing [5,3]-[6,4]")
+	s.Equal(
+		[2]spatial.Position{
+			tkencounter.HexCellAt(tkencounter.HexesArePointyTop(), 15, 5),
+			tkencounter.HexCellAt(tkencounter.HexesArePointyTop(), 16, 4),
+		},
+		where["reference-tomb/hall-tomb"],
+		"and the tomb door [15,5]-[16,4]")
+}
+
 func (s *SessionStackSuite) TestStartEncounter_NotHost_Errors() {
 	s.seedCharacter("char-alice", "alice", "Alice")
 	s.seedCharacter("char-bob", "bob", "Bob")
