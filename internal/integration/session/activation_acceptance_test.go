@@ -1,9 +1,13 @@
 package session_test
 
 import (
+	"bytes"
 	"context"
+	cryptorand "crypto/rand"
 	"encoding/json"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -25,6 +29,24 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
+
+// activationCryptoReaderMu serializes the narrow crypto/rand replacement used
+// below. Second Wind still rolls through dice's package default
+// (rpg-toolkit#1427); this acceptance pins exact story facts without fixing
+// that separate provider seam. The helper restores the process-global reader
+// before releasing the lock, even when the activating call fails.
+var activationCryptoReaderMu sync.Mutex
+
+func activateWithCryptoByte(value byte, activate func() error) error {
+	activationCryptoReaderMu.Lock()
+	defer activationCryptoReaderMu.Unlock()
+
+	original := cryptorand.Reader
+	cryptorand.Reader = bytes.NewReader([]byte{value})
+	defer func() { cryptorand.Reader = original }()
+
+	return activate()
+}
 
 // ragingBarbarian is a level-1 barbarian carrying Rage, with a weapon so the
 // Attack declaration compiles beside the activations.
@@ -330,35 +352,105 @@ func TestAcceptance_ASpentSelectorIsRefusedWithFailedPrecondition(t *testing.T) 
 	require.Equal(t, sessionpb.Currency_CURRENCY_ACTION, after.GetWhy().GetCurrency())
 }
 
-// Second Wind heals its own fighter, which is the one activation whose effect
-// is neither a condition nor the ledger.
-func TestAcceptance_SecondWindHealsTheFighter(t *testing.T) {
+func requireSecondWindActivationEvents(t *testing.T, events []*sessionpb.Event) {
+	t.Helper()
+	require.Len(t, events, 2)
+
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_ACTIVATED, events[0].GetKind())
+	require.Equal(t, "alice", events[0].GetActivated().GetActor())
+	require.Equal(t, "dnd5e:features:second_wind", events[0].GetActivated().GetAbility().GetRef())
+	require.Equal(t, "Second Wind", events[0].GetActivated().GetAbility().GetName())
+	require.Empty(t, events[0].GetActivated().GetTarget())
+
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_ACTIVATION_RESULT, events[1].GetKind())
+	require.Equal(t, events[0].GetSeq()+1, events[1].GetSeq())
+	result := events[1].GetActivationResult()
+	require.Equal(t, "alice", result.GetActor())
+	healing := result.GetHealingApplied()
+	require.NotNil(t, healing)
+	require.Equal(t, "alice", healing.GetTarget())
+	require.Equal(t, int32(2), healing.GetAmount())
+	require.Equal(t, int32(7), healing.GetRequested())
+	require.Equal(t, int32(6), healing.GetRoll())
+	require.Equal(t, int32(1), healing.GetModifier())
+	require.Equal(t, "dnd5e:features:second_wind", healing.GetSourceRef())
+	require.Equal(t, "Second Wind", healing.GetSourceName())
+	require.Equal(t, int32(8), healing.GetHpBefore())
+	require.Equal(t, int32(10), healing.GetHpAfter())
+	require.Nil(t, result.GetConditionApplied())
+	require.Nil(t, result.GetConditionRemoved())
+	require.Nil(t, result.GetCapacityGranted())
+}
+
+// Second Wind heals its own fighter and emits the ordered acknowledgement and
+// applied result through both the live SessionService stream and GetStory.
+func TestAcceptance_SecondWindActivationEventsAndHealingCrossTheWire(t *testing.T) {
 	// armedFighter carries no features, so this one gets its own sheet rather
-	// than mutating a fixture five other acceptance tests read.
+	// than mutating a fixture five other acceptance tests read. Level one makes
+	// the provider's modifier 1; byte 5 makes crypto/rand.Int([0,10)) return 5,
+	// and therefore makes the d10 roll exactly 6.
 	fighter := armedFighter("alice", "player-alice")
-	fighter.HitPoints = 10
+	fighter.Level = 1
+	fighter.HitPoints = 8
+	fighter.MaxHitPoints = 10
 	fighter.Features = []json.RawMessage{json.RawMessage(
 		`{"ref":{"module":"dnd5e","type":"features","id":"second_wind"},` +
-			`"id":"second-wind-1","name":"Second Wind","level":3,` +
+			`"id":"second-wind-1","name":"Second Wind","level":1,` +
 			`"character_id":"alice","uses":1,"max_uses":1}`)}
 
 	h, ctx := inAFightWith(t, fighter)
+
+	// Join owns first-admission normal-rest recovery, so establish the damaged
+	// precondition after that admission and before Afford/Activate. This is a
+	// persistence fixture setup, not API-side healing arithmetic.
+	stored, err := h.charRepo.Get(context.Background(), characterrepo.GetInput{ID: "alice"})
+	require.NoError(t, err)
+	stored.Character.Data.HitPoints = 8
+	stored.Character.Data.MaxHitPoints = 10
+	_, err = h.charRepo.Update(context.Background(), characterrepo.UpdateInput{Character: stored.Character})
+	require.NoError(t, err)
 
 	offers := activationsFor(ctx, t, h, "alice")
 	secondWind, ok := offers["dnd5e:features:second_wind"]
 	require.True(t, ok, "a fighter carrying Second Wind must be offered it")
 	require.Equal(t, sessionpb.Slot_SLOT_BONUS, secondWind.GetSlot())
 
-	_, err := h.handler.Activate(ctx, &sessionpb.ActivateRequest{
-		Session: "acceptance-run", Member: "alice", DeclarationId: secondWind.GetId(),
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stream := newRecordingStream(streamCtx)
+	done := make(chan error, 1)
+	go func() {
+		done <- h.handler.StreamEvents(&sessionpb.StreamEventsRequest{
+			Session: "acceptance-run", Member: "alice",
+		}, stream)
+	}()
+	waitForLive(t, h.manager.Broker, "acceptance-run", "alice", stream)
+	baseline := len(stream.snapshot())
+
+	err = activateWithCryptoByte(5, func() error {
+		_, activateErr := h.handler.Activate(ctx, &sessionpb.ActivateRequest{
+			Session: "acceptance-run", Member: "alice", DeclarationId: secondWind.GetId(),
+		})
+		return activateErr
 	})
 	require.NoError(t, err)
 
-	// The one activation of the seven whose effect is neither a condition nor
-	// the ledger — it heals, and the healing has to reach the stored sheet the
-	// same way everything else does.
-	require.Greater(t, storedSheetOf(t, h.charRepo, "alice").HitPoints, 10,
-		"Second Wind heals its own fighter")
+	live := waitForQuiescence(t, stream, 2*time.Second)[baseline:]
+	requireSecondWindActivationEvents(t, live)
+
+	story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{
+		Session: "acceptance-run", Member: "alice", FromSeq: live[0].GetSeq(),
+	})
+	require.NoError(t, err)
+	requireSecondWindActivationEvents(t, story.GetEntries())
+	requireStoryContainsLiveEvents(t, story.GetEntries(), live)
+
+	cancel()
+	require.NoError(t, <-done)
+
+	// The same authoritative result reached persistence; no response-side
+	// optimism or converter arithmetic is involved.
+	require.Equal(t, 10, storedSheetOf(t, h.charRepo, "alice").HitPoints)
 }
 
 // HIDE REACHES THE SHEET AND ITS CHECK IS VACUOUS, which are two different

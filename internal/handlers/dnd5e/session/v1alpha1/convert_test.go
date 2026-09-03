@@ -472,6 +472,177 @@ func TestEventsToProto_RichStruckMatchesDirectConversion(t *testing.T) {
 		"GetStory's slice conversion and StreamEvents' direct conversion share one mapping")
 }
 
+func TestActivationEventKindsToProto(t *testing.T) {
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_ACTIVATED, eventKindToProto(sdk.EventActivated))
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_ACTIVATION_RESULT, eventKindToProto(sdk.EventActivationResult))
+}
+
+// TestActivationEventBodiesToProto pins the thin event boundary: every SDK
+// activation body crosses into its matching proto oneof arm without deriving
+// identity, arithmetic, or prose from any other field.
+func TestActivationEventBodiesToProto(t *testing.T) {
+	t.Run("Activated", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventActivated, Payload: []byte("activated-payload"),
+			Body: sdk.ActivatedBody{
+				Actor: "alice",
+				Ability: sdk.AbilityRef{
+					Ref: "dnd5e:features:second_wind", Name: "Second Wind",
+				},
+				Target: "alice",
+			},
+		})
+
+		require.Equal(t, []byte("activated-payload"), got.GetPayload())
+		activated := got.GetActivated()
+		require.NotNil(t, activated)
+		require.Equal(t, "alice", activated.GetActor())
+		require.Equal(t, "dnd5e:features:second_wind", activated.GetAbility().GetRef())
+		require.Equal(t, "Second Wind", activated.GetAbility().GetName())
+		require.Equal(t, "alice", activated.GetTarget())
+	})
+
+	t.Run("HealingApplied", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventActivationResult,
+			Body: sdk.ActivationResultBody{
+				Actor: "alice",
+				HealingApplied: &sdk.HealingAppliedBody{
+					Target: "alice", Amount: 2, Requested: 7, Roll: 6, Modifier: 1,
+					SourceRef: "dnd5e:features:second_wind", SourceName: "Second Wind",
+					HPBefore: 8, HPAfter: 10,
+				},
+			},
+		})
+
+		result := got.GetActivationResult()
+		require.NotNil(t, result)
+		require.Equal(t, "alice", result.GetActor())
+		healing := result.GetHealingApplied()
+		require.NotNil(t, healing)
+		require.Equal(t, "alice", healing.GetTarget())
+		require.Equal(t, int32(2), healing.GetAmount())
+		require.Equal(t, int32(7), healing.GetRequested())
+		require.Equal(t, int32(6), healing.GetRoll())
+		require.Equal(t, int32(1), healing.GetModifier())
+		require.Equal(t, "dnd5e:features:second_wind", healing.GetSourceRef())
+		require.Equal(t, "Second Wind", healing.GetSourceName())
+		require.Equal(t, int32(8), healing.GetHpBefore())
+		require.Equal(t, int32(10), healing.GetHpAfter())
+		require.Nil(t, result.GetConditionApplied())
+		require.Nil(t, result.GetConditionRemoved())
+		require.Nil(t, result.GetCapacityGranted())
+	})
+
+	t.Run("ConditionApplied", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventActivationResult,
+			Body: sdk.ActivationResultBody{
+				Actor: "alice",
+				ConditionApplied: &sdk.ConditionAppliedBody{
+					Target: "bob", Ref: "dnd5e:conditions:raging", Name: "Raging",
+				},
+			},
+		})
+
+		result := got.GetActivationResult()
+		require.NotNil(t, result)
+		require.Equal(t, "alice", result.GetActor())
+		condition := result.GetConditionApplied()
+		require.NotNil(t, condition)
+		require.Equal(t, "bob", condition.GetTarget())
+		require.Equal(t, "dnd5e:conditions:raging", condition.GetRef())
+		require.Equal(t, "Raging", condition.GetName())
+		require.Nil(t, result.GetHealingApplied())
+		require.Nil(t, result.GetConditionRemoved())
+		require.Nil(t, result.GetCapacityGranted())
+	})
+
+	t.Run("ConditionRemoved", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventActivationResult,
+			Body: sdk.ActivationResultBody{
+				Actor: "alice",
+				ConditionRemoved: &sdk.ConditionRemovedBody{
+					Target: "bob", Ref: "dnd5e:conditions:hidden", Name: "Hidden", Reason: "revealed",
+				},
+			},
+		})
+
+		result := got.GetActivationResult()
+		require.NotNil(t, result)
+		require.Equal(t, "alice", result.GetActor())
+		condition := result.GetConditionRemoved()
+		require.NotNil(t, condition)
+		require.Equal(t, "bob", condition.GetTarget())
+		require.Equal(t, "dnd5e:conditions:hidden", condition.GetRef())
+		require.Equal(t, "Hidden", condition.GetName())
+		require.Equal(t, "revealed", condition.GetReason())
+		require.Nil(t, result.GetHealingApplied())
+		require.Nil(t, result.GetConditionApplied())
+		require.Nil(t, result.GetCapacityGranted())
+	})
+
+	t.Run("CapacityGranted", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventActivationResult,
+			Body: sdk.ActivationResultBody{
+				Actor: "alice",
+				CapacityGranted: &sdk.CapacityGrantedBody{
+					Member: "alice", Description: "30ft movement",
+				},
+			},
+		})
+
+		result := got.GetActivationResult()
+		require.NotNil(t, result)
+		require.Equal(t, "alice", result.GetActor())
+		capacity := result.GetCapacityGranted()
+		require.NotNil(t, capacity)
+		require.Equal(t, "alice", capacity.GetMember())
+		require.Equal(t, "30ft movement", capacity.GetDescription())
+		require.Nil(t, result.GetHealingApplied())
+		require.Nil(t, result.GetConditionApplied())
+		require.Nil(t, result.GetConditionRemoved())
+	})
+}
+
+func TestActivationResultVariantConverters_NilSafe(t *testing.T) {
+	require.Nil(t, healingAppliedBodyToProto(nil))
+	require.Nil(t, conditionAppliedBodyToProto(nil))
+	require.Nil(t, conditionRemovedBodyToProto(nil))
+	require.Nil(t, capacityGrantedBodyToProto(nil))
+}
+
+func TestActivationEventBody_NilOrMalformedStaysNil(t *testing.T) {
+	tests := []struct {
+		name string
+		body sdk.EventBody
+	}{
+		{name: "nil", body: nil},
+		{name: "no result", body: sdk.ActivationResultBody{Actor: "alice"}},
+		{
+			name: "multiple results",
+			body: sdk.ActivationResultBody{
+				Actor:            "alice",
+				ConditionApplied: &sdk.ConditionAppliedBody{Target: "alice"},
+				CapacityGranted:  &sdk.CapacityGrantedBody{Member: "alice"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := eventToProto(sdk.Event{
+				Kind: sdk.EventActivationResult, Payload: []byte("passthrough"), Body: tt.body,
+			})
+			require.Equal(t, sessionpb.EventKind_EVENT_KIND_ACTIVATION_RESULT, got.GetKind())
+			require.Equal(t, []byte("passthrough"), got.GetPayload())
+			require.Nil(t, got.GetBody())
+		})
+	}
+}
+
 func TestStepsToProto(t *testing.T) {
 	got := stepsToProto([]sdk.Step{{Position: spatial.Position{X: 1, Y: 1}, Seq: 5}})
 	require.Len(t, got, 1)

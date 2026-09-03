@@ -150,14 +150,20 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 
 // errorsGoDefaultCaseSentinels names every SDK sentinel statusError leaves to
 // the default case ON PURPOSE, so TestStatusError_MapsEverySDKSentinel below
-// does not fail on them -- each entry's reason is carried in errors.go's own
-// doc, not here; this map is only the allowlist that check reads.
+// does not fail on them -- each entry's reason is documented either in
+// errors.go or beside the relevant allowlist entry here.
 var errorsGoDefaultCaseSentinels = map[string]bool{
 	// The SDK's repository-facing contract sentinel: the Manager translates
 	// it into a caller-facing one (ErrNoSession, ErrNoEncounter, ...) before
 	// any verb returns, so it should never reach a handler. See errors.go's
 	// own doc on statusError for the full reasoning.
 	"ErrNotFound": true,
+	// Session v0.48.0 adds these for its Interact verb, which this proto
+	// service does not expose. Keeping the defensive Internal fallback avoids
+	// widening this activation-event change into a new transport contract;
+	// the API leg that adds Interact must choose and test its public codes.
+	"ErrOutOfRange": true,
+	"ErrNotVisible": true,
 }
 
 // sdkSentinelNames reads every exported Err* sentinel declared in the PINNED

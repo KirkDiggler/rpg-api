@@ -18,6 +18,27 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
 
+// requireStoryContainsLiveEvents proves the shared conversion contract for a
+// set of live events: catch-up contains the same sequence entries byte-for-byte.
+// Callers still assert their event-specific fields on both slices so parity
+// cannot hide a converter that dropped the same field twice.
+func requireStoryContainsLiveEvents(
+	t *testing.T, story, live []*sessionpb.Event,
+) {
+	t.Helper()
+	bySeq := make(map[uint64]*sessionpb.Event, len(story))
+	for _, event := range story {
+		bySeq[event.GetSeq()] = event
+	}
+	for _, liveEvent := range live {
+		storyEvent, ok := bySeq[liveEvent.GetSeq()]
+		require.True(t, ok, "GetStory must carry every seq the live stream delivered; missing seq %d", liveEvent.GetSeq())
+		require.True(t, proto.Equal(liveEvent, storyEvent),
+			"seq %d: live and catch-up must be byte-equal (rpg-api-protos#239)\n  live:  %v\n  story: %v",
+			liveEvent.GetSeq(), liveEvent, storyEvent)
+	}
+}
+
 // TestGetStoryMatchesLiveEvents is rpg-api-protos#239's own acceptance
 // criterion made executable, entirely through the real, wired stack (real
 // Manager, real Broker, real Handler.StreamEvents and Handler.GetStory) --
@@ -106,17 +127,7 @@ func TestGetStoryMatchesLiveEvents(t *testing.T) {
 	storyResp, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: session, Member: "alice", FromSeq: 1})
 	require.NoError(t, err)
 
-	bySeq := make(map[uint64]*sessionpb.Event, len(storyResp.GetEntries()))
-	for _, e := range storyResp.GetEntries() {
-		bySeq[e.GetSeq()] = e
-	}
-	for _, liveEvt := range live {
-		storyEvt, ok := bySeq[liveEvt.GetSeq()]
-		require.True(t, ok, "GetStory must carry every seq the live stream delivered; missing seq %d", liveEvt.GetSeq())
-		require.True(t, proto.Equal(liveEvt, storyEvt),
-			"seq %d: live and catch-up must be byte-equal (rpg-api-protos#239)\n  live:  %v\n  story: %v",
-			liveEvt.GetSeq(), liveEvt, storyEvt)
-	}
+	requireStoryContainsLiveEvents(t, storyResp.GetEntries(), live)
 
 	// FromSeq:1 catches up from before alice's own Join beat -- the join
 	// beat's audience is "all current members including the joiner", so
