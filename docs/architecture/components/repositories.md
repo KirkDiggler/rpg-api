@@ -21,7 +21,6 @@ served. The later v2 encounter repository is also deleted with rpg-project#227.
 | `dice_session` | `repository.go` | `redis.go` | Redis | B- |
 | ~~`encounters/v2`~~ | DELETED | DELETED | DELETED | n/a |
 | `lobby` | `repository.go` | `redis.go` + `in_memory.go` | Redis + in-memory | B |
-| `roster` | `repository.go` | `redis.go` + `in_memory.go` | Redis + in-memory | B+ |
 | `sessionpresentation` | `repository.go` | `redis.go` | Redis | B+ |
 
 ~~`encounters` (v1 root)~~ / ~~`dungeons`~~ / ~~`encounterlog`~~ — all DELETED
@@ -70,14 +69,12 @@ Narrow scope: tracks ability score dice rolls during character creation before t
 Toolkit session state is now owned by `rulebooks/dnd5e/session.Manager`, wired by
 `internal/orchestrators/session` over Redis-backed toolkit repositories.
 
-## Roster repository
+## Session roster
 
-**Path:** `repositories/roster/`
-
-Stores the launch-written public membership row for a started session. Production and
-`internal/integration/harness` use `NewRedis(client, 24*time.Hour)` so `SessionService`
-and `SessionPresentationService` share the exact same seated-member gate across server
-instances. The in-memory implementation remains for unit tests.
+The Session SDK owns roster state and public identity projection inside
+`rulebooks/dnd5e/session.Manager`. `SessionService.GetRoster` and the shared
+`sessionaccess.Access` gates call the manager's `Roster` method; rpg-api has no roster
+repository or launch-time duplicate.
 
 ## Session presentation repository
 

@@ -47,7 +47,6 @@ import (
 	characterdraftrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
-	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 	sessionpresentationrepo "github.com/KirkDiggler/rpg-api/internal/repositories/sessionpresentation"
 )
 
@@ -82,7 +81,6 @@ type TestServer struct {
 	CharacterRepo characterrepo.Repository
 	LobbyBroker   *lobbyorch.Broker
 	LobbyRepo     lobbyrepo.Repository
-	RosterRepo    rosterrepo.Repository
 	SessionOrch   *sessionorch.Orchestrator
 }
 
@@ -330,9 +328,7 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	}
 	ts.SessionOrch = sessOrch
 
-	rosterRepo := rosterrepo.NewRedis(ts.redisClient, 24*time.Hour)
-	ts.RosterRepo = rosterRepo
-	access, err := sessionaccess.New(charRepo, rosterRepo)
+	access, err := sessionaccess.New(charRepo, sessOrch.Manager)
 	if err != nil {
 		return fmt.Errorf("session access: %w", err)
 	}
@@ -340,7 +336,6 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 		Manager:    sessOrch.Manager,
 		Broker:     sessOrch.Broker,
 		Characters: charRepo,
-		Roster:     rosterRepo,
 		Access:     access,
 	})
 	if err != nil {
@@ -391,7 +386,6 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 		EncounterIDGenerator: idgen.NewUUID(""),
 		SessionManager:       sessOrch.Manager,
 		Dungeons:             registry,
-		RosterRepo:           rosterRepo,
 	})
 	if err != nil {
 		return fmt.Errorf("lobby orchestrator: %w", err)

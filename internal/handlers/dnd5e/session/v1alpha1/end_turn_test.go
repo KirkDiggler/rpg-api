@@ -17,7 +17,7 @@ import (
 
 func TestEndTurn_Unauthenticated_Errors(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	_, err := h.EndTurn(context.Background(), &sessionpb.EndTurnRequest{})
 	requireCode(t, err, codes.Unauthenticated)
 }
@@ -31,7 +31,7 @@ func TestEndTurn_HappyPath(t *testing.T) {
 		Next: "goblin-1", RoundWrapped: true, Seq: 6,
 	}, nil)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.EndTurn(ctx, &sessionpb.EndTurnRequest{
 		Session: "sess-1", Member: "char-1", DeclarationId: "decl-end-1",
@@ -46,7 +46,7 @@ func TestEndTurn_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	mgr.EXPECT().EndTurn(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNotInFight)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.EndTurn(ctx, &sessionpb.EndTurnRequest{Session: "sess-1", Member: "char-1"})
 	requireCode(t, err, codes.FailedPrecondition)

@@ -56,10 +56,10 @@ to the toolkit session SDK. Every member-naming verb applies the shared caller/m
 gate before Manager dispatch; production and the harness now pass the same
 `sessionaccess.Access` instance to SessionService and SessionPresentationService.
 Conversion remains field-for-field with no rules or invented vocabulary, including
-nested declarations/candidates and selectors. `GetRoster` now maps player Appearance
-from nested toolkit Data through the shared customization converter while keeping the
-shelf present-and-empty for nil/default players and monsters; it projects no private
-sheet fields. `StreamEvents` is audience-filtered
+nested declarations/candidates and selectors. `GetRoster` delegates once to the Session
+SDK and mechanically maps its public members and flat customization values, preserving
+optional presence and explicit zero while keeping the shelf present-and-empty for
+nil/default players and monsters; it projects no private sheet fields. `StreamEvents` is audience-filtered
 best-effort live delivery; `GetStory` is persisted catch-up, and both use the same
 typed-event converter. Unit and `internal/integration/session` suites cover ownership,
 selectors, live fan-out, replay, and production declaration shapes. Held below A pending
@@ -69,7 +69,7 @@ production traffic.
 
 `internal/handlers/dnd5e/sessionpresentation/v1alpha1/` adapts the presentation-only
 `SessionPresentationService`. Both RPCs run the shared `CallerMemberSeated` gate before
-service access, so caller ownership and launch-written roster seating are identical to
+service access, so caller ownership and Session SDK seating are identical to
 SessionService. Mapping is proto ↔ proto-free domain structs plus a small status switch:
 invalid plans become `InvalidArgument`, duplicate conflicting attempts become
 `AlreadyExists`, and storage/subscription failures are sanitized as `Internal`. It does
@@ -281,14 +281,6 @@ every Save/Get like the v2 encounter repo. Grade held at B rather than higher
 because it's brand new with no production traffic yet — the pattern is proven
 but unexercised at scale.
 
-### Roster repository — B+ (updated 2026-08-28)
-
-`internal/repositories/roster/` stores the launch-written public membership row used by
-`SessionService.GetRoster` and now by the shared session/presentation access gate.
-Production and the harness use the Redis implementation with a 24h TTL, so a second
-server can authorize a seated member from the same row server A wrote during lobby
-launch. Held below A pending production traffic and broader edge-case coverage.
-
 ### Session presentation repository — B+ (new, 2026-08-28)
 
 `internal/repositories/sessionpresentation/` accepts deterministic presentation payloads
@@ -335,12 +327,12 @@ Redis-backed. Narrow scope. No observed gaps. Low risk.
 The harness still omits the deleted v1alpha2 EncounterService, but #852 restores the
 new-stack full-gRPC value and #869 uses its real `redis:7-alpine` character path to prove
 hair update/reload/refusal/finalization/Get: `TestServer` exposes `SessionClient`,
-`SessionPresentationClient`, `HealthClient`, and `RosterRepo`; registers SessionService
-and SessionPresentationService; and wires the Redis roster repository shared by lobby
-launch, SessionService access, and SessionPresentationService access. The new
-`internal/integration/sessionpresentation` package starts two TestServers over one Redis
-container and proves real cross-instance seating plus Redis Pub/Sub. Grade returns to B+
-from B-; held below A pending wider lobby/session full-stack suites and browser evidence.
+`SessionPresentationClient`, and `HealthClient`; registers SessionService and
+SessionPresentationService; and shares the real Session Manager with lobby launch and
+both access gates. The new `internal/integration/sessionpresentation` package starts two
+TestServers over one Redis container and proves real cross-instance seating plus Redis
+Pub/Sub. Grade returns to B+ from B-; held below A pending wider lobby/session full-stack
+suites and browser evidence.
 
 ### Unit tests — B-
 

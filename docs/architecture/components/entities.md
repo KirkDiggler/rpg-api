@@ -26,11 +26,11 @@ Appearance is nested in those toolkit data types and Redis serializes that shape
 directly. The session SDK therefore saves complete `Data`, including Appearance,
 without an API-side preservation envelope.
 
-The shared converter at `internal/converters/customization` is the only
-proto↔toolkit Appearance mapping used by character handlers and the temporary
-public session roster projection. It preserves nil/empty nested messages,
-selection oneofs, optional scalar presence, and present zero values. Validation
-and provider interpretation remain in rpg-toolkit.
+Character handlers use the shared `internal/converters/customization` mapping for
+proto↔toolkit Appearance. The Session handler separately maps the Session SDK's flat
+public roster customization values to its wire types, preserving nil/empty nested
+messages, selection oneofs, optional scalar presence, and present zero values.
+Validation and provider interpretation remain in rpg-toolkit.
 
 ## Boundary status
 

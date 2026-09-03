@@ -16,10 +16,10 @@ proto-level client calls.
 deleted v1alpha2 encounter stack (`EncounterClientV2`, `BrokerV2`, `EncRepoV2`),
 but it now registers and exposes the live session stack: `SessionClient`,
 `SessionPresentationClient`, `HealthClient`, and `SessionOrch`. Lobby launch,
-SessionService access, and SessionPresentationService access share one Redis-backed
-`RosterRepo`, mirroring `cmd/server/server.go`. `internal/integration/sessionpresentation`
+SessionService access, and SessionPresentationService access share the same real
+Session Manager, mirroring `cmd/server/server.go`. `internal/integration/sessionpresentation`
 starts two TestServers over one Redis container and proves server B can authorize a
-seated member from the roster server A wrote during the real lobby launch path.
+seated member from Session SDK state created by server A's real lobby launch path.
 
 ## Files
 
@@ -45,7 +45,7 @@ TestServer (harness.go), one fresh instance per test
     │                 owns only its own client connection)
     ├── bufconn               ← in-process gRPC (no network)
     ├── real orchestrators    ← same code as production (character, lobby, session presentation)
-    ├── real repositories     ← character (Redis), lobby (in-memory), roster (Redis)
+    ├── real repositories     ← character (Redis), lobby (in-memory)
     ├── SessionOrch           ← Redis-backed session.Manager, the sole
     │                            encounter-construction stack (rpg-project#227)
     └── health server         ← exact service-name checks for registered APIs
@@ -54,8 +54,8 @@ TestServer (harness.go), one fresh instance per test
 `TestServer.CharacterClient`, `.DiceClient`, `.LobbyClient`, `.SessionClient`,
 `.SessionPresentationClient`, and `.HealthClient` are proto-generated gRPC clients
 that connect to the in-process server. Tests call these clients exactly as the web
-client would. `TestServer.RosterRepo` is the Redis-backed launch roster shared with
-SessionService and SessionPresentationService access. There is no `EncounterClientV2`
+client would. Session roster reads and access checks use the real Session Manager
+wired into `TestServer`; there is no `EncounterClientV2`
 any more — the old v1alpha2 encounter service it connected to is deleted.
 
 ## TestServer lifecycle

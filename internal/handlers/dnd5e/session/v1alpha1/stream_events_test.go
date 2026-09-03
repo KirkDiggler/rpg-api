@@ -22,7 +22,6 @@ import (
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
-	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
@@ -91,13 +90,9 @@ func anyMemberOwnedBy(ctrl *gomock.Controller, playerID string) characterrepo.Re
 	return repo
 }
 
-func testRoster() rosterrepo.Repository {
-	return rosterrepo.NewInMemory()
-}
-
 func TestStreamEvents_Unauthenticated_Errors(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	stream := newCapturingStream(context.Background())
 	err := h.StreamEvents(&sessionpb.StreamEventsRequest{}, stream)
 	requireCode(t, err, codes.Unauthenticated)
@@ -105,7 +100,7 @@ func TestStreamEvents_Unauthenticated_Errors(t *testing.T) {
 
 func TestStreamEvents_EmptyMember_InvalidArgument(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	stream := newCapturingStream(ctx)
 	err := h.StreamEvents(&sessionpb.StreamEventsRequest{Session: "sess-1"}, stream)
@@ -114,7 +109,7 @@ func TestStreamEvents_EmptyMember_InvalidArgument(t *testing.T) {
 
 func TestStreamEvents_CallerDoesNotOwnMember_PermissionDenied(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "bob"), roster: testRoster(), broker: sessionorch.NewBroker()}
+	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "bob"), broker: sessionorch.NewBroker()}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	stream := newCapturingStream(ctx)
 	err := h.StreamEvents(&sessionpb.StreamEventsRequest{Session: "sess-1", Member: "char-1"}, stream)
@@ -124,7 +119,7 @@ func TestStreamEvents_CallerDoesNotOwnMember_PermissionDenied(t *testing.T) {
 func TestStreamEvents_ForwardsPublishedEventsVerbatim(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	broker := sessionorch.NewBroker()
-	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), roster: testRoster(), broker: broker}
+	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), broker: broker}
 
 	ctx, cancel := context.WithCancel(auth.WithPlayerID(context.Background(), "alice"))
 	defer cancel()
@@ -159,7 +154,7 @@ func TestStreamEvents_ForwardsPublishedEventsVerbatim(t *testing.T) {
 func TestStreamEvents_DoesNotReceiveEventsAddressedToOthers(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	broker := sessionorch.NewBroker()
-	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), roster: testRoster(), broker: broker}
+	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), broker: broker}
 
 	ctx, cancel := context.WithCancel(auth.WithPlayerID(context.Background(), "alice"))
 	defer cancel()
@@ -294,7 +289,7 @@ func TestStreamEvents_ForwardsTypedBodyPerKind(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			broker := sessionorch.NewBroker()
-			h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), roster: testRoster(), broker: broker}
+			h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), broker: broker}
 
 			ctx, cancel := context.WithCancel(auth.WithPlayerID(context.Background(), "alice"))
 			defer cancel()
@@ -368,7 +363,7 @@ func TestStreamEvents_SendTrace_OnlyLogsAfterASuccessfulSend(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	broker := sessionorch.NewBroker()
-	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), roster: testRoster(), broker: broker}
+	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), broker: broker}
 
 	ctx, cancel := context.WithCancel(auth.WithPlayerID(context.Background(), "alice"))
 	defer cancel()
@@ -396,7 +391,7 @@ func TestStreamEvents_SendTrace_LogsFailureNotForwardedWhenSendErrors(t *testing
 
 	ctrl := gomock.NewController(t)
 	broker := sessionorch.NewBroker()
-	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), roster: testRoster(), broker: broker}
+	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), broker: broker}
 
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	// A stream whose Send always fails: a zero-capacity channel nobody

@@ -26,7 +26,6 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
-	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 )
 
 // DefaultPartyCap is the normal product roster capacity (lobby-surface.md
@@ -74,13 +73,6 @@ type Config struct {
 	// Dungeons is the content registry StartEncounter resolves dungeon_key
 	// against and ListDungeons reads. Required.
 	Dungeons dungeons.Registry
-
-	// RosterRepo persists the launch-written roster row GetRoster reads
-	// (rpg-project#264, ideas/characters/presentation). Required: launch is
-	// the only moment that knows every member and every authored spawn at
-	// once, so a missing store here would be a session nobody can ask
-	// "who is here" about.
-	RosterRepo rosterrepo.Repository
 }
 
 // Orchestrator is the lobby load -> mutate -> persist -> publish core. One
@@ -96,8 +88,6 @@ type Orchestrator struct {
 	partyCap       int
 	now            func() time.Time
 	locks          *keyedMutex
-
-	rosterRepo rosterrepo.Repository
 
 	// sessionManager is Config.SessionManager — StartEncounter builds onto
 	// it, and GetMyActiveLobby/AbandonEncounter query/close through it.
@@ -137,9 +127,6 @@ func New(cfg *Config) (*Orchestrator, error) {
 	if cfg.Dungeons == nil {
 		return nil, errors.New("lobby orchestrator: Config.Dungeons is required")
 	}
-	if cfg.RosterRepo == nil {
-		return nil, errors.New("lobby orchestrator: Config.RosterRepo is required")
-	}
 	if cfg.PartyCap < 0 {
 		return nil, errors.New("lobby orchestrator: Config.PartyCap must not be negative")
 	}
@@ -164,7 +151,6 @@ func New(cfg *Config) (*Orchestrator, error) {
 		locks:          newKeyedMutex(),
 		sessionManager: cfg.SessionManager,
 		dungeons:       cfg.Dungeons,
-		rosterRepo:     cfg.RosterRepo,
 	}, nil
 }
 

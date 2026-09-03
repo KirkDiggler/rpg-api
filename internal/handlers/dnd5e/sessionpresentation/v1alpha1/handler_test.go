@@ -18,8 +18,8 @@ import (
 	orchsessionpresentation "github.com/KirkDiggler/rpg-api/internal/orchestrators/sessionpresentation"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
-	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
 
 type HandlerSuite struct {
@@ -70,11 +70,11 @@ func (s *HandlerSuite) accessForMemberOwner(ownerPlayerID string, order *callOrd
 		},
 	).Times(1)
 
-	access, err := sessionaccess.New(characters, &fakeRosterRepo{getFn: func(_ context.Context, encounterID string) (*rosterrepo.Data, error) {
+	access, err := sessionaccess.New(characters, &fakeRosterReader{rosterFn: func(_ context.Context, _ *sdk.RosterInput) (*sdk.RosterOutput, error) {
 		if order != nil {
-			order.Add("roster.Get")
+			order.Add("roster.Roster")
 		}
-		return &rosterrepo.Data{EncounterID: encounterID, Members: []rosterrepo.Member{{ID: s.memberID, Kind: rosterrepo.KindPlayer}}}, nil
+		return &sdk.RosterOutput{Members: []sdk.PublicMember{{ID: s.memberID, Kind: sdk.KindPlayer}}}, nil
 	}})
 	s.Require().NoError(err)
 	return access
@@ -242,18 +242,16 @@ func (r *callOrderRecorder) Steps() []string {
 	return append([]string(nil), r.steps...)
 }
 
-type fakeRosterRepo struct {
-	getFn func(context.Context, string) (*rosterrepo.Data, error)
+type fakeRosterReader struct {
+	rosterFn func(context.Context, *sdk.RosterInput) (*sdk.RosterOutput, error)
 }
 
-func (f *fakeRosterRepo) Get(ctx context.Context, encounterID string) (*rosterrepo.Data, error) {
-	if f.getFn != nil {
-		return f.getFn(ctx, encounterID)
+func (f *fakeRosterReader) Roster(ctx context.Context, in *sdk.RosterInput) (*sdk.RosterOutput, error) {
+	if f.rosterFn != nil {
+		return f.rosterFn(ctx, in)
 	}
-	return nil, nil
+	return &sdk.RosterOutput{}, nil
 }
-
-func (f *fakeRosterRepo) Save(context.Context, *rosterrepo.Data) error { return nil }
 
 type fakePlanStream struct {
 	grpc.ServerStream

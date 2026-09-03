@@ -4,94 +4,111 @@ import (
 	"context"
 	"errors"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+
+	customizationpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/customization/v1alpha1"
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-
-	customizationconverter "github.com/KirkDiggler/rpg-api/internal/converters/customization"
-	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
-	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 )
 
-// GetRoster reports the public half of every member (rpg-project#264,
-// ideas/characters/presentation): identity — never position, never the sheet.
-//
-// The row the launch wrote holds identity FACTS (ids, kinds, authored monster
-// ref/name); everything a character record owns is read fresh HERE, at serve
-// time, so a rename or reclass between encounters is never served stale.
-// PublicMemberInfo is the projection's whole contract: name, class/race refs
-// and public hair for players, the authored ref for monsters, and an always-set
-// Customization shelf. Monsters and players without customization keep it empty.
-//
-// Authorization: the caller must be SEATED — no member parameter to gate on
-// (callerActingAs guards verbs that name one), so the gate is membership
-// itself: some player row of this roster must belong to the authenticated
-// caller. The check rides the same character loads the response needs anyway.
+// GetRoster reports the Session SDK's public identity projection. The SDK
+// owns roster membership, character loading, and customization semantics;
+// this handler only authenticates, binds the transport fields, and converts
+// the result to proto.
 func (h *Handler) GetRoster(ctx context.Context, req *sessionpb.GetRosterRequest) (*sessionpb.GetRosterResponse, error) {
 	playerID, err := authenticatedPlayerID(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if req.GetSession() == "" {
-		return nil, status.Error(codes.InvalidArgument, "session is required")
+		return nil, statusError(sdk.ErrNoSessionID)
 	}
 
-	row, err := h.roster.Get(ctx, req.GetSession())
+	out, err := h.manager.Roster(ctx, &sdk.RosterInput{
+		Session: req.GetSession(),
+		Player:  playerID,
+	})
 	if err != nil {
-		if errors.Is(err, rosterrepo.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "session %q has no roster", req.GetSession())
-		}
-		return nil, status.Errorf(codes.Internal, "load roster for session %q: %v", req.GetSession(), err)
+		return nil, statusError(err)
 	}
-
-	members := make([]*sessionpb.PublicMemberInfo, 0, len(row.Members))
-	seated := false
-	for _, m := range row.Members {
-		switch m.Kind {
-		case rosterrepo.KindPlayer:
-			got, err := h.characters.Get(ctx, characterrepo.GetInput{ID: m.ID})
-			if err != nil || got == nil || got.Character == nil || got.Character.Data == nil {
-				// A roster row references a character the store no longer
-				// serves — a data invariant broken somewhere else, reported
-				// as such rather than silently thinning the roster.
-				return nil, status.Errorf(codes.Internal, "roster member %q has no character record", m.ID)
-			}
-			data := got.Character.Data
-			if data.PlayerID == playerID {
-				seated = true
-			}
-			customization := &sessionpb.Customization{}
-			if appearance := customizationconverter.ToolkitToProto(data.Appearance); appearance != nil {
-				customization.Hair = appearance.Hair
-				customization.Outfit = appearance.Outfit
-			}
-			members = append(members, &sessionpb.PublicMemberInfo{
-				Id:   m.ID,
-				Kind: sessionpb.MemberKind_MEMBER_KIND_PLAYER,
-				Name: data.Name,
-				// The same words the client's own render path already maps
-				// to models for the local player.
-				ClassRef:      data.ClassID,
-				RaceRef:       string(data.RaceID),
-				Customization: customization,
-			})
-		case rosterrepo.KindMonster:
-			members = append(members, &sessionpb.PublicMemberInfo{
-				Id:            m.ID,
-				Kind:          sessionpb.MemberKind_MEMBER_KIND_MONSTER,
-				Name:          m.Name,
-				MonsterRef:    m.Ref,
-				Customization: &sessionpb.Customization{},
-			})
-		default:
-			return nil, status.Errorf(codes.Internal, "roster member %q has unspecified kind", m.ID)
-		}
+	if out == nil {
+		return nil, statusError(errRosterOutputRequired)
 	}
+	return rosterToProto(out), nil
+}
 
-	if !seated {
-		return nil, status.Error(codes.PermissionDenied, "caller is not seated in this session")
+var errRosterOutputRequired = errors.New("roster returned no output")
+
+func rosterToProto(in *sdk.RosterOutput) *sessionpb.GetRosterResponse {
+	members := make([]*sessionpb.PublicMemberInfo, len(in.Members))
+	for i, member := range in.Members {
+		members[i] = publicMemberToProto(member)
 	}
+	return &sessionpb.GetRosterResponse{Members: members}
+}
 
-	return &sessionpb.GetRosterResponse{Members: members}, nil
+func publicMemberToProto(member sdk.PublicMember) *sessionpb.PublicMemberInfo {
+	return &sessionpb.PublicMemberInfo{
+		Id:            member.ID,
+		Kind:          memberKindToProto(member.Kind),
+		Name:          member.Name,
+		ClassRef:      member.ClassRef,
+		RaceRef:       member.RaceRef,
+		MonsterRef:    member.MonsterRef,
+		Customization: customizationToProto(member.Customization),
+	}
+}
+
+func customizationToProto(in sdk.Customization) *sessionpb.Customization {
+	return &sessionpb.Customization{
+		Hair:   hairCustomizationToProto(in.Hair),
+		Outfit: outfitCustomizationToProto(in.Outfit),
+	}
+}
+
+func hairCustomizationToProto(in *sdk.HairCustomization) *customizationpb.HairCustomization {
+	if in == nil {
+		return nil
+	}
+	out := &customizationpb.HairCustomization{
+		Scalp:      styleSelectionToProto(in.Scalp),
+		FacialHair: styleSelectionToProto(in.FacialHair),
+	}
+	if in.ColorSRGB != nil {
+		out.ColorSrgb = proto.Uint32(*in.ColorSRGB)
+	}
+	if in.Roughness != nil {
+		out.Roughness = proto.Float32(*in.Roughness)
+	}
+	return out
+}
+
+func outfitCustomizationToProto(in *sdk.OutfitCustomization) *customizationpb.OutfitCustomization {
+	if in == nil {
+		return nil
+	}
+	out := &customizationpb.OutfitCustomization{}
+	if in.PrimaryColorSRGB != nil {
+		out.PrimaryColorSrgb = proto.Uint32(*in.PrimaryColorSRGB)
+	}
+	if in.SecondaryColorSRGB != nil {
+		out.SecondaryColorSrgb = proto.Uint32(*in.SecondaryColorSRGB)
+	}
+	return out
+}
+
+func styleSelectionToProto(in *sdk.StyleSelection) *customizationpb.StyleSelection {
+	if in == nil {
+		return nil
+	}
+	out := &customizationpb.StyleSelection{}
+	switch in.Kind {
+	case sdk.StyleSelectionStyle:
+		out.Selection = &customizationpb.StyleSelection_StyleRef{StyleRef: in.StyleRef}
+	case sdk.StyleSelectionNone:
+		out.Selection = &customizationpb.StyleSelection_None{None: &emptypb.Empty{}}
+	}
+	return out
 }

@@ -18,7 +18,7 @@ import (
 
 func TestSearch_Unauthenticated_Errors(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	_, err := h.Search(context.Background(), &sessionpb.SearchRequest{Session: "sess-1", Member: "char-1", Region: "hall"})
 	requireCode(t, err, codes.Unauthenticated)
 }
@@ -27,7 +27,7 @@ func TestSearch_EmptyMember_IsRefused(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.Search(ctx, &sessionpb.SearchRequest{Session: "sess-1", Region: "hall"})
 	requireCode(t, err, codes.InvalidArgument)
@@ -42,7 +42,7 @@ func TestSearch_ForeignMember_IsRefusedBeforeTheSDK(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
-	h := &Handler{manager: mgr, characters: ownedCharacterRepo(ctrl, "char-bob", "bob"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: ownedCharacterRepo(ctrl, "char-bob", "bob")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.Search(ctx, &sessionpb.SearchRequest{Session: "sess-1", Member: "char-bob", Region: "hall"})
 	requireCode(t, err, codes.PermissionDenied)
@@ -67,7 +67,6 @@ func TestSearch_HappyPath_ReturnsAckOnly(t *testing.T) {
 		characters: charactersOf(ctrl, map[string]rosterCharacter{
 			"char-alice": {owner: "alice", name: "Alice", class: "fighter", race: "human"},
 		}),
-		roster: tombRoster(t),
 	}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.Search(ctx, &sessionpb.SearchRequest{Session: "sess-1", Member: "char-alice", Region: "hall"})
@@ -93,7 +92,6 @@ func TestSearch_EmptySearch_LooksIdenticalToAFind(t *testing.T) {
 		characters: charactersOf(ctrl, map[string]rosterCharacter{
 			"char-alice": {owner: "alice", name: "Alice", class: "fighter", race: "human"},
 		}),
-		roster: tombRoster(t),
 	}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.Search(ctx, &sessionpb.SearchRequest{Session: "sess-1", Member: "char-alice", Region: "hall"})
@@ -111,7 +109,7 @@ func TestSearch_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	mgr.EXPECT().Search(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrElsewhere)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.Search(ctx, &sessionpb.SearchRequest{Session: "sess-1", Member: "char-1", Region: "hall"})
 	requireCode(t, err, codes.FailedPrecondition)

@@ -17,7 +17,7 @@ import (
 
 func TestGetStory_Unauthenticated_Errors(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	_, err := h.GetStory(context.Background(), &sessionpb.GetStoryRequest{})
 	requireCode(t, err, codes.Unauthenticated)
 }
@@ -29,7 +29,7 @@ func TestGetStory_HappyPath(t *testing.T) {
 		[]sdk.Event{{Seq: 5, Kind: sdk.EventTurnEnded}, {Seq: 6, Kind: sdk.EventMoved}}, nil,
 	)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.GetStory(ctx, &sessionpb.GetStoryRequest{Session: "sess-1", Member: "char-1", FromSeq: 5})
 	require.NoError(t, err)
@@ -41,7 +41,7 @@ func TestGetStory_Trimmed_ReturnsOutOfRange(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	mgr.EXPECT().Story(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrStoryTrimmed)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.GetStory(ctx, &sessionpb.GetStoryRequest{Session: "sess-1", Member: "char-1", FromSeq: 1})
 	requireCode(t, err, codes.OutOfRange)

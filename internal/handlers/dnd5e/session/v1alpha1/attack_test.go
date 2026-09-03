@@ -17,7 +17,7 @@ import (
 
 func TestAttack_Unauthenticated_Errors(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	_, err := h.Attack(context.Background(), &sessionpb.AttackRequest{})
 	requireCode(t, err, codes.Unauthenticated)
 }
@@ -32,7 +32,7 @@ func TestAttack_HappyPath(t *testing.T) {
 		Attack: sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
 	}, nil)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.Attack(ctx, &sessionpb.AttackRequest{
 		Session: "sess-1", Attacker: "char-1", Target: "goblin-1", DeclarationId: "decl-attack-1",
@@ -53,7 +53,7 @@ func TestAttack_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	mgr.EXPECT().Attack(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNotACharacter)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.Attack(ctx, &sessionpb.AttackRequest{Session: "sess-1", Attacker: "goblin-1", Target: "char-1"})
 	requireCode(t, err, codes.FailedPrecondition)

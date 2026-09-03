@@ -38,7 +38,6 @@ import (
 	sessionhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
-	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 )
 
 // requireGRPCCode asserts the gRPC status code of a handler error.
@@ -338,13 +337,20 @@ func armedFighter(id, playerID string) *tkcharacter.Data {
 
 func acceptanceHairAppearance() *customization.Appearance {
 	color := uint32(0x123456)
+	zero := uint32(0)
 	roughness := float32(0.33)
-	return &customization.Appearance{Hair: &customization.HairCustomization{
-		Scalp:      &customization.StyleSelection{Kind: customization.StyleSelectionStyle, StyleRef: "modular-fantasy-hero:hair:38"},
-		FacialHair: &customization.StyleSelection{Kind: customization.StyleSelectionNone},
-		ColorSRGB:  &color,
-		Roughness:  &roughness,
-	}}
+	return &customization.Appearance{
+		Hair: &customization.HairCustomization{
+			Scalp:      &customization.StyleSelection{Kind: customization.StyleSelectionStyle, StyleRef: "modular-fantasy-hero:hair:38"},
+			FacialHair: &customization.StyleSelection{Kind: customization.StyleSelectionNone},
+			ColorSRGB:  &color,
+			Roughness:  &roughness,
+		},
+		Outfit: &customization.OutfitCustomization{
+			PrimaryColorSRGB:   &zero,
+			SecondaryColorSRGB: &zero,
+		},
+	}
 }
 
 // acceptanceHarness is the design §6.1 acceptance criterion made executable:
@@ -352,10 +358,9 @@ func acceptanceHairAppearance() *customization.Appearance {
 // walk a multi-room world, meet a monster by sight, fight it, disengage,
 // and recover its own position and the full story after the fact.
 type acceptanceHarness struct {
-	handler    *sessionhandler.Handler
-	charRepo   characterrepo.Repository
-	manager    *sessionorch.Orchestrator
-	rosterRepo rosterrepo.Repository
+	handler  *sessionhandler.Handler
+	charRepo characterrepo.Repository
+	manager  *sessionorch.Orchestrator
 }
 
 func newAcceptanceHarness(t *testing.T) *acceptanceHarness {
@@ -383,13 +388,12 @@ func newAcceptanceHarnessWithDice(t *testing.T, roller sdk.Roller) *acceptanceHa
 	})
 	require.NoError(t, err)
 
-	rosterRepo := rosterrepo.NewInMemory()
 	h, err := sessionhandler.New(&sessionhandler.HandlerConfig{
-		Manager: orch.Manager, Broker: orch.Broker, Characters: charRepo, Roster: rosterRepo,
+		Manager: orch.Manager, Broker: orch.Broker, Characters: charRepo,
 	})
 	require.NoError(t, err)
 
-	return &acceptanceHarness{handler: h, charRepo: charRepo, manager: orch, rosterRepo: rosterRepo}
+	return &acceptanceHarness{handler: h, charRepo: charRepo, manager: orch}
 }
 
 func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
@@ -621,48 +625,31 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 // party's public identity — her own class/race refs read FRESH from the
 // character record, the skeleton's authored ref and name from the row — and
 // nothing else.
-func TestGetRoster_ServesTheLaunchWrittenRow(t *testing.T) {
+func TestGetRoster_UsesSessionRoster(t *testing.T) {
 	h := newAcceptanceHarness(t)
 	ctx := auth.WithPlayerID(context.Background(), "player-alice")
 	appearance := acceptanceHairAppearance()
 
+	data := armedFighter("alice", "player-alice")
+	data.Appearance = appearance
 	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{
-			Data: func() *tkcharacter.Data {
-				data := armedFighter("alice", "player-alice")
-				data.Appearance = appearance
-				return data
-			}(),
-		},
+		Character: &entities.Character{Data: data},
 	})
 	require.NoError(t, err)
 
-	// Exercise the adapter the toolkit session Manager writes through, backed
-	// by the real character Redis repository rather than a mock.
-	sessionCharacters := sessionorch.NewCharacterRepository(h.charRepo)
-	loaded, err := sessionCharacters.GetCharacter(context.Background(), "alice")
+	world := buildThreeRoomTomb(t)
+	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+		Session: "roster-run", Encounter: "tomb-encounter", World: world,
+	})
 	require.NoError(t, err)
-	updated := *loaded
-	updated.HitPoints = 23
-	require.NoError(t, sessionCharacters.SaveCharacter(context.Background(), &updated))
-
-	stored, err := h.charRepo.Get(context.Background(), characterrepo.GetInput{ID: "alice"})
+	_, err = h.manager.Manager.Join(context.Background(), &sdk.JoinInput{
+		Session: "roster-run", Member: "alice", Position: at(1, 1),
+	})
 	require.NoError(t, err)
-	require.Equal(t, appearance, stored.Character.Data.Appearance)
-	require.NotSame(t, appearance, stored.Character.Data.Appearance)
-	require.NotSame(t, appearance.Hair, stored.Character.Data.Appearance.Hair)
-	require.NotSame(t, appearance.Hair.Scalp, stored.Character.Data.Appearance.Hair.Scalp)
-	require.NotSame(t, appearance.Hair.FacialHair, stored.Character.Data.Appearance.Hair.FacialHair)
-	require.NotSame(t, appearance.Hair.ColorSRGB, stored.Character.Data.Appearance.Hair.ColorSRGB)
-	require.NotSame(t, appearance.Hair.Roughness, stored.Character.Data.Appearance.Hair.Roughness)
-
-	require.NoError(t, h.rosterRepo.Save(context.Background(), &rosterrepo.Data{
-		EncounterID: "roster-run",
-		Members: []rosterrepo.Member{
-			{ID: "alice", Kind: rosterrepo.KindPlayer},
-			{ID: "skeleton-1", Kind: rosterrepo.KindMonster, Ref: "dnd5e:monsters:skeleton", Name: "Skeleton"},
-		},
-	}))
+	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+		Session: "roster-run", ID: "skeleton-1", Ref: refs.Monsters.Skeleton().String(), Position: at(19, 3),
+	})
+	require.NoError(t, err)
 
 	resp, err := h.handler.GetRoster(ctx, &sessionpb.GetRosterRequest{Session: "roster-run"})
 	require.NoError(t, err)
@@ -670,8 +657,7 @@ func TestGetRoster_ServesTheLaunchWrittenRow(t *testing.T) {
 
 	alice := resp.GetMembers()[0]
 	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_PLAYER, alice.GetKind())
-	require.Equal(t, classes.Fighter, alice.GetClassRef(),
-		"class ref must be the character record's own word — the one the local-player render path already maps")
+	require.Equal(t, classes.Fighter, alice.GetClassRef())
 	require.Equal(t, string(races.Human), alice.GetRaceRef())
 	hair := alice.GetCustomization().GetHair()
 	require.NotNil(t, hair)
@@ -681,6 +667,12 @@ func TestGetRoster_ServesTheLaunchWrittenRow(t *testing.T) {
 	require.Equal(t, uint32(0x123456), hair.GetColorSrgb())
 	require.NotNil(t, hair.Roughness)
 	require.InDelta(t, 0.33, hair.GetRoughness(), 0.000001)
+	outfit := alice.GetCustomization().GetOutfit()
+	require.NotNil(t, outfit)
+	require.NotNil(t, outfit.PrimaryColorSrgb)
+	require.Zero(t, outfit.GetPrimaryColorSrgb())
+	require.NotNil(t, outfit.SecondaryColorSrgb)
+	require.Zero(t, outfit.GetSecondaryColorSrgb())
 
 	skel := resp.GetMembers()[1]
 	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_MONSTER, skel.GetKind())
@@ -689,8 +681,6 @@ func TestGetRoster_ServesTheLaunchWrittenRow(t *testing.T) {
 	require.NotNil(t, skel.GetCustomization())
 	require.Nil(t, skel.GetCustomization().GetHair())
 
-	// The seated gate, through the real stack: a player with no seat in this
-	// roster is refused the read.
 	strangerCtx := auth.WithPlayerID(context.Background(), "player-nobody")
 	_, err = h.handler.GetRoster(strangerCtx, &sessionpb.GetRosterRequest{Session: "roster-run"})
 	requireGRPCCode(t, err, codes.PermissionDenied)
@@ -951,12 +941,6 @@ func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
 		Position: at(19, 3),
 	})
 	require.NoError(t, err)
-
-	// The launch also writes the roster row GetDoors's seated gate reads.
-	require.NoError(t, h.rosterRepo.Save(context.Background(), &rosterrepo.Data{
-		EncounterID: "doom-run",
-		Members:     []rosterrepo.Member{{ID: "alice", Kind: rosterrepo.KindPlayer}},
-	}))
 
 	// Join in the hall, on the locked door's row, with the door shut between
 	// alice and the skeleton: no fight forms — the lock blocks sight.

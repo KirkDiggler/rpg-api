@@ -119,7 +119,6 @@ Components are local prototypes pending graduation to rpg-toolkit. They implemen
 | Lobby orchestrator | `internal/orchestrators/lobby/` | Party assembly + sole encounter construction (`StartEncounter`) | New; see `docs/architecture/components/lobby-service.md` |
 | Session presentation orchestrator | `internal/orchestrators/sessionpresentation/` | Validate/bind presentation plans | Proto-free; no toolkit calls |
 | Lobby repo | `internal/repositories/lobby/` | Lobby persistence | Redis + in-memory |
-| Roster repo | `internal/repositories/roster/` | Launch-written public membership rows | Redis-backed in production and harness for session/presentation access |
 | Session presentation repo | `internal/repositories/sessionpresentation/` | Accepted plan payloads + Redis Pub/Sub | Live-only, 2-minute duplicate/conflict keys |
 
 ~~Encounter handler (v1alpha1)~~ / ~~Encounter orchestrator (v1alpha1)~~ /
@@ -144,7 +143,7 @@ repo~~ / ~~Encounter log repo~~ — all DELETED (rpg-api#642, 2026-07-13).
 - Thin `entities.Character`/`CharacterDraft` wrappers serialized to Redis; toolkit `Data`/`DraftData`, including nested Appearance, own character state.
 - Toolkit session/encounter state owned by `rulebooks/dnd5e/session.Manager` — Redis-backed through `internal/orchestrators/session`, 24h TTL.
 - Lobby state — Redis-backed via `internal/repositories/lobby`.
-- Roster rows — Redis-backed via `internal/repositories/roster`, shared by SessionService and SessionPresentationService access checks.
+- Session roster — owned and projected by the toolkit `session.Manager`; SessionService and the shared access gate read it through the SDK.
 - Session presentation plans — Redis-backed ephemeral duplicate/conflict keys (2-minute TTL) plus live Pub/Sub; not replayable Story.
 - ~~`EncounterData` (local type)~~ / ~~`Dungeon` (local entity)~~ / ~~`EncounterEvent` (local entity)~~ — all DELETED (rpg-api#642); these were the v1alpha1 encounter stack's storage types.
 
