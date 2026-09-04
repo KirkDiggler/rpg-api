@@ -29,6 +29,7 @@ type Manager interface {
 	Exit(ctx context.Context, in *sdk.ExitInput) (*sdk.ExitOutput, error)
 	Move(ctx context.Context, in *sdk.MoveInput) (*sdk.MoveOutput, error)
 	Attack(ctx context.Context, in *sdk.AttackInput) (*sdk.AttackOutput, error)
+	DeathSave(ctx context.Context, in *sdk.DeathSaveInput) (*sdk.DeathSaveOutput, error)
 	Afford(ctx context.Context, in *sdk.AffordInput) (*sdk.AffordOutput, error)
 	Turn(ctx context.Context, in *sdk.TurnInput) (*sdk.TurnOutput, error)
 	EndTurn(ctx context.Context, in *sdk.EndTurnInput) (*sdk.EndTurnOutput, error)

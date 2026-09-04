@@ -19,6 +19,7 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
 
@@ -37,7 +38,10 @@ func Projector(t testing.TB) dungeons.AtlasProjector {
 	if err != nil {
 		t.Fatalf("dungeonstest: character repo: %v", err)
 	}
-	orch, err := sessionorch.New(sessionorch.Config{Redis: client, Characters: chars, TTL: time.Hour})
+	orch, err := sessionorch.New(sessionorch.Config{
+		Redis: client, Characters: chars, TTL: time.Hour,
+		PresentationIDs: idgen.NewSequential("presentation"),
+	})
 	if err != nil {
 		t.Fatalf("dungeonstest: session orchestrator: %v", err)
 	}

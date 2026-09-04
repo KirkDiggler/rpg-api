@@ -305,6 +305,32 @@ func (monsterFirst) RollInitiative(_ []tkencounter.MemberID) ([]tkencounter.Memb
 // throwaway placement probe and an empty real world -- would never let a
 // fight form at all here, which is exactly wrong for what this test needs
 // to prove.
+func TestNobodyDownAssessmentProjectsEverySuppliedMember(t *testing.T) {
+	members := []tkencounter.MemberID{"alice", "bob"}
+	assessment, err := (nobodyDown{}).Assess(members)
+	require.NoError(t, err)
+	require.False(t, assessment.PartyDefeated)
+	require.False(t, assessment.KeepTurnOrder)
+	require.Equal(t, []tkencounter.MemberParticipation{
+		{Member: "alice", Contact: true, Conscious: true, Turn: tkencounter.TurnParticipationWait},
+		{Member: "bob", Contact: true, Conscious: true, Turn: tkencounter.TurnParticipationWait},
+	}, assessment.Members)
+}
+
+type standingOnly struct{}
+
+func (standingOnly) Standing([]tkencounter.MemberID) ([]tkencounter.MemberID, error) {
+	return []tkencounter.MemberID{}, nil
+}
+
+func TestStandingOnlyConstructionIsRefused(t *testing.T) {
+	_, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
+		Initiative: orderAsGiven{}, Standing: standingOnly{},
+		Endings: []tkencounter.EndingInput{{Key: "unused", Trigger: tkencounter.TriggerExternal{}}},
+	})
+	require.ErrorIs(t, err, tkencounter.ErrNoParticipation)
+}
+
 type allSeeing struct{}
 
 func (allSeeing) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberID]int, error) {

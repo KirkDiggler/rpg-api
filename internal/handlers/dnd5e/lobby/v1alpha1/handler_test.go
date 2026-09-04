@@ -60,6 +60,7 @@ func (s *HandlerSuite) SetupTest() {
 	s.T().Cleanup(func() { _ = redisClient.Close() })
 	sessOrch, err := sessionorch.New(sessionorch.Config{
 		Redis: redisClient, Characters: s.charRepo, TTL: 24 * time.Hour,
+		PresentationIDs: idgen.NewSequential("presentation"),
 	})
 	s.Require().NoError(err)
 

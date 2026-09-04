@@ -101,6 +101,12 @@ func memberTakingVerbs(member string) map[string]func(ctx context.Context, h *Ha
 			})
 			return err
 		},
+		"DeathSave": func(ctx context.Context, h *Handler) error {
+			_, err := h.DeathSave(ctx, &sessionpb.DeathSaveRequest{
+				Session: "sess-1", Member: member, DeclarationId: "decl-save-1",
+			})
+			return err
+		},
 		"Afford": func(ctx context.Context, h *Handler) error {
 			_, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: member})
 			return err
@@ -165,6 +171,10 @@ func TestEveryMemberTakingVerbRefusesAnEmptyMember(t *testing.T) {
 		},
 		"Attack": func(ctx context.Context, h *Handler) error {
 			_, err := h.Attack(ctx, &sessionpb.AttackRequest{Session: "sess-1", Target: "char-1"})
+			return err
+		},
+		"DeathSave": func(ctx context.Context, h *Handler) error {
+			_, err := h.DeathSave(ctx, &sessionpb.DeathSaveRequest{Session: "sess-1", DeclarationId: "decl-save-1"})
 			return err
 		},
 		"Activate": func(ctx context.Context, h *Handler) error {

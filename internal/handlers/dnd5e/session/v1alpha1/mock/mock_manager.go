@@ -101,6 +101,21 @@ func (mr *MockManagerMockRecorder) Attack(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Attack", reflect.TypeOf((*MockManager)(nil).Attack), ctx, in)
 }
 
+// DeathSave mocks base method.
+func (m *MockManager) DeathSave(ctx context.Context, in *session.DeathSaveInput) (*session.DeathSaveOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeathSave", ctx, in)
+	ret0, _ := ret[0].(*session.DeathSaveOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DeathSave indicates an expected call of DeathSave.
+func (mr *MockManagerMockRecorder) DeathSave(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeathSave", reflect.TypeOf((*MockManager)(nil).DeathSave), ctx, in)
+}
+
 // Dissolve mocks base method.
 func (m *MockManager) Dissolve(ctx context.Context, in *session.DissolveInput) (*session.DissolveOutput, error) {
 	m.ctrl.T.Helper()

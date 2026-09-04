@@ -81,6 +81,7 @@ func (s *LobbySuite) newSessionOrchestrator() *sessionorch.Orchestrator {
 	s.T().Cleanup(func() { _ = client.Close() })
 	sessOrch, err := sessionorch.New(sessionorch.Config{
 		Redis: client, Characters: s.charRepo, TTL: 24 * time.Hour,
+		PresentationIDs: idgen.NewSequential("presentation"),
 	})
 	s.Require().NoError(err)
 	return sessOrch

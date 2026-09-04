@@ -77,7 +77,10 @@ func (s *SessionStackSuite) SetupTest() {
 	s.Require().NoError(err)
 	s.charRepo = charRepo
 
-	sessOrch, err := sessionorch.New(sessionorch.Config{Redis: client, Characters: charRepo, TTL: 24 * time.Hour})
+	sessOrch, err := sessionorch.New(sessionorch.Config{
+		Redis: client, Characters: charRepo, TTL: 24 * time.Hour,
+		PresentationIDs: idgen.NewSequential("presentation"),
+	})
 	s.Require().NoError(err)
 	s.sessOrch = sessOrch
 
@@ -672,7 +675,8 @@ func (s *SessionStackSuite) TestStartEncounter_StartSessionFailureLeavesCharacte
 		EncounterRepository: sessionorch.NewEncounterRepository(s.redisClient, 24*time.Hour),
 	}
 	manager, err := sdk.NewManager(&sdk.Config{
-		Sessions: failedStores, Encounters: failedStores,
+		PresentationIDs: idgen.NewSequential("presentation"),
+		Sessions:        failedStores, Encounters: failedStores,
 		Characters: sessionorch.NewCharacterRepository(countedCharacters),
 		Events:     sdk.DiscardEvents{}, Dice: &dice.CryptoRoller{}, TurnDriver: sdk.Behavior(),
 	})
