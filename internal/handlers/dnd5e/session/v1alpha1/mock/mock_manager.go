@@ -191,6 +191,21 @@ func (mr *MockManagerMockRecorder) Exit(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Exit", reflect.TypeOf((*MockManager)(nil).Exit), ctx, in)
 }
 
+// Hold mocks base method.
+func (m *MockManager) Hold(ctx context.Context, in *session.HoldInput) (*session.HoldOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Hold", ctx, in)
+	ret0, _ := ret[0].(*session.HoldOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Hold indicates an expected call of Hold.
+func (mr *MockManagerMockRecorder) Hold(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Hold", reflect.TypeOf((*MockManager)(nil).Hold), ctx, in)
+}
+
 // Interact mocks base method.
 func (m *MockManager) Interact(ctx context.Context, in *session.InteractInput) (*session.InteractOutput, error) {
 	m.ctrl.T.Helper()
@@ -219,6 +234,21 @@ func (m *MockManager) Join(ctx context.Context, in *session.JoinInput) (*session
 func (mr *MockManagerMockRecorder) Join(ctx, in any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Join", reflect.TypeOf((*MockManager)(nil).Join), ctx, in)
+}
+
+// Loot mocks base method.
+func (m *MockManager) Loot(ctx context.Context, in *session.LootInput) (*session.LootOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Loot", ctx, in)
+	ret0, _ := ret[0].(*session.LootOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Loot indicates an expected call of Loot.
+func (mr *MockManagerMockRecorder) Loot(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Loot", reflect.TypeOf((*MockManager)(nil).Loot), ctx, in)
 }
 
 // Move mocks base method.

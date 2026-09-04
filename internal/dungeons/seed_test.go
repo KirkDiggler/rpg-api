@@ -15,9 +15,9 @@ import (
 func (s *RegistrySuite) TestSeed_AnEmptyMountGetsTheShippedTombAndLoads() {
 	empty := s.T().TempDir()
 
-	seeded, err := dungeons.SeedDefault(empty, s.dir)
+	seeded, err := dungeons.SeedShipped(empty, s.dir)
 	s.Require().NoError(err)
-	s.True(seeded, "the tomb was written")
+	s.Contains(seeded, "reference-tomb", "the tomb was written")
 
 	onDisk, err := os.ReadFile(filepath.Join(empty, "reference-tomb.yaml"))
 	s.Require().NoError(err)
@@ -27,11 +27,11 @@ func (s *RegistrySuite) TestSeed_AnEmptyMountGetsTheShippedTombAndLoads() {
 	s.Require().NoError(err)
 	list, err := r.List(s.ctx)
 	s.Require().NoError(err)
-	s.Len(list, 1)
+	s.Len(list, len(seeded), "every seeded dungeon is served")
 
 	entries, err := os.ReadDir(empty)
 	s.Require().NoError(err)
-	s.Len(entries, 1, "no temp file left behind")
+	s.Len(entries, len(seeded), "no temp file left behind")
 }
 
 // TestSeed_NeverOverwritesAnExistingTomb: a directory that already has its
@@ -40,9 +40,9 @@ func (s *RegistrySuite) TestSeed_NeverOverwritesAnExistingTomb() {
 	custom := append(bytes.Clone(s.tomb), []byte("# the author's own edit\n")...)
 	s.write("reference-tomb.yaml", custom)
 
-	seeded, err := dungeons.SeedDefault(s.dir, s.T().TempDir())
+	seeded, err := dungeons.SeedShipped(s.dir, s.T().TempDir())
 	s.Require().NoError(err)
-	s.False(seeded)
+	s.Empty(seeded)
 
 	onDisk, err := os.ReadFile(filepath.Join(s.dir, "reference-tomb.yaml"))
 	s.Require().NoError(err)
@@ -54,9 +54,9 @@ func (s *RegistrySuite) TestSeed_NeverOverwritesAnExistingTomb() {
 func (s *RegistrySuite) TestSeed_ABrokenExistingTombIsStillRefusedByName() {
 	s.write("reference-tomb.yaml", []byte("version: 2\nkey: reference-tomb\nvoid: nonsense\n"))
 
-	seeded, err := dungeons.SeedDefault(s.dir, s.T().TempDir())
+	seeded, err := dungeons.SeedShipped(s.dir, s.T().TempDir())
 	s.Require().NoError(err)
-	s.False(seeded)
+	s.Empty(seeded)
 
 	_, err = dungeons.NewFileRegistry(s.dir, false, dungeonstest.Projector(s.T()))
 	s.Require().Error(err)
@@ -69,7 +69,7 @@ func (s *RegistrySuite) TestSeed_MissingShippedFileNamesBothPaths() {
 	empty := s.T().TempDir()
 	nowhere := filepath.Join(s.T().TempDir(), "not-shipped")
 
-	_, err := dungeons.SeedDefault(empty, nowhere)
+	_, err := dungeons.SeedShipped(empty, nowhere)
 	s.Require().Error(err)
 	s.Contains(err.Error(), empty)
 	s.Contains(err.Error(), filepath.Join(nowhere, "reference-tomb.yaml"))
@@ -83,14 +83,14 @@ func (s *RegistrySuite) TestSeed_MissingShippedFileNamesBothPaths() {
 // tree itself (or a mount over it) has nothing to seed from; the registry's
 // own check decides whether the tomb is there.
 func (s *RegistrySuite) TestSeed_SameDirectoryIsANoOp() {
-	seeded, err := dungeons.SeedDefault(s.dir, s.dir)
+	seeded, err := dungeons.SeedShipped(s.dir, s.dir)
 	s.Require().NoError(err)
-	s.False(seeded)
+	s.Empty(seeded)
 
 	empty := s.T().TempDir()
-	seeded, err = dungeons.SeedDefault(empty, empty)
+	seeded, err = dungeons.SeedShipped(empty, empty)
 	s.Require().NoError(err)
-	s.False(seeded, "an empty dir that is its own source is not an error here")
+	s.Empty(seeded, "an empty dir that is its own source is not an error here")
 	_, err = dungeons.NewFileRegistry(empty, false, dungeonstest.Projector(s.T()))
 	s.Require().Error(err, "the registry still refuses it by name")
 }

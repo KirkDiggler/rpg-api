@@ -50,7 +50,23 @@ func statusError(err error) error {
 		// (rpg-project#268): GetDoors/OpenDoor/Unlock name a door, so a door
 		// the dungeon does not have is a caller's NotFound again -- see the
 		// INTERNAL bucket's note for the years it spent there.
-		errors.Is(err, sdk.ErrNoConnection):
+		errors.Is(err, sdk.ErrNoConnection),
+		// ErrNoProp (rpg-project#368, Hold) is ErrNoConnection's shape one
+		// placement kind over -- a caller naming a thing the dungeon does
+		// not have -- and it is ALSO the probe-law collapse sentinel, which
+		// is what makes NOT_FOUND the right answer rather than an accident:
+		// for a prop standing in space the member cannot see, the
+		// composition returns THIS sentinel for every refusal it could have
+		// made (no such prop, not holdable, already held, out of range), so
+		// all four arrive here as one sentinel and leave as one code
+		// carrying one sentence. A guessed id cannot map a room nobody has
+		// found, because the answer is byte-identical to the one a
+		// nonexistent id gets.
+		//
+		// The other three sentinels below it in FAILED_PRECONDITION are
+		// reachable only for a prop the member CAN see, where refusing by
+		// name costs nothing: there is no secret in a pillar.
+		errors.Is(err, sdk.ErrNoProp):
 		return status.Error(codes.NotFound, err.Error())
 
 	// INVALID_ARGUMENT -- the request itself is malformed: bad shape, bad
@@ -163,6 +179,30 @@ func statusError(err error) error {
 		errors.Is(err, sdk.ErrStaleDeclaration),
 		errors.Is(err, sdk.ErrOutOfRange),
 		errors.Is(err, sdk.ErrNotVisible),
+		// Three more arrive with the holdings verbs (rpg-project#368), and
+		// all three are this bucket by the same test every row above meets:
+		// the request is well-formed and names real things, and it is the
+		// world's present state that refuses it.
+		//
+		//   ErrNotDown (Loot) -- the target is a real member, standing up.
+		//   Ordinary rather than probe-scoped on purpose: a body is visible,
+		//   and there is no secret in whether somebody is on the floor
+		//   (design §4.2).
+		//
+		//   ErrNotHoldable (Hold) -- a prop the member can see that nobody
+		//   declared holdable. A thing nobody declared holdable stays
+		//   scenery, so this names the pillar rather than hiding it.
+		//
+		//   ErrAlreadyHeld (Hold) -- somebody is carrying it. State, not a
+		//   malformed request: the remedy is looting the carrier or waiting
+		//   for them to drop it, not new arguments.
+		//
+		// Each is reachable ONLY for a prop or body the member can see; for
+		// anything they cannot, the composition collapses the refusal to
+		// ErrNoProp in the NOT_FOUND bucket above.
+		errors.Is(err, sdk.ErrNotDown),
+		errors.Is(err, sdk.ErrNotHoldable),
+		errors.Is(err, sdk.ErrAlreadyHeld),
 		// ErrCannotActivate is ErrCannotAfford's shape one verb further out:
 		// an ability that could have run and said no. The SDK documents it as
 		// not currently reachable through Activate -- Afford consults the same

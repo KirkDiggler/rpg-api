@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 )
 
 // ShippedContentDir is where the binary ships its content, relative to its
@@ -16,9 +18,11 @@ import (
 // tree's content/ cannot hide the seed.
 const ShippedContentDir = "content"
 
-// SeedDefault makes sure dir holds the default dungeon before the registry
-// loads it: if dir has no DefaultKey file, the shipped one is copied in
-// (same-directory temp + rename, so a crash never leaves half a tomb).
+// SeedShipped makes sure dir holds every dungeon the binary ships before the
+// registry loads it: each shipped *.yaml the directory does not already have
+// is copied in (same-directory temp + rename, so a crash never leaves half a
+// tomb). Returns the keys written, sorted, empty when there was nothing to
+// do.
 //
 // It exists because a deployment mounts an EMPTY directory as
 // RPG_CONTENT_DIR on a fresh box (rpg-deployment's ./content volume is
@@ -27,39 +31,84 @@ const ShippedContentDir = "content"
 // second copy of the tomb in the deployment repo would drift from the one
 // the image ships; seeding from the image cannot.
 //
-// It NEVER overwrites: a dir that already has a reference-tomb.yaml —
+// # Why EVERY shipped dungeon and not only the default
+//
+// It seeded only the tomb until rpg-project#368, and that was the narrower
+// half of what it is for. The property wanted is "a fresh box has the
+// content the image ships"; seeding one file gets that property only while
+// the image ships one file. The moment a second reference dungeon exists —
+// reference-tomb-heirloom.yaml, the fixture the recover-the-artifact
+// scenario is authored against — the one-file version quietly means "a
+// fresh box has SOME of the shipped content", and the missing one has to be
+// carried to the box by hand before anybody can play it.
+//
+// The consequence to name: a SHIPPED dungeon deleted from a mounted
+// directory comes back on the next boot. That was already true of the tomb
+// and is now true of its siblings. A dungeon PutDungeon authored is never
+// touched — its key is not one the image ships — and neither is an edited
+// copy of a shipped one, because:
+//
+// It NEVER overwrites. A dir that already has a file for that key —
 // authored, edited, or simply different — is left exactly as it is, and if
 // that file does not compile, NewFileRegistry refuses it by name as before.
-// Returns whether a file was written. A missing shipped file is an error
-// naming both paths.
-func SeedDefault(dir, shipped string) (bool, error) {
+//
+// A shipped directory that cannot be read is an error naming both paths; a
+// shipped directory with no default dungeon in it is not this function's
+// refusal to make (NewFileRegistry's is, against the directory that will
+// actually be served).
+func SeedShipped(dir, shipped string) ([]string, error) {
 	if same, err := sameDir(dir, shipped); err != nil {
-		return false, err
+		return nil, err
 	} else if same {
 		// Nothing to seed FROM: the registry is reading the shipped tree
 		// itself. Whether the tomb is there is NewFileRegistry's question.
-		return false, nil
+		return nil, nil
 	}
 
-	target := filepath.Join(dir, DefaultKey+yamlExt)
-	if _, err := os.Stat(target); err == nil {
-		return false, nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return false, fmt.Errorf("dungeons: stat %s: %w", target, err)
-	}
-
-	source := filepath.Join(shipped, DefaultKey+yamlExt)
-	raw, err := os.ReadFile(filepath.Clean(source))
+	entries, err := os.ReadDir(shipped)
 	if err != nil {
-		return false, fmt.Errorf("dungeons: %s has no %s%s and the shipped copy at %s cannot be read: %w",
-			dir, DefaultKey, yamlExt, source, err)
+		return nil, fmt.Errorf("dungeons: %s has no %s%s and the shipped copy at %s cannot be read: %w",
+			dir, DefaultKey, yamlExt, filepath.Join(shipped, DefaultKey+yamlExt), err)
+	}
+	// The DEFAULT is special and stays special: "no key" must always mean the
+	// tomb, so a shipped tree that cannot supply it is named here rather than
+	// left to surface as a registry refusal one layer on. Every other shipped
+	// dungeon is optional by construction — there is nothing to be missing.
+	if _, statErr := os.Stat(filepath.Join(shipped, DefaultKey+yamlExt)); statErr != nil {
+		if _, targetErr := os.Stat(filepath.Join(dir, DefaultKey+yamlExt)); errors.Is(targetErr, os.ErrNotExist) {
+			return nil, fmt.Errorf("dungeons: %s has no %s%s and the shipped copy at %s cannot be read: %w",
+				dir, DefaultKey, yamlExt, filepath.Join(shipped, DefaultKey+yamlExt), statErr)
+		}
 	}
 
-	if err := writeAtomic(dir, DefaultKey, raw); err != nil {
-		return false, fmt.Errorf("dungeons: seed %s: %w", target, err)
-	}
+	var written []string
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != yamlExt {
+			continue
+		}
+		key := strings.TrimSuffix(entry.Name(), yamlExt)
 
-	return true, nil
+		target := filepath.Join(dir, entry.Name())
+		if _, statErr := os.Stat(target); statErr == nil {
+			continue
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return nil, fmt.Errorf("dungeons: stat %s: %w", target, statErr)
+		}
+
+		source := filepath.Join(shipped, entry.Name())
+		raw, readErr := os.ReadFile(filepath.Clean(source))
+		if readErr != nil {
+			return nil, fmt.Errorf("dungeons: %s has no %s and the shipped copy at %s cannot be read: %w",
+				dir, entry.Name(), source, readErr)
+		}
+		if writeErr := writeAtomic(dir, key, raw); writeErr != nil {
+			return nil, fmt.Errorf("dungeons: seed %s: %w", target, writeErr)
+		}
+		written = append(written, key)
+	}
+	sort.Strings(written)
+
+	return written, nil
 }
 
 // sameDir reports whether a and b name the same directory, by absolute path

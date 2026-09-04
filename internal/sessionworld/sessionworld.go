@@ -27,10 +27,13 @@ package sessionworld
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
+	tkscenarios "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/scenarios"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
@@ -116,6 +119,34 @@ type Monster struct {
 	// compile so the gap is visible at the seam that has it, not invisible in
 	// the package that threw it away.
 	Targeting string
+
+	// PlacementID is the author's own name for this placement
+	// (`place[].id`), or empty when they gave it none (rpg-project#368,
+	// design P2).
+	//
+	// SEPARATE FROM MemberID, and deliberately: MemberID is derived here so
+	// every monster has one, and this is the author's word, which most
+	// placements do not have. Nothing binds a monster by id in this slice —
+	// the scenario that will is kill-the-captain, R8's named follow-up — so
+	// this is carried for the same reason Targeting beside it is: the fact
+	// exists in the file and belongs at the seam that has it.
+	PlacementID string
+
+	// Knows is the doors this monster carries the way to, by COMPILED door
+	// id (`<key>/<id>`) — the author's knowledge links, which Loot moves off
+	// the body (design P1, P4).
+	//
+	// CARRIED AND NOT YET ACTED ON, and this one is a HOLE rather than a
+	// gap, so it is stated plainly: the toolkit seeds knowledge links at
+	// CONSTRUCTION ONLY (tkencounter.MemberInput.Knows, read by
+	// NewEncounter; Load never re-seeds it), and this package's world is
+	// deliberately empty of members — a monster has no sheet until
+	// session.Spawn builds one. Neither session.SpawnInput nor
+	// encounter.JoinInput carries a Knows field, so an authored `knows:`
+	// currently reaches no live monster and the loot-the-captain path
+	// cannot be walked. Filed against the toolkit; carried here so the
+	// day the field exists this is a one-line forward, not a rediscovery.
+	Knows []string
 }
 
 // Compile turns one authored dungeon file into a [Dungeon].
@@ -159,7 +190,11 @@ func Compile(raw []byte) (*Dungeon, error) {
 		if idErr != nil {
 			return nil, fmt.Errorf("monster %d: %w", i, idErr)
 		}
-		monsters[i] = Monster{Ref: m.Ref, MemberID: id, At: cellOf(orientation, m.At), Boss: m.Boss, Targeting: m.Targeting}
+		monsters[i] = Monster{
+			Ref: m.Ref, MemberID: id, At: cellOf(orientation, m.At),
+			Boss: m.Boss, Targeting: m.Targeting,
+			PlacementID: m.ID, Knows: m.Knows,
+		}
 	}
 
 	// dungeonspec validates at most one boss PER REGION; across regions a
@@ -184,7 +219,12 @@ func Compile(raw []byte) (*Dungeon, error) {
 		bossID = m.MemberID
 	}
 
-	world, err := buildWorld(spec.Field, bossID)
+	scenarioEndings, err := endingsOfScenarios(spec)
+	if err != nil {
+		return nil, err
+	}
+
+	world, err := buildWorld(spec.Field, bossID, scenarioEndings)
 	if err != nil {
 		return nil, err
 	}
@@ -221,11 +261,17 @@ func memberIDFor(ref string, ordinals map[string]int) (string, error) {
 // buildWorld constructs the world the session actually plays in: the compiled
 // field, and nobody standing in it. See [Dungeon.World] for why it is empty.
 //
+// scenarioEndings are the endings every bound scenario declared, already
+// constructed and validated against this dungeon by the rulebook's own
+// scenario packages (see [endingsOfScenarios]).
+//
 // bossID, when non-empty, is the member whose death ends the dungeon — an
 // ending may name a member that has not joined yet (the same contract
 // TriggerReachedPosition's filter has), which is what lets an empty world
 // declare a doom for a monster the launch spawns minutes later.
-func buildWorld(field tkencounter.FieldInput, bossID string) (*tkencounter.EncounterData, error) {
+func buildWorld(
+	field tkencounter.FieldInput, bossID string, scenarioEndings []tkencounter.EndingInput,
+) (*tkencounter.EncounterData, error) {
 	enc, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
 		// Construction-time capabilities only. The session package supplies its
 		// own when it loads this world -- including the sight RANGE that decides
@@ -264,10 +310,12 @@ func buildWorld(field tkencounter.FieldInput, bossID string) (*tkencounter.Encou
 		Retention:     tkencounter.RetentionUnbounded,
 		Field:         field,
 		// What ends a dungeon is not geometry, and the file says it: the
-		// party withdrawing (external, always declared) and — when a
-		// placement carries the boss flag — the boss going down
-		// (rpg-project#268; see [Monster.Boss]).
-		Endings: endingsFor(bossID),
+		// party withdrawing (external, always declared), the boss going
+		// down when a placement carries the flag (rpg-project#268; see
+		// [Monster.Boss]), and — since rpg-project#368 — whatever each
+		// scenario the file BINDS declares for itself. A dungeon is
+		// geometry; a scenario is what it is for.
+		Endings: endingsFor(bossID, scenarioEndings),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build world: %w", err)
@@ -279,8 +327,21 @@ func buildWorld(field tkencounter.FieldInput, bossID string) (*tkencounter.Encou
 }
 
 // endingsFor is every ending an authored dungeon declares: withdrawal
-// always, and the boss's fall when a placement names one.
-func endingsFor(bossID string) []tkencounter.EndingInput {
+// always, the boss's fall when a placement names one, and whatever each
+// bound scenario declared (rpg-project#368, design R8).
+//
+// THE BOSS ARM IS UNTOUCHED BY THIS SLICE, deliberately. R8 ruled that
+// `boss:` keeps working here and is retired by the NAMED FOLLOW-UP — the one
+// that turns the reference tomb into the kill-the-captain scenario and
+// deletes the flag with its content re-put. A dungeon may legally declare
+// both, and one that does simply has two ways to end; that is the author's
+// business, visible on the form.
+//
+// A scenario ending that collided with "withdrawn" or "boss-down" is refused
+// by the composition itself (NewEncounter names the duplicate key and returns
+// ErrNoEnding), so there is no second copy of that rule here to drift from
+// the first.
+func endingsFor(bossID string, scenarioEndings []tkencounter.EndingInput) []tkencounter.EndingInput {
 	endings := []tkencounter.EndingInput{
 		{Key: EndingWithdrawn, Trigger: tkencounter.TriggerExternal{}},
 	}
@@ -290,7 +351,85 @@ func endingsFor(bossID string) []tkencounter.EndingInput {
 			Trigger: tkencounter.TriggerMemberDown{Member: tkencounter.MemberID(bossID)},
 		})
 	}
-	return endings
+
+	return append(endings, scenarioEndings...)
+}
+
+// endingsOfScenarios constructs every scenario the file binds and returns the
+// endings they declare, in the order their ids sort.
+//
+// THIS PACKAGE LEARNS NO SCENARIO WORD (design §7). It never reads a binding
+// key, never knows what an artifact is, and authors no default: it looks the
+// id up in the rulebook's registry, hands the author's map and the narrowed
+// dungeon facts to that package's own New, and carries back whatever it
+// declares. Every refusal is the constructor's own sentence, in the words a
+// person filling in the form can act on.
+//
+// A refusal comes back as a *tkdungeonspec.ValidationError so it travels the
+// path a bad file already travels: the registry turns an ErrBadSpec into the
+// wire's FieldError list, so PutDungeon answers the builder with the
+// sentence on the binding block it is about rather than failing the call.
+// The PATH names the block and not the field — the field key is inside the
+// constructor's sentence, which is the rulebook's own doing and not
+// something this package may parse.
+//
+// SORTED, because Compiled.Scenarios is a map: two runs of the same file
+// must declare the same endings in the same order, or the world a dungeon
+// compiles to depends on Go's map iteration.
+func endingsOfScenarios(spec tkdungeonspec.Compiled) ([]tkencounter.EndingInput, error) {
+	if len(spec.Scenarios) == 0 {
+		return nil, nil
+	}
+
+	ids := make([]string, 0, len(spec.Scenarios))
+	for id := range spec.Scenarios {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	facts := tkscenarios.FactsFrom(spec.Field)
+	var endings []tkencounter.EndingInput
+	for _, id := range ids {
+		scenario, known := tkscenarios.Lookup(id)
+		if !known {
+			// Refused by name, never guessed at: a build that does not have
+			// this scenario cannot run the dungeon bound to it, and saying
+			// so on the binding is the only answer that helps an author.
+			return nil, &tkdungeonspec.ValidationError{Errors: []tkdungeonspec.FieldError{{
+				Path:    scenarioPath(id),
+				Message: fmt.Sprintf("no scenario named %q — this build offers %s", id, offeredScenarios()),
+			}}}
+		}
+		declared, err := scenario.New(spec.Scenarios[id], facts)
+		if err != nil {
+			return nil, &tkdungeonspec.ValidationError{Errors: []tkdungeonspec.FieldError{{
+				Path: scenarioPath(id), Message: err.Error(),
+			}}}
+		}
+		endings = append(endings, declared.Endings...)
+	}
+
+	return endings, nil
+}
+
+// scenarioPath is the YAML path of one scenario's binding block, the shape
+// dungeonspec's own defects use.
+func scenarioPath(id string) string { return "scenarios." + id }
+
+// offeredScenarios lists what this build does have, so an author who
+// mistyped an id is told what they could have meant rather than only what
+// they could not.
+func offeredScenarios() string {
+	all := tkscenarios.All()
+	if len(all) == 0 {
+		return "none"
+	}
+	ids := make([]string, len(all))
+	for i, s := range all {
+		ids[i] = s.ID()
+	}
+
+	return strings.Join(ids, ", ")
 }
 
 // EndingWithdrawn is the key of one of the two endings an authored dungeon
