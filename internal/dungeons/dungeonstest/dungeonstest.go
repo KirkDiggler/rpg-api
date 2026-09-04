@@ -126,3 +126,30 @@ func copyFile(t testing.TB, src, dst string) {
 		t.Fatalf("dungeonstest: write %s: %v", dst, err)
 	}
 }
+
+// ShippedCount is how many dungeons the content/ directory holds — what a
+// picker over the shipped registry must list.
+//
+// COUNTED, never asserted as a literal: the content tree grows (it gained
+// the heirloom fixture with rpg-project#368), and a hard-coded 1 turns every
+// piece of new content into a test failure that says nothing about the
+// content. A test that wants to know a SPECIFIC dungeon is there names it.
+func ShippedCount(t testing.TB) int {
+	t.Helper()
+
+	entries, err := os.ReadDir(ContentDir(t))
+	if err != nil {
+		t.Fatalf("dungeonstest: read content dir: %v", err)
+	}
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() && filepath.Ext(e.Name()) == ".yaml" {
+			n++
+		}
+	}
+	if n == 0 {
+		t.Fatal("dungeonstest: the content directory holds no dungeons at all")
+	}
+
+	return n
+}

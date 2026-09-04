@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/scenarios"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
@@ -104,4 +105,42 @@ func (o *Orchestrator) GetDungeon(ctx context.Context, in *GetDungeonInput) (*Ge
 	}
 
 	return &GetDungeonOutput{YAML: entry.YAML}, nil
+}
+
+// ListScenariosInput asks for the whole registry. No fields, and none are
+// coming: the set of scenarios is a property of the SERVER'S rulebook build,
+// not of any one dungeon, so there is nothing here to scope it by. Kept as a
+// type anyway, because every verb at every layer of this repo takes one.
+type ListScenariosInput struct{}
+
+// ListScenariosOutput is every scenario this build's rulebook offers, in the
+// order the toolkit sorts them.
+//
+// THE TOOLKIT'S OWN TYPE, not a mirror of it. A scenario's descriptor is
+// CONTENT -- the field keys its constructor validates and the refusal
+// sentences that constructor uses -- and an rpg-api struct in the middle
+// would be a second copy of words nobody here wrote, free to drift from the
+// ones the builder actually has to satisfy. So the one conversion happens at
+// the handler/proto boundary, where every other toolkit type's does.
+type ListScenariosOutput struct {
+	Scenarios []scenarios.Scenario
+}
+
+// ListScenarios reports every scenario a dungeon may be bound to.
+//
+// UNGATED, on GetDungeon's precedent and for GetDungeon's reason: it reads
+// and mutates nothing. It does not even reach the registry -- the answer is a
+// property of the binary, so a build with no content directory at all still
+// has one. PutDungeon keeps its own gate.
+//
+// Empty is legal and means this build offers none; the builder shows no
+// scenario panel rather than an error, because a dungeon with no scenario
+// bound is a perfectly good dungeon -- which is every dungeon shipped before
+// this one.
+func (o *Orchestrator) ListScenarios(_ context.Context, in *ListScenariosInput) (*ListScenariosOutput, error) {
+	if in == nil {
+		return nil, errors.New("authoring orchestrator: ListScenariosInput is required")
+	}
+
+	return &ListScenariosOutput{Scenarios: scenarios.All()}, nil
 }

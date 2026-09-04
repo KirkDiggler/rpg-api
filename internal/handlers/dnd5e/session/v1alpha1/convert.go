@@ -536,6 +536,16 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED
 	case sdk.EventRegionRevealed:
 		return sessionpb.EventKind_EVENT_KIND_REGION_REVEALED
+	// Holdings (rpg-project#368). Each kind is a STATEMENT -- looted, held,
+	// dropped -- because a verb and a beat are named by what the record will
+	// say. Nothing here says "took": Take is reserved for the act that lands
+	// a thing in inventory (design R10).
+	case sdk.EventLooted:
+		return sessionpb.EventKind_EVENT_KIND_LOOTED
+	case sdk.EventHeld:
+		return sessionpb.EventKind_EVENT_KIND_HELD
+	case sdk.EventDropped:
+		return sessionpb.EventKind_EVENT_KIND_DROPPED
 	default:
 		return sessionpb.EventKind_EVENT_KIND_UNKNOWN
 	}
@@ -651,7 +661,48 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 	case sdk.JoinedBody:
 		evt.Body = &sessionpb.Event_Joined{Joined: &sessionpb.Joined{Member: b.Member}}
 	case sdk.ExitedBody:
-		evt.Body = &sessionpb.Event_Exited{Exited: &sessionpb.Exited{Member: b.Member}}
+		// Holding and Exit (rpg-project#368) carry what left with them and
+		// the authored way out they left through. Both are ordinarily
+		// empty and empty is the TRUTH rather than "unknown": most
+		// departures carry nothing, and a departure from a cell nobody
+		// authored as an exit used no exit. A carrier who leaves from
+		// anywhere else DROPS what they hold, so this list is never the
+		// silent deletion of a holding -- the DROPPED beat says where it
+		// landed.
+		//
+		// PROPS ONLY, and this is the wire's half of design P3: intel is a
+		// holding too, and it never appears here or anywhere else, so a
+		// departure carrying nothing but knowledge is indistinguishable
+		// from one carrying nothing at all.
+		evt.Body = &sessionpb.Event_Exited{Exited: &sessionpb.Exited{
+			Member: b.Member, Holding: b.Holding, Exit: b.Exit,
+		}}
+	case sdk.LootedBody:
+		// Looter and body, and deliberately nothing about what moved: the
+		// beat is identical for a body that carried the run's only secret
+		// and one that carried nothing (design P3). What actually moved
+		// reaches the looter alone, as their own DOOR_REVEALED.
+		evt.Body = &sessionpb.Event_Looted{Looted: &sessionpb.Looted{
+			Looter: b.Looter, Body: b.Body,
+		}}
+	case sdk.HeldBody:
+		// To everyone present: an object leaving the floor folds on the
+		// TRUTH GRAIN, so every recipient's atlas loses the prop and a
+		// client patches its cached map by removing this id -- the
+		// load-once, beat-refreshed law running subtractively, where
+		// DOOR_REVEALED runs it additively.
+		evt.Body = &sessionpb.Event_Held{Held: &sessionpb.Held{
+			Holder: b.Holder, Prop: b.Prop,
+		}}
+	case sdk.DroppedBody:
+		// The inverse patch: the prop reappears at `at` for everyone
+		// present. Not a player verb -- a drop is what happens when a
+		// carrier leaves from anywhere but the scenario's bound exit
+		// (design R9), which is what stops a carrier walking off with the
+		// only win in the run.
+		evt.Body = &sessionpb.Event_Dropped{Dropped: &sessionpb.Dropped{
+			Member: b.Member, Prop: b.Prop, At: positionToProto(b.At),
+		}}
 	case sdk.EndedBody:
 		evt.Body = &sessionpb.Event_Ended{Ended: &sessionpb.Ended{Ending: b.Ending}}
 	case sdk.DoorBody:
@@ -861,7 +912,26 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 		Regions:    atlasRegionsToProto(a.Regions),
 		Segments:   atlasSegmentsToProto(a.Segments),
 		Sealed:     sealed,
+		Exits:      atlasExitsToProto(a.Exits),
 	}
+}
+
+// atlasExitsToProto mirrors the authored ways out (rpg-project#368, design
+// §5's wire paragraph): an id and a cell, the same for every member the way
+// `start` is, so a map can DRAW the way out.
+//
+// EXITS DO NOT GATE ANYTHING HERE. Leave is offered everywhere and the server
+// decides what a departure means -- a departure from the vault has to remain
+// possible, because dropping what you carry when you leave from the wrong
+// place (design R9) is the rule that stops a carrier walking off with the
+// run. This list is for drawing, never for deciding.
+func atlasExitsToProto(es []sdk.AtlasExit) []*sessionpb.AtlasExit {
+	out := make([]*sessionpb.AtlasExit, len(es))
+	for i, e := range es {
+		out[i] = &sessionpb.AtlasExit{Id: e.ID, At: positionToProto(e.At)}
+	}
+
+	return out
 }
 
 // atlasPropToProto mirrors one session.AtlasProp -- shared by AtlasToProto and
@@ -869,6 +939,15 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 // "exactly as GetAtlasResponse.props would" (rpg-project#350/#351).
 func atlasPropToProto(prop sdk.AtlasProp) *sessionpb.AtlasProp {
 	return &sessionpb.AtlasProp{
+		// ID and Holdable (rpg-project#368, design §5). The id is the
+		// author's `place[].id` and is the ONLY name a Hold request can
+		// use, so a prop carrying none is one no verb can name -- which is
+		// the author's decision, not this converter's, and the empty string
+		// carries it forward honestly. Holdable is structure on the truth
+		// grain: a holdable thing looks holdable, so a client offers Hold
+		// where it is true and never guesses from a ref or an id.
+		Id:                prop.ID,
+		Holdable:          prop.Holdable,
 		Ref:               prop.Ref,
 		At:                positionToProto(prop.At),
 		BlocksMovement:    prop.BlocksMovement,

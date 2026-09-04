@@ -33,6 +33,11 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// NOT_FOUND -- the caller named something that does not exist.
 		{"ErrNoSession", sdk.ErrNoSession, codes.NotFound},
 		{"ErrNoEncounter", sdk.ErrNoEncounter, codes.NotFound},
+		// Hold's probe-law collapse sentinel (rpg-project#368): the SAME
+		// sentinel answers "this dungeon has no prop by that id" and every
+		// refusal about a prop the member cannot see, so this is one row
+		// for one sentinel exactly as ErrElsewhere below is.
+		{"ErrNoProp", sdk.ErrNoProp, codes.NotFound},
 		{"ErrNoCharacter", sdk.ErrNoCharacter, codes.NotFound},
 		{"ErrNoMember", sdk.ErrNoMember, codes.NotFound},
 		{"ErrNoEnding", sdk.ErrNoEnding, codes.NotFound},
@@ -94,6 +99,13 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// the same shape as ErrOutOfReach above.
 		{"ErrOutOfRange", sdk.ErrOutOfRange, codes.FailedPrecondition},
 		{"ErrNotVisible", sdk.ErrNotVisible, codes.FailedPrecondition},
+		// Holdings (rpg-project#368): Loot's and Hold's own state refusals,
+		// each reachable only about a body or prop the member can SEE --
+		// for anything they cannot, the composition collapses the refusal
+		// to ErrNoProp in the NOT_FOUND rows above (the probe law).
+		{"ErrNotDown", sdk.ErrNotDown, codes.FailedPrecondition},
+		{"ErrNotHoldable", sdk.ErrNotHoldable, codes.FailedPrecondition},
+		{"ErrAlreadyHeld", sdk.ErrAlreadyHeld, codes.FailedPrecondition},
 		// ErrCannotActivate is ErrCannotAfford's shape one verb further out:
 		// an ability that could have run and said no. The SDK documents it as
 		// not currently reachable through Activate — Afford consults the same

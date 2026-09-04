@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -287,13 +288,14 @@ func runServer(_ *cobra.Command, _ []string) error {
 		if shippedDir == "" {
 			shippedDir = dungeons.ShippedContentDir
 		}
-		seeded, seedErr := dungeons.SeedDefault(contentDir, shippedDir)
+		seeded, seedErr := dungeons.SeedShipped(contentDir, shippedDir)
 		if seedErr != nil {
 			return fmt.Errorf("content registry: %w", seedErr)
 		}
-		if seeded {
+		if len(seeded) > 0 {
 			//nolint:gosec // operator-supplied env var, logged once at boot
-			log.Printf("content registry: seeded %s/%s.yaml from the shipped copy", contentDir, dungeons.DefaultKey)
+			log.Printf("content registry: seeded %s into %s from the shipped copy",
+				strings.Join(seeded, ", "), contentDir)
 		}
 	}
 	// sessionOrch.Manager is the AtlasProjector: Manager.AtlasOf loads the
