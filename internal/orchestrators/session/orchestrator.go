@@ -74,6 +74,12 @@ type Config struct {
 // sdk.Config.TurnDriver seam, with no change to session's own shape.
 var turnDriver = sdk.Behavior()
 
+const presentationIDPrefix = "presentation"
+
+func newDefaultPresentationIDs() sdk.PresentationIDGenerator {
+	return idgen.NewUUID(presentationIDPrefix)
+}
+
 // Orchestrator owns the toolkit session.Manager and the Broker StreamEvents
 // subscribes against. Both are exported for handlers to use directly:
 // Manager for every verb, Broker for StreamEvents' subscription.
@@ -102,7 +108,7 @@ func New(cfg Config) (*Orchestrator, error) {
 
 	presentationIDs := cfg.PresentationIDs
 	if presentationIDs == nil {
-		presentationIDs = idgen.NewUUID("presentation-")
+		presentationIDs = newDefaultPresentationIDs()
 	}
 
 	broker := NewBroker()

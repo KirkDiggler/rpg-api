@@ -17,8 +17,9 @@ maps the authoritative roll, outcome, progress, continuation, opaque
 presentation token, recipient-local sequence, save report, and delivery report
 without rule arithmetic. Turn participants and owner-private CharacterData now
 carry explicit provider life state and optional provider progress; Dead owner
-progress remains visible. Production supplies `idgen.NewUUID("presentation-")`
-and tests use deterministic sequential tokens, separately from numeric event
+progress remains visible. Production supplies `idgen.NewUUID("presentation")`
+so the generator emits one `presentation_` separator; tests use deterministic
+sequential tokens, separately from numeric event
 sequence. Construction adapters answer one Conscious/Contact/Wait row per
 member and reject Standing-only capabilities.
 
