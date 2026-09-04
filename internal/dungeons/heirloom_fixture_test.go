@@ -24,7 +24,7 @@ const heirloomKey = "reference-tomb-heirloom"
 var shippedHeirloom = filepath.Join("..", "..", "content", heirloomKey+".yaml")
 
 // TestHeirloomFixture_IsByteIdenticalToTheToolkits is the pin the plan asks
-// for, and the reason it is bytes rather than behaviour: this file and the
+// for, and the reason it is bytes rather than behavior: this file and the
 // toolkit's dungeonspec testdata copy are ONE fixture kept in two places, and
 // two copies of a fixture that are allowed to differ are two fixtures. The
 // toolkit proves the scenario's rules against its copy; rpg-api boots the

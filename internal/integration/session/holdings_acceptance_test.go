@@ -54,7 +54,7 @@ const (
 	// TRUTH -- the seam takes it and forwards it, and what counts as reach
 	// is the rulebook's rule, not this test's. It is generous on purpose:
 	// offset-to-axial is a sheared conversion, so two cells that look
-	// adjacent on the authored page are not reliably neighbours on the hex
+	// adjacent on the authored page are not reliably neighbors on the hex
 	// grid, and a scene about holdings should not fail on that arithmetic.
 	holdReach = 4
 )
@@ -107,9 +107,9 @@ func startHeirloomRun(t *testing.T) *heirloomRun {
 //
 // A PATH IS COMPUTED, NEVER SPELLED. Offset-to-axial is a sheared conversion
 // (rpg-toolkit#1141, #1150), so two cells that look adjacent on the authored
-// page are not reliably neighbours on the hex grid the game runs — and a
+// page are not reliably neighbors on the hex grid the game runs — and a
 // hand-written route is exactly the kind of arithmetic this workspace has
-// already paid for twice. This asks the grid what a neighbour is and
+// already paid for twice. This asks the grid what a neighbor is and
 // breadth-firsts over the region's own floor, which also keeps the walk
 // inside one room, so no step ever tries to cross the seam except where a
 // scene deliberately steps through the door.
@@ -461,12 +461,12 @@ func TestAcceptance_ThePartyThatNeverSearchesFinishesBlind(t *testing.T) {
 		require.NotContains(t, propIDs(atlas), dungeonstest.HeirloomPropID)
 	}
 
-	real, realErr := run.h.handler.Hold(run.alice, &sessionpb.HoldRequest{
+	guessed, guessedErr := run.h.handler.Hold(run.alice, &sessionpb.HoldRequest{
 		Session: heirloomSession, Member: "alice",
 		Target: dungeonstest.HeirloomPropID, Range: holdReach,
 	})
-	require.Nil(t, real)
-	require.Error(t, realErr)
+	require.Nil(t, guessed)
+	require.Error(t, guessedErr)
 
 	invented, inventedErr := run.h.handler.Hold(run.alice, &sessionpb.HoldRequest{
 		Session: heirloomSession, Member: "alice",
@@ -475,9 +475,9 @@ func TestAcceptance_ThePartyThatNeverSearchesFinishesBlind(t *testing.T) {
 	require.Nil(t, invented)
 	require.Error(t, inventedErr)
 
-	require.Equal(t, inventedErr.Error(), realErr.Error(),
+	require.Equal(t, inventedErr.Error(), guessedErr.Error(),
 		"a real prop the member cannot see and an id nothing has answer with the same bytes")
-	require.NotContains(t, realErr.Error(), dungeonstest.HeirloomPropID,
+	require.NotContains(t, guessedErr.Error(), dungeonstest.HeirloomPropID,
 		"and the refusal does not echo the guessed id back")
 }
 

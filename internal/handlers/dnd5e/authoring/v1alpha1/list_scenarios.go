@@ -79,7 +79,7 @@ func scenarioDescriptorToProto(s scenarios.Scenario) *authoringpb.ScenarioDescri
 // client cannot render a shape it has never heard of, which is why one is an
 // enum and the other is not.
 //
-// An unrecognised type maps to UNSPECIFIED rather than being guessed at. That
+// An unrecognized type maps to UNSPECIFIED rather than being guessed at. That
 // is the honest answer and it is a PRODUCER defect by construction: the
 // toolkit grew a widget shape this build's protos have no value for, so a
 // picker cannot be drawn and saying so is better than drawing the wrong one.

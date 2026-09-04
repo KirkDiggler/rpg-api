@@ -1,8 +1,9 @@
 package authoringv1alpha1_test
 
 import (
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/scenarios"
 	"google.golang.org/grpc/codes"
+
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/scenarios"
 
 	authoringpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/authoring/v1alpha1"
 )
@@ -68,7 +69,7 @@ func (s *HandlerSuite) TestListScenarios_IsTheRulebooksOwnDescriptorVerbatim() {
 //
 // So this fills in every blank of every scenario with something the rulebook
 // would accept, then empties one blank at a time and checks the refusal
-// carries exactly the guidance that travelled the wire. It runs over All(),
+// carries exactly the guidance that traveled the wire. It runs over All(),
 // so a scenario added later cannot skip it.
 //
 // A kind this test cannot satisfy FAILS rather than skips. `kind` is an open
