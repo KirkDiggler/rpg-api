@@ -2,6 +2,7 @@ package session_test
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -753,4 +754,159 @@ func TestAcceptance_ForwardingTheAuthorsRawRecordIDIsRefusedByName(t *testing.T)
 		Holds: captain.Holds,
 	})
 	require.NoError(t, err)
+}
+
+// TestAcceptance_HoldingAScrollTeachesItsHolderAlone is R6 at the wire
+// (rpg-project#372): a PROP can hold intel, and picking it up applies what
+// its records reveal to whoever picked it up.
+//
+// # Why this is the row that makes intel a tool
+//
+// Until R6 the only way authored knowledge changed hands was Loot, which
+// needs a body, which needs a fight. A DM who wants to put "the way into the
+// vault" somewhere a party can find it had to first author something worth
+// killing. A holdable scroll is the whole tool with the fight taken out:
+// leave it on a table, and the party that picks it up knows the way.
+//
+// # The control is in the same run, not across two
+//
+// The chalice and the scroll are both ordinary holdable props standing in the
+// open hall, and they differ in exactly one authored thing — the scroll holds
+// a record and the chalice holds nothing. Holding the chalice first, and
+// asserting nothing was learned, is what rules out "any Hold reveals the
+// vault" and "the vault was already hers"; nothing but the `holds:` list can
+// account for the difference that follows.
+func TestAcceptance_HoldingAScrollTeachesItsHolderAlone(t *testing.T) {
+	run := startHeirloomRun(t)
+
+	require.Empty(t, run.atlas(t, "alice").GetDoorways(), "nobody has searched or picked anything up")
+	require.Empty(t, run.atlas(t, "bob").GetDoorways())
+
+	// THE CONTROL FIRST. A holdable prop that holds no record teaches
+	// nothing, and it has to leave the map exactly as any hold does -- so
+	// this is not "the verb did nothing", it is "the verb worked and taught
+	// nothing".
+	_, err := run.h.handler.Hold(run.alice, &sessionpb.HoldRequest{
+		Session: heirloomSession, Member: "alice",
+		Target: dungeonstest.ChalicePropID, Range: holdReach,
+	})
+	require.NoError(t, err)
+	require.NotContains(t, propIDs(run.atlas(t, "alice")), dungeonstest.ChalicePropID,
+		"the chalice left the map, so the hold really happened")
+	require.Empty(t, run.atlas(t, "alice").GetDoorways(),
+		"and holding something that holds no record taught her nothing")
+
+	// NOW THE SCROLL.
+	_, err = run.h.handler.Hold(run.alice, &sessionpb.HoldRequest{
+		Session: heirloomSession, Member: "alice",
+		Target: dungeonstest.ScrollPropID, Range: holdReach,
+	})
+	require.NoError(t, err)
+
+	require.Len(t, run.atlas(t, "alice").GetDoorways(), 1,
+		"picking up the scroll put what its record reveals on her map")
+	require.Contains(t, run.kinds(t, "alice"), sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED,
+		"as the same beat a search and a loot both produce -- one reveal shape, three ways in")
+
+	// HER ALONE. Knowledge is audience-scoped even though where the scroll
+	// physically is folds on the truth grain: bob watched her pick it up and
+	// learned nothing from watching.
+	require.Empty(t, run.atlas(t, "bob").GetDoorways(),
+		"bob saw the scroll leave the floor and still does not know the way in")
+	require.NotContains(t, run.kinds(t, "bob"), sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED)
+	require.NotContains(t, propIDs(run.atlas(t, "bob")), dungeonstest.ScrollPropID,
+		"though the scroll is gone from his map too, as every held prop is")
+
+	// AND NO FIGHT WAS NEEDED. This is R6's whole point: the run reached a
+	// reveal without a single attack.
+	require.NotContains(t, run.kinds(t, "alice"), sessionpb.EventKind_EVENT_KIND_FIGHT_STARTED,
+		"the tool works with the fight taken out")
+}
+
+// TestAcceptance_TheScrollsWayInOpensTheSameVault closes R6's path the way
+// path 2 is closed: what the scroll taught is not a private note about a
+// door, it is the door.
+func TestAcceptance_TheScrollsWayInOpensTheSameVault(t *testing.T) {
+	run := startHeirloomRun(t)
+
+	_, err := run.h.handler.Hold(run.alice, &sessionpb.HoldRequest{
+		Session: heirloomSession, Member: "alice",
+		Target: dungeonstest.ScrollPropID, Range: holdReach,
+	})
+	require.NoError(t, err)
+
+	_, err = run.h.handler.OpenDoor(run.alice, &sessionpb.OpenDoorRequest{
+		Session: heirloomSession, Member: "alice", Door: dungeonstest.HeirloomVaultDoorID,
+	})
+	require.NoError(t, err, "the door the scroll revealed is one she can open")
+
+	// And the same door the CAPTAIN's record reveals: two records, one way
+	// in, and the run cannot tell which one you read.
+	hallSide := dungeonstest.HeirloomVaultDoorCrossing[0]
+	vaultSide := dungeonstest.HeirloomVaultDoorCrossing[1]
+	run.walkWithin(t, "alice", dungeonstest.HeirloomHallCells, hallSide[0], hallSide[1])
+	run.step(t, "alice", vaultSide[0], vaultSide[1])
+	run.walkWithin(t, "alice", dungeonstest.HeirloomVaultCells, 5, 1)
+
+	_, err = run.h.handler.Hold(run.alice, &sessionpb.HoldRequest{
+		Session: heirloomSession, Member: "alice",
+		Target: dungeonstest.HeirloomPropID, Range: holdReach,
+	})
+	require.NoError(t, err, "and the heirloom behind it is hers to pick up")
+}
+
+// TestAcceptance_TheAtlasNeverSaysWhichPropIsWorthTaking is R6's half of the
+// secrecy law (design §3, carrying slice 2's P3 to props).
+//
+// A scroll that holds the way into the vault and a chalice that holds nothing
+// are both holdable props standing in the open hall. If the atlas said which
+// was which, a party would know what to grab without picking anything up, and
+// authored knowledge would stop being something you FIND.
+//
+// Two assertions, and the second is the durable one:
+//
+//   - the two props' wire rows differ only in the things a prop legitimately
+//     differs in — its id, its ref and where it stands. A scroll may look
+//     like a scroll; that is content, not a leak.
+//   - AtlasProp carries no field for holdings AT ALL. That is the mechanical
+//     version, and it is what survives somebody deciding a `holds` list would
+//     be convenient for a client one day: a new field on this message fails
+//     here and forces the design conversation, instead of arriving as a
+//     one-line addition that quietly answers the question the tool exists to
+//     ask.
+func TestAcceptance_TheAtlasNeverSaysWhichPropIsWorthTaking(t *testing.T) {
+	run := startHeirloomRun(t)
+
+	byID := map[string]*sessionpb.AtlasProp{}
+	for _, p := range run.atlas(t, "alice").GetProps() {
+		byID[p.GetId()] = p
+	}
+	scroll, ok := byID[dungeonstest.ScrollPropID]
+	require.True(t, ok, "the scroll is on the map")
+	chalice, ok := byID[dungeonstest.ChalicePropID]
+	require.True(t, ok, "and so is the chalice")
+
+	// Everything except identity and place is equal, field for field. Both
+	// are holdable, and nothing marks one as the one that teaches.
+	require.Equal(t, chalice.GetHoldable(), scroll.GetHoldable())
+	require.Equal(t, chalice.GetBlocksMovement(), scroll.GetBlocksMovement())
+	require.Equal(t, chalice.GetBlocksLineOfSight(), scroll.GetBlocksLineOfSight())
+	require.Equal(t, chalice.GetFacing(), scroll.GetFacing())
+	require.Equal(t, chalice.GetOffsetX(), scroll.GetOffsetX())
+	require.Equal(t, chalice.GetOffsetY(), scroll.GetOffsetY())
+	require.Equal(t, chalice.GetOffsetZ(), scroll.GetOffsetZ())
+
+	typ := reflect.TypeOf(sessionpb.AtlasProp{})
+	var exported []string
+	for i := 0; i < typ.NumField(); i++ {
+		if f := typ.Field(i); f.IsExported() {
+			exported = append(exported, f.Name)
+		}
+	}
+	require.ElementsMatch(t, []string{
+		"Ref", "At", "BlocksMovement", "BlocksLineOfSight",
+		"Facing", "OffsetX", "OffsetY", "OffsetZ", "Id", "Holdable",
+	}, exported,
+		"AtlasProp grew a field -- if it names holdings, the atlas has started "+
+			"answering which prop is worth taking")
 }

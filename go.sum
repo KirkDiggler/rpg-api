@@ -30,12 +30,12 @@ github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.138.1 h1:pNcciu3FG90KpxFDS
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.138.1/go.mod h1:1BvFBmd7Da2en+6cM0zyZXTRtTxzLo2RvXDv8qzotBA=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/behavior v0.3.0 h1:hH7lU5maz2NRPUCjumE7vhU3Kg/q0QEufX6+VMC5DNk=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/behavior v0.3.0/go.mod h1:REskYInq0+iizpuvHXL7q6jibRIBBTbiiXOpX9xuYzQ=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.57.3-0.20260904095240-7c7c54c29ed9 h1:qgeVLLIK9D9ILTxhtDW8olzOqWAoYijGma3+b0IUFHQ=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.57.3-0.20260904095240-7c7c54c29ed9/go.mod h1:D3AcLs/nP93b/Y3iGZtSuHezeyKEgl4TAZbVlWx48Yc=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.57.3-0.20260904104401-8fb11951ada4 h1:vbY7UdtLKE1fyn/c+gmNmgZijtNV+oUZPV/TzXAlD5I=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.57.3-0.20260904104401-8fb11951ada4/go.mod h1:D3AcLs/nP93b/Y3iGZtSuHezeyKEgl4TAZbVlWx48Yc=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.32.1 h1:6SOWvq+V1AqRAgqNzokxSnnhmfi1rub1/iolaJf55y4=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.32.1/go.mod h1:WP7rBiV3VXGcruNEEV0QA4lY3tb85VW7lsK2viyIjhc=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.57.1-0.20260904095638-5352c303edcc h1:YFkirZL3aB7SubC3R+Qya//yXKif4mgahVTR9fyOBUQ=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.57.1-0.20260904095638-5352c303edcc/go.mod h1:wdjYMNRmrvc1da4XhlkAG4Tz4r0GtkjxWZsHspK6xh0=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.57.1-0.20260904104512-6d72c1bec2a1 h1:TqRBHgk0qVOnhvO3IbcEecTkwL9zdbLQawvqdQ4k7uc=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.57.1-0.20260904104512-6d72c1bec2a1/go.mod h1:p2O8dWNgaF06hC90iKs+M1VNY5eHX3YBb07i/rrf4u0=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.11.0 h1:FzCB2NbNS/BMRuKwEr8GRnadWJvdYermOs3smTd8Ss0=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.11.0/go.mod h1:3SZFDKtQWXwplGyRfUDSsdrGH25Etkm62BdZig0Q3rY=
 github.com/KirkDiggler/rpg-toolkit/world v0.3.0 h1:8LGp5jiskU2vY4tm6GP0uEjpY0VA3RkQvrFHpOhWuW0=
