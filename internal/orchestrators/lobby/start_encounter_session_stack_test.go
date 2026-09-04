@@ -895,34 +895,35 @@ func (r *countingCharacterRepository) Update(
 	return r.Repository.Update(ctx, input)
 }
 
-// TestStartEncounter_ASpawnedMonsterCarriesWhatItsAuthorSaidItKnows is the
-// launch's half of path 2 (rpg-project#368, design P1): the author writes
-// `knows:` on a placement, and the monster the lobby spawns has it.
+// TestStartEncounter_ASpawnedMonsterCarriesTheRecordItWasGiven is the
+// launch's half of path 2 (rpg-project#372): the author declares an intel
+// record and places it in a monster with `holds:`, and the monster the lobby
+// spawns carries it.
 //
 // PROVEN BY LOOTING, not by reading the input back. Who carries intel never
-// reaches a wire, an atlas or a beat (design P3) -- that is the whole point
-// of the fact -- so the only honest question to ask is the one a player
+// reaches a wire, an atlas or a beat (slice 2 design P3) -- that is the whole
+// point of the fact -- so the only honest question to ask is the one a player
 // asks: loot the body and see whether the door arrives.
-func (s *SessionStackSuite) TestStartEncounter_ASpawnedMonsterCarriesWhatItsAuthorSaidItKnows() {
+func (s *SessionStackSuite) TestStartEncounter_ASpawnedMonsterCarriesTheRecordItWasGiven() {
 	after := s.lootTheAuthoredCaptain(dungeonstest.HeirloomVaultYAML)
-	s.Len(after.Doorways, 1, "the way in the author gave the captain reached the looter")
+	s.Len(after.Doorways, 1, "what the record reveals reached the looter")
 }
 
-// TestStartEncounter_AMonsterAuthoredKnowingNothingCarriesNothing is the
-// control the test above needs, and a separate method rather than a subtest
-// so each runs on its own SetupTest: without it, "the looter's map gained a
-// doorway" could have been the launch revealing the vault to anybody who
-// looted anything.
+// TestStartEncounter_AMonsterHoldingNothingCarriesNothing is the control the
+// test above needs, and a separate method rather than a subtest so each runs
+// on its own SetupTest: without it, "the looter's map gained a doorway" could
+// have been the launch revealing the vault to anybody who looted anything.
 //
-// The ONE difference is the authored knowledge link, struck out of the same
-// file.
-func (s *SessionStackSuite) TestStartEncounter_AMonsterAuthoredKnowingNothingCarriesNothing() {
-	tombless := strings.Replace(dungeonstest.HeirloomVaultYAML, ", knows: [vault-door]", "", 1)
-	s.Require().NotEqual(dungeonstest.HeirloomVaultYAML, tombless,
-		"the fixture's knows line must be where this test expects it")
+// The ONE difference is the `holds:` list, struck out of the same file. The
+// record itself stays declared, which is the sharper control: a dungeon can
+// author knowledge nobody carries, and that has to reveal nothing.
+func (s *SessionStackSuite) TestStartEncounter_AMonsterHoldingNothingCarriesNothing() {
+	empty := strings.Replace(dungeonstest.HeirloomVaultYAML, ", holds: [vault-map]", "", 1)
+	s.Require().NotEqual(dungeonstest.HeirloomVaultYAML, empty,
+		"the fixture's holds line must be where this test expects it")
 
-	after := s.lootTheAuthoredCaptain(tombless)
-	s.Empty(after.Doorways, "a body with nothing to give transfers nothing")
+	after := s.lootTheAuthoredCaptain(empty)
+	s.Empty(after.Doorways, "a body holding nothing transfers nothing")
 }
 
 // lootTheAuthoredCaptain plays one authored dungeon through the real launch,

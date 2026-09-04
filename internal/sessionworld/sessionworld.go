@@ -132,26 +132,30 @@ type Monster struct {
 	// exists in the file and belongs at the seam that has it.
 	PlacementID string
 
-	// Knows is the doors this monster carries the way to, by COMPILED door
-	// id (`<key>/<id>`) — the author's knowledge links, which Loot moves off
-	// the body (design P1, P4). Nil when the author gave it none.
+	// Holds is the intel records this monster carries, by COMPILED record id
+	// (`<key>/<id>`) — the author's knowledge, which Loot copies off the
+	// body (rpg-project#372). Nil when the monster holds nothing.
 	//
-	// ACTED ON, and the launch is where: StartEncounter hands this to
-	// session.Spawn, which seeds it as a holding the moment the monster
-	// ENTERS the world (rpg-toolkit#1504, #1505 — the seam had no field for
-	// it until this slice, found from this side and closed in wave 1). That
-	// is what makes a body worth looting.
+	// A RECORD, NOT A DOOR. Until this slice a monster carried a door id
+	// directly, which made "what does knowing this tell you" a question with
+	// exactly one possible answer forever. The record puts one indirection
+	// in the middle: what it reveals is read from the field's intel table
+	// when it changes hands, so the same fact kind serves a region, a
+	// treasure's location or a lock's approach the day a use case asks for
+	// one — and none of that touches who holds it. `Knows` is deleted
+	// upstream and refused by name in the file.
 	//
 	// COMPILED IDS, NOT THE AUTHOR'S. dungeonspec mints `<key>/<id>` so two
 	// dungeons in one process cannot collide, and it is the minted form that
-	// arrives here. Forwarding the raw authored id would name a door the
-	// composition does not have and every spawn would refuse by name.
+	// arrives here. Forwarding the raw authored id names a record the
+	// composition does not have, and the seam says so loudly rather than
+	// spawning a monster that holds nothing (session.ErrNoIntel).
 	//
 	// NEVER PROJECTED. Who carries intel reaches no wire, no atlas and no
-	// beat (design P3): Loot is offered on every body, and a body with
-	// nothing to give must be indistinguishable from the one that has
-	// everything.
-	Knows []string
+	// beat (slice 2 design P3): a monster holding nothing and one holding
+	// the way into the vault are byte-identical to every observer until
+	// somebody loots them.
+	Holds []string
 }
 
 // Compile turns one authored dungeon file into a [Dungeon].
@@ -198,7 +202,7 @@ func Compile(raw []byte) (*Dungeon, error) {
 		monsters[i] = Monster{
 			Ref: m.Ref, MemberID: id, At: cellOf(orientation, m.At),
 			Boss: m.Boss, Targeting: m.Targeting,
-			PlacementID: m.ID, Knows: m.Knows,
+			PlacementID: m.ID, Holds: m.Holds,
 		}
 	}
 
@@ -270,6 +274,16 @@ func memberIDFor(ref string, ordinals map[string]int) (string, error) {
 
 // buildWorld constructs the world the session actually plays in: the compiled
 // field, and nobody standing in it. See [Dungeon.World] for why it is empty.
+//
+// THE INTEL TABLE RIDES THE FIELD and needs no wiring of its own: a
+// dungeon's authored records are construction truth, exactly like its doors
+// and its exits, so [tkdungeonspec.Compiled] carries them on Field.Intel and
+// this function hands the whole field over. That is a fact worth stating
+// rather than leaving implicit, because it is the reason a record's
+// `reveals` can be read at transfer time at all — the composition looks the
+// record up in its own table, and a table this package forgot to pass would
+// make every loot of an intel-holding body silently reveal nothing.
+// [TestTheIntelTableIsConstructionTruth] pins it.
 //
 // scenarioEndings are the endings every bound scenario declared, already
 // constructed and validated against this dungeon by the rulebook's own

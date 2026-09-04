@@ -300,7 +300,21 @@ func statusError(err error) error {
 		errors.Is(err, sdk.ErrInvalidSession),
 		errors.Is(err, sdk.ErrNilConfig),
 		errors.Is(err, sdk.ErrIncompleteConfig),
-		errors.Is(err, sdk.ErrBadTurnOutcome):
+		errors.Is(err, sdk.ErrBadTurnOutcome),
+		// ErrNoIntel (rpg-project#372) is here for ErrBadCost's reason, and
+		// the bucket is the whole argument: NO SessionService RPC NAMES AN
+		// INTEL RECORD. A client cannot produce this — it is raised when a
+		// spawn carries a record id the dungeon does not declare, and the
+		// only thing that spawns is THIS SERVER, forwarding the compiled ids
+		// dungeonspec minted (internal/orchestrators/lobby's
+		// StartEncounter). So it reports wiring on this side of the wire,
+		// not a caller mistake, and NotFound or InvalidArgument would blame
+		// a client for a list it never sent.
+		//
+		// Unreachable through this service today, and mapped anyway: the day
+		// a verb does take an intel id, the failure needs a name that is not
+		// a lie.
+		errors.Is(err, sdk.ErrNoIntel):
 		return status.Error(codes.Internal, err.Error())
 
 	default:

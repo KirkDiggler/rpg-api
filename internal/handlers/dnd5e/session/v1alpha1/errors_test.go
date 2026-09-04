@@ -157,6 +157,11 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// until this audit: this package's OWN adapter vocabulary going stale
 		// against itself, not a caller mistake.
 		{"ErrBadTurnOutcome", sdk.ErrBadTurnOutcome, codes.Internal},
+		// Intel records (rpg-project#372): raised only when a SPAWN names a
+		// record the dungeon does not declare, and the only spawner is this
+		// server forwarding compiled ids. Wiring on this side, never a
+		// caller's mistake -- see errors.go.
+		{"ErrNoIntel", sdk.ErrNoIntel, codes.Internal},
 
 		// sdk.ErrNotFound is the SDK's repository-facing contract sentinel: the
 		// Manager translates it into a caller-facing sentinel (ErrNoSession,

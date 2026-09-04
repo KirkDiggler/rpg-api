@@ -914,6 +914,45 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 		Segments:   atlasSegmentsToProto(a.Segments),
 		Sealed:     sealed,
 		Exits:      atlasExitsToProto(a.Exits),
+		Start:      atlasStartToProto(a.Start),
+	}
+}
+
+// atlasStartToProto mirrors where the party came in and which way they were
+// looking (rpg-project#374), or NOTHING when the dungeon declares none.
+//
+// # Absence is a third answer, not a zero value
+//
+// A nil start is not "the party arrives at [0,0] facing nowhere" -- that is a
+// real dungeon somebody could author, and a zero-valued message here would be
+// indistinguishable from it. Both sides of this conversion spell absence with
+// a pointer for exactly that reason, so the honest translation of nil is an
+// omitted field.
+//
+// It is reachable, and not only from authoring: dungeonspec REFUSES a file
+// with no `start:` ("the dungeon does not say where the party starts"), so no
+// authored dungeon lands here nil. What does is a STORED ENCOUNTER written
+// before starts were carried -- the toolkit made its own StartData a pointer
+// with omitempty precisely so such a blob loads with none. Every session
+// already in Redis is one, which makes this the first thing to break on the
+// next deploy if it were translated as a zero.
+//
+// # The facing is a word, carried verbatim
+//
+// One of eight true-compass names, or empty when the author stated none.
+// Empty is a FACT here rather than a gap -- it means open the camera however
+// it opened before -- and nothing in this function invents, defaults or
+// validates the word. The vocabulary is the authoring dialect's to check and
+// the client's to turn into an angle; a second check here would be a second
+// place it could drift from the first.
+func atlasStartToProto(start *sdk.AtlasStart) *sessionpb.AtlasStart {
+	if start == nil {
+		return nil
+	}
+
+	return &sessionpb.AtlasStart{
+		At:     positionToProto(start.At),
+		Facing: start.Facing,
 	}
 }
 

@@ -179,3 +179,45 @@ func (s *RegistrySuite) TestPut_TheHeirloomFixtureItselfStillCompiles() {
 	s.Require().NoError(err)
 	s.Empty(out.Errors)
 }
+
+// TestPut_TheOldSpellingOfKnowledgeIsRefusedByName is R1 arriving at the wire
+// (rpg-project#372): one spelling of knowledge, and the retired one is
+// refused rather than ignored.
+//
+// IGNORING IT WOULD BE THE DANGEROUS OUTCOME. A file that still said `knows:`
+// and compiled would store, spawn a captain holding nothing, and play exactly
+// like a dungeon whose author never authored intel at all — a scenario that
+// cannot be won by its second path, with nothing anywhere saying why. So this
+// asserts the refusal is an ANSWER the builder can render, on the field it is
+// about, in the compiler's own words.
+func (s *RegistrySuite) TestPut_TheOldSpellingOfKnowledgeIsRefusedByName() {
+	raw, err := os.ReadFile(shippedHeirloom)
+	s.Require().NoError(err)
+
+	const holds = "holds: [vault-map]"
+	s.Require().Contains(string(raw), holds, "the fixture's holds line must be where this test expects it")
+	legacy := []byte(strings.Replace(string(raw), holds, "knows: [vault-map]", 1))
+
+	r := s.open(true)
+	out, err := r.Put(s.ctx, &dungeons.PutInput{
+		Key: heirloomKey, YAML: legacy, ValidateOnly: true,
+	})
+	s.Require().NoError(err, "a retired spelling is a form filled in wrong, not a status")
+	s.Require().Len(out.Errors, 1)
+	s.Contains(out.Errors[0].Message, "knows",
+		"the refusal names the word the author used, so they can find it")
+}
+
+// TestPut_TheShippedFixtureAuthorsItsKnowledgeAsARecord is the positive half,
+// and it is about the FILE rather than the compiler: the dungeon this slice
+// ships must be the one the panel will round-trip, so it declares an `intel:`
+// record and places it with `holds:`, and says `knows:` nowhere.
+func (s *RegistrySuite) TestPut_TheShippedFixtureAuthorsItsKnowledgeAsARecord() {
+	raw, err := os.ReadFile(shippedHeirloom)
+	s.Require().NoError(err)
+
+	s.Contains(string(raw), "intel:", "the record is declared")
+	s.Contains(string(raw), "reveals: { door: vault }", "and says what it reveals")
+	s.Contains(string(raw), "holds: [vault-map]", "and the captain is where it was placed")
+	s.NotContains(string(raw), "knows:", "and nothing spells knowledge the retired way")
+}

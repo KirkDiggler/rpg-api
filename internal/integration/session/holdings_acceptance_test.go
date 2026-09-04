@@ -2,10 +2,14 @@ package session_test
 
 import (
 	"context"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
@@ -60,9 +64,10 @@ func startHeirloomRun(t *testing.T) *heirloomRun {
 	return startHeirloomRunWith(t, true)
 }
 
-// startHeirloomRunWith starts the run, optionally with the captain's authored
-// knowledge link left off, which is the ONE thing the two loot scenes vary.
-func startHeirloomRunWith(t *testing.T, captainKnows bool) *heirloomRun {
+// startHeirloomRunWith starts the run, optionally with the intel record the
+// captain was authored holding left off, which is the ONE thing the two loot
+// scenes vary.
+func startHeirloomRunWith(t *testing.T, captainHolds bool) *heirloomRun {
 	t.Helper()
 
 	h := newAcceptanceHarness(t)
@@ -88,17 +93,17 @@ func startHeirloomRunWith(t *testing.T, captainKnows bool) *heirloomRun {
 	require.NoError(t, err)
 
 	// THE GARRISON ARRIVES THE WAY THE LOBBY BRINGS IT: one Spawn per
-	// authored monster, carrying what the author said it knows. That
-	// forwarding is the whole of rpg-api's part in path 2, and this is the
-	// call that exercises it -- the same three-plus-one fields
-	// StartEncounter builds.
+	// authored monster, carrying the intel records the author placed in it.
+	// That forwarding is the whole of rpg-api's part in path 2, and this is
+	// the call that exercises it -- the same three-plus-one fields
+	// StartEncounter builds, with the COMPILED record ids Compiled carries.
 	for _, m := range dungeon.Monsters {
-		knows := m.Knows
-		if !captainKnows {
-			knows = nil
+		holds := m.Holds
+		if !captainHolds {
+			holds = nil
 		}
 		_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-			Session: heirloomSession, ID: m.MemberID, Ref: m.Ref, Position: m.At, Knows: knows,
+			Session: heirloomSession, ID: m.MemberID, Ref: m.Ref, Position: m.At, Holds: holds,
 		})
 		require.NoError(t, err, "spawning %s", m.MemberID)
 	}
@@ -520,29 +525,37 @@ func TestAcceptance_ThePartyThatNeverSearchesFinishesBlind(t *testing.T) {
 // writes, so the reveal it produces is byte-identical to a successful
 // search's -- one DOOR_REVEALED, to the looter, and nobody else's map moves.
 //
-// THE WHOLE CHAIN IS DRIVEN, file to beat. The author writes `knows:
-// [vault-door]` on a placement; dungeonspec mints the compiled door id;
-// sessionworld carries it onto the monster; the launch forwards it into
-// Spawn; the composition seeds it as a holding when the monster enters the
-// world; Loot moves it to the looter. Nothing in that list is asserted about
-// a struct -- the door appears on one player's map because somebody looted a
+// THE WHOLE CHAIN IS DRIVEN, file to beat. The author DECLARES A RECORD --
+// `intel: [{id: vault-map, reveals: {door: vault-door}}]` -- and places it in
+// a monster with `holds: [vault-map]`; dungeonspec mints the compiled record
+// id and the compiled door id it reveals; sessionworld carries the record id
+// onto the monster and the intel TABLE onto the field; the launch forwards
+// the record into Spawn; the composition seeds it as a holding when the
+// monster enters the world; Loot copies it to the looter and reads the
+// table to learn what it reveals. Nothing in that list is asserted about a
+// struct -- the door appears on one player's map because somebody looted a
 // body.
+//
+// THE INDIRECTION IS THE POINT (rpg-project#372). The member holds a RECORD,
+// not a door, so the same fact kind serves a region or a treasure the day a
+// use case asks for one, and none of that touches who holds it.
 func TestAcceptance_LootingTheCaptainRevealsTheDoorToTheLooterAlone(t *testing.T) {
-	t.Run("the captain carried the way in", func(t *testing.T) { lootTheCaptain(t, true) })
+	t.Run("the captain held the record", func(t *testing.T) { lootTheCaptain(t, true) })
 
 	// THE CONTROL, and this file needs it: with the ONE difference removed
-	// -- the captain knowing the door -- the identical scene must reveal
+	// -- the captain holding the record -- the identical scene must reveal
 	// nothing. Without it, "alice's map gained a doorway" could have been
 	// the join, the spawn, or anything else in the run, and the assertion
 	// above would pass on a version of Loot that revealed the door to
-	// whoever asked.
-	t.Run("a captain who knew nothing gives nothing", func(t *testing.T) { lootTheCaptain(t, false) })
+	// whoever asked. The record stays DECLARED in both, which is the
+	// sharper control: authored knowledge nobody carries reveals nothing.
+	t.Run("a captain holding nothing gives nothing", func(t *testing.T) { lootTheCaptain(t, false) })
 }
 
-func lootTheCaptain(t *testing.T, captainKnows bool) {
+func lootTheCaptain(t *testing.T, captainHolds bool) {
 	t.Helper()
 
-	run := startHeirloomRunWith(t, captainKnows)
+	run := startHeirloomRunWith(t, captainHolds)
 
 	// Nobody has searched. The way in is on nobody's map.
 	require.Empty(t, run.atlas(t, "alice").GetDoorways())
@@ -554,14 +567,14 @@ func lootTheCaptain(t *testing.T, captainKnows bool) {
 	})
 	require.NoError(t, err, "loot is offered on every downed body and never refuses for having nothing")
 
-	if captainKnows {
+	if captainHolds {
 		require.Len(t, run.atlas(t, "alice").GetDoorways(), 1,
-			"looting the body that carried the way in puts the door on the looter's map")
+			"looting the body that held the record puts what it reveals on the looter's map")
 		require.Contains(t, run.kinds(t, "alice"), sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED,
 			"the looter hears the same beat a successful search produces")
 	} else {
 		require.Empty(t, run.atlas(t, "alice").GetDoorways(),
-			"a body with nothing to give transfers nothing")
+			"a body holding nothing transfers nothing")
 		require.NotContains(t, run.kinds(t, "alice"), sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED)
 	}
 	require.Empty(t, run.atlas(t, "bob").GetDoorways(),
@@ -587,7 +600,7 @@ func lootTheCaptain(t *testing.T, captainKnows bool) {
 }
 
 // TestAcceptance_TheLootedWayInOpensTheSameVault closes path 2 to where path
-// 1 already runs: what loot hands over is not a private note about a door,
+// 1 already runs: what the record reveals is not a private note about a door,
 // it is the door. The looter opens it and the vault is hers, exactly as if
 // she had found it by searching.
 func TestAcceptance_TheLootedWayInOpensTheSameVault(t *testing.T) {
@@ -602,7 +615,7 @@ func TestAcceptance_TheLootedWayInOpensTheSameVault(t *testing.T) {
 	_, err = run.h.handler.OpenDoor(run.alice, &sessionpb.OpenDoorRequest{
 		Session: heirloomSession, Member: "alice", Door: dungeonstest.HeirloomVaultDoorID,
 	})
-	require.NoError(t, err, "the way in she looted is a door she can open")
+	require.NoError(t, err, "the door the record revealed is one she can open")
 
 	hallSide := dungeonstest.HeirloomVaultDoorCrossing[0]
 	vaultSide := dungeonstest.HeirloomVaultDoorCrossing[1]
@@ -627,4 +640,390 @@ func TestAcceptance_TheLootedWayInOpensTheSameVault(t *testing.T) {
 	require.NotNil(t, exited.GetClosed(),
 		"path 2 ends where path 1 ends, and the ending cannot tell them apart")
 	require.Equal(t, "recover-the-artifact", exited.GetClosed().GetEnding())
+}
+
+// TestAcceptance_AHolderAndANonHolderAreIdenticalUntilSomebodyLoots is design
+// §7's secrecy row, at the seam where it can actually be broken
+// (rpg-project#372, and slice 2's design P3 before it).
+//
+// Loot is offered on EVERY downed body. If anything a client can read
+// differed between a captain carrying the way into the vault and one
+// carrying nothing, the affordance would answer the question it exists to
+// ask, and a party would know which corpse was worth its time before
+// touching it.
+//
+// So this runs the identical scene twice, varying ONLY whether the captain
+// was authored holding the record, and compares the two runs BYTE FOR BYTE:
+// every member's atlas and every member's whole story, as the wire serializes
+// them. Not field-by-field — a field-by-field check only covers the fields
+// somebody thought to list, and the leak this guards against is precisely a
+// field nobody thought about.
+func TestAcceptance_AHolderAndANonHolderAreIdenticalUntilSomebodyLoots(t *testing.T) {
+	holding := heirloomWireBytes(t, true)
+	empty := heirloomWireBytes(t, false)
+
+	// Non-vacuity, said out loud: an assertion that two empty maps match
+	// would pass forever and mean nothing.
+	require.NotEmpty(t, holding["alice/atlas"], "there is an atlas to compare")
+	require.NotEmpty(t, holding["alice/story"], "and beats to compare")
+	require.Equal(t, empty, holding,
+		"a captain holding the way into the vault and a captain holding nothing "+
+			"are the same bytes to every observer, until somebody loots one")
+}
+
+// heirloomWireBytes is everything both members can read of a fresh run,
+// serialized: the atlas each is served and the story each has been told.
+func heirloomWireBytes(t *testing.T, captainHolds bool) map[string]string {
+	t.Helper()
+
+	run := startHeirloomRunWith(t, captainHolds)
+
+	out := map[string]string{}
+	for _, member := range []string{"alice", "bob"} {
+		atlas, err := run.h.handler.GetAtlas(run.ctxOf(member), &sessionpb.GetAtlasRequest{
+			Session: heirloomSession, Member: member,
+		})
+		require.NoError(t, err)
+		atlasBytes, err := proto.Marshal(atlas)
+		require.NoError(t, err)
+		out[member+"/atlas"] = string(atlasBytes)
+
+		story, err := run.h.handler.GetStory(run.ctxOf(member), &sessionpb.GetStoryRequest{
+			Session: heirloomSession, Member: member,
+		})
+		require.NoError(t, err)
+		// THE WHOLE BEAT, rendered: session, seq, recipient, kind, the raw
+		// payload and the typed body. Measured rather than assumed to be
+		// stable — these beats carry no wall-clock time and no correlation
+		// id, so two runs of the same scene render identically and any
+		// difference is a real one.
+		require.NotEmpty(t, story.GetEntries(), "%s has been told something to compare", member)
+		said := make([]string, 0, len(story.GetEntries()))
+		for _, e := range story.GetEntries() {
+			said = append(said, e.GetKind().String()+"|"+protojson.Format(e))
+		}
+		out[member+"/story"] = strings.Join(said, "\n")
+	}
+
+	return out
+}
+
+// TestAcceptance_ForwardingTheAuthorsRawRecordIDIsRefusedByName is the hazard
+// the seam documents and the one a host is most likely to walk into
+// (rpg-project#372): dungeonspec mints `<key>/<id>`, and a launch that
+// forwarded the author's own spelling would name a record the composition
+// does not declare.
+//
+// REFUSED, NOT IGNORED, and that is the whole value of the row. A spawn that
+// shrugged would place a captain holding nothing, and the run would play
+// perfectly until somebody looted the body for an empty answer — a scenario
+// that cannot be won by its second path, with nothing anywhere saying why.
+func TestAcceptance_ForwardingTheAuthorsRawRecordIDIsRefusedByName(t *testing.T) {
+	h := newAcceptanceHarness(t)
+	dungeon, err := sessionworld.Compile([]byte(dungeonstest.HeirloomVaultYAML))
+	require.NoError(t, err)
+
+	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+		Session: heirloomSession, Encounter: "heirloom-encounter", World: dungeon.World,
+	})
+	require.NoError(t, err)
+
+	var captain sessionworld.Monster
+	for _, m := range dungeon.Monsters {
+		if m.PlacementID == dungeonstest.HeirloomCaptainPlacementID {
+			captain = m
+		}
+	}
+	require.Equal(t, []string{dungeonstest.HeirloomIntelRecordID}, captain.Holds,
+		"the compiled id is what the launch forwards")
+
+	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+		Session: heirloomSession, ID: captain.MemberID, Ref: captain.Ref, Position: captain.At,
+		// The AUTHOR's spelling — what a host reaching for the file's own
+		// word instead of the compiler's would send.
+		Holds: []string{dungeonstest.HeirloomIntelAuthoredID},
+	})
+	require.Error(t, err, "a record this dungeon does not declare is refused at the spawn")
+	require.ErrorIs(t, err, sdk.ErrNoIntel,
+		"and by a sentinel about intel, not about doorways")
+
+	// The compiled id, on the same call, is accepted — so the refusal above
+	// is about the ID and not about anything else in this spawn.
+	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+		Session: heirloomSession, ID: captain.MemberID, Ref: captain.Ref, Position: captain.At,
+		Holds: captain.Holds,
+	})
+	require.NoError(t, err)
+}
+
+// TestAcceptance_HoldingAScrollTeachesItsHolderAlone is R6 at the wire
+// (rpg-project#372): a PROP can hold intel, and picking it up applies what
+// its records reveal to whoever picked it up.
+//
+// # Why this is the row that makes intel a tool
+//
+// Until R6 the only way authored knowledge changed hands was Loot, which
+// needs a body, which needs a fight. A DM who wants to put "the way into the
+// vault" somewhere a party can find it had to first author something worth
+// killing. A holdable scroll is the whole tool with the fight taken out:
+// leave it on a table, and the party that picks it up knows the way.
+//
+// # The control is in the same run, not across two
+//
+// The chalice and the scroll are both ordinary holdable props standing in the
+// open hall, and they differ in exactly one authored thing — the scroll holds
+// a record and the chalice holds nothing. Holding the chalice first, and
+// asserting nothing was learned, is what rules out "any Hold reveals the
+// vault" and "the vault was already hers"; nothing but the `holds:` list can
+// account for the difference that follows.
+func TestAcceptance_HoldingAScrollTeachesItsHolderAlone(t *testing.T) {
+	run := startHeirloomRun(t)
+
+	require.Empty(t, run.atlas(t, "alice").GetDoorways(), "nobody has searched or picked anything up")
+	require.Empty(t, run.atlas(t, "bob").GetDoorways())
+
+	// THE CONTROL FIRST. A holdable prop that holds no record teaches
+	// nothing, and it has to leave the map exactly as any hold does -- so
+	// this is not "the verb did nothing", it is "the verb worked and taught
+	// nothing".
+	_, err := run.h.handler.Hold(run.alice, &sessionpb.HoldRequest{
+		Session: heirloomSession, Member: "alice",
+		Target: dungeonstest.ChalicePropID, Range: holdReach,
+	})
+	require.NoError(t, err)
+	require.NotContains(t, propIDs(run.atlas(t, "alice")), dungeonstest.ChalicePropID,
+		"the chalice left the map, so the hold really happened")
+	require.Empty(t, run.atlas(t, "alice").GetDoorways(),
+		"and holding something that holds no record taught her nothing")
+
+	// NOW THE SCROLL.
+	_, err = run.h.handler.Hold(run.alice, &sessionpb.HoldRequest{
+		Session: heirloomSession, Member: "alice",
+		Target: dungeonstest.ScrollPropID, Range: holdReach,
+	})
+	require.NoError(t, err)
+
+	require.Len(t, run.atlas(t, "alice").GetDoorways(), 1,
+		"picking up the scroll put what its record reveals on her map")
+	require.Contains(t, run.kinds(t, "alice"), sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED,
+		"as the same beat a search and a loot both produce -- one reveal shape, three ways in")
+
+	// HER ALONE. Knowledge is audience-scoped even though where the scroll
+	// physically is folds on the truth grain: bob watched her pick it up and
+	// learned nothing from watching.
+	require.Empty(t, run.atlas(t, "bob").GetDoorways(),
+		"bob saw the scroll leave the floor and still does not know the way in")
+	require.NotContains(t, run.kinds(t, "bob"), sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED)
+	require.NotContains(t, propIDs(run.atlas(t, "bob")), dungeonstest.ScrollPropID,
+		"though the scroll is gone from his map too, as every held prop is")
+
+	// AND NO FIGHT WAS NEEDED. This is R6's whole point: the run reached a
+	// reveal without a single attack.
+	require.NotContains(t, run.kinds(t, "alice"), sessionpb.EventKind_EVENT_KIND_FIGHT_STARTED,
+		"the tool works with the fight taken out")
+}
+
+// TestAcceptance_TheScrollsWayInOpensTheSameVault closes R6's path the way
+// path 2 is closed: what the scroll taught is not a private note about a
+// door, it is the door.
+func TestAcceptance_TheScrollsWayInOpensTheSameVault(t *testing.T) {
+	run := startHeirloomRun(t)
+
+	_, err := run.h.handler.Hold(run.alice, &sessionpb.HoldRequest{
+		Session: heirloomSession, Member: "alice",
+		Target: dungeonstest.ScrollPropID, Range: holdReach,
+	})
+	require.NoError(t, err)
+
+	_, err = run.h.handler.OpenDoor(run.alice, &sessionpb.OpenDoorRequest{
+		Session: heirloomSession, Member: "alice", Door: dungeonstest.HeirloomVaultDoorID,
+	})
+	require.NoError(t, err, "the door the scroll revealed is one she can open")
+
+	// And the same door the CAPTAIN's record reveals: two records, one way
+	// in, and the run cannot tell which one you read.
+	hallSide := dungeonstest.HeirloomVaultDoorCrossing[0]
+	vaultSide := dungeonstest.HeirloomVaultDoorCrossing[1]
+	run.walkWithin(t, "alice", dungeonstest.HeirloomHallCells, hallSide[0], hallSide[1])
+	run.step(t, "alice", vaultSide[0], vaultSide[1])
+	run.walkWithin(t, "alice", dungeonstest.HeirloomVaultCells, 5, 1)
+
+	_, err = run.h.handler.Hold(run.alice, &sessionpb.HoldRequest{
+		Session: heirloomSession, Member: "alice",
+		Target: dungeonstest.HeirloomPropID, Range: holdReach,
+	})
+	require.NoError(t, err, "and the heirloom behind it is hers to pick up")
+}
+
+// TestAcceptance_TheAtlasNeverSaysWhichPropIsWorthTaking is R6's half of the
+// secrecy law (design §3, carrying slice 2's P3 to props).
+//
+// A scroll that holds the way into the vault and a chalice that holds nothing
+// are both holdable props standing in the open hall. If the atlas said which
+// was which, a party would know what to grab without picking anything up, and
+// authored knowledge would stop being something you FIND.
+//
+// Two assertions, and the second is the durable one:
+//
+//   - the two props' wire rows differ only in the things a prop legitimately
+//     differs in — its id, its ref and where it stands. A scroll may look
+//     like a scroll; that is content, not a leak.
+//   - AtlasProp carries no field for holdings AT ALL. That is the mechanical
+//     version, and it is what survives somebody deciding a `holds` list would
+//     be convenient for a client one day: a new field on this message fails
+//     here and forces the design conversation, instead of arriving as a
+//     one-line addition that quietly answers the question the tool exists to
+//     ask.
+func TestAcceptance_TheAtlasNeverSaysWhichPropIsWorthTaking(t *testing.T) {
+	run := startHeirloomRun(t)
+
+	byID := map[string]*sessionpb.AtlasProp{}
+	for _, p := range run.atlas(t, "alice").GetProps() {
+		byID[p.GetId()] = p
+	}
+	scroll, ok := byID[dungeonstest.ScrollPropID]
+	require.True(t, ok, "the scroll is on the map")
+	chalice, ok := byID[dungeonstest.ChalicePropID]
+	require.True(t, ok, "and so is the chalice")
+
+	// Everything except identity and place is equal, field for field. Both
+	// are holdable, and nothing marks one as the one that teaches.
+	require.Equal(t, chalice.GetHoldable(), scroll.GetHoldable())
+	require.Equal(t, chalice.GetBlocksMovement(), scroll.GetBlocksMovement())
+	require.Equal(t, chalice.GetBlocksLineOfSight(), scroll.GetBlocksLineOfSight())
+	require.Equal(t, chalice.GetFacing(), scroll.GetFacing())
+	require.Equal(t, chalice.GetOffsetX(), scroll.GetOffsetX())
+	require.Equal(t, chalice.GetOffsetY(), scroll.GetOffsetY())
+	require.Equal(t, chalice.GetOffsetZ(), scroll.GetOffsetZ())
+
+	typ := reflect.TypeOf(sessionpb.AtlasProp{})
+	var exported []string
+	for i := 0; i < typ.NumField(); i++ {
+		if f := typ.Field(i); f.IsExported() {
+			exported = append(exported, f.Name)
+		}
+	}
+	require.ElementsMatch(t, []string{
+		"Ref", "At", "BlocksMovement", "BlocksLineOfSight",
+		"Facing", "OffsetX", "OffsetY", "OffsetZ", "Id", "Holdable",
+	}, exported,
+		"AtlasProp grew a field -- if it names holdings, the atlas has started "+
+			"answering which prop is worth taking")
+}
+
+// -----------------------------------------------------------------------
+// The atlas start (rpg-project#374) — three cases, three answers
+// -----------------------------------------------------------------------
+
+// TestAcceptance_TheAtlasSaysWhereTheDungeonBeginsAndWhichWay is the whole
+// start translation, and its three rows are three DIFFERENT facts rather
+// than one fact with a default.
+//
+// A start is PRESENTATION and gates nothing: it is where the dungeon says it
+// begins, so a client opens the camera the way the author meant. Where
+// members actually are is GetWhere's answer and always was.
+func TestAcceptance_TheAtlasSaysWhereTheDungeonBeginsAndWhichWay(t *testing.T) {
+	// ROW 1 — the author stated no facing. The bare pair is the whole of
+	// what a start was before facings existed and stays legal forever, so
+	// this is what every shipped fixture says today.
+	t.Run("an authored start with no facing is a cell and an empty word", func(t *testing.T) {
+		run := startHeirloomRun(t)
+
+		start := run.atlas(t, "alice").GetStart()
+		require.NotNil(t, start, "the dungeon says where it begins")
+		require.Equal(t, pbAt(aliceSeatCol, aliceSeatRow).GetX(), start.GetAt().GetX())
+		require.Equal(t, pbAt(aliceSeatCol, aliceSeatRow).GetY(), start.GetAt().GetY())
+		require.Empty(t, start.GetFacing(),
+			"a dungeon that says nothing about facing is not a dungeon facing north -- "+
+				"it is one whose author did not say, and empty is that fact")
+
+		// The same answer for everyone: a start is structure, like the exits.
+		require.Equal(t, start.String(), run.atlas(t, "bob").GetStart().String())
+	})
+
+	// ROW 2 — the author stated one. The word crosses VERBATIM: this seam
+	// neither validates the vocabulary nor turns a name into an angle, both
+	// of which belong elsewhere and would be a second place to drift.
+	t.Run("an authored facing crosses as the word the author wrote", func(t *testing.T) {
+		const bare = "start: [0, 1]"
+		faced := strings.Replace(dungeonstest.HeirloomVaultYAML, bare, "start: { at: [0, 1], facing: e }", 1)
+		require.NotEqual(t, dungeonstest.HeirloomVaultYAML, faced,
+			"the fixture's start line must be where this test expects it")
+
+		run := startRunOn(t, faced)
+
+		start := run.atlas(t, "alice").GetStart()
+		require.NotNil(t, start)
+		require.Equal(t, "e", start.GetFacing(), "the author's own word, unedited")
+	})
+
+	// ROW 3 — nobody stated a start at all, and this is the row that matters
+	// on the next deploy.
+	//
+	// It cannot come from authoring: dungeonspec REFUSES a file without a
+	// start ("the dungeon does not say where the party starts"). What it
+	// comes from is a STORED ENCOUNTER written before starts were carried,
+	// which the toolkit made a pointer with omitempty precisely to allow --
+	// and every session already in Redis is one of those. So this scene ages
+	// a live encounter backwards: it strips the start from the blob the way
+	// an older server would have written it, and asks what the atlas says.
+	//
+	// The answer has to be NOTHING. A zero-valued start would claim the
+	// party arrives at [0,0] looking nowhere, which is a real dungeon
+	// somebody could author and therefore a lie about this one.
+	t.Run("an encounter stored before starts existed says nothing", func(t *testing.T) {
+		run := startHeirloomRun(t)
+		require.NotNil(t, run.atlas(t, "alice").GetStart(), "it has one to begin with")
+
+		encounters := sessionorch.NewEncounterRepository(run.h.redis, time.Hour)
+		stored, err := encounters.GetEncounter(context.Background(), "heirloom-encounter")
+		require.NoError(t, err)
+		require.NotNil(t, stored.Field.Start, "the blob carries one before we age it")
+		stored.Field.Start = nil
+		require.NoError(t, encounters.SaveEncounter(context.Background(), "heirloom-encounter", stored))
+
+		require.Nil(t, run.atlas(t, "alice").GetStart(),
+			"absence is spelled as an absent message, never as a zero-valued one")
+		require.Nil(t, run.atlas(t, "bob").GetStart())
+	})
+}
+
+// startRunOn is startHeirloomRun over authored YAML the caller supplies, for
+// the scenes that vary the file itself.
+func startRunOn(t *testing.T, authored string) *heirloomRun {
+	t.Helper()
+
+	h := newAcceptanceHarness(t)
+	for _, who := range []struct{ id, player string }{
+		{"alice", "player-alice"}, {"bob", "player-bob"},
+	} {
+		_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
+			Character: &entities.Character{Data: armedFighter(who.id, who.player)},
+		})
+		require.NoError(t, err)
+	}
+
+	dungeon, err := sessionworld.Compile([]byte(authored))
+	require.NoError(t, err, "the authored fixture must compile")
+
+	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+		Session: heirloomSession, Encounter: "heirloom-encounter", World: dungeon.World,
+	})
+	require.NoError(t, err)
+
+	run := &heirloomRun{
+		h:     h,
+		alice: auth.WithPlayerID(context.Background(), "player-alice"),
+		bob:   auth.WithPlayerID(context.Background(), "player-bob"),
+	}
+	_, err = h.handler.Join(run.alice, &sessionpb.JoinRequest{
+		Session: heirloomSession, Member: "alice", Position: pbAt(aliceSeatCol, aliceSeatRow),
+	})
+	require.NoError(t, err)
+	_, err = h.handler.Join(run.bob, &sessionpb.JoinRequest{
+		Session: heirloomSession, Member: "bob", Position: pbAt(bobSeatCol, bobSeatRow),
+	})
+	require.NoError(t, err)
+
+	return run
 }
