@@ -219,9 +219,14 @@ func Compile(raw []byte) (*Dungeon, error) {
 		bossID = m.MemberID
 	}
 
+	// Wrapped like the three steps above it (Copilot, PR #914), so a refusal
+	// that surfaces through the registry says which stage of the compile
+	// made it. The wrap is transparent to both matches the registry runs:
+	// errors.Is still finds ErrBadSpec and errors.As still finds the
+	// *ValidationError whose defects carry the form-filler sentence.
 	scenarioEndings, err := endingsOfScenarios(spec)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("bind scenarios: %w", err)
 	}
 
 	world, err := buildWorld(spec.Field, bossID, scenarioEndings)

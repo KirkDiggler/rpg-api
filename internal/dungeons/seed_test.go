@@ -63,20 +63,49 @@ func (s *RegistrySuite) TestSeed_ABrokenExistingTombIsStillRefusedByName() {
 	s.Contains(err.Error(), filepath.Join(s.dir, "reference-tomb.yaml"))
 }
 
-// TestSeed_MissingShippedFileNamesBothPaths: an empty mount and no shipped
-// copy to seed from is a construction-time error that says where it looked.
-func (s *RegistrySuite) TestSeed_MissingShippedFileNamesBothPaths() {
+// TestSeed_AnUnreadableShippedDirectoryNamesItself: there is nowhere to seed
+// FROM. The refusal names the directory it could not open and the one it was
+// seeding, and says nothing about the tomb -- the tomb is not what failed
+// (Copilot, PR #914).
+func (s *RegistrySuite) TestSeed_AnUnreadableShippedDirectoryNamesItself() {
 	empty := s.T().TempDir()
 	nowhere := filepath.Join(s.T().TempDir(), "not-shipped")
 
 	_, err := dungeons.SeedShipped(empty, nowhere)
 	s.Require().Error(err)
-	s.Contains(err.Error(), empty)
-	s.Contains(err.Error(), filepath.Join(nowhere, "reference-tomb.yaml"))
+	s.Contains(err.Error(), nowhere, "the directory it could not read")
+	s.Contains(err.Error(), empty, "and the one it was seeding")
+	s.NotContains(err.Error(), "reference-tomb.yaml",
+		"and not a file, because a file is not what failed")
 
 	entries, err := os.ReadDir(empty)
 	s.Require().NoError(err)
 	s.Empty(entries, "nothing was written")
+}
+
+// TestSeed_AShippedTreeWithNoTombNamesTheFile is the other refusal, and the
+// reason it is separate: the source is readable, it simply cannot supply the
+// one dungeon "no key" has to mean. That failure names the file.
+func (s *RegistrySuite) TestSeed_AShippedTreeWithNoTombNamesTheFile() {
+	empty := s.T().TempDir()
+	tombless := s.T().TempDir()
+
+	_, err := dungeons.SeedShipped(empty, tombless)
+	s.Require().Error(err)
+	s.Contains(err.Error(), filepath.Join(tombless, "reference-tomb.yaml"))
+	s.Contains(err.Error(), empty)
+}
+
+// TestSeed_AShippedTreeWithNoTombIsFineWhenTheTargetHasOne: the refusal
+// above is about the DEFAULT being unavailable, not about the source being
+// thin. A target that already has its own tomb needs nothing from the
+// source, and every other shipped dungeon is optional by construction.
+func (s *RegistrySuite) TestSeed_AShippedTreeWithNoTombIsFineWhenTheTargetHasOne() {
+	tombless := s.T().TempDir()
+
+	seeded, err := dungeons.SeedShipped(s.dir, tombless)
+	s.Require().NoError(err)
+	s.Empty(seeded)
 }
 
 // TestSeed_SameDirectoryIsANoOp: RPG_CONTENT_DIR pointing at the shipped

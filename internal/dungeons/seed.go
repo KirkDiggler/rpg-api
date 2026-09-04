@@ -52,10 +52,12 @@ const ShippedContentDir = "content"
 // authored, edited, or simply different — is left exactly as it is, and if
 // that file does not compile, NewFileRegistry refuses it by name as before.
 //
-// A shipped directory that cannot be read is an error naming both paths; a
-// shipped directory with no default dungeon in it is not this function's
-// refusal to make (NewFileRegistry's is, against the directory that will
-// actually be served).
+// Two refusals, and they say different things because they ARE different
+// things: a shipped directory that cannot be read names the directory it
+// could not open and the one it was seeding, and a readable shipped
+// directory with no default dungeon in it names the file it looked for. A
+// target that already has its own tomb makes the second one moot, so it is
+// not raised.
 func SeedShipped(dir, shipped string) ([]string, error) {
 	if same, err := sameDir(dir, shipped); err != nil {
 		return nil, err
@@ -65,10 +67,16 @@ func SeedShipped(dir, shipped string) ([]string, error) {
 		return nil, nil
 	}
 
+	// TWO DIFFERENT FAILURES, TWO DIFFERENT SENTENCES (Copilot, PR #914):
+	// the source directory being unreadable is not the same thing as the
+	// tomb being missing from it, and one message covering both sends
+	// whoever reads it to the wrong place — it would say the target "has no
+	// reference-tomb.yaml" when the target may well have one and it is the
+	// SOURCE that could not be opened.
 	entries, err := os.ReadDir(shipped)
 	if err != nil {
-		return nil, fmt.Errorf("dungeons: %s has no %s%s and the shipped copy at %s cannot be read: %w",
-			dir, DefaultKey, yamlExt, filepath.Join(shipped, DefaultKey+yamlExt), err)
+		return nil, fmt.Errorf("dungeons: cannot read the shipped content directory %s while seeding %s: %w",
+			shipped, dir, err)
 	}
 	// The DEFAULT is special and stays special: "no key" must always mean the
 	// tomb, so a shipped tree that cannot supply it is named here rather than
