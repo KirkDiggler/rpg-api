@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 )
 
 // heirloomPath is the shipped dungeon that declares intel: the reference tomb
@@ -99,4 +100,66 @@ func TestKnowsIsRefusedByName(t *testing.T) {
 	_, err = Compile([]byte(legacy))
 	require.Error(t, err, "a file still spelling knowledge the old way is refused, never ignored")
 	require.Contains(t, err.Error(), "knows", "and the refusal names the word the author used")
+}
+
+// TestPropsRideTheFieldRatherThanBeingForwarded is the fact that decides how
+// much work each new PLACEMENT field costs this package, and it is worth a
+// test because the answer is different for props and for monsters — a
+// difference that is easy to get backwards.
+//
+// A MONSTER needs forwarding. The world this package builds is empty of
+// members on purpose (see [Dungeon.World]): a construction-time monster has
+// no sheet, so it arrives later through session.Spawn, and every fact about
+// it — its cell, its targeting, what it holds — has to be carried across
+// that seam by hand. That is why [Monster] exists at all.
+//
+// A PROP does not. Props are field STRUCTURE, like walls, doors, exits and
+// the intel table, so they ride Compiled.Field and this package hands the
+// whole field to NewEncounter. Nothing here assembles a PropInput — the
+// production code contains no mention of the type — so a field the compiler
+// grows is a field the world gets, for free and by construction.
+//
+// The consequence, stated because it is the thing to check first the next
+// time a placement grows a field: whatever dungeonspec adds to a PROP needs
+// no forwarding code here, and whatever it adds to a MONSTER needs a line in
+// Compile and a line at the launch. What this test guards is that the free
+// half stays free — a refactor that copied Field piecemeal, the way the
+// session's atlas mirror has to, would silently stop carrying it.
+func TestPropsRideTheFieldRatherThanBeingForwarded(t *testing.T) {
+	raw, err := os.ReadFile(heirloomPath)
+	require.NoError(t, err)
+	dungeon, err := Compile(raw)
+	require.NoError(t, err)
+
+	byID := map[tkencounter.PropID]tkencounter.PropData{}
+	for _, p := range dungeon.World.Field.Props {
+		if p.ID != "" {
+			byID[p.ID] = p
+		}
+	}
+
+	// The heirloom is the fixture's one named, holdable prop, and BOTH of
+	// those facts reached the world without a line of code in this package
+	// putting them there.
+	heirloom, placed := byID["heirloom"]
+	require.True(t, placed, "the named prop the author placed is in the world")
+	require.True(t, heirloom.Holdable, "carrying its holdable flag with it")
+	require.Equal(t, "dnd5e:props:reliquary", heirloom.Ref)
+
+	// And the world's prop list is the compiler's, entry for entry — not a
+	// subset this package chose to carry.
+	require.Len(t, dungeon.World.Field.Props, len(compiledProps(t, raw)),
+		"every prop the compiler produced reached the world")
+}
+
+// compiledProps is what dungeonspec alone says the file places, so the
+// assertion above compares the world against the compiler rather than
+// against a number somebody typed.
+func compiledProps(t *testing.T, raw []byte) []tkencounter.PropInput {
+	t.Helper()
+
+	spec, err := tkdungeonspec.Load(raw)
+	require.NoError(t, err)
+
+	return spec.Field.Props
 }
