@@ -77,11 +77,7 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 		return nil, apierr.InvalidArgument(errPlayerIDEmpty)
 	}
 
-	// Make a copy to avoid modifying input
-	draft := &entities.CharacterDraft{
-		Data:       input.Draft.Data,
-		Appearance: input.Draft.Appearance,
-	}
+	draft := input.Draft
 
 	// Repository generates ID if not provided
 	if draft.Data.ID == "" {
@@ -111,7 +107,6 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 		pipe.Del(ctx, oldDraftKey)
 	}
 
-	// Marshal draft (includes appearance)
 	data, err := json.Marshal(draft)
 	if err != nil {
 		return nil, apierr.Wrapf(err, "failed to marshal draft")
@@ -205,13 +200,9 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 		return nil, apierr.NotFoundf("draft with ID %s not found", input.Draft.Data.ID)
 	}
 
-	// Make a copy to avoid modifying input
-	draft := &entities.CharacterDraft{
-		Data:       input.Draft.Data,
-		Appearance: input.Draft.Appearance,
-	}
+	draft := input.Draft
 
-	// Marshal draft (includes appearance)
+	// Marshal draft
 	data, err := json.Marshal(draft)
 	if err != nil {
 		return nil, apierr.Wrapf(err, "failed to marshal draft")

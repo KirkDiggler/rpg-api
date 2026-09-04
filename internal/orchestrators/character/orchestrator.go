@@ -102,11 +102,8 @@ func (o *Orchestrator) CreateDraft(ctx context.Context, input *CreateDraftInput)
 		return nil, fmt.Errorf("failed to create draft: %w", err)
 	}
 
-	// Wrap in entity for storage (no appearance yet)
-	draftEntity := &entities.CharacterDraft{
-		Data:       draft.ToData(),
-		Appearance: nil,
-	}
+	// Wrap toolkit draft data for storage.
+	draftEntity := &entities.CharacterDraft{Data: draft.ToData()}
 
 	// Save to repository
 	if _, err := o.draftRepo.Create(ctx, characterdraft.CreateInput{
@@ -136,7 +133,7 @@ func (o *Orchestrator) GetDraft(ctx context.Context, input *GetDraftInput) (*Get
 		return nil, fmt.Errorf("failed to get draft: %w", err)
 	}
 
-	// Draft entity now includes appearance
+	// Draft data carries toolkit-owned Appearance.
 	return &GetDraftOutput{
 		Draft:    getOutput.Draft,
 		Progress: getOutput.Draft.Data.Progress,
@@ -240,12 +237,8 @@ func (o *Orchestrator) SetName(ctx context.Context, input *SetNameInput) (*SetNa
 		return nil, fmt.Errorf("failed to set name: %w", err)
 	}
 
-	// Save updated draft (preserve appearance)
 	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
-		Draft: &entities.CharacterDraft{
-			Data:       draft.ToData(),
-			Appearance: getOutput.Draft.Appearance,
-		},
+		Draft: &entities.CharacterDraft{Data: draft.ToData()},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save draft: %w", err)
@@ -284,12 +277,8 @@ func (o *Orchestrator) SetRace(ctx context.Context, input *SetRaceInput) (*SetRa
 		return nil, fmt.Errorf("failed to set race: %w", err)
 	}
 
-	// Save updated draft (preserve appearance)
 	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
-		Draft: &entities.CharacterDraft{
-			Data:       draft.ToData(),
-			Appearance: getOutput.Draft.Appearance,
-		},
+		Draft: &entities.CharacterDraft{Data: draft.ToData()},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save draft: %w", err)
@@ -337,12 +326,8 @@ func (o *Orchestrator) SetClass(ctx context.Context, input *SetClassInput) (*Set
 		return nil, fmt.Errorf("failed to set class: %w", err)
 	}
 
-	// Save updated draft (preserve appearance)
 	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
-		Draft: &entities.CharacterDraft{
-			Data:       draft.ToData(),
-			Appearance: getOutput.Draft.Appearance,
-		},
+		Draft: &entities.CharacterDraft{Data: draft.ToData()},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save draft: %w", err)
@@ -390,12 +375,8 @@ func (o *Orchestrator) SetBackground(ctx context.Context, input *SetBackgroundIn
 		return nil, fmt.Errorf("failed to set background: %w", err)
 	}
 
-	// Save updated draft (preserve appearance)
 	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
-		Draft: &entities.CharacterDraft{
-			Data:       draft.ToData(),
-			Appearance: getOutput.Draft.Appearance,
-		},
+		Draft: &entities.CharacterDraft{Data: draft.ToData()},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save draft: %w", err)
@@ -440,12 +421,8 @@ func (o *Orchestrator) SetAbilityScores(ctx context.Context, input *SetAbilitySc
 		return nil, fmt.Errorf("failed to set ability scores: %w", err)
 	}
 
-	// Save updated draft (preserve appearance)
 	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
-		Draft: &entities.CharacterDraft{
-			Data:       draft.ToData(),
-			Appearance: getOutput.Draft.Appearance,
-		},
+		Draft: &entities.CharacterDraft{Data: draft.ToData()},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save draft: %w", err)
@@ -525,12 +502,8 @@ func (o *Orchestrator) SetAbilityScoresFromRolls(ctx context.Context, input *Set
 		return nil, fmt.Errorf("failed to set ability scores: %w", err)
 	}
 
-	// Save updated draft (preserve appearance)
 	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
-		Draft: &entities.CharacterDraft{
-			Data:       draft.ToData(),
-			Appearance: getOutput.Draft.Appearance,
-		},
+		Draft: &entities.CharacterDraft{Data: draft.ToData()},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save draft: %w", err)
@@ -542,14 +515,16 @@ func (o *Orchestrator) SetAbilityScoresFromRolls(ctx context.Context, input *Set
 	}, nil
 }
 
-// SetAppearance sets the appearance for a draft
-// Appearance is now part of the draft entity
+// SetAppearance delegates Appearance validation and mutation to the toolkit draft.
 func (o *Orchestrator) SetAppearance(ctx context.Context, input *SetAppearanceInput) (*SetAppearanceOutput, error) {
 	if input == nil {
 		return nil, apierr.InvalidArgument("input is required")
 	}
 	if input.DraftID == "" {
 		return nil, apierr.InvalidArgument("draft ID is required")
+	}
+	if input.PlayerID == "" {
+		return nil, apierr.InvalidArgument("player ID is required")
 	}
 	if input.Appearance == nil {
 		return nil, apierr.InvalidArgument("appearance is required")
@@ -560,23 +535,34 @@ func (o *Orchestrator) SetAppearance(ctx context.Context, input *SetAppearanceIn
 		ID: input.DraftID,
 	})
 	if err != nil {
+		if apierr.IsNotFound(err) {
+			return nil, apierr.NotFound("draft not found")
+		}
 		return nil, fmt.Errorf("failed to get draft: %w", err)
 	}
+	if getOutput == nil || getOutput.Draft == nil || getOutput.Draft.Data == nil || getOutput.Draft.Data.PlayerID != input.PlayerID {
+		return nil, apierr.NotFound("draft not found")
+	}
 
-	// Update draft with new appearance
+	draft := character.LoadDraftFromData(getOutput.Draft.Data)
+	if draft == nil {
+		return nil, apierr.Internal("failed to load draft data")
+	}
+	if setErr := draft.SetAppearance(&character.SetAppearanceInput{Appearance: input.Appearance}); setErr != nil {
+		return nil, fmt.Errorf("failed to set appearance: %w", setErr)
+	}
+
 	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
-		Draft: &entities.CharacterDraft{
-			Data:       getOutput.Draft.Data,
-			Appearance: input.Appearance,
-		},
+		Draft: &entities.CharacterDraft{Data: draft.ToData()},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update draft appearance: %w", err)
 	}
+	if updateOutput == nil || updateOutput.Draft == nil || updateOutput.Draft.Data == nil {
+		return nil, apierr.Internal("failed to update draft appearance: repository returned no draft data")
+	}
 
-	return &SetAppearanceOutput{
-		Appearance: updateOutput.Draft.Appearance,
-	}, nil
+	return &SetAppearanceOutput{Draft: updateOutput.Draft.Data}, nil
 }
 
 // ValidateDraft validates a draft
@@ -711,11 +697,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	// ToData is now a method on Character
 	charData := char.ToData()
 
-	// Create character entity with appearance from draft
-	charEntity := &entities.Character{
-		Data:       charData,
-		Appearance: getOutput.Draft.Appearance, // Copy appearance from draft
-	}
+	charEntity := &entities.Character{Data: charData}
 
 	// Save character to character repository
 	createOutput, err := o.characterRepo.Create(ctx, characterrepo.CreateInput{
@@ -745,10 +727,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		return nil, fmt.Errorf("failed to load character from data: %w", err)
 	}
 
-	return &FinalizeDraftOutput{
-		Character:  finalChar,
-		Appearance: createOutput.Character.Appearance,
-	}, nil
+	return &FinalizeDraftOutput{Character: finalChar}, nil
 }
 
 // ListRaces returns all available races
@@ -868,7 +847,7 @@ func (o *Orchestrator) GetCharacter(ctx context.Context, input *GetCharacterInpu
 		return nil, apierr.InvalidArgument("character ID is required")
 	}
 
-	// Get character entity from repository (includes appearance)
+	// Get character data from repository.
 	result, err := o.characterRepo.Get(ctx, characterrepo.GetInput{
 		ID: input.CharacterID,
 	})

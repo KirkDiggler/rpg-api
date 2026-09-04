@@ -9,7 +9,6 @@ import (
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	customizationconverter "github.com/KirkDiggler/rpg-api/internal/converters/customization"
-	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-toolkit/core/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/ammunition"
@@ -61,6 +60,7 @@ func convertDraftDataToProto(draft *toolkitchar.DraftData) *dnd5ev1alpha1.Charac
 		BaseAbilityScores: convertAbilityScoresToProto(draft.BaseAbilityScores),
 		Choices:           convertChoicesToProto(draft.Choices),
 		Progress:          convertProgressToProto(draft.Progress),
+		Appearance:        customizationconverter.ToolkitToProto(draft.Appearance),
 		// Validation will be populated by the orchestrator if needed
 		// Info fields (race_info, class_info, etc.) can be populated later if needed for UI
 	}
@@ -1083,9 +1083,10 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 	}
 
 	char := &dnd5ev1alpha1.Character{
-		Id:    data.ID,
-		Name:  data.Name,
-		Level: int32(data.Level),
+		Id:         data.ID,
+		Name:       data.Name,
+		Level:      int32(data.Level),
+		Appearance: customizationconverter.ToolkitToProto(data.Appearance),
 	}
 
 	// Convert race and subrace
@@ -3403,25 +3404,5 @@ func featureIDToDisplayName(id string) string {
 	default:
 		// Convert snake_case to Title Case as fallback
 		return toTitleCase(id)
-	}
-}
-
-// convertProtoAppearanceToEntity converts proto Appearance to entity Appearance
-func convertProtoAppearanceToEntity(proto *dnd5ev1alpha1.Appearance) *entities.Appearance {
-	if proto == nil {
-		return nil
-	}
-	return &entities.Appearance{
-		Hair: customizationconverter.ProtoToEntity(proto.Hair),
-	}
-}
-
-// convertEntityAppearanceToProto converts entity Appearance to proto Appearance
-func convertEntityAppearanceToProto(entity *entities.Appearance) *dnd5ev1alpha1.Appearance {
-	if entity == nil {
-		return nil
-	}
-	return &dnd5ev1alpha1.Appearance{
-		Hair: customizationconverter.EntityToProto(entity.Hair),
 	}
 }

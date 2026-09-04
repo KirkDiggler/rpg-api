@@ -15,7 +15,6 @@ import (
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
-	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 )
 
 // TestEveryMemberTakingVerbRefusesAForeignMember is the pin for the entitlement
@@ -46,7 +45,6 @@ func TestEveryMemberTakingVerbRefusesAForeignMember(t *testing.T) {
 			h := &Handler{
 				manager:    sessionv1alpha1mock.NewMockManager(ctrl),
 				characters: ownedCharacterRepo(ctrl, foreign, owner),
-				roster:     testRoster(),
 			}
 			err := call(auth.WithPlayerID(context.Background(), caller), h)
 			requireCode(t, err, codes.PermissionDenied)
@@ -71,7 +69,6 @@ func TestEveryMemberTakingVerbRefusesAMissingMember(t *testing.T) {
 				Manager:    manager,
 				Broker:     sessionorch.NewBroker(),
 				Characters: characters,
-				Roster:     rosterrepo.NewInMemory(),
 			})
 			require.NoError(t, err)
 
@@ -208,7 +205,6 @@ func TestEveryMemberTakingVerbRefusesAnEmptyMember(t *testing.T) {
 			h := &Handler{
 				manager:    sessionv1alpha1mock.NewMockManager(ctrl),
 				characters: anyMemberOwnedBy(ctrl, "alice"),
-				roster:     testRoster(),
 			}
 			err := call(auth.WithPlayerID(context.Background(), "alice"), h)
 			requireCode(t, err, codes.InvalidArgument)
@@ -225,7 +221,6 @@ func TestStreamEventsRefusesAnEmptySession(t *testing.T) {
 	h := &Handler{
 		manager:    sessionv1alpha1mock.NewMockManager(ctrl),
 		characters: anyMemberOwnedBy(ctrl, "alice"),
-		roster:     testRoster(),
 	}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	err := h.StreamEvents(

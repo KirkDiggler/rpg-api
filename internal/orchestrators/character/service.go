@@ -9,6 +9,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 )
 
@@ -34,7 +35,7 @@ type Service interface {
 	SetAbilityScores(ctx context.Context, input *SetAbilityScoresInput) (*SetAbilityScoresOutput, error)
 	SetAbilityScoresFromRolls(ctx context.Context, input *SetAbilityScoresFromRollsInput) (*SetAbilityScoresFromRollsOutput, error)
 
-	// Appearance (cosmetic, stored separately from game data)
+	// Appearance customization is part of toolkit character draft data.
 	SetAppearance(ctx context.Context, input *SetAppearanceInput) (*SetAppearanceOutput, error)
 
 	// Validation and finalization
@@ -200,10 +201,9 @@ type FinalizeDraftInput struct {
 	DraftID string
 }
 
-// FinalizeDraftOutput returns the created character and its API-owned appearance.
+// FinalizeDraftOutput returns the created character.
 type FinalizeDraftOutput struct {
-	Character  *character.Character
-	Appearance *entities.Appearance
+	Character *character.Character
 }
 
 // ListRacesInput lists available races
@@ -364,13 +364,14 @@ type SpellInfo struct {
 	Level       int
 }
 
-// SetAppearanceInput sets the appearance for a draft
+// SetAppearanceInput sets the appearance for a draft.
 type SetAppearanceInput struct {
 	DraftID    string
-	Appearance *entities.Appearance
+	PlayerID   string
+	Appearance *customization.Appearance
 }
 
-// SetAppearanceOutput returns the updated appearance
+// SetAppearanceOutput returns the complete updated draft data.
 type SetAppearanceOutput struct {
-	Appearance *entities.Appearance
+	Draft *character.DraftData
 }

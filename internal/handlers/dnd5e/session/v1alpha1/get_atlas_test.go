@@ -18,7 +18,7 @@ import (
 
 func TestGetAtlas_Unauthenticated_Errors(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	_, err := h.GetAtlas(context.Background(), &sessionpb.GetAtlasRequest{})
 	requireCode(t, err, codes.Unauthenticated)
 }
@@ -31,7 +31,7 @@ func TestGetAtlas_HappyPath(t *testing.T) {
 		Cells: []spatial.Position{{X: 0, Y: 0}},
 	}, nil)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.GetAtlas(ctx, &sessionpb.GetAtlasRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
@@ -43,7 +43,7 @@ func TestGetAtlas_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	mgr.EXPECT().Atlas(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNoEncounter)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.GetAtlas(ctx, &sessionpb.GetAtlasRequest{Session: "sess-1", Member: "char-1"})
 	requireCode(t, err, codes.NotFound)
@@ -58,7 +58,7 @@ func TestGetAtlas_ForeignMember_IsRefusedBeforeTheSDK(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
-	h := &Handler{manager: mgr, characters: ownedCharacterRepo(ctrl, "goblin-1", "someone-else"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: ownedCharacterRepo(ctrl, "goblin-1", "someone-else")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.GetAtlas(ctx, &sessionpb.GetAtlasRequest{Session: "sess-1", Member: "goblin-1"})
 	requireCode(t, err, codes.PermissionDenied)
@@ -68,7 +68,7 @@ func TestGetAtlas_EmptyMember_IsRefused(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.GetAtlas(ctx, &sessionpb.GetAtlasRequest{Session: "sess-1"})
 	requireCode(t, err, codes.InvalidArgument)

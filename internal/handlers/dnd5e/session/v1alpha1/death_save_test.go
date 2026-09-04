@@ -21,7 +21,6 @@ func TestDeathSave_UnauthenticatedRefusesBeforeManagerCall(t *testing.T) {
 	h := &Handler{
 		manager:    sessionv1alpha1mock.NewMockManager(ctrl),
 		characters: anyMemberOwnedBy(ctrl, "alice"),
-		roster:     testRoster(),
 	}
 
 	_, err := h.DeathSave(context.Background(), &sessionpb.DeathSaveRequest{
@@ -46,7 +45,7 @@ func TestDeathSave_MapsRequestAndResponseFieldForField(t *testing.T) {
 		Delivery: sdk.DeliveryReport{Events: 2, Failed: true},
 	}, nil)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.DeathSave(ctx, &sessionpb.DeathSaveRequest{
 		Session: "sess-1", Member: "char-1", DeclarationId: "decl-save-1",
@@ -78,7 +77,6 @@ func TestDeathSave_EmptyInputsAndStateSentinelsMapConsistently(t *testing.T) {
 		h := &Handler{
 			manager:    sessionv1alpha1mock.NewMockManager(ctrl),
 			characters: anyMemberOwnedBy(ctrl, "alice"),
-			roster:     testRoster(),
 		}
 		ctx := auth.WithPlayerID(context.Background(), "alice")
 		_, err := h.DeathSave(ctx, &sessionpb.DeathSaveRequest{Session: "sess-1", DeclarationId: "decl"})
@@ -102,7 +100,7 @@ func TestDeathSave_EmptyInputsAndStateSentinelsMapConsistently(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 			mgr.EXPECT().DeathSave(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("death save: %w", tt.err))
-			h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+			h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 			ctx := auth.WithPlayerID(context.Background(), "alice")
 			_, err := h.DeathSave(ctx, &sessionpb.DeathSaveRequest{
 				Session: "sess-1", Member: "char-1", DeclarationId: "decl-save-1",

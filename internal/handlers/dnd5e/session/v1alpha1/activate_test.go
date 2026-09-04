@@ -18,7 +18,7 @@ import (
 
 func TestActivate_Unauthenticated_Errors(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	_, err := h.Activate(context.Background(), &sessionpb.ActivateRequest{})
 	requireCode(t, err, codes.Unauthenticated)
 }
@@ -33,7 +33,7 @@ func TestActivate_HappyPath(t *testing.T) {
 		Saved:   sdk.SaveReport{Written: []string{"character:char-1"}},
 	}, nil)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.Activate(ctx, &sessionpb.ActivateRequest{
 		Session: "sess-1", Member: "char-1", DeclarationId: "decl-rage-1",
@@ -51,7 +51,7 @@ func TestActivate_PassesTheTargetThrough(t *testing.T) {
 		Session: "sess-1", Member: "char-1", DeclarationID: "decl-help-1", Target: "char-2",
 	}).Return(&sdk.ActivateOutput{Ability: "dnd5e:combat_abilities:help"}, nil)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.Activate(ctx, &sessionpb.ActivateRequest{
 		Session: "sess-1", Member: "char-1", DeclarationId: "decl-help-1", Target: "char-2",
@@ -93,7 +93,7 @@ func TestActivate_EveryRefusalIsAStatusCode(t *testing.T) {
 			mgr.EXPECT().Activate(gomock.Any(), gomock.Any()).
 				Return(nil, fmt.Errorf("activate: %w", tc.err))
 
-			h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+			h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 			ctx := auth.WithPlayerID(context.Background(), "alice")
 			resp, err := h.Activate(ctx, &sessionpb.ActivateRequest{
 				Session: "sess-1", Member: "char-1", DeclarationId: "decl-1",

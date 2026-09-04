@@ -14,7 +14,6 @@ import (
 	sessionaccess "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sessionaccess"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
-	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 )
 
 //go:generate mockgen -destination=mock/mock_manager.go -package=sessionv1alpha1mock github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1 Manager
@@ -43,6 +42,7 @@ type Manager interface {
 	Atlas(ctx context.Context, in *sdk.AtlasInput) (*sdk.Atlas, error)
 	Where(ctx context.Context, in *sdk.WhereInput) (*sdk.WhereOutput, error)
 	Doors(ctx context.Context, in *sdk.DoorsInput) (*sdk.DoorsOutput, error)
+	Roster(ctx context.Context, in *sdk.RosterInput) (*sdk.RosterOutput, error)
 	OpenDoor(ctx context.Context, in *sdk.OpenDoorInput) (*sdk.OpenDoorOutput, error)
 	Unlock(ctx context.Context, in *sdk.UnlockInput) (*sdk.UnlockOutput, error)
 	Search(ctx context.Context, in *sdk.SearchInput) (*sdk.SearchOutput, error)
@@ -68,9 +68,6 @@ type Handler struct {
 	// IN the session; they cannot answer whether this caller is allowed to be
 	// that member, which is the question this repository exists here to settle.
 	characters characterrepo.Repository
-	// roster is the launch-written roster store GetRoster serves from
-	// (rpg-project#264, ideas/characters/presentation).
-	roster rosterrepo.Repository
 	// access centralizes the member/seat entitlement checks shared across the
 	// session presentation handlers.
 	access *sessionaccess.Access
@@ -82,9 +79,6 @@ type HandlerConfig struct {
 	Manager    Manager
 	Broker     *sessionorch.Broker
 	Characters characterrepo.Repository
-	// Roster is the launch-written roster store GetRoster serves from
-	// (rpg-project#264). Required.
-	Roster rosterrepo.Repository
 	// Access is the shared caller/member/session gate. Optional for legacy
 	// tests that construct HandlerConfig directly; production and the
 	// integration harness pass one shared instance to SessionService and
@@ -106,18 +100,15 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 	if cfg.Characters == nil {
 		return nil, errors.New("session handler: HandlerConfig.Characters is required")
 	}
-	if cfg.Roster == nil {
-		return nil, errors.New("session handler: HandlerConfig.Roster is required")
-	}
 	access := cfg.Access
 	if access == nil {
 		var err error
-		access, err = sessionaccess.New(cfg.Characters, cfg.Roster)
+		access, err = sessionaccess.New(cfg.Characters, cfg.Manager)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return &Handler{manager: cfg.Manager, broker: cfg.Broker, characters: cfg.Characters, roster: cfg.Roster, access: access}, nil
+	return &Handler{manager: cfg.Manager, broker: cfg.Broker, characters: cfg.Characters, access: access}, nil
 }
 
 // authenticatedPlayerID extracts the caller's player ID from ctx, or a
@@ -134,6 +125,9 @@ func authenticatedPlayerID(ctx context.Context) (string, error) {
 // through: the caller is authenticated, the member is present, and the caller
 // controls it.
 func (h *Handler) callerActingAs(ctx context.Context, member string) error {
+	if _, err := authenticatedPlayerID(ctx); err != nil {
+		return err
+	}
 	gate, err := h.accessGate()
 	if err != nil {
 		return err
@@ -145,7 +139,7 @@ func (h *Handler) accessGate() (*sessionaccess.Access, error) {
 	if h.access != nil {
 		return h.access, nil
 	}
-	gate, err := sessionaccess.New(h.characters, h.roster)
+	gate, err := sessionaccess.New(h.characters, h.manager)
 	if err != nil {
 		return nil, err
 	}

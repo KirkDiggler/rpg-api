@@ -15,6 +15,7 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 )
 
 func TestPatchEquipment_ConcurrentCombatStateSurvives(t *testing.T) {
@@ -42,12 +43,9 @@ func TestPatchEquipment_ConcurrentCombatStateSurvives(t *testing.T) {
 	}
 	color := uint32(0x123456)
 	roughness := float32(0.33)
-	concurrent.Appearance = &entities.Appearance{Hair: &entities.HairCustomization{
-		Scalp: &entities.StyleSelection{
-			Kind:     entities.StyleSelectionKindStyle,
-			StyleRef: "modular-fantasy-hero:hair:38",
-		},
-		FacialHair: &entities.StyleSelection{Kind: entities.StyleSelectionKindNone},
+	concurrent.Data.Appearance = &customization.Appearance{Hair: &customization.HairCustomization{
+		Scalp:      &customization.StyleSelection{Kind: customization.StyleSelectionStyle, StyleRef: "modular-fantasy-hero:hair:38"},
+		FacialHair: &customization.StyleSelection{Kind: customization.StyleSelectionNone},
 		ColorSRGB:  &color,
 		Roughness:  &roughness,
 	}}
@@ -85,7 +83,7 @@ func TestPatchEquipment_ConcurrentCombatStateSurvives(t *testing.T) {
 	require.Equal(t, concurrent.Data.Resources, stored.Character.Data.Resources)
 	require.Equal(t, concurrent.Data.Conditions, stored.Character.Data.Conditions)
 	require.Equal(t, concurrent.Data.ActionEconomy, stored.Character.Data.ActionEconomy)
-	require.Equal(t, concurrent.Appearance, stored.Character.Appearance)
+	require.Equal(t, concurrent.Data.Appearance, stored.Character.Data.Appearance)
 	require.Equal(t, "longsword", stored.Character.Data.EquipmentSlots.Get(tkcharacter.SlotMainHand))
 	require.Equal(t, 16, stored.Character.Data.ArmorClass)
 }

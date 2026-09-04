@@ -21,6 +21,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/languages"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/proficiencies"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
@@ -249,29 +250,29 @@ func TestSeed_DefaultStillDeletesAndRecreatesToolkitFixtures(t *testing.T) {
 	require.Contains(t, client.authHeaders, "Dev "+barbarianIdentity)
 }
 
-func TestCloneGalleryCharacterDeepCopiesAppearance(t *testing.T) {
+func TestCloneGalleryCharacterPreservesToolkitAppearance(t *testing.T) {
 	original := galleryCharacter("id", exactGalleryInventoryWithNonWeapons())
 	clone := cloneGalleryCharacter(original)
 
 	require.True(t, reflect.DeepEqual(original, clone))
-	require.NotSame(t, original.Appearance, clone.Appearance)
-	require.NotSame(t, original.Appearance.Hair, clone.Appearance.Hair)
-	require.NotSame(t, original.Appearance.Hair.Scalp, clone.Appearance.Hair.Scalp)
-	require.NotSame(t, original.Appearance.Hair.FacialHair, clone.Appearance.Hair.FacialHair)
-	require.NotSame(t, original.Appearance.Hair.ColorSRGB, clone.Appearance.Hair.ColorSRGB)
-	require.NotSame(t, original.Appearance.Hair.Roughness, clone.Appearance.Hair.Roughness)
+	require.NotSame(t, original.Data.Appearance, clone.Data.Appearance)
+	require.NotSame(t, original.Data.Appearance.Hair, clone.Data.Appearance.Hair)
+	require.NotSame(t, original.Data.Appearance.Hair.Scalp, clone.Data.Appearance.Hair.Scalp)
+	require.NotSame(t, original.Data.Appearance.Hair.FacialHair, clone.Data.Appearance.Hair.FacialHair)
+	require.NotSame(t, original.Data.Appearance.Hair.ColorSRGB, clone.Data.Appearance.Hair.ColorSRGB)
+	require.NotSame(t, original.Data.Appearance.Hair.Roughness, clone.Data.Appearance.Hair.Roughness)
 
-	clone.Appearance.Hair.Scalp.StyleRef = "changed:hair"
-	clone.Appearance.Hair.FacialHair.Kind = entities.StyleSelectionKindStyle
-	clone.Appearance.Hair.FacialHair.StyleRef = "changed:beard"
-	*clone.Appearance.Hair.ColorSRGB = 0xffffff
-	*clone.Appearance.Hair.Roughness = 1
+	clone.Data.Appearance.Hair.Scalp.StyleRef = "changed:hair"
+	clone.Data.Appearance.Hair.FacialHair.Kind = customization.StyleSelectionStyle
+	clone.Data.Appearance.Hair.FacialHair.StyleRef = "changed:beard"
+	*clone.Data.Appearance.Hair.ColorSRGB = 0xffffff
+	*clone.Data.Appearance.Hair.Roughness = 1
 
-	require.Equal(t, "modular-fantasy-hero:hair:38", original.Appearance.Hair.Scalp.StyleRef)
-	require.Equal(t, entities.StyleSelectionKindNone, original.Appearance.Hair.FacialHair.Kind)
-	require.Empty(t, original.Appearance.Hair.FacialHair.StyleRef)
-	require.Equal(t, uint32(0x123456), *original.Appearance.Hair.ColorSRGB)
-	require.InDelta(t, 0.33, *original.Appearance.Hair.Roughness, 0.000001)
+	require.Equal(t, "modular-fantasy-hero:hair:38", original.Data.Appearance.Hair.Scalp.StyleRef)
+	require.Equal(t, customization.StyleSelectionNone, original.Data.Appearance.Hair.FacialHair.Kind)
+	require.Empty(t, original.Data.Appearance.Hair.FacialHair.StyleRef)
+	require.Equal(t, uint32(0x123456), *original.Data.Appearance.Hair.ColorSRGB)
+	require.InDelta(t, 0.33, *original.Data.Appearance.Hair.Roughness, 0.000001)
 }
 
 func TestCloneEntityTestHelperDeepCopiesRepresentativeState(t *testing.T) {
@@ -281,7 +282,7 @@ func TestCloneEntityTestHelperDeepCopiesRepresentativeState(t *testing.T) {
 	require.True(t, reflect.DeepEqual(original, clone))
 	require.NotSame(t, original, clone)
 	require.NotSame(t, original.Data, clone.Data)
-	require.NotSame(t, original.Appearance, clone.Appearance)
+	require.NotSame(t, original.Data.Appearance, clone.Data.Appearance)
 	require.NotSame(t, original.Data.DeathSaveState, clone.Data.DeathSaveState)
 	require.NotSame(t, original.Data.ActionEconomy, clone.Data.ActionEconomy)
 
@@ -302,11 +303,11 @@ func TestCloneEntityTestHelperDeepCopiesRepresentativeState(t *testing.T) {
 	clone.Data.ActionEconomy.TurnNumber = 9
 	clone.Data.ActionEconomy.Granted[tkcharacter.GrantedAttacks] = 0
 	clone.Data.DeathSaveState.Failures = 3
-	clone.Appearance.Hair.Scalp.StyleRef = "changed:hair"
-	clone.Appearance.Hair.FacialHair.Kind = entities.StyleSelectionKindStyle
-	clone.Appearance.Hair.FacialHair.StyleRef = "changed:beard"
-	*clone.Appearance.Hair.ColorSRGB = 0xffffff
-	*clone.Appearance.Hair.Roughness = 1
+	clone.Data.Appearance.Hair.Scalp.StyleRef = "changed:hair"
+	clone.Data.Appearance.Hair.FacialHair.Kind = customization.StyleSelectionStyle
+	clone.Data.Appearance.Hair.FacialHair.StyleRef = "changed:beard"
+	*clone.Data.Appearance.Hair.ColorSRGB = 0xffffff
+	*clone.Data.Appearance.Hair.Roughness = 1
 
 	require.Equal(t, "rope", original.Data.Inventory[0].ID)
 	require.Equal(t, 15, original.Data.AbilityScores[abilities.STR])
@@ -325,11 +326,11 @@ func TestCloneEntityTestHelperDeepCopiesRepresentativeState(t *testing.T) {
 	require.Equal(t, 3, original.Data.ActionEconomy.TurnNumber)
 	require.Equal(t, 1, original.Data.ActionEconomy.Granted[tkcharacter.GrantedAttacks])
 	require.Equal(t, 2, original.Data.DeathSaveState.Failures)
-	require.Equal(t, "modular-fantasy-hero:hair:38", original.Appearance.Hair.Scalp.StyleRef)
-	require.Equal(t, entities.StyleSelectionKindNone, original.Appearance.Hair.FacialHair.Kind)
-	require.Empty(t, original.Appearance.Hair.FacialHair.StyleRef)
-	require.Equal(t, uint32(0x123456), *original.Appearance.Hair.ColorSRGB)
-	require.InDelta(t, 0.33, *original.Appearance.Hair.Roughness, 0.000001)
+	require.Equal(t, "modular-fantasy-hero:hair:38", original.Data.Appearance.Hair.Scalp.StyleRef)
+	require.Equal(t, customization.StyleSelectionNone, original.Data.Appearance.Hair.FacialHair.Kind)
+	require.Empty(t, original.Data.Appearance.Hair.FacialHair.StyleRef)
+	require.Equal(t, uint32(0x123456), *original.Data.Appearance.Hair.ColorSRGB)
+	require.InDelta(t, 0.33, *original.Data.Appearance.Hair.Roughness, 0.000001)
 }
 
 func assertGalleryInventory(t *testing.T, inventory []tkcharacter.InventoryItemData) {
@@ -598,22 +599,19 @@ func galleryCharacter(id string, inventory []tkcharacter.InventoryItemData) *ent
 					tkcharacter.GrantedOffHandStrikes: 1,
 				},
 			},
-			CreatedAt: time.Unix(1, 0),
-			UpdatedAt: time.Unix(2, 0),
+			CreatedAt:  time.Unix(1, 0),
+			UpdatedAt:  time.Unix(2, 0),
+			Appearance: galleryAppearance(),
 		},
-		Appearance: galleryAppearance(),
 	}
 }
 
-func galleryAppearance() *entities.Appearance {
+func galleryAppearance() *customization.Appearance {
 	color := uint32(0x123456)
 	roughness := float32(0.33)
-	return &entities.Appearance{Hair: &entities.HairCustomization{
-		Scalp: &entities.StyleSelection{
-			Kind:     entities.StyleSelectionKindStyle,
-			StyleRef: "modular-fantasy-hero:hair:38",
-		},
-		FacialHair: &entities.StyleSelection{Kind: entities.StyleSelectionKindNone},
+	return &customization.Appearance{Hair: &customization.HairCustomization{
+		Scalp:      &customization.StyleSelection{Kind: customization.StyleSelectionStyle, StyleRef: "modular-fantasy-hero:hair:38"},
+		FacialHair: &customization.StyleSelection{Kind: customization.StyleSelectionNone},
 		ColorSRGB:  &color,
 		Roughness:  &roughness,
 	}}
@@ -699,9 +697,9 @@ func cloneEntity(in *entities.Character) *entities.Character {
 			}
 			data.ActionEconomy = &actionEconomy
 		}
+		data.Appearance = customization.CloneAppearance(in.Data.Appearance)
 		out.Data = &data
 	}
-	out.Appearance = cloneAppearance(in.Appearance)
 	return out
 }
 

@@ -251,6 +251,21 @@ func (mr *MockManagerMockRecorder) OpenDoor(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OpenDoor", reflect.TypeOf((*MockManager)(nil).OpenDoor), ctx, in)
 }
 
+// Roster mocks base method.
+func (m *MockManager) Roster(ctx context.Context, in *session.RosterInput) (*session.RosterOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Roster", ctx, in)
+	ret0, _ := ret[0].(*session.RosterOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Roster indicates an expected call of Roster.
+func (mr *MockManagerMockRecorder) Roster(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Roster", reflect.TypeOf((*MockManager)(nil).Roster), ctx, in)
+}
+
 // Search mocks base method.
 func (m *MockManager) Search(ctx context.Context, in *session.SearchInput) (*session.SearchOutput, error) {
 	m.ctrl.T.Helper()

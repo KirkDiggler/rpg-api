@@ -12,12 +12,16 @@ import (
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
+	customizationconverter "github.com/KirkDiggler/rpg-api/internal/converters/customization"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
+	"github.com/KirkDiggler/rpg-toolkit/rpgerr"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 )
+
+const draftNotFoundMessage = "draft not found"
 
 // HandlerConfig holds dependencies for the handler
 type HandlerConfig struct {
@@ -98,18 +102,13 @@ func (h *Handler) GetDraft(
 	})
 	if err != nil {
 		if apierr.IsNotFound(err) {
-			return nil, status.Error(codes.NotFound, "draft not found")
+			return nil, status.Error(codes.NotFound, draftNotFoundMessage)
 		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// Convert draft to proto (draft entity includes appearance)
+	// Convert toolkit draft data, including nested Appearance, to proto.
 	protoDraft := convertDraftDataToProto(output.Draft.Data)
-
-	// Add appearance if present
-	if output.Draft.Appearance != nil {
-		protoDraft.Appearance = convertEntityAppearanceToProto(output.Draft.Appearance)
-	}
 
 	// Run validation to populate the validation field
 	validationOutput, err := h.characterService.ValidateDraft(ctx, &character.ValidateDraftInput{
@@ -535,10 +534,6 @@ func (h *Handler) FinalizeDraft(
 	if protoChar == nil {
 		return nil, apierr.Internal("failed to convert character to proto")
 	}
-	if output.Appearance != nil {
-		protoChar.Appearance = convertEntityAppearanceToProto(output.Appearance)
-	}
-
 	return &dnd5ev1alpha1.FinalizeDraftResponse{
 		Character: protoChar,
 	}, nil
@@ -571,13 +566,8 @@ func (h *Handler) GetCharacter(
 		return nil, status.Error(codes.Internal, "failed to get character")
 	}
 
-	// Convert character entity to proto (includes appearance)
+	// Convert character data, including nested Appearance, to proto.
 	protoCharacter := ConvertCharacterDataToProto(result.Character.Data)
-
-	// Add appearance if present
-	if result.Character.Appearance != nil {
-		protoCharacter.Appearance = convertEntityAppearanceToProto(result.Character.Appearance)
-	}
 
 	return &dnd5ev1alpha1.GetCharacterResponse{
 		Character: protoCharacter,
@@ -613,9 +603,6 @@ func (h *Handler) ListCharacters(
 	protoCharacters := make([]*dnd5ev1alpha1.Character, 0, len(output.Characters))
 	for _, charEntity := range output.Characters {
 		protoChar := ConvertCharacterDataToProto(charEntity.Data)
-		if charEntity.Appearance != nil {
-			protoChar.Appearance = convertEntityAppearanceToProto(charEntity.Appearance)
-		}
 		protoCharacters = append(protoCharacters, protoChar)
 	}
 
@@ -944,10 +931,6 @@ func (h *Handler) EquipItem(
 	// Convert the orchestrator's actual persisted post-state. There is no
 	// fallible repository read after the successful write.
 	protoChar := ConvertCharacterDataToProto(equipResult.Character.Data)
-	if equipResult.Character.Appearance != nil {
-		protoChar.Appearance = convertEntityAppearanceToProto(equipResult.Character.Appearance)
-	}
-
 	// Build response
 	response := &dnd5ev1alpha1.EquipItemResponse{
 		Character: protoChar,
@@ -996,10 +979,6 @@ func (h *Handler) UnequipItem(
 	}
 
 	protoChar := ConvertCharacterDataToProto(unequipResult.Character.Data)
-	if unequipResult.Character.Appearance != nil {
-		protoChar.Appearance = convertEntityAppearanceToProto(unequipResult.Character.Appearance)
-	}
-
 	return &dnd5ev1alpha1.UnequipItemResponse{
 		Character: protoChar,
 	}, nil
@@ -1034,48 +1013,68 @@ func (h *Handler) UpdateAppearance(
 	ctx context.Context,
 	req *dnd5ev1alpha1.UpdateAppearanceRequest,
 ) (*dnd5ev1alpha1.UpdateAppearanceResponse, error) {
+	playerID := auth.GetPlayerID(ctx)
+	if playerID == "" {
+		return nil, status.Error(codes.Unauthenticated, "player not authenticated")
+	}
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
 	if req.DraftId == "" {
 		return nil, status.Error(codes.InvalidArgument, "draft_id is required")
 	}
-	if err := validateAppearance(req.Appearance); err != nil {
-		return nil, err
+	if req.Appearance == nil {
+		return nil, status.Error(codes.InvalidArgument, "appearance is required")
 	}
-
-	// Convert proto appearance to entity
-	appearance := convertProtoAppearanceToEntity(req.Appearance)
-
-	// Call orchestrator to set appearance
-	_, err := h.characterService.SetAppearance(ctx, &character.SetAppearanceInput{
+	output, err := h.characterService.SetAppearance(ctx, &character.SetAppearanceInput{
 		DraftID:    req.DraftId,
-		Appearance: appearance,
+		PlayerID:   playerID,
+		Appearance: customizationconverter.ProtoToToolkit(req.Appearance),
 	})
 	if err != nil {
-		if apierr.IsNotFound(err) {
-			return nil, status.Error(codes.NotFound, "draft not found")
-		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, translateAppearanceError(err)
 	}
-
-	// Get the updated draft to return in response
-	getDraftOutput, err := h.characterService.GetDraft(ctx, &character.GetDraftInput{
-		DraftID: req.DraftId,
-	})
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	// Convert to proto draft (draft entity now includes appearance)
-	protoDraft := convertDraftDataToProto(getDraftOutput.Draft.Data)
-
-	// Add appearance to proto response
-	if getDraftOutput.Draft.Appearance != nil {
-		protoDraft.Appearance = convertEntityAppearanceToProto(getDraftOutput.Draft.Appearance)
+	if output == nil || output.Draft == nil {
+		return nil, status.Error(codes.Internal, "set appearance returned no draft")
 	}
 
 	return &dnd5ev1alpha1.UpdateAppearanceResponse{
-		Draft: protoDraft,
+		Draft: convertDraftDataToProto(output.Draft),
 	}, nil
+}
+
+func translateAppearanceError(err error) error {
+	if apierr.IsNotFound(err) {
+		return status.Error(codes.NotFound, draftNotFoundMessage)
+	}
+
+	var toolkitErr *rpgerr.Error
+	if errors.As(err, &toolkitErr) {
+		switch toolkitErr.Code {
+		case rpgerr.CodeInvalidArgument:
+			return status.Error(codes.InvalidArgument, toolkitErr.Message)
+		case rpgerr.CodeNotFound:
+			return status.Error(codes.NotFound, toolkitErr.Message)
+		case rpgerr.CodeAlreadyExists:
+			return status.Error(codes.AlreadyExists, toolkitErr.Message)
+		case rpgerr.CodeResourceExhausted:
+			return status.Error(codes.ResourceExhausted, toolkitErr.Message)
+		case rpgerr.CodeOutOfRange:
+			return status.Error(codes.OutOfRange, toolkitErr.Message)
+		case rpgerr.CodePrerequisiteNotMet,
+			rpgerr.CodeNotAllowed,
+			rpgerr.CodeInvalidTarget,
+			rpgerr.CodeConflictingState,
+			rpgerr.CodeTimingRestriction,
+			rpgerr.CodeCapacityExceeded,
+			rpgerr.CodeCooldownActive,
+			rpgerr.CodeImmune,
+			rpgerr.CodeBlocked,
+			rpgerr.CodeInterrupted,
+			rpgerr.CodeInvalidState:
+			return status.Error(codes.FailedPrecondition, toolkitErr.Message)
+		}
+	}
+
+	return status.Error(codes.Internal, err.Error())
 }

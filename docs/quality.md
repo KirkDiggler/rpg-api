@@ -1,8 +1,8 @@
 ---
 name: rpg-api quality scorecard
 description: Per-component grade with rationale — a graded scorecard to update as the codebase evolves
-updated: 2026-09-01
-confidence: medium-high — #869 hair persistence/finalization/roster projection verified through focused and Docker-backed integration tests; #852 and #844 retain their stated evidence
+updated: 2026-09-04
+confidence: medium-high — #897 complete Appearance conversion/delegation and nested persistence are verified by focused and Docker-backed integration tests
 ---
 
 # Quality Scorecard
@@ -56,8 +56,9 @@ to the toolkit session SDK. Every member-naming verb applies the shared caller/m
 gate before Manager dispatch; production and the harness now pass the same
 `sessionaccess.Access` instance to SessionService and SessionPresentationService.
 Conversion remains field-for-field with no rules or invented vocabulary, including
-nested declarations/candidates and selectors. `GetRoster` now maps API-owned player hair
-through the shared customization converter while keeping the shelf present-and-empty for
+nested declarations/candidates and selectors. `GetRoster` delegates once to the Session
+SDK and mechanically maps its public members and flat customization values, preserving
+optional presence and explicit zero while keeping the shelf present-and-empty for
 nil/default players and monsters; it projects no private sheet fields. `StreamEvents` is audience-filtered
 best-effort live delivery; `GetStory` is persisted catch-up, and both use the same
 typed-event converter. Unit and `internal/integration/session` suites cover ownership,
@@ -68,7 +69,7 @@ production traffic.
 
 `internal/handlers/dnd5e/sessionpresentation/v1alpha1/` adapts the presentation-only
 `SessionPresentationService`. Both RPCs run the shared `CallerMemberSeated` gate before
-service access, so caller ownership and launch-written roster seating are identical to
+service access, so caller ownership and Session SDK seating are identical to
 SessionService. Mapping is proto ↔ proto-free domain structs plus a small status switch:
 invalid plans become `InvalidArgument`, duplicate conflicting attempts become
 `AlreadyExists`, and storage/subscription failures are sanitized as `Internal`. It does
@@ -93,12 +94,11 @@ its size. Its `EquipItem`/`UnequipItem` RPCs now delegate to the rules-correct
 orchestrator method (rpg-api#680, see "Character orchestrator" below) — that
 specific gap is closed even though the surrounding stub/TODO debt isn't.
 
-**Update (rpg-api#869, 2026-09-01):** `UpdateAppearance` validates typed hair before
-mutation and is draft-only. Draft update/reload, finalization, Get, and List preserve
-exact selection and optional scalar presence. Finalization now carries the API-owned
-Appearance beside the toolkit character so its response no longer drops customization.
-Focused handler tests and a Docker-backed Dwarf Fighter flow cover the boundary. Grade
-remains C because the older converter/TODO debt above is unchanged.
+**Update (rpg-api#897, 2026-09-03):** complete Appearance now converts field-for-field
+to toolkit customization data. `UpdateAppearance` delegates once and returns the
+service's complete DraftData without a second Get; malformed semantics reach
+`Draft.SetAppearance`. Finalization/Get/List/equipment map nested `Data.Appearance`
+naturally. Grade remains C because the older converter/TODO debt above is unchanged.
 
 ### Character v2 handler — B+ (updated 2026-08-25)
 
@@ -138,11 +138,11 @@ Verified remaining TODOs concern draft mutation access, background validation, e
 logging, and pagination/class-filter placeholders; they are outside the owner-private
 equipment path.
 
-**Update (rpg-api#869, 2026-09-01):** every draft mutation preserves the API-owned
-Appearance envelope, finalization persists and returns it separately from toolkit Data,
-and Get/List pass the envelope through. Redis reload and session SDK adapter tests cover
-nested pointer detachment and preservation. The grade remains B- because the older
-draft/catalog TODO debt below is unchanged.
+**Update (rpg-api#897, 2026-09-03):** Appearance now lives in toolkit
+`character.Data`/`DraftData`; `SetAppearance` loads, calls `Draft.SetAppearance` once,
+updates with `draft.ToData()`, and returns stored DraftData. Redis and session-save
+paths use nested toolkit state without a sibling envelope. The grade remains B- because
+older draft/catalog TODO debt below is unchanged.
 
 **Update (rpg-api#680/#844, 2026-08-25):** `EquipItem`/`UnequipItem` strictly
 load/attach, call the toolkit's rules-aware verbs, precompose complete post-views, and
@@ -281,14 +281,6 @@ every Save/Get like the v2 encounter repo. Grade held at B rather than higher
 because it's brand new with no production traffic yet — the pattern is proven
 but unexercised at scale.
 
-### Roster repository — B+ (updated 2026-08-28)
-
-`internal/repositories/roster/` stores the launch-written public membership row used by
-`SessionService.GetRoster` and now by the shared session/presentation access gate.
-Production and the harness use the Redis implementation with a 24h TTL, so a second
-server can authorize a seated member from the same row server A wrote during lobby
-launch. Held below A pending production traffic and broader edge-case coverage.
-
 ### Session presentation repository — B+ (new, 2026-08-28)
 
 `internal/repositories/sessionpresentation/` accepts deterministic presentation payloads
@@ -314,11 +306,11 @@ not been redesigned and TTL/stale-character lifecycle remains unchanged.
 
 `internal/repositories/character_draft/redis.go`
 
-Redis-backed. Handles in-progress character creation state. #869 adds exact typed-hair
-JSON round trips, detached nested pointer assertions, and present-zero optional scalar
-coverage; the Docker-backed character integration flow proves the same draft reaches
-finalization. Broad repository lifecycle coverage remains thinner than the character
-repository, so the grade does not change. No known correctness gaps.
+Redis-backed. Handles in-progress character creation state. #897 adds complete
+nested toolkit Appearance JSON round trips, detached nested pointer assertions, and
+present-zero optional scalar coverage. Broad repository lifecycle coverage remains
+thinner than the character repository, so the grade does not change. No known
+correctness gaps.
 
 ### Dice session repository — B-
 
@@ -335,12 +327,12 @@ Redis-backed. Narrow scope. No observed gaps. Low risk.
 The harness still omits the deleted v1alpha2 EncounterService, but #852 restores the
 new-stack full-gRPC value and #869 uses its real `redis:7-alpine` character path to prove
 hair update/reload/refusal/finalization/Get: `TestServer` exposes `SessionClient`,
-`SessionPresentationClient`, `HealthClient`, and `RosterRepo`; registers SessionService
-and SessionPresentationService; and wires the Redis roster repository shared by lobby
-launch, SessionService access, and SessionPresentationService access. The new
-`internal/integration/sessionpresentation` package starts two TestServers over one Redis
-container and proves real cross-instance seating plus Redis Pub/Sub. Grade returns to B+
-from B-; held below A pending wider lobby/session full-stack suites and browser evidence.
+`SessionPresentationClient`, and `HealthClient`; registers SessionService and
+SessionPresentationService; and shares the real Session Manager with lobby launch and
+both access gates. The new `internal/integration/sessionpresentation` package starts two
+TestServers over one Redis container and proves real cross-instance seating plus Redis
+Pub/Sub. Grade returns to B+ from B-; held below A pending wider lobby/session full-stack
+suites and browser evidence.
 
 ### Unit tests — B-
 

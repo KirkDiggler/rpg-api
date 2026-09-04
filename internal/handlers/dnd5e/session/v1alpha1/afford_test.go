@@ -17,7 +17,7 @@ import (
 
 func TestAfford_Unauthenticated_Errors(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	_, err := h.Afford(context.Background(), &sessionpb.AffordRequest{})
 	requireCode(t, err, codes.Unauthenticated)
 }
@@ -45,7 +45,7 @@ func TestAfford_HappyPath_ProjectsNestedDeclaration(t *testing.T) {
 		},
 	}, nil)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
@@ -78,7 +78,7 @@ func TestAfford_WorldClock_DeclarationsEmpty(t *testing.T) {
 		Declarations: []sdk.Declaration{},
 	}, nil)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
@@ -102,7 +102,7 @@ func TestAfford_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 			mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 			mgr.EXPECT().Afford(gomock.Any(), gomock.Any()).Return(nil, tt.err)
 
-			h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+			h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 			ctx := auth.WithPlayerID(context.Background(), "alice")
 			_, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
 			requireCode(t, err, tt.want)
@@ -130,7 +130,7 @@ func TestAfford_NoTargetInReach_KeepsCandidateRows(t *testing.T) {
 		},
 	}, nil)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
@@ -156,7 +156,7 @@ func TestAfford_MoveAndEndTurnDeclarations(t *testing.T) {
 		},
 	}, nil)
 
-	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice"), roster: testRoster()}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
