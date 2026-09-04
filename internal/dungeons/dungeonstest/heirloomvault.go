@@ -16,13 +16,17 @@ const HeirloomVaultKey = "heirloom-vault"
 // the one the walk plays; internal/dungeons proves that one compiles and
 // declares its ending, and these scenes prove what the wire does with it.
 //
-// ONE MONSTER, WHO KNOWS THE WAY IN. The captain carries `knows:
-// [vault-door]` and NO boss flag — this dungeon ends because a scenario says
-// so, not because a monster has a flag on it (design R8) — which is what
-// makes path 2 a path: kill them, loot them, and the vault door is yours.
-// The link is authored with the AUTHOR'S door id; dungeonspec mints the
-// compiled `<key>/<id>` form on the way through, and that is what a spawn
-// must forward.
+// ONE RECORD, HELD BY ONE MONSTER. The dungeon declares `vault-map`, which
+// reveals the vault door, and the captain `holds:` it — knowledge is a thing
+// the author places, not a property typed on a monster (rpg-project#372
+// R1/R2). The captain carries NO boss flag: this dungeon ends because a
+// scenario says so, not because a monster has a flag on it (slice 2 R8).
+// That is what makes path 2 a path: kill them, loot them, and the vault door
+// is yours.
+//
+// Both ids are authored in the AUTHOR'S spelling; dungeonspec mints the
+// compiled `<key>/<id>` form on the way through, and it is the minted form a
+// spawn must forward.
 //
 // TWO HOLDABLE THINGS, ONE BOUND. The heirloom is what the scenario counts;
 // the chalice is an ordinary holdable standing in the open hall. Holding
@@ -73,6 +77,12 @@ doors:
     closed: true
     concealed: [{ ability: perception, dc: 15 }]
 
+# The knowledge this dungeon declares. A record is a thing in the file, like a
+# door: an id and what it reveals. Whoever carries it names it under holds.
+intel:
+  - id: vault-map
+    reveals: { door: vault-door }
+
 place:
   - { id: heirloom, ref: "dnd5e:props:reliquary", at: [5,1],
       blocks_movement: false, blocks_los: false, holdable: true }
@@ -81,7 +91,7 @@ place:
   - { id: pillar, ref: "dnd5e:props:pillar", at: [2,0],
       blocks_movement: true, blocks_los: true }
   - { id: captain, ref: "dnd5e:monsters:skeleton-captain", at: [1,0],
-      targeting: closest, knows: [vault-door] }
+      targeting: closest, holds: [vault-map] }
 
 exits:
   - { id: front-gate, at: [0, 1] }
@@ -112,6 +122,13 @@ const (
 	// HeirloomVaultDoorID is the concealed door, as the composition mints it:
 	// `<key>/<id>`, so two dungeons in one process cannot collide.
 	HeirloomVaultDoorID = HeirloomVaultKey + "/vault-door"
+
+	// HeirloomIntelAuthoredID is the intel record as the AUTHOR spells it in
+	// the file, and HeirloomIntelRecordID is the same record as the compiler
+	// mints it. Both are named because the difference between them is
+	// load-bearing: a host that forwards the first gets ErrNoIntel.
+	HeirloomIntelAuthoredID = "vault-map"
+	HeirloomIntelRecordID   = HeirloomVaultKey + "/" + HeirloomIntelAuthoredID
 
 	// HeirloomCaptainPlacementID is the author's name for the monster who
 	// knows the way into the vault. Its MEMBER id inside a run is derived

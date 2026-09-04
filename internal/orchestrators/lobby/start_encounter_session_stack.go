@@ -62,9 +62,9 @@ type StartEncounterOutput struct {
 //   - NO MONSTER BEHAVIOR. session.Spawn takes no decider, by its own
 //     design ("behavior arrives with the wave that brings it"), so the
 //     garrison is placed, perceived and remembered correctly and does
-//     not act. It DOES carry what the author said it knows
-//     (rpg-project#368): a monster arrives holding its knowledge links, so
-//     a body can be worth looting.
+//     not act. It DOES carry the intel records the author placed in it
+//     (rpg-project#368, #372): a monster arrives holding what it was
+//     authored to know, so a body can be worth looting.
 //   - The authored endings are BOTH declared now (rpg-project#268): the
 //     party withdrawing (sessionworld.EndingWithdrawn, external) and the
 //     boss going down (sessionworld.EndingBossDown, TriggerMemberDown over
@@ -154,19 +154,21 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	for _, monster := range dungeon.Monsters {
 		_, err := o.sessionManager.Spawn(ctx, &sdk.SpawnInput{
 			Session: encID, ID: monster.MemberID, Ref: monster.Ref, Position: monster.At,
-			// The author's knowledge links (rpg-project#368 design P1), as
-			// COMPILED door ids: dungeonspec mints `<key>/<id>` so two
-			// dungeons in one process cannot collide, and
-			// sessionworld.Monster.Knows carries that minted form already.
-			// Passing the author's raw id would name a door the composition
-			// does not have, and every such spawn would refuse by name.
+			// The intel records the author placed in this monster
+			// (rpg-project#372), as COMPILED ids: dungeonspec mints
+			// `<key>/<id>` so two dungeons in one process cannot collide,
+			// and sessionworld.Monster.Holds carries that minted form
+			// already. Passing the author's raw id names a record the
+			// composition does not have, and the seam refuses it by name
+			// (ErrNoIntel) rather than spawning a monster that holds
+			// nothing and is looted for an empty answer.
 			//
-			// This is what makes the captain worth looting: the seam seeds
-			// the fact when the monster ENTERS the world, and Loot is what
-			// moves it off the body. Nothing on any wire ever says who
-			// carries intel (design P3) — the link is engine-internal from
-			// here on.
-			Knows: monster.Knows,
+			// This is what makes a body worth looting: the seam seeds the
+			// holding when the monster ENTERS the world, and Loot copies it
+			// to the looter, who learns whatever the record reveals.
+			// Nothing on any wire ever says who carries intel (slice 2
+			// design P3) — the holding is engine-internal from here on.
+			Holds: monster.Holds,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("spawn %q into session %q on new stack: %w", monster.MemberID, encID, err)
