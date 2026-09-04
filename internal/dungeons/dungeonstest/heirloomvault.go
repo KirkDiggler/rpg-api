@@ -16,6 +16,14 @@ const HeirloomVaultKey = "heirloom-vault"
 // the one the walk plays; internal/dungeons proves that one compiles and
 // declares its ending, and these scenes prove what the wire does with it.
 //
+// ONE MONSTER, WHO KNOWS THE WAY IN. The captain carries `knows:
+// [vault-door]` and NO boss flag — this dungeon ends because a scenario says
+// so, not because a monster has a flag on it (design R8) — which is what
+// makes path 2 a path: kill them, loot them, and the vault door is yours.
+// The link is authored with the AUTHOR'S door id; dungeonspec mints the
+// compiled `<key>/<id>` form on the way through, and that is what a spawn
+// must forward.
+//
 // TWO HOLDABLE THINGS, ONE BOUND. The heirloom is what the scenario counts;
 // the chalice is an ordinary holdable standing in the open hall. Holding
 // something everybody can already see is what makes "the prop leaves the map
@@ -72,6 +80,8 @@ place:
       blocks_movement: false, blocks_los: false, holdable: true }
   - { id: pillar, ref: "dnd5e:props:pillar", at: [2,0],
       blocks_movement: true, blocks_los: true }
+  - { id: captain, ref: "dnd5e:monsters:skeleton-captain", at: [1,0],
+      targeting: closest, knows: [vault-door] }
 
 exits:
   - { id: front-gate, at: [0, 1] }
@@ -102,6 +112,16 @@ const (
 	// HeirloomVaultDoorID is the concealed door, as the composition mints it:
 	// `<key>/<id>`, so two dungeons in one process cannot collide.
 	HeirloomVaultDoorID = HeirloomVaultKey + "/vault-door"
+
+	// HeirloomCaptainPlacementID is the author's name for the monster who
+	// knows the way into the vault. Its MEMBER id inside a run is derived
+	// from the ref, not from this (sessionworld.Monster.MemberID), which is
+	// why the two are named apart.
+	HeirloomCaptainPlacementID = "captain"
+
+	// HeirloomCaptainMemberID is that monster's id inside a run: the ref's
+	// own id plus a per-ref ordinal, exactly as the launch derives it.
+	HeirloomCaptainMemberID = "skeleton-captain-1"
 
 	// HeirloomBoundExitID is the way out the scenario counts as escaping.
 	HeirloomBoundExitID = "front-gate"

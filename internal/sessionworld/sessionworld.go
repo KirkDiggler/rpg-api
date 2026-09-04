@@ -134,18 +134,23 @@ type Monster struct {
 
 	// Knows is the doors this monster carries the way to, by COMPILED door
 	// id (`<key>/<id>`) — the author's knowledge links, which Loot moves off
-	// the body (design P1, P4).
+	// the body (design P1, P4). Nil when the author gave it none.
 	//
-	// CARRIED AND NOT YET ACTED ON, and this one is a HOLE rather than a
-	// gap, so it is stated plainly: the toolkit seeds knowledge links at
-	// CONSTRUCTION ONLY (tkencounter.MemberInput.Knows, read by
-	// NewEncounter; Load never re-seeds it), and this package's world is
-	// deliberately empty of members — a monster has no sheet until
-	// session.Spawn builds one. Neither session.SpawnInput nor
-	// encounter.JoinInput carries a Knows field, so an authored `knows:`
-	// currently reaches no live monster and the loot-the-captain path
-	// cannot be walked. Filed against the toolkit; carried here so the
-	// day the field exists this is a one-line forward, not a rediscovery.
+	// ACTED ON, and the launch is where: StartEncounter hands this to
+	// session.Spawn, which seeds it as a holding the moment the monster
+	// ENTERS the world (rpg-toolkit#1504, #1505 — the seam had no field for
+	// it until this slice, found from this side and closed in wave 1). That
+	// is what makes a body worth looting.
+	//
+	// COMPILED IDS, NOT THE AUTHOR'S. dungeonspec mints `<key>/<id>` so two
+	// dungeons in one process cannot collide, and it is the minted form that
+	// arrives here. Forwarding the raw authored id would name a door the
+	// composition does not have and every spawn would refuse by name.
+	//
+	// NEVER PROJECTED. Who carries intel reaches no wire, no atlas and no
+	// beat (design P3): Loot is offered on every body, and a body with
+	// nothing to give must be indistinguishable from the one that has
+	// everything.
 	Knows []string
 }
 

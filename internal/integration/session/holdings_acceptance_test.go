@@ -2,15 +2,11 @@ package session_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
-	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
-	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
@@ -61,6 +57,13 @@ const (
 
 func startHeirloomRun(t *testing.T) *heirloomRun {
 	t.Helper()
+	return startHeirloomRunWith(t, true)
+}
+
+// startHeirloomRunWith starts the run, optionally with the captain's authored
+// knowledge link left off, which is the ONE thing the two loot scenes vary.
+func startHeirloomRunWith(t *testing.T, captainKnows bool) *heirloomRun {
+	t.Helper()
 
 	h := newAcceptanceHarness(t)
 	for _, who := range []struct{ id, player string }{
@@ -84,6 +87,34 @@ func startHeirloomRun(t *testing.T) *heirloomRun {
 	})
 	require.NoError(t, err)
 
+	// THE GARRISON ARRIVES THE WAY THE LOBBY BRINGS IT: one Spawn per
+	// authored monster, carrying what the author said it knows. That
+	// forwarding is the whole of rpg-api's part in path 2, and this is the
+	// call that exercises it -- the same three-plus-one fields
+	// StartEncounter builds.
+	for _, m := range dungeon.Monsters {
+		knows := m.Knows
+		if !captainKnows {
+			knows = nil
+		}
+		_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+			Session: heirloomSession, ID: m.MemberID, Ref: m.Ref, Position: m.At, Knows: knows,
+		})
+		require.NoError(t, err, "spawning %s", m.MemberID)
+	}
+
+	// THE BODY IS A BODY BECAUSE ITS SHEET SAYS SO. The session's standing
+	// seam reads the record Spawn just wrote, so a captain at full hit
+	// points is reported UP -- Loot would refuse with ErrNotDown, and every
+	// other scene here would run inside a fight with the verbs on the turn
+	// clock. Zeroed through the repository the orchestrator itself runs on
+	// rather than by reaching into Redis keys, and BEFORE anybody joins, so
+	// no bubble ever forms.
+	//
+	// This is fixture state standing in for a fight the scenes are not
+	// about. The fight itself is proven in acceptance_test.go.
+	downTheGarrison(t, h)
+
 	run := &heirloomRun{
 		h:     h,
 		alice: auth.WithPlayerID(context.Background(), "player-alice"),
@@ -101,18 +132,20 @@ func startHeirloomRun(t *testing.T) *heirloomRun {
 	return run
 }
 
-// walkWithin moves member from where they stand to the authored cell
-// [col,row], one adjacent step at a time, staying inside the region whose
-// cells are given.
-//
-// A PATH IS COMPUTED, NEVER SPELLED. Offset-to-axial is a sheared conversion
-// (rpg-toolkit#1141, #1150), so two cells that look adjacent on the authored
-// page are not reliably neighbors on the hex grid the game runs — and a
-// hand-written route is exactly the kind of arithmetic this workspace has
-// already paid for twice. This asks the grid what a neighbor is and
-// breadth-firsts over the region's own floor, which also keeps the walk
-// inside one room, so no step ever tries to cross the seam except where a
-// scene deliberately steps through the door.
+// downTheGarrison puts every spawned monster's sheet at zero hit points.
+func downTheGarrison(t *testing.T, h *acceptanceHarness) {
+	t.Helper()
+
+	sessions := sessionorch.NewSessionRepository(h.redis, time.Hour)
+	stored, err := sessions.GetSession(context.Background(), heirloomSession)
+	require.NoError(t, err)
+	require.NotEmpty(t, stored.NPCs, "Spawn must have written a sheet for every authored monster")
+	for i := range stored.NPCs {
+		stored.NPCs[i].HitPoints = 0
+	}
+	require.NoError(t, sessions.SaveSession(context.Background(), stored))
+}
+
 func (r *heirloomRun) walkWithin(t *testing.T, member string, region [][2]int, col, row int) {
 	t.Helper()
 
@@ -490,90 +523,37 @@ func TestAcceptance_ThePartyThatNeverSearchesFinishesBlind(t *testing.T) {
 // writes, so the reveal it produces is byte-identical to a successful
 // search's -- one DOOR_REVEALED, to the looter, and nobody else's map moves.
 //
-// # Why this scene builds its world by hand
-//
-// Every other scene in this file compiles authored YAML, which is the right
-// way round. This one cannot, and the reason is a hole worth naming rather
-// than working around quietly: an authored `knows:` CANNOT REACH A MONSTER
-// THE HOST SPAWNS (rpg-toolkit#1506). The toolkit seeds knowledge links at
-// construction only, rpg-api builds its worlds empty of members on purpose,
-// and neither `session.SpawnInput` nor `encounter.JoinInput` carries the
-// field -- so the shipped heirloom fixture's `knows: [vault]` on the captain
-// is dropped at the seam.
-//
-// The world below is therefore the world a launch WILL build once that
-// lands: the same compiled field, with the captain standing in it already
-// knowing the way in. What this scene proves is rpg-api's half -- that the
-// reveal loot produces crosses the wire to one member and not the other --
-// and that half is finished and does not change when #1506 does.
+// THE WHOLE CHAIN IS DRIVEN, file to beat. The author writes `knows:
+// [vault-door]` on a placement; dungeonspec mints the compiled door id;
+// sessionworld carries it onto the monster; the launch forwards it into
+// Spawn; the composition seeds it as a holding when the monster enters the
+// world; Loot moves it to the looter. Nothing in that list is asserted about
+// a struct -- the door appears on one player's map because somebody looted a
+// body.
 func TestAcceptance_LootingTheCaptainRevealsTheDoorToTheLooterAlone(t *testing.T) {
 	t.Run("the captain carried the way in", func(t *testing.T) { lootTheCaptain(t, true) })
 
 	// THE CONTROL, and this file needs it: with the ONE difference removed
 	// -- the captain knowing the door -- the identical scene must reveal
 	// nothing. Without it, "alice's map gained a doorway" could have been
-	// the join, the loot beat, or anything else in the run, and the
-	// assertion above would pass on a version of Loot that revealed the
-	// door to whoever asked.
+	// the join, the spawn, or anything else in the run, and the assertion
+	// above would pass on a version of Loot that revealed the door to
+	// whoever asked.
 	t.Run("a captain who knew nothing gives nothing", func(t *testing.T) { lootTheCaptain(t, false) })
 }
 
 func lootTheCaptain(t *testing.T, captainKnows bool) {
 	t.Helper()
 
-	h := newAcceptanceHarness(t)
-	for _, who := range []struct{ id, player string }{
-		{"alice", "player-alice"}, {"bob", "player-bob"},
-	} {
-		_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-			Character: &entities.Character{Data: armedFighter(who.id, who.player)},
-		})
-		require.NoError(t, err)
-	}
-
-	compiled, err := tkdungeonspec.Load([]byte(dungeonstest.HeirloomVaultYAML))
-	require.NoError(t, err, "the same authored field every other scene here compiles")
-
-	world := worldWithACaptain(t, compiled.Field, captainKnows)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: heirloomSession, Encounter: "heirloom-encounter", World: world,
-	})
-	require.NoError(t, err)
-
-	// THE BODY IS A BODY BECAUSE ITS SHEET SAYS SO. The session's standing
-	// seam reads this record, so a captain with no sheet is reported UP and
-	// Loot refuses with ErrNotDown before the scene starts. Seeded through
-	// the repository the orchestrator itself runs on, not by reaching into
-	// Redis keys.
-	sessions := sessionorch.NewSessionRepository(h.redis, time.Hour)
-	stored, err := sessions.GetSession(context.Background(), heirloomSession)
-	require.NoError(t, err)
-	stored.NPCs = append(stored.NPCs, monster.Data{
-		ID: captainID, Name: "Skeleton Captain", HitPoints: 0, MaxHitPoints: 22, ArmorClass: 15,
-	})
-	require.NoError(t, sessions.SaveSession(context.Background(), stored))
-
-	run := &heirloomRun{
-		h:     h,
-		alice: auth.WithPlayerID(context.Background(), "player-alice"),
-		bob:   auth.WithPlayerID(context.Background(), "player-bob"),
-	}
-	for _, who := range []struct {
-		id       string
-		col, row int
-	}{{"alice", aliceSeatCol, aliceSeatRow}, {"bob", bobSeatCol, bobSeatRow}} {
-		_, joinErr := h.handler.Join(run.ctxOf(who.id), &sessionpb.JoinRequest{
-			Session: heirloomSession, Member: who.id, Position: pbAt(who.col, who.row),
-		})
-		require.NoError(t, joinErr)
-	}
+	run := startHeirloomRunWith(t, captainKnows)
 
 	// Nobody has searched. The way in is on nobody's map.
 	require.Empty(t, run.atlas(t, "alice").GetDoorways())
 	require.Empty(t, run.atlas(t, "bob").GetDoorways())
 
-	_, err = h.handler.Loot(run.alice, &sessionpb.LootRequest{
-		Session: heirloomSession, Member: "alice", Target: captainID, Range: holdReach,
+	_, err := run.h.handler.Loot(run.alice, &sessionpb.LootRequest{
+		Session: heirloomSession, Member: "alice",
+		Target: dungeonstest.HeirloomCaptainMemberID, Range: holdReach,
 	})
 	require.NoError(t, err, "loot is offered on every downed body and never refuses for having nothing")
 
@@ -605,96 +585,49 @@ func lootTheCaptain(t *testing.T, captainKnows bool) {
 		}
 		require.NotNil(t, looted, "%s was present", member)
 		require.Equal(t, "alice", looted.GetLooter())
-		require.Equal(t, captainID, looted.GetBody())
+		require.Equal(t, dungeonstest.HeirloomCaptainMemberID, looted.GetBody())
 	}
 }
 
-// captainID is the monster who knows the way into the vault.
-const captainID = "captain"
+// TestAcceptance_TheLootedWayInOpensTheSameVault closes path 2 to where path
+// 1 already runs: what loot hands over is not a private note about a door,
+// it is the door. The looter opens it and the vault is hers, exactly as if
+// she had found it by searching.
+func TestAcceptance_TheLootedWayInOpensTheSameVault(t *testing.T) {
+	run := startHeirloomRun(t)
 
-// worldWithACaptain builds the heirloom vault with one member already
-// standing in it: a downed skeleton captain, carrying the knowledge link the
-// authored file gives them or carrying nothing.
-//
-// `knows` is the ONE thing the two scenes vary, so everything else about the
-// two worlds is identical by construction rather than by inspection.
-//
-// The capabilities are internal/sessionworld's, restated here because they
-// are unexported there and for the same reason they are trivial there: this
-// world is EMPTY OF PLAYERS at the moment it is built, so nobody can see,
-// roll, strike or take a turn in it. The session package supplies the real
-// ones when it loads the world to play it.
-func worldWithACaptain(t *testing.T, field tkencounter.FieldInput, knows bool) *tkencounter.EncounterData {
-	t.Helper()
-
-	captain := tkencounter.MemberInput{
-		ID: captainID, Kind: tkencounter.KindMonster, Name: "Skeleton Captain",
-		// Authored offset [1,0], in the hall where the party comes in.
-		Position: spatial.Position{X: 1, Y: 0},
-	}
-	if knows {
-		// The knowledge link, by COMPILED door id -- dungeonspec mints
-		// `<key>/<id>` so two dungeons in one process cannot collide.
-		captain.Knows = []tkencounter.DoorID{dungeonstest.HeirloomVaultDoorID}
-	}
-
-	enc, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
-		Field:   field,
-		Members: []tkencounter.MemberInput{captain},
-		Endings: []tkencounter.EndingInput{
-			{Key: sessionworld.EndingWithdrawn, Trigger: tkencounter.TriggerExternal{}},
-		},
-		Retention:     tkencounter.RetentionUnbounded,
-		Initiative:    orderAsGiven{},
-		Standing:      everybodyIsDown{},
-		Sight:         allSeeing{},
-		TurnDriver:    tkencounter.PassDriver{},
-		Striker:       tkencounter.RefusingStriker{},
-		Announcer:     tkencounter.RefusingAnnouncer{},
-		CheckResolver: neverResolves{},
-		Witness:       nobodyPerceives{},
+	_, err := run.h.handler.Loot(run.alice, &sessionpb.LootRequest{
+		Session: heirloomSession, Member: "alice",
+		Target: dungeonstest.HeirloomCaptainMemberID, Range: holdReach,
 	})
 	require.NoError(t, err)
 
-	data := enc.ToData()
-	return &data
-}
+	_, err = run.h.handler.OpenDoor(run.alice, &sessionpb.OpenDoorRequest{
+		Session: heirloomSession, Member: "alice", Door: dungeonstest.HeirloomVaultDoorID,
+	})
+	require.NoError(t, err, "the way in she looted is a door she can open")
 
-// everybodyIsDown answers for the FIXTURE BUILD ALONE, and it answers "down"
-// so that no fight has already formed by the time a session loads the blob:
-// the only member here is the captain, and a captain reported up beside two
-// players would put all three in a bubble before the scene ran. Once the
-// session owns the world the real standing seam answers out of the stored
-// sheet, which is why the scene seeds that sheet at zero.
-type everybodyIsDown struct{}
+	hallSide := dungeonstest.HeirloomVaultDoorCrossing[0]
+	vaultSide := dungeonstest.HeirloomVaultDoorCrossing[1]
+	run.walkWithin(t, "alice", dungeonstest.HeirloomHallCells, hallSide[0], hallSide[1])
+	run.step(t, "alice", vaultSide[0], vaultSide[1])
+	run.walkWithin(t, "alice", dungeonstest.HeirloomVaultCells, 5, 1)
 
-func (everybodyIsDown) Standing(down []tkencounter.MemberID) ([]tkencounter.MemberID, error) {
-	return down, nil
-}
+	_, err = run.h.handler.Hold(run.alice, &sessionpb.HoldRequest{
+		Session: heirloomSession, Member: "alice",
+		Target: dungeonstest.HeirloomPropID, Range: holdReach,
+	})
+	require.NoError(t, err, "and the heirloom behind it is hers to pick up")
 
-func (everybodyIsDown) Assess(members []tkencounter.MemberID) (*tkencounter.ParticipationAssessment, error) {
-	out := &tkencounter.ParticipationAssessment{
-		Members: make([]tkencounter.MemberParticipation, 0, len(members)),
-	}
-	for _, id := range members {
-		out.Members = append(out.Members, tkencounter.MemberParticipation{
-			Member: id, Down: true, Conscious: false, Contact: false,
-			Turn: tkencounter.TurnParticipationRemove,
-		})
-	}
-	return out, nil
-}
+	run.walkWithin(t, "alice", dungeonstest.HeirloomVaultCells, vaultSide[0], vaultSide[1])
+	run.step(t, "alice", hallSide[0], hallSide[1])
+	run.walkWithin(t, "alice", dungeonstest.HeirloomHallCells, aliceSeatCol, aliceSeatRow)
 
-type neverResolves struct{}
-
-func (neverResolves) ResolveCheck(*tkencounter.ResolveCheckInput) (*tkencounter.ResolveCheckOutput, error) {
-	return nil, errNoCheckAtConstruction
-}
-
-var errNoCheckAtConstruction = errors.New("a check was rolled against a world still being built")
-
-type nobodyPerceives struct{}
-
-func (nobodyPerceives) Perceivers(*tkencounter.PerceiversInput) ([]tkencounter.MemberID, error) {
-	return []tkencounter.MemberID{}, nil
+	exited, err := run.h.handler.Exit(run.alice, &sessionpb.ExitRequest{
+		Session: heirloomSession, Member: "alice",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, exited.GetClosed(),
+		"path 2 ends where path 1 ends, and the ending cannot tell them apart")
+	require.Equal(t, "recover-the-artifact", exited.GetClosed().GetEnding())
 }

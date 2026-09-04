@@ -851,3 +851,122 @@ func (r *countingCharacterRepository) Update(
 	r.updates++
 	return r.Repository.Update(ctx, input)
 }
+
+// TestStartEncounter_ASpawnedMonsterCarriesWhatItsAuthorSaidItKnows is the
+// launch's half of path 2 (rpg-project#368, design P1): the author writes
+// `knows:` on a placement, and the monster the lobby spawns has it.
+//
+// PROVEN BY LOOTING, not by reading the input back. Who carries intel never
+// reaches a wire, an atlas or a beat (design P3) -- that is the whole point
+// of the fact -- so the only honest question to ask is the one a player
+// asks: loot the body and see whether the door arrives.
+func (s *SessionStackSuite) TestStartEncounter_ASpawnedMonsterCarriesWhatItsAuthorSaidItKnows() {
+	after := s.lootTheAuthoredCaptain(dungeonstest.HeirloomVaultYAML)
+	s.Len(after.Doorways, 1, "the way in the author gave the captain reached the looter")
+}
+
+// TestStartEncounter_AMonsterAuthoredKnowingNothingCarriesNothing is the
+// control the test above needs, and a separate method rather than a subtest
+// so each runs on its own SetupTest: without it, "the looter's map gained a
+// doorway" could have been the launch revealing the vault to anybody who
+// looted anything.
+//
+// The ONE difference is the authored knowledge link, struck out of the same
+// file.
+func (s *SessionStackSuite) TestStartEncounter_AMonsterAuthoredKnowingNothingCarriesNothing() {
+	tombless := strings.Replace(dungeonstest.HeirloomVaultYAML, ", knows: [vault-door]", "", 1)
+	s.Require().NotEqual(dungeonstest.HeirloomVaultYAML, tombless,
+		"the fixture's knows line must be where this test expects it")
+
+	after := s.lootTheAuthoredCaptain(tombless)
+	s.Empty(after.Doorways, "a body with nothing to give transfers nothing")
+}
+
+// lootTheAuthoredCaptain plays one authored dungeon through the real launch,
+// downs the garrison it spawned, loots the captain, and returns the looter's
+// map afterwards.
+//
+// # Why this builds its own session stack
+//
+// The captain spawns ALIVE, in sight of a party that has already joined, so
+// a fight forms inside StartEncounter and the monster takes driven turns
+// against a level-3 fighter. On the suite's own stack that is REAL dice, and
+// the scene became a coin toss: caught here as a genuine flake, where a run
+// in which alice went down closed the encounter and Loot refused with
+// ErrClosed before the scene's actual question was asked.
+//
+// The roller below always answers the LOWEST face, so no attack ever lands.
+// That is the honest fix rather than a retry: this test is about whether the
+// launch forwards a knowledge link, and who wins a fight is not its
+// question. The fight itself is proven with the maximum-face roller in
+// internal/integration/session.
+func (s *SessionStackSuite) lootTheAuthoredCaptain(authored string) *sdk.Atlas {
+	s.T().Helper()
+
+	registry, _ := dungeonstest.Scratch(s.T())
+	res, err := registry.Put(s.ctx, &dungeons.PutInput{
+		Key: dungeonstest.HeirloomVaultKey, YAML: []byte(authored),
+	})
+	s.Require().NoError(err)
+	s.Require().Empty(res.Errors, "the heirloom fixture must compile: %v", res.Errors)
+
+	sessOrch, err := sessionorch.New(sessionorch.Config{
+		Redis: s.redisClient, Characters: s.charRepo, TTL: 24 * time.Hour,
+		PresentationIDs: idgen.NewSequential("presentation"), Dice: alwaysTheLowestFace{},
+	})
+	s.Require().NoError(err)
+
+	orch, err := lobbyorch.New(&lobbyorch.Config{
+		LobbyRepo:            s.lobbyRepo,
+		LobbyBroker:          s.broker,
+		CharacterRepo:        s.charRepo,
+		LobbyIDGenerator:     idgen.NewSequential("lobby"),
+		JoinRefGenerator:     idgen.NewSequential("ref"),
+		EncounterIDGenerator: idgen.NewSequential("enc"),
+		SessionManager:       sessOrch.Manager,
+		Dungeons:             registry,
+	})
+	s.Require().NoError(err)
+
+	s.seedCharacter("char-alice", "alice", "Alice")
+	s.seedReadyLobby("lobby-1", "alice")
+
+	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: dungeonstest.HeirloomVaultKey,
+	})
+	s.Require().NoError(err)
+
+	before, err := sessOrch.Manager.Atlas(s.ctx,
+		&sdk.AtlasInput{Session: out.EncounterID, Member: "char-alice"})
+	s.Require().NoError(err)
+	s.Require().Empty(before.Doorways, "nobody has searched: the way in is on no map")
+
+	// A body is a body because its sheet says so: the session's standing
+	// seam reads these, and Loot refuses a member still on their feet.
+	sessions := sessionorch.NewSessionRepository(s.redisClient, time.Hour)
+	stored, err := sessions.GetSession(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+	s.Require().NotEmpty(stored.NPCs, "the launch must have spawned the authored garrison")
+	for i := range stored.NPCs {
+		stored.NPCs[i].HitPoints = 0
+	}
+	s.Require().NoError(sessions.SaveSession(s.ctx, stored))
+
+	_, err = sessOrch.Manager.Loot(s.ctx, &sdk.LootInput{
+		Session: out.EncounterID, Member: "char-alice",
+		Target: dungeonstest.HeirloomCaptainMemberID, Range: 4,
+	})
+	s.Require().NoError(err)
+
+	after, err := sessOrch.Manager.Atlas(s.ctx,
+		&sdk.AtlasInput{Session: out.EncounterID, Member: "char-alice"})
+	s.Require().NoError(err)
+
+	return after
+}
+
+// alwaysTheLowestFace is a Roller that never lets an attack land, so a scene
+// about something other than combat is not decided by dice.
+type alwaysTheLowestFace struct{}
+
+func (alwaysTheLowestFace) Roll(_ context.Context, _ int) (int, error) { return 1, nil }
