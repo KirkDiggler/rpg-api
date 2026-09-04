@@ -362,6 +362,12 @@ type acceptanceHarness struct {
 	handler  *sessionhandler.Handler
 	charRepo characterrepo.Repository
 	manager  *sessionorch.Orchestrator
+
+	// redis is the same client the orchestrator's repositories run on, kept
+	// so a scene can seed a stored record the SDK owns but no rpg-api verb
+	// writes -- a spawned monster's sheet, for one. See
+	// holdings_acceptance_test.go, which explains why one scene needs it.
+	redis *goredis.Client
 }
 
 func newAcceptanceHarness(t *testing.T) *acceptanceHarness {
@@ -395,7 +401,7 @@ func newAcceptanceHarnessWithDice(t *testing.T, roller sdk.Roller) *acceptanceHa
 	})
 	require.NoError(t, err)
 
-	return &acceptanceHarness{handler: h, charRepo: charRepo, manager: orch}
+	return &acceptanceHarness{handler: h, charRepo: charRepo, manager: orch, redis: client}
 }
 
 func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {

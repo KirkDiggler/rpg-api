@@ -574,8 +574,17 @@ func (s *SessionStackSuite) TestStartEncounter_GetAtlasServesSceneryAsFloorNobod
 func (s *SessionStackSuite) TestListDungeons_ReadsTheRegistry() {
 	out, err := s.orch.ListDungeons(s.ctx, &lobbyorch.ListDungeonsInput{})
 	s.Require().NoError(err)
-	s.Require().Len(out.Dungeons, 1)
-	s.Equal(dungeons.DefaultKey, out.Dungeons[0].Key)
+
+	keys := make([]string, 0, len(out.Dungeons))
+	for _, d := range out.Dungeons {
+		keys = append(keys, d.Key)
+	}
+	// Every shipped dungeon, counted rather than spelled: the content tree
+	// gained the heirloom fixture with rpg-project#368, and a literal here
+	// would turn each new piece of content into a failure that says nothing
+	// about the content.
+	s.Contains(keys, dungeons.DefaultKey)
+	s.Len(keys, dungeonstest.ShippedCount(s.T()))
 }
 
 // TestStartEncounter_FirstAdmissionPersistsCompleteLongRestOutcomes is the

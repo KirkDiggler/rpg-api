@@ -8,6 +8,7 @@ import (
 
 	lobbyv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
+	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 )
 
 func (s *HandlerSuite) TestListDungeons_NoAuth_Unauthenticated() {
@@ -17,12 +18,23 @@ func (s *HandlerSuite) TestListDungeons_NoAuth_Unauthenticated() {
 	s.Require().Equal(codes.Unauthenticated, st.Code())
 }
 
-// TestListDungeons_ListsTheShippedTomb: the picker sees what the registry
+// TestListDungeons_ListsWhatIsShipped: the picker sees what the registry
 // holds, with authoring off (the handler suite's registry is read-only).
-func (s *HandlerSuite) TestListDungeons_ListsTheShippedTomb() {
+//
+// Every shipped dungeon, not a named one: the content directory grew a
+// second file with rpg-project#368 (the heirloom fixture the
+// recover-the-artifact scenario is authored against), and the picker showing
+// it is the point rather than a side effect -- it is how a party chooses to
+// play that scenario.
+func (s *HandlerSuite) TestListDungeons_ListsWhatIsShipped() {
 	resp, err := s.handler.ListDungeons(s.ctx, &lobbyv1alpha1.ListDungeonsRequest{})
 	s.Require().NoError(err)
-	s.Require().Len(resp.GetDungeons(), 1)
-	s.Equal(dungeons.DefaultKey, resp.GetDungeons()[0].GetKey())
-	s.NotEmpty(resp.GetDungeons()[0].GetName())
+
+	keys := make([]string, 0, len(resp.GetDungeons()))
+	for _, d := range resp.GetDungeons() {
+		s.NotEmpty(d.GetName(), "dungeon %q reaches the picker with no name", d.GetKey())
+		keys = append(keys, d.GetKey())
+	}
+	s.Contains(keys, dungeons.DefaultKey, "the default is always there -- 'no key' means the tomb")
+	s.Len(keys, dungeonstest.ShippedCount(s.T()), "and every other file in the content directory beside it")
 }
