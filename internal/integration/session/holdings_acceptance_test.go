@@ -910,3 +910,120 @@ func TestAcceptance_TheAtlasNeverSaysWhichPropIsWorthTaking(t *testing.T) {
 		"AtlasProp grew a field -- if it names holdings, the atlas has started "+
 			"answering which prop is worth taking")
 }
+
+// -----------------------------------------------------------------------
+// The atlas start (rpg-project#374) — three cases, three answers
+// -----------------------------------------------------------------------
+
+// TestAcceptance_TheAtlasSaysWhereTheDungeonBeginsAndWhichWay is the whole
+// start translation, and its three rows are three DIFFERENT facts rather
+// than one fact with a default.
+//
+// A start is PRESENTATION and gates nothing: it is where the dungeon says it
+// begins, so a client opens the camera the way the author meant. Where
+// members actually are is GetWhere's answer and always was.
+func TestAcceptance_TheAtlasSaysWhereTheDungeonBeginsAndWhichWay(t *testing.T) {
+	// ROW 1 — the author stated no facing. The bare pair is the whole of
+	// what a start was before facings existed and stays legal forever, so
+	// this is what every shipped fixture says today.
+	t.Run("an authored start with no facing is a cell and an empty word", func(t *testing.T) {
+		run := startHeirloomRun(t)
+
+		start := run.atlas(t, "alice").GetStart()
+		require.NotNil(t, start, "the dungeon says where it begins")
+		require.Equal(t, pbAt(aliceSeatCol, aliceSeatRow).GetX(), start.GetAt().GetX())
+		require.Equal(t, pbAt(aliceSeatCol, aliceSeatRow).GetY(), start.GetAt().GetY())
+		require.Empty(t, start.GetFacing(),
+			"a dungeon that says nothing about facing is not a dungeon facing north -- "+
+				"it is one whose author did not say, and empty is that fact")
+
+		// The same answer for everyone: a start is structure, like the exits.
+		require.Equal(t, start.String(), run.atlas(t, "bob").GetStart().String())
+	})
+
+	// ROW 2 — the author stated one. The word crosses VERBATIM: this seam
+	// neither validates the vocabulary nor turns a name into an angle, both
+	// of which belong elsewhere and would be a second place to drift.
+	t.Run("an authored facing crosses as the word the author wrote", func(t *testing.T) {
+		const bare = "start: [0, 1]"
+		faced := strings.Replace(dungeonstest.HeirloomVaultYAML, bare, "start: { at: [0, 1], facing: e }", 1)
+		require.NotEqual(t, dungeonstest.HeirloomVaultYAML, faced,
+			"the fixture's start line must be where this test expects it")
+
+		run := startRunOn(t, faced)
+
+		start := run.atlas(t, "alice").GetStart()
+		require.NotNil(t, start)
+		require.Equal(t, "e", start.GetFacing(), "the author's own word, unedited")
+	})
+
+	// ROW 3 — nobody stated a start at all, and this is the row that matters
+	// on the next deploy.
+	//
+	// It cannot come from authoring: dungeonspec REFUSES a file without a
+	// start ("the dungeon does not say where the party starts"). What it
+	// comes from is a STORED ENCOUNTER written before starts were carried,
+	// which the toolkit made a pointer with omitempty precisely to allow --
+	// and every session already in Redis is one of those. So this scene ages
+	// a live encounter backwards: it strips the start from the blob the way
+	// an older server would have written it, and asks what the atlas says.
+	//
+	// The answer has to be NOTHING. A zero-valued start would claim the
+	// party arrives at [0,0] looking nowhere, which is a real dungeon
+	// somebody could author and therefore a lie about this one.
+	t.Run("an encounter stored before starts existed says nothing", func(t *testing.T) {
+		run := startHeirloomRun(t)
+		require.NotNil(t, run.atlas(t, "alice").GetStart(), "it has one to begin with")
+
+		encounters := sessionorch.NewEncounterRepository(run.h.redis, time.Hour)
+		stored, err := encounters.GetEncounter(context.Background(), "heirloom-encounter")
+		require.NoError(t, err)
+		require.NotNil(t, stored.Field.Start, "the blob carries one before we age it")
+		stored.Field.Start = nil
+		require.NoError(t, encounters.SaveEncounter(context.Background(), "heirloom-encounter", stored))
+
+		require.Nil(t, run.atlas(t, "alice").GetStart(),
+			"absence is spelled as an absent message, never as a zero-valued one")
+		require.Nil(t, run.atlas(t, "bob").GetStart())
+	})
+}
+
+// startRunOn is startHeirloomRun over authored YAML the caller supplies, for
+// the scenes that vary the file itself.
+func startRunOn(t *testing.T, authored string) *heirloomRun {
+	t.Helper()
+
+	h := newAcceptanceHarness(t)
+	for _, who := range []struct{ id, player string }{
+		{"alice", "player-alice"}, {"bob", "player-bob"},
+	} {
+		_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
+			Character: &entities.Character{Data: armedFighter(who.id, who.player)},
+		})
+		require.NoError(t, err)
+	}
+
+	dungeon, err := sessionworld.Compile([]byte(authored))
+	require.NoError(t, err, "the authored fixture must compile")
+
+	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+		Session: heirloomSession, Encounter: "heirloom-encounter", World: dungeon.World,
+	})
+	require.NoError(t, err)
+
+	run := &heirloomRun{
+		h:     h,
+		alice: auth.WithPlayerID(context.Background(), "player-alice"),
+		bob:   auth.WithPlayerID(context.Background(), "player-bob"),
+	}
+	_, err = h.handler.Join(run.alice, &sessionpb.JoinRequest{
+		Session: heirloomSession, Member: "alice", Position: pbAt(aliceSeatCol, aliceSeatRow),
+	})
+	require.NoError(t, err)
+	_, err = h.handler.Join(run.bob, &sessionpb.JoinRequest{
+		Session: heirloomSession, Member: "bob", Position: pbAt(bobSeatCol, bobSeatRow),
+	})
+	require.NoError(t, err)
+
+	return run
+}
