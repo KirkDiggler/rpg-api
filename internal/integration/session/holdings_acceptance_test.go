@@ -697,7 +697,7 @@ func heirloomWireBytes(t *testing.T, captainHolds bool) map[string]string {
 		// id, so two runs of the same scene render identically and any
 		// difference is a real one.
 		require.NotEmpty(t, story.GetEntries(), "%s has been told something to compare", member)
-		var said []string
+		said := make([]string, 0, len(story.GetEntries()))
 		for _, e := range story.GetEntries() {
 			said = append(said, e.GetKind().String()+"|"+protojson.Format(e))
 		}
