@@ -5,6 +5,7 @@ import (
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
@@ -1491,4 +1492,28 @@ func doorToProto(d sdk.Door) *sessionpb.DoorInfo {
 		out.Lock = &sessionpb.DoorLock{Approaches: doorApproachesToProto(d.Lock.Approaches)}
 	}
 	return out
+}
+
+// tradeItemFromProto mirrors one wire TradeItem onto the SDK's shape. The
+// equipment type crosses as the same plain string vendorStockEntryToProto
+// already carries the other direction -- no second equipment-type mapping.
+func tradeItemFromProto(i *sessionpb.TradeItem) sdk.TradeItem {
+	return sdk.TradeItem{
+		Type:     shared.EquipmentType(i.GetEquipmentType()),
+		ID:       i.GetEquipmentId(),
+		Quantity: int(i.GetQuantity()),
+	}
+}
+
+// tradeOfferFromProto mirrors one wire TradeOffer. A nil proto offer (the
+// field unset) becomes the zero TradeOffer -- an empty Items slice, which is
+// exactly what an omitted `give` on the wire means (session.TradeInput's own
+// doc: Give must be empty this wave; the SDK's own ErrGiveNotSupported
+// refusal is what tells a caller who sent one anyway, not a nil check here).
+func tradeOfferFromProto(o *sessionpb.TradeOffer) sdk.TradeOffer {
+	items := make([]sdk.TradeItem, len(o.GetItems()))
+	for i, it := range o.GetItems() {
+		items[i] = tradeItemFromProto(it)
+	}
+	return sdk.TradeOffer{Items: items}
 }

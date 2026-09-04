@@ -106,6 +106,19 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrNotDown", sdk.ErrNotDown, codes.FailedPrecondition},
 		{"ErrNotHoldable", sdk.ErrNotHoldable, codes.FailedPrecondition},
 		{"ErrAlreadyHeld", sdk.ErrAlreadyHeld, codes.FailedPrecondition},
+		// Trade (rpg-project#369/#370, wave 1 of rpg-toolkit#1275): the wire's
+		// own TradeRequest.give doc already states ErrGiveNotSupported's code
+		// in writing (FAILED_PRECONDITION) -- a legal field on a legal
+		// message, refused by this wave's own rule, the same shape
+		// ErrCannotAfford already sits in. The other three are the same
+		// well-formed-call-the-world-refuses family: ErrInvalidTradeOffer
+		// (Receive isn't exactly one valid item), ErrNotAVendor (a real,
+		// visible world NPC with no vendor capability), ErrOutOfStock (a
+		// real vendor that doesn't carry enough of it).
+		{"ErrGiveNotSupported", sdk.ErrGiveNotSupported, codes.FailedPrecondition},
+		{"ErrInvalidTradeOffer", sdk.ErrInvalidTradeOffer, codes.FailedPrecondition},
+		{"ErrNotAVendor", sdk.ErrNotAVendor, codes.FailedPrecondition},
+		{"ErrOutOfStock", sdk.ErrOutOfStock, codes.FailedPrecondition},
 		// ErrCannotActivate is ErrCannotAfford's shape one verb further out:
 		// an ability that could have run and said no. The SDK documents it as
 		// not currently reachable through Activate — Afford consults the same

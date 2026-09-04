@@ -471,6 +471,49 @@ func (s *SessionStackSuite) TestStartEncounter_DemoVendorIsPlacedAndInteractable
 	s.Equal(npcs.StockModeUnlimited, byID[ammunition.Arrows20].Mode)
 }
 
+// TestStartEncounter_TradeBuysFromTheDemoVendor is rpg-project#369/#370's
+// own definition of done for this wave, proven directly against the real
+// Manager (no mocks): a seated player can Trade for one item and actually
+// receive it -- the character's stored inventory gains it, and the vendor's
+// stock line for it drops by the same amount.
+func (s *SessionStackSuite) TestStartEncounter_TradeBuysFromTheDemoVendor() {
+	s.seedCharacter("char-alice", "alice", "Alice")
+	s.seedReadyLobby("lobby-1", "alice")
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-1",
+	})
+	s.Require().NoError(err)
+
+	traded, err := s.sessOrch.Manager.Trade(s.ctx, &sdk.TradeInput{
+		Session: out.EncounterID, Actor: "char-alice", Target: "demo-merchant-1",
+		Receive: sdk.TradeOffer{Items: []sdk.TradeItem{
+			{Type: shared.EquipmentTypeWeapon, ID: weapons.Longsword, Quantity: 1},
+		}},
+	})
+	s.Require().NoError(err)
+
+	// The vendor's own limited stock line for the longsword is gone --
+	// bought the whole quantity it had (1) -- while the longbow and arrows
+	// are untouched.
+	byID := make(map[string]npcs.StockEntryView, len(traded.Descriptor.Inventory))
+	for _, entry := range traded.Descriptor.Inventory {
+		byID[entry.ID] = entry
+	}
+	s.Require().Len(traded.Descriptor.Inventory, 2, "the bought longsword's line is gone, longbow and arrows remain")
+	_, stillHasLongsword := byID[weapons.Longsword]
+	s.False(stillHasLongsword)
+	s.Equal(npcs.StockModeLimited, byID[weapons.Longbow].Mode)
+
+	// And the buyer's own stored character record actually gained it --
+	// the point of the whole verb, not just a descriptor that says so.
+	got, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-alice"})
+	s.Require().NoError(err)
+	s.Contains(got.Character.Data.Inventory, tkcharacter.InventoryItemData{
+		Type: shared.EquipmentTypeWeapon, ID: weapons.Longsword, Quantity: 1,
+	})
+}
+
 // lobbyOver is SetupTest's orchestrator over a different content registry,
 // for the tests that play a dungeon the author Put rather than a shipped one.
 func (s *SessionStackSuite) lobbyOver(registry dungeons.Registry) *lobbyorch.Orchestrator {
