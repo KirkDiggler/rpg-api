@@ -453,22 +453,19 @@ func TestAcceptance_LeavingFromAnywhereElseDropsWhatYouCarry(t *testing.T) {
 	require.Empty(t, departure.GetExit(),
 		"he used no authored exit -- empty is the truth, not 'unknown'")
 
-	// KNOWN DIVERGENCE, filed as rpg-toolkit#1507. The design and the proto
-	// both say a departure that dropped what it held carries nothing out --
-	// "a holding is either carried out through the exit or left on the
-	// floor, never silently deleted" -- but the composition writes the
-	// `exited` beat with what the member held BEFORE it decides whether an
-	// ending fired, so today it says `holding: [chalice]` and the `dropped`
-	// beat below says the chalice is on the floor. Two beats about one
-	// departure that disagree.
+	// THE TWO BEATS NEVER DISAGREE (rpg-toolkit#1507, found by this scene and
+	// fixed in encounter v0.57.1). `holding` is what actually LEFT THE RUN
+	// with the member, so a departure that dropped everything carries
+	// nothing out and the DROPPED beat below is the whole story of where it
+	// went. The composition used to write this beat with what the member
+	// held before deciding whether an ending had fired, which said "he left
+	// holding the chalice" one line above "the chalice is on the floor".
 	//
-	// Pinned as it actually behaves, loudly, rather than asserted as it
-	// should: rpg-api translates verbatim and has nothing to fix here, and a
-	// test that quietly skipped the field would let the disagreement reach
-	// the client unrecorded. This line flips to require.Empty when #1507
-	// lands.
-	require.Equal(t, []string{dungeonstest.ChalicePropID}, departure.GetHolding(),
-		"today the exited beat still claims he carried it out -- rpg-toolkit#1507")
+	// A holding is therefore either carried out through the bound exit or
+	// left on the floor, and never silently deleted -- which is the wire
+	// contract Exited.holding states, now true of the beat as well.
+	require.Empty(t, departure.GetHolding(),
+		"a departure that dropped what it held carried nothing out")
 
 	require.Contains(t, propIDs(run.atlas(t, "alice")), dungeonstest.ChalicePropID,
 		"a refetch agrees with the beat: the chalice is on the map again")
