@@ -377,8 +377,12 @@ func endingsFor(bossID string, scenarioEndings []tkencounter.EndingInput) []tken
 // must declare the same endings in the same order, or the world a dungeon
 // compiles to depends on Go's map iteration.
 func endingsOfScenarios(spec tkdungeonspec.Compiled) ([]tkencounter.EndingInput, error) {
+	// An empty list, never a nil one with a nil error: this package's own law
+	// (see nobodyDown.Standing) is that a caller must not have to tell "this
+	// dungeon binds no scenario" from "nothing was answered".
+	endings := []tkencounter.EndingInput{}
 	if len(spec.Scenarios) == 0 {
-		return nil, nil
+		return endings, nil
 	}
 
 	ids := make([]string, 0, len(spec.Scenarios))
@@ -388,7 +392,6 @@ func endingsOfScenarios(spec tkdungeonspec.Compiled) ([]tkencounter.EndingInput,
 	sort.Strings(ids)
 
 	facts := tkscenarios.FactsFrom(spec.Field)
-	var endings []tkencounter.EndingInput
 	for _, id := range ids {
 		scenario, known := tkscenarios.Lookup(id)
 		if !known {
