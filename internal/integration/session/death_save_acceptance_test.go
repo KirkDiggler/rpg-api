@@ -2,14 +2,18 @@ package session_test
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/saves"
@@ -154,23 +158,197 @@ func deathSaveDeclaration(t *testing.T, s *deathSaveScene) *sessionpb.Declaratio
 	return nil
 }
 
+func attackDeclaration(t *testing.T, s *deathSaveScene) *sessionpb.Declaration {
+	t.Helper()
+	afford, err := s.h.handler.Afford(s.ctx, &sessionpb.AffordRequest{Session: s.session, Member: s.actor})
+	require.NoError(t, err)
+	for _, declaration := range afford.GetDeclarations() {
+		if declaration.GetVerb() == sessionpb.Verb_VERB_ATTACK {
+			return declaration
+		}
+	}
+	require.FailNow(t, "Attack declaration absent")
+	return nil
+}
+
+func attackCandidatePresent(declaration *sessionpb.Declaration, member string) bool {
+	for _, candidate := range declaration.GetCandidates() {
+		if candidate.GetMember() == member {
+			return true
+		}
+	}
+	return false
+}
+
+func attackCandidateAvailable(declaration *sessionpb.Declaration, member string) bool {
+	for _, candidate := range declaration.GetCandidates() {
+		if candidate.GetMember() == member {
+			return candidate.GetAvailable()
+		}
+	}
+	return false
+}
+
+func participantByMember(t *testing.T, turn *sessionpb.TurnResponse, member string) *sessionpb.Participant {
+	t.Helper()
+	for _, participant := range turn.GetParticipants() {
+		if participant.GetMember() == member {
+			return participant
+		}
+	}
+	require.FailNow(t, "participant absent", member)
+	return nil
+}
+
+func assertPublicDeathSaveState(
+	t *testing.T,
+	participant *sessionpb.Participant,
+	life sessionpb.LifeState,
+	progress *sessionpb.DeathSaveProgress,
+) {
+	t.Helper()
+	require.Equal(t, life, participant.GetLifeState())
+	require.True(t, proto.Equal(progress, participant.GetDeathSaves()),
+		"progress mismatch: want %v, got %v", progress, participant.GetDeathSaves())
+}
+
+type deathSaveWitness struct {
+	member   string
+	ctx      context.Context
+	stream   *recordingStream
+	baseline int
+}
+
+func subscribeDeathSaveWitness(t *testing.T, s *deathSaveScene, member string) *deathSaveWitness {
+	t.Helper()
+	ctx, cancel := context.WithCancel(auth.WithPlayerID(context.Background(), "player-"+member))
+	stream := newRecordingStream(ctx)
+	done := make(chan error, 1)
+	go func() {
+		done <- s.h.handler.StreamEvents(&sessionpb.StreamEventsRequest{Session: s.session, Member: member}, stream)
+	}()
+	waitForLive(t, s.h.manager.Broker, s.session, member, stream)
+	witness := &deathSaveWitness{member: member, ctx: ctx, stream: stream, baseline: len(stream.snapshot())}
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-done:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			t.Errorf("%s StreamEvents did not stop after cancellation", member)
+		}
+	})
+	return witness
+}
+
+func (w *deathSaveWitness) deathSaveEvent(t *testing.T) *sessionpb.Event {
+	t.Helper()
+	events := waitForQuiescence(t, w.stream, 2*time.Second)[w.baseline:]
+	return singleDeathSaveEvent(t, events)
+}
+
+func singleDeathSaveEvent(t *testing.T, events []*sessionpb.Event) *sessionpb.Event {
+	t.Helper()
+	var found []*sessionpb.Event
+	for _, event := range events {
+		if event.GetKind() == sessionpb.EventKind_EVENT_KIND_DEATH_SAVE_ROLLED {
+			found = append(found, event)
+		}
+	}
+	require.Len(t, found, 1, "expected exactly one Death Save event")
+	return found[0]
+}
+
+func assertOrdinarySuccessResponse(t *testing.T, s *deathSaveScene, response *sessionpb.DeathSaveResponse) {
+	t.Helper()
+	require.Equal(t, int32(14), response.GetRoll())
+	require.Equal(t, sessionpb.DeathSaveOutcome_DEATH_SAVE_OUTCOME_SUCCESS, response.GetOutcome())
+	require.Equal(t, int32(1), response.GetSuccessesAdded())
+	require.Zero(t, response.GetFailuresAdded())
+	require.Equal(t, int32(2), response.GetSuccesses())
+	require.Equal(t, int32(1), response.GetFailures())
+	require.Equal(t, int32(1), response.GetSuccessesNeeded())
+	require.Equal(t, int32(2), response.GetFailuresRemaining())
+	require.False(t, response.GetStabilized())
+	require.False(t, response.GetDead())
+	require.False(t, response.GetRecovered())
+	require.Zero(t, response.GetHpRestored())
+	require.Equal(t, sessionpb.DeathSaveContinuation_DEATH_SAVE_CONTINUATION_END_TURN, response.GetContinuation())
+	require.Equal(t, "presentation_1", response.GetPresentationId())
+	require.Positive(t, response.GetSeq())
+	require.NotEqual(t, strconv.FormatUint(response.GetSeq(), 10), response.GetPresentationId(),
+		"opaque token remains separate from numeric authority")
+	require.Equal(t, []string{"character:" + s.actor, "encounter:death-save-encounter", "session:" + s.session}, response.GetSaved().GetWritten())
+	require.Empty(t, response.GetSaved().GetFailed())
+	require.Equal(t, int32(6), response.GetDelivery().GetEvents(), "Death Save plus newly-observed Down are delivered to all three roster members")
+	require.False(t, response.GetDelivery().GetFailed())
+}
+
+func assertDeathSaveEventMatchesResponse(
+	t *testing.T,
+	actor string,
+	event *sessionpb.DeathSaveRolled,
+	response *sessionpb.DeathSaveResponse,
+) {
+	t.Helper()
+	require.NotNil(t, event)
+	require.Equal(t, actor, event.GetActor())
+	require.Equal(t, response.GetRoll(), event.GetRoll())
+	require.Equal(t, response.GetOutcome(), event.GetOutcome())
+	require.Equal(t, response.GetSuccessesAdded(), event.GetSuccessesAdded())
+	require.Equal(t, response.GetFailuresAdded(), event.GetFailuresAdded())
+	require.Equal(t, response.GetSuccesses(), event.GetSuccesses())
+	require.Equal(t, response.GetFailures(), event.GetFailures())
+	require.Equal(t, response.GetSuccessesNeeded(), event.GetSuccessesNeeded())
+	require.Equal(t, response.GetFailuresRemaining(), event.GetFailuresRemaining())
+	require.Equal(t, response.GetStabilized(), event.GetStabilized())
+	require.Equal(t, response.GetDead(), event.GetDead())
+	require.Equal(t, response.GetRecovered(), event.GetRecovered())
+	require.Equal(t, response.GetHpRestored(), event.GetHpRestored())
+	require.Equal(t, response.GetContinuation(), event.GetContinuation())
+	require.Equal(t, response.GetPresentationId(), event.GetPresentationId())
+}
+
+type deathSaveStateSnapshot struct {
+	HitPoints         int
+	ProgressPresent   bool
+	Progress          saves.DeathSaveState
+	DeathSaveCapacity int
+	LifeState         combat.LifeState
+}
+
+func deathSaveStateSnapshotOf(t *testing.T, s *deathSaveScene, member string) deathSaveStateSnapshot {
+	t.Helper()
+	data := s.stored(t, member)
+	snapshot := deathSaveStateSnapshot{HitPoints: data.HitPoints}
+	if data.DeathSaveState != nil {
+		snapshot.ProgressPresent = true
+		snapshot.Progress = *data.DeathSaveState
+	}
+	if data.ActionEconomy != nil {
+		snapshot.DeathSaveCapacity = data.ActionEconomy.Granted[tkcharacter.GrantedDeathSaves]
+	}
+	loaded, err := tkcharacter.Load(context.Background(), data)
+	require.NoError(t, err)
+	snapshot.LifeState = loaded.LifeState()
+	return snapshot
+}
+
 func TestAcceptance_DeathSave(t *testing.T) {
 	t.Run("ordinary success persists, publishes, spends, and rejects replay", func(t *testing.T) {
 		s := newDeathSaveScene(t)
+		actorLive := subscribeDeathSaveWitness(t, s, s.actor)
+		allyLive := subscribeDeathSaveWitness(t, s, s.ally)
 		s.seed(t, s.actor, 0, &saves.DeathSaveState{Successes: 1, Failures: 1}, true)
 
 		turn, err := s.h.handler.Turn(s.ctx, &sessionpb.TurnRequest{Session: s.session, Member: s.actor})
 		require.NoError(t, err)
-		var actor *sessionpb.Participant
-		for _, participant := range turn.GetParticipants() {
-			if participant.GetMember() == s.actor {
-				actor = participant
-			}
-		}
-		require.NotNil(t, actor)
-		require.Equal(t, sessionpb.LifeState_LIFE_STATE_DYING, actor.GetLifeState())
-		require.Equal(t, int32(1), actor.GetDeathSaves().GetSuccesses())
-		require.Equal(t, int32(1), actor.GetDeathSaves().GetFailures())
+		require.Contains(t, turn.GetOrder(), s.actor, "Dying actor retains the actual initiative order entry")
+		actor := participantByMember(t, turn, s.actor)
+		assertPublicDeathSaveState(t, actor, sessionpb.LifeState_LIFE_STATE_DYING, &sessionpb.DeathSaveProgress{
+			Successes: 1, Failures: 1, SuccessesNeeded: 2, FailuresRemaining: 2,
+			Stabilized: false, Dead: false,
+		})
 
 		declaration := deathSaveDeclaration(t, s)
 		require.NotEmpty(t, declaration.GetId())
@@ -182,33 +360,41 @@ func TestAcceptance_DeathSave(t *testing.T) {
 			Session: s.session, Member: s.actor, DeclarationId: declaration.GetId(),
 		})
 		require.NoError(t, err)
-		require.Equal(t, int32(14), resp.GetRoll())
-		require.Equal(t, sessionpb.DeathSaveOutcome_DEATH_SAVE_OUTCOME_SUCCESS, resp.GetOutcome())
-		require.Equal(t, sessionpb.DeathSaveContinuation_DEATH_SAVE_CONTINUATION_END_TURN, resp.GetContinuation())
-		require.Equal(t, "presentation_1", resp.GetPresentationId())
-		require.NotEqual(t, "1", resp.GetPresentationId(), "opaque token is not the numeric event sequence")
+		assertOrdinarySuccessResponse(t, s, resp)
 		require.Equal(t, 1, s.dice.callCount())
 
 		stored := s.stored(t, s.actor)
-		require.Equal(t, 2, stored.DeathSaveState.Successes)
+		require.Zero(t, stored.HitPoints)
+		require.Equal(t, &saves.DeathSaveState{Successes: 2, Failures: 1}, stored.DeathSaveState)
 		require.Zero(t, stored.ActionEconomy.Granted[tkcharacter.GrantedDeathSaves])
-		for _, witness := range []struct{ member, player string }{{s.actor, "player-" + s.actor}, {s.ally, "player-" + s.ally}} {
-			story, storyErr := s.h.handler.GetStory(auth.WithPlayerID(context.Background(), witness.player), &sessionpb.GetStoryRequest{Session: s.session, Member: witness.member})
+		afterTurn, turnErr := s.h.handler.Turn(s.ctx, &sessionpb.TurnRequest{Session: s.session, Member: s.actor})
+		require.NoError(t, turnErr)
+		require.Contains(t, afterTurn.GetOrder(), s.actor)
+		assertPublicDeathSaveState(t, participantByMember(t, afterTurn, s.actor), sessionpb.LifeState_LIFE_STATE_DYING, &sessionpb.DeathSaveProgress{
+			Successes: 2, Failures: 1, SuccessesNeeded: 1, FailuresRemaining: 2,
+			Stabilized: false, Dead: false,
+		})
+
+		for _, witness := range []*deathSaveWitness{actorLive, allyLive} {
+			liveEvent := witness.deathSaveEvent(t)
+			require.Equal(t, witness.member, liveEvent.GetRecipient())
+			require.Equal(t, s.session, liveEvent.GetSession())
+			assertDeathSaveEventMatchesResponse(t, s.actor, liveEvent.GetDeathSaveRolled(), resp)
+
+			story, storyErr := s.h.handler.GetStory(witness.ctx, &sessionpb.GetStoryRequest{Session: s.session, Member: witness.member})
 			require.NoError(t, storyErr)
-			var rolled *sessionpb.DeathSaveRolled
-			for _, event := range story.GetEntries() {
-				if event.GetKind() == sessionpb.EventKind_EVENT_KIND_DEATH_SAVE_ROLLED {
-					rolled = event.GetDeathSaveRolled()
-				}
-			}
-			require.NotNil(t, rolled)
-			require.Equal(t, resp.GetPresentationId(), rolled.GetPresentationId())
-			require.Equal(t, resp.GetRoll(), rolled.GetRoll())
+			storyEvent := singleDeathSaveEvent(t, story.GetEntries())
+			require.Equal(t, witness.member, storyEvent.GetRecipient())
+			assertDeathSaveEventMatchesResponse(t, s.actor, storyEvent.GetDeathSaveRolled(), resp)
 		}
+		require.Equal(t, actorLive.deathSaveEvent(t).GetSeq(), resp.GetSeq(), "response sequence is the actor recipient's delivered event sequence")
+
 		beforeReplay := s.dice.callCount()
+		beforeState := deathSaveStateSnapshotOf(t, s, s.actor)
 		_, err = s.h.handler.DeathSave(s.ctx, &sessionpb.DeathSaveRequest{Session: s.session, Member: s.actor, DeclarationId: declaration.GetId()})
 		requireGRPCCode(t, err, codes.FailedPrecondition)
 		require.Equal(t, beforeReplay, s.dice.callCount())
+		require.Equal(t, beforeState, deathSaveStateSnapshotOf(t, s, s.actor))
 	})
 
 	for _, tc := range []struct {
@@ -288,12 +474,17 @@ func TestAcceptance_DeathSaveAttackTransitionsAndTargetability(t *testing.T) {
 				}
 			}
 			require.True(t, targetListed, "Dying and Stabilized remain provider-authored targets")
+			before := deathSaveStateSnapshotOf(t, s, target)
 			s.dice.reset(tc.rolls...)
 			_, err = s.h.handler.Attack(s.ctx, &sessionpb.AttackRequest{Session: s.session, Attacker: s.actor, Target: target, DeclarationId: attack.GetId()})
 			require.NoError(t, err)
-			stored := s.stored(t, target)
-			require.Equal(t, tc.wantFailures, stored.DeathSaveState.Failures)
-			require.Equal(t, tc.wantStabilized, stored.DeathSaveState.Stabilized)
+			after := deathSaveStateSnapshotOf(t, s, target)
+			if tc.weak {
+				require.Equal(t, before, after, "zero applied damage preserves the complete target life/death-save state")
+			} else {
+				require.Equal(t, tc.wantFailures, after.Progress.Failures)
+				require.Equal(t, tc.wantStabilized, after.Progress.Stabilized)
+			}
 		})
 	}
 
@@ -313,11 +504,39 @@ func TestAcceptance_DeathSaveAttackTransitionsAndTargetability(t *testing.T) {
 		for _, candidate := range attack.GetCandidates() {
 			require.NotEqual(t, s.ally, candidate.GetMember())
 		}
+		before := deathSaveStateSnapshotOf(t, s, s.ally)
 		s.dice.reset(20, 8, 8)
 		_, err = s.h.handler.Attack(s.ctx, &sessionpb.AttackRequest{Session: s.session, Attacker: s.actor, Target: s.ally, DeclarationId: attack.GetId()})
 		requireGRPCCode(t, err, codes.FailedPrecondition)
 		require.Zero(t, s.dice.callCount(), "stale target refuses before resolution or dice")
-		require.Equal(t, 3, s.stored(t, s.ally).DeathSaveState.Failures)
+		require.Equal(t, before, deathSaveStateSnapshotOf(t, s, s.ally), "Dead target refusal preserves the complete target life/death-save state")
+	})
+
+	t.Run("defeated monster is excluded while another hostile keeps the fight active", func(t *testing.T) {
+		s := newDeathSaveScene(t)
+		_, err := s.h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+			Session: s.session, ID: "skel-2", Ref: refs.Monsters.Skeleton().String(), Position: at(20, 3),
+		})
+		require.NoError(t, err)
+		attack := attackDeclaration(t, s)
+		require.True(t, attackCandidateAvailable(attack, "skel-1"))
+		require.True(t, attackCandidatePresent(attack, "skel-2"))
+
+		s.dice.reset(20, 8, 8)
+		_, err = s.h.handler.Attack(s.ctx, &sessionpb.AttackRequest{
+			Session: s.session, Attacker: s.actor, Target: "skel-1", DeclarationId: attack.GetId(),
+		})
+		require.NoError(t, err)
+
+		after := attackDeclaration(t, s)
+		require.False(t, attackCandidatePresent(after, "skel-1"), "defeated monster is omitted from the provider candidate universe")
+		require.True(t, attackCandidatePresent(after, "skel-2"), "live hostile proves the fight and Attack declaration remain")
+		s.dice.reset(20, 8, 8)
+		_, err = s.h.handler.Attack(s.ctx, &sessionpb.AttackRequest{
+			Session: s.session, Attacker: s.actor, Target: "skel-1", DeclarationId: attack.GetId(),
+		})
+		requireGRPCCode(t, err, codes.FailedPrecondition)
+		require.Zero(t, s.dice.callCount(), "defeated target is stale before a second resolution")
 	})
 }
 
