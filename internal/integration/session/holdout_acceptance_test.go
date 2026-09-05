@@ -2,6 +2,7 @@ package session_test
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -44,6 +45,20 @@ const raiderCampKey = "reference-raider-camp"
 type alwaysTheLowestFace struct{}
 
 func (alwaysTheLowestFace) Roll(_ context.Context, _ int) (int, error) { return 1, nil }
+
+// switchableDice answers the highest face while high is set and the lowest
+// otherwise. A scene flips it around the one verb whose rolls it wants to
+// land -- alice's own Attack -- so her blows always hit for full damage and
+// the camp's never do. Every verb runs synchronously under the test, so the
+// flip is scoped exactly; atomic anyway, because -race is watching.
+type switchableDice struct{ high *atomic.Bool }
+
+func (d switchableDice) Roll(_ context.Context, size int) (int, error) {
+	if d.high.Load() {
+		return size, nil
+	}
+	return 1, nil
+}
 
 // The camp's geometry the scenes lean on, in authored [col,row] offsets.
 var (
@@ -89,8 +104,13 @@ type campRun struct {
 // the launch's, not the scene's -- and returns the run.
 func launchTheCamp(t *testing.T) *campRun {
 	t.Helper()
+	return launchTheCampWith(t, alwaysTheLowestFace{})
+}
 
-	h := newAcceptanceHarnessWithDice(t, alwaysTheLowestFace{})
+func launchTheCampWith(t *testing.T, roller sdk.Roller) *campRun {
+	t.Helper()
+
+	h := newAcceptanceHarnessWithDice(t, roller)
 	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
 		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
 	})
@@ -491,4 +511,104 @@ func TestAcceptance_TheChiefsFallBringsTheReinforcements(t *testing.T) {
 	status, err := r.h.handler.GetStatus(r.alice, &sessionpb.GetStatusRequest{Session: r.sess})
 	require.NoError(t, err)
 	require.True(t, status.GetOpen(), "and the run is not over -- the camp never learned anything")
+}
+
+// TestAcceptance_TheChiefFelledByThePartyBringsTheReinforcements is A4 by
+// the walk's own path: no sheet is edited -- alice walks into the hut and
+// cuts the chief down herself through the gRPC surface, and the three
+// zombies arrive INSIDE THAT BLOW'S OWN RECORD, in the same verb, before
+// anybody takes another turn. This is the path the session's walk-4 fix
+// repaired: the seams rebuilt after resolution handed the world back had
+// dropped the reserve, so participation was asked about members it had
+// never been told of.
+func TestAcceptance_TheChiefFelledByThePartyBringsTheReinforcements(t *testing.T) {
+	high := &atomic.Bool{}
+	r := launchTheCampWith(t, switchableDice{high: high})
+	require.Len(t, r.factions(t), 3, "the reinforcements are in reserve")
+
+	r.intoTheYard(t)
+	r.walkToTheHut(t)
+	require.Equal(t, at(hutDoorCell[0], hutDoorCell[1]), r.where(t), "alice stands in the hut, in the chief's sight")
+
+	// Cut the chief down. He closes in on his own turns; alice swings when
+	// he is in reach, and only her rolls land.
+	felled := false
+	for turn := 0; turn < 12 && !felled; turn++ {
+		if r.canAttack(t, "chief") {
+			high.Store(true)
+			swing, err := r.h.handler.Attack(r.alice, &sessionpb.AttackRequest{
+				Session: r.sess, Attacker: "alice", Target: "chief",
+				DeclarationId: currentDeclarationID(r.alice, t, r.h.handler, r.sess, "alice", sessionpb.Verb_VERB_ATTACK),
+			})
+			high.Store(false)
+			require.NoError(t, err)
+			require.True(t, swing.GetHit(), "the highest face always lands")
+			if r.isDown(t, "chief") {
+				felled = true
+				break
+			}
+		}
+		r.endTurn(t)
+	}
+	require.True(t, felled, "alice's own blow felled the chief")
+
+	// Inside that blow's record: three ARRIVED beats, as raiders, at the
+	// gate where the author drew them -- no further verb was needed.
+	came := arrivals(r.story(t))
+	require.Len(t, came, 3, "three reinforcements arrived in the same verb that felled the chief")
+	wantCells := map[spatial.Position]bool{}
+	for _, c := range arrivalCells {
+		wantCells[at(c[0], c[1])] = true
+	}
+	for _, id := range []string{"reinforcement-1", "reinforcement-2", "reinforcement-3"} {
+		a, arrived := came[id]
+		require.True(t, arrived, "%s arrived", id)
+		require.Equal(t, sessionpb.PlacementKind_PLACEMENT_KIND_MONSTER, a.GetKind())
+		require.True(t, wantCells[spatial.Position{X: a.GetCell().GetX(), Y: a.GetCell().GetY()}],
+			"%s stands where the author drew it", id)
+	}
+	factions := r.factions(t)
+	require.Len(t, factions, 6, "the roster grew by three")
+	for _, id := range []string{"reinforcement-1", "reinforcement-2", "reinforcement-3"} {
+		require.Equal(t, "raiders", factions[id])
+	}
+
+	// And the world goes on: the scout is still up, the run is still open,
+	// and the next verb is accepted -- which is where the walk-4 defect
+	// used to surface.
+	require.Equal(t, -1, beatIndex(r.story(t), sessionpb.EventKind_EVENT_KIND_FIGHT_ENDED))
+	status, err := r.h.handler.GetStatus(r.alice, &sessionpb.GetStatusRequest{Session: r.sess})
+	require.NoError(t, err)
+	require.True(t, status.GetOpen())
+	r.endTurn(t)
+}
+
+// canAttack reports whether member is an available target of alice's Attack
+// right now, by the declaration the session itself offers her.
+func (r *campRun) canAttack(t *testing.T, member string) bool {
+	t.Helper()
+	out, err := r.h.handler.Afford(r.alice, &sessionpb.AffordRequest{Session: r.sess, Member: "alice"})
+	require.NoError(t, err)
+	for _, d := range out.GetDeclarations() {
+		if d.GetVerb() != sessionpb.Verb_VERB_ATTACK || !d.GetAvailable() {
+			continue
+		}
+		for _, c := range d.GetCandidates() {
+			if c.GetMember() == member && c.GetAvailable() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isDown reports whether the story has told alice that member went down.
+func (r *campRun) isDown(t *testing.T, member string) bool {
+	t.Helper()
+	for _, e := range r.story(t) {
+		if e.GetKind() == sessionpb.EventKind_EVENT_KIND_DOWNED && e.GetDowned().GetMember() == member {
+			return true
+		}
+	}
+	return false
 }
