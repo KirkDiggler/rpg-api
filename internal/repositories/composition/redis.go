@@ -94,7 +94,8 @@ if index_type ~= 'set' or redis.call('SISMEMBER', KEYS[3], ARGV[2]) ~= 1 then
   return 5
 end
 
-local definition_ok, definition = pcall(cjson.decode, redis.call('GET', KEYS[1]))
+local stored_definition = redis.call('GET', KEYS[1])
+local definition_ok, definition = pcall(cjson.decode, stored_definition)
 if not definition_ok or type(definition) ~= 'table' then
   return 2
 end
@@ -104,16 +105,23 @@ end
 if definition['head_revision_id'] ~= ARGV[3] then
   return 3
 end
+if stored_definition ~= ARGV[6] then
+  return 2
+end
 
 local head_type = redis.call('TYPE', KEYS[4]).ok
 if head_type ~= 'string' then
   return 6
 end
-local head_ok, head = pcall(cjson.decode, redis.call('GET', KEYS[4]))
+local stored_head = redis.call('GET', KEYS[4])
+local head_ok, head = pcall(cjson.decode, stored_head)
 if not head_ok or type(head) ~= 'table' then
   return 6
 end
 if head['guild_id'] ~= ARGV[1] or head['definition_id'] ~= ARGV[2] or head['id'] ~= ARGV[3] then
+  return 6
+end
+if stored_head ~= ARGV[7] then
   return 6
 end
 
@@ -245,8 +253,8 @@ func (r *redisRepository) AppendRevision(
 	now := r.clock.Now()
 	definition := &entities.CompositionDefinition{
 		ID: input.DefinitionID, GuildID: input.GuildID,
-		// The script validates existing immutable attribution/time and stores this JSON only
-		// after the existing record is loaded below. Fill those fields from that record.
+		// The script binds its writes to the exact definition/head bytes validated below.
+		// Preserve the definition's immutable attribution and creation time in its new value.
 		HeadRevisionID: revisionID,
 	}
 
@@ -307,7 +315,7 @@ func (r *redisRepository) AppendRevision(
 		definitionIndexKey(input.GuildID),
 		revisionKey(input.GuildID, input.ExpectedHeadRevisionID),
 	}, input.GuildID, input.DefinitionID, input.ExpectedHeadRevisionID,
-		definitionJSON, revisionJSON).Int64()
+		definitionJSON, revisionJSON, existingJSON, existingHeadJSON).Int64()
 	if err != nil {
 		return nil, apierr.Wrapf(err, "failed to append composition revision")
 	}

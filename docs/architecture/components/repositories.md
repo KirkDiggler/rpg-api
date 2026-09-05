@@ -71,7 +71,8 @@ partial library.
 
 One SHA-256 guild hash tag keeps the definition, revision, and index keys in one Redis
 Cluster slot. Lua scripts preflight modeled type, identity, collision, index, and head
-conflicts before writes, so those refusals are atomic. This is not an end-to-end
+conflicts before writes; append also compares the exact definition/head bytes validated
+by its read preflight, so those refusals are atomic. This is not an end-to-end
 exactly-once acknowledgment guarantee: go-redis may retry a script after a lost reply
 and report a collision/stale-head result even if the first execution committed. Before
 any RPC exposure, the service integration must provide and test idempotent requests or
