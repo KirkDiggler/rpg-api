@@ -156,6 +156,30 @@ type Monster struct {
 	// the way into the vault are byte-identical to every observer until
 	// somebody loots them.
 	Holds []string
+
+	// Faction is the faction this monster was placed in, AS AUTHORED
+	// (`place[].faction`, rpg-project#375): empty when the author wrote
+	// none, which the composition reads as the reserved `monsters` faction
+	// -- so a dungeon authored before factions existed spawns exactly as it
+	// did. Verbatim, not key-prefixed: a faction is a word the roster shows
+	// and a scenario binds by name.
+	//
+	// THE ONE FACT ABOUT SIDES THAT NEEDS FORWARDING. Factions, dispositions
+	// and what a record reveals are field structure and ride Compiled.Field
+	// whole into the world ([TestFactionsRideTheFieldRatherThanBeingForwarded]);
+	// a monster's membership is the one thing that is about the MEMBER, and
+	// a member enters the run through session.Spawn rather than the field,
+	// so it is hand-carried across that seam exactly as Holds is.
+	//
+	// CARRIED AND NOT YET FORWARDED, for Targeting's own reason one field
+	// up: session.SpawnInput has no field for it until the session branch of
+	// this wave is pinned, so it cannot cross the seam today even though
+	// both ends know it. Until it does, a monster whose id is its faction's
+	// MIND cannot enter the run at all: the composition refuses a mind that
+	// joins any faction but its own (encounter ErrNoFaction), so the launch
+	// of a dungeon that names one fails closed and says which member, rather
+	// than starting a camp that can never learn.
+	Faction string
 }
 
 // Compile turns one authored dungeon file into a [Dungeon].
@@ -202,7 +226,7 @@ func Compile(raw []byte) (*Dungeon, error) {
 		monsters[i] = Monster{
 			Ref: m.Ref, MemberID: id, At: cellOf(orientation, m.At),
 			Boss: m.Boss, Targeting: m.Targeting,
-			PlacementID: m.ID, Holds: m.Holds,
+			PlacementID: m.ID, Holds: m.Holds, Faction: m.Faction,
 		}
 	}
 

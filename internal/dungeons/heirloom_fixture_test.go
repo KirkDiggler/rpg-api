@@ -87,6 +87,7 @@ func (s *RegistrySuite) TestSeed_AnEmptyMountGetsEveryShippedDungeon() {
 	s.Require().NoError(err)
 	s.Contains(seeded, dungeons.DefaultKey)
 	s.Contains(seeded, heirloomKey)
+	s.Contains(seeded, raiderCampKey, "the hold-out's fixture ships too (rpg-project#375)")
 
 	onDisk, err := os.ReadDir(shipped)
 	s.Require().NoError(err)
