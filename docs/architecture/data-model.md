@@ -1,8 +1,8 @@
 ---
 name: rpg-api data model
 description: Entities, relationships, storage schemas, and known gaps in the data layer
-updated: 2026-09-04
-confidence: medium-high — Character/CharacterDraft Appearance storage is verified against current toolkit-owned entities and Redis tests; the v1 encounter/dungeon entity model this doc used to describe remains deleted (rpg-api#642)
+updated: 2026-09-05
+confidence: medium-high — #921 composition entities/storage and Character/CharacterDraft Appearance storage are verified by focused Redis tests; the historical v1 encounter/dungeon model remains deleted
 ---
 
 # rpg-api data model
@@ -41,6 +41,11 @@ EncounterEvent ─────────────── DELETED (rpg-api#64
 CharacterDraft ─────────────── owned by character_draft repo (Redis)
 
 DiceSession ────────────────── owned by dice_session repo (Redis)
+
+CompositionDefinition ──────── guild-owned stable identity + current head (Redis)
+    │ 1:N immutable
+    ▼
+CompositionRevision ────────── typed versioned source snapshot (Redis)
 ```
 
 The v2 encounter path's data model (encounter state owned by
@@ -244,6 +249,21 @@ type ActionEconomyState struct {
 
 `ActionEconomyState` has methods (`HasAction`, `UseAction`, `HasBonusAction`, etc.) — this is intentional behavior on entities (not game rules, just state tracking).
 
+## CompositionDefinition and CompositionRevision (`entities/composition.go`)
+
+`CompositionDefinition` holds a stable generated ID, guild owner, immutable creator/time
+attribution, and the current opaque revision ID. Each `CompositionRevision` repeats its
+guild/definition/creator identity and creation time and stores a typed
+`CompositionSource`: version/name, prop items, groups, root-frame XYZ/Y-yaw transforms,
+group parents, and prop support relationships. Revisions are immutable and exact reads
+remain pinned; logical asset-ref strings are preserved, but this does not version the
+referenced asset bytes.
+
+The current provider admits source version 1. Read-time validation for immutable version-1
+records must retain version-1 semantics when later versions arrive. This data model is
+repository-only: no server DI, RPC, guild authorization, dungeon/world placement, toolkit
+rule, or rendering integration exists yet.
+
 ## DiceSession (repositories/dice_session)
 
 Tracks in-progress ability score rolls for character creation. Redis-backed. Narrow scope; stores the rolls until assigned to a draft.
@@ -273,6 +293,12 @@ Character draft repository (`repositories/character_draft/redis.go`):
 
 Dice session repository (`repositories/dice_session/redis.go`):
 - `dice_session:{playerID}:{sessionID}` — JSON-serialized session state
+
+Composition repository (`repositories/composition/redis.go`; `<guild-sha256>` is one
+Redis Cluster hash tag):
+- `composition:{<guild-sha256>}:definitions` — set of definition IDs
+- `composition:{<guild-sha256>}:definition:<definition-id>` — JSON definition/head metadata
+- `composition:{<guild-sha256>}:revision:<revision-id>` — JSON immutable source revision
 
 ~~Encounter events (publisher, `publishers/encounter/redis.go`):~~ DELETED
 (rpg-api#642, 2026-07-13) — the v1 pub/sub publisher and the `EncounterEvent`

@@ -1,8 +1,8 @@
 ---
 name: rpg-api quality scorecard
 description: Per-component grade with rationale — a graded scorecard to update as the codebase evolves
-updated: 2026-09-04
-confidence: medium-high — #897 complete Appearance conversion/delegation and nested persistence are verified by focused and Docker-backed integration tests
+updated: 2026-09-05
+confidence: medium-high — #921 composition persistence is verified by focused Redis race tests; #897 Appearance conversion/delegation remains verified by focused and Docker-backed integration tests
 ---
 
 # Quality Scorecard
@@ -290,6 +290,22 @@ minutes; Redis Pub/Sub streams are live-only and close with context/subscription
 Unit tests cover key hashing, TTL, duplicate/conflict behavior, fan-out, and close paths;
 `internal/integration/sessionpresentation` proves two server instances over one Redis.
 Held below A until web traffic exercises the live channel.
+
+### Composition repository — B (new, 2026-09-05)
+
+`internal/repositories/composition/` provides typed guild-scoped create, expected-head
+append, exact pinned revision reads, and deterministic current-head listing. Generated
+IDs/timestamps, immutable JSON records, no TTL, one safe Redis Cluster hash tag, and Lua
+preflight of modeled conflicts/types/identity are covered by miniredis tests, including
+race-stressed concurrent CAS and corrupt-record refusal. Listing deliberately fails
+closed on any invalid indexed definition/head. Stored source version 1 must continue to
+use stable version-1 validation semantics when future versions are introduced.
+
+Held at B because this is repository-only and has no production traffic or live Redis
+Cluster proof. It is not wired into DI/RPC and supplies no guild authorization or
+world/dungeon integration. Lua atomicity also does not provide exactly-once request
+acknowledgment across go-redis retry after a lost reply; service integration must prove
+idempotent requests or outcome reconciliation before RPC exposure.
 
 ### Character repository — B+
 

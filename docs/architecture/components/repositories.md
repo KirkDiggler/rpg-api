@@ -1,8 +1,8 @@
 ---
 name: repositories
 description: All data access components — interface definitions, implementations, and storage schemas
-updated: 2026-09-04
-confidence: high — #897 verified nested toolkit Appearance Redis/session storage through focused repository and adapter tests; older repository notes retain stated caveats
+updated: 2026-09-05
+confidence: high — #921 composition persistence is verified through focused Redis repository tests; older repository notes retain stated caveats
 ---
 
 # repositories
@@ -18,6 +18,7 @@ served. The later v2 encounter repository is also deleted with rpg-project#227.
 |---|---|---|---|---|
 | `character` | `repository.go` | `redis.go` | Redis | B |
 | `character_draft` | `repository.go` | `redis.go` | Redis | B- |
+| `composition` | `repository.go` | `redis.go` | Redis | B |
 | `dice_session` | `repository.go` | `redis.go` | Redis | B- |
 | ~~`encounters/v2`~~ | DELETED | DELETED | DELETED | n/a |
 | `lobby` | `repository.go` | `redis.go` + `in_memory.go` | Redis + in-memory | B |
@@ -56,6 +57,34 @@ Interface methods: `Create`, `Get`, `List`, `Update`, `Delete`.
 **Storage:** Redis keys per draft. JSON stores the thin `entities.CharacterDraft`
 wrapper around toolkit `character.DraftData`, including nested Appearance. Focused
 Redis tests cover complete Appearance and present-zero optional values.
+
+## Composition repository
+
+**Path:** `repositories/composition/`
+
+Guild-scoped Redis storage for stable composition definitions and immutable source
+revisions. The typed contract creates a definition, appends a revision with an
+expected-head CAS, gets one pinned revision, and lists current definition/head pairs in
+definition-ID order. `ListDefinitions` deliberately fails closed if any indexed
+definition or head is missing, unreadable, or corrupt; it never returns a silently
+partial library.
+
+One SHA-256 guild hash tag keeps the definition, revision, and index keys in one Redis
+Cluster slot. Lua scripts preflight modeled type, identity, collision, index, and head
+conflicts before writes, so those refusals are atomic. This is not an end-to-end
+exactly-once acknowledgment guarantee: go-redis may retry a script after a lost reply
+and report a collision/stale-head result even if the first execution committed. Before
+any RPC exposure, the service integration must provide and test idempotent requests or
+outcome reconciliation for that indeterminate result.
+
+Stored source version 1 is read-validated with its version-1 semantics. Those semantics
+must remain stable for immutable historical reads when future source versions are
+introduced; new validation rules must be selected by the stored version rather than
+retroactively tightened.
+
+This is repository-only infrastructure. It is not wired into server DI or RPCs and adds
+no guild authorization, dungeon/world integration, toolkit rule, rendering pipeline, or
+user-visible readiness.
 
 ## Dice session repository
 

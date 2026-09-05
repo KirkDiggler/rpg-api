@@ -172,6 +172,10 @@ func TestRedisAppendPreservesOldRevisionAndRejectsStaleHead(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, "revision-2", appended.Definition.HeadRevisionID)
+	require.Equal(t, "player-one", appended.Definition.CreatedByPlayerID)
+	require.Equal(t, fixedNow, appended.Definition.CreatedAt)
+	require.Equal(t, "player-two", appended.Revision.CreatedByPlayerID)
+	require.Equal(t, fixedNow, appended.Revision.CreatedAt)
 
 	_, err = repo.AppendRevision(ctx, AppendRevisionInput{
 		GuildID: "guild", DefinitionID: created.Definition.ID,
@@ -262,6 +266,18 @@ func TestRedisGeneratedIDCollisionsLeaveStateUnchanged(t *testing.T) {
 		require.True(t, apierr.IsAlreadyExists(err), "got %v", err)
 		require.Equal(t, before, mustRedisGet(t, client, definitionKey("guild", created.Definition.ID)))
 	})
+
+	t.Run("wrong-type generated revision collision", func(t *testing.T) {
+		_, client, repo := newTestRepository(t, "definition", "revision")
+		ctx := context.Background()
+		require.NoError(t, client.SAdd(ctx, revisionKey("guild", "revision"), "wrong-type").Err())
+
+		_, err := repo.CreateDefinition(ctx, validCreateInput(validSource("source")))
+		require.True(t, apierr.IsAlreadyExists(err), "got %v", err)
+		require.Zero(t, client.Exists(ctx, definitionKey("guild", "definition")).Val())
+		require.Zero(t, client.Exists(ctx, definitionIndexKey("guild")).Val())
+		require.Equal(t, "set", client.Type(ctx, revisionKey("guild", "revision")).Val())
+	})
 }
 
 func TestRedisInputAndResultsDoNotAliasPersistedSource(t *testing.T) {
@@ -334,6 +350,13 @@ func TestRedisAppendRefusesCorruptPrerequisitesWithoutPartialWrites(t *testing.T
 			client.Del(ctx, key)
 			client.Set(ctx, key, "wrong-type", 0)
 		},
+		"definition absent from index": func(
+			ctx context.Context,
+			client redisclient.Client,
+			created *CreateDefinitionOutput,
+		) {
+			client.SRem(ctx, definitionIndexKey("guild"), created.Definition.ID)
+		},
 		"missing head": func(ctx context.Context, client redisclient.Client, created *CreateDefinitionOutput) {
 			client.Del(ctx, revisionKey("guild", created.Revision.ID))
 		},
@@ -369,6 +392,171 @@ func TestRedisAppendRefusesCorruptPrerequisitesWithoutPartialWrites(t *testing.T
 			}
 		})
 	}
+}
+
+func TestRedisStoredIdentifiersFailClosedBeforeAppendWrites(t *testing.T) {
+	invalidIdentifiers := map[string]string{
+		"whitespace": " invalid",
+		"control":    "invalid\n",
+		"overlong":   strings.Repeat("x", maxIDLength+1),
+	}
+
+	for kind, invalid := range invalidIdentifiers {
+		t.Run("get revision creator "+kind, func(t *testing.T) {
+			_, client, repo := newTestRepository(t, "definition", "revision")
+			created := mustCreate(t, repo, "guild", validSource("source"))
+			stored := *created.Revision
+			stored.CreatedByPlayerID = invalid
+			setJSON(t, client, revisionKey("guild", stored.ID), &stored)
+
+			_, err := repo.GetRevision(context.Background(), GetRevisionInput{
+				GuildID: "guild", DefinitionID: created.Definition.ID, RevisionID: stored.ID,
+			})
+			require.True(t, apierr.IsInternal(err), "got %v", err)
+		})
+
+		for _, metadata := range []string{"definition creator", "definition head", "revision creator"} {
+			t.Run("list "+metadata+" "+kind, func(t *testing.T) {
+				_, client, repo := newTestRepository(t, "definition", "revision")
+				created := mustCreate(t, repo, "guild", validSource("source"))
+				switch metadata {
+				case "definition creator":
+					stored := *created.Definition
+					stored.CreatedByPlayerID = invalid
+					setJSON(t, client, definitionKey("guild", stored.ID), &stored)
+				case "definition head":
+					definition := *created.Definition
+					definition.HeadRevisionID = invalid
+					setJSON(t, client, definitionKey("guild", definition.ID), &definition)
+					revision := *created.Revision
+					revision.ID = invalid
+					setJSON(t, client, revisionKey("guild", invalid), &revision)
+				case "revision creator":
+					stored := *created.Revision
+					stored.CreatedByPlayerID = invalid
+					setJSON(t, client, revisionKey("guild", stored.ID), &stored)
+				}
+
+				_, err := repo.ListDefinitions(context.Background(), ListDefinitionsInput{GuildID: "guild"})
+				require.True(t, apierr.IsInternal(err), "got %v", err)
+			})
+		}
+
+		for _, metadata := range []string{"definition creator", "definition head", "revision creator"} {
+			t.Run("append "+metadata+" "+kind, func(t *testing.T) {
+				_, client, repo := newTestRepository(t, "definition", "revision-1", "revision-2")
+				ctx := context.Background()
+				created := mustCreate(t, repo, "guild", validSource("source"))
+				switch metadata {
+				case "definition creator":
+					stored := *created.Definition
+					stored.CreatedByPlayerID = invalid
+					setJSON(t, client, definitionKey("guild", stored.ID), &stored)
+				case "definition head":
+					stored := *created.Definition
+					stored.HeadRevisionID = invalid
+					setJSON(t, client, definitionKey("guild", stored.ID), &stored)
+				case "revision creator":
+					stored := *created.Revision
+					stored.CreatedByPlayerID = invalid
+					setJSON(t, client, revisionKey("guild", stored.ID), &stored)
+				}
+				definitionBefore := mustRedisGet(t, client, definitionKey("guild", created.Definition.ID))
+				indexBefore := client.SMembers(ctx, definitionIndexKey("guild")).Val()
+
+				_, err := repo.AppendRevision(ctx, AppendRevisionInput{
+					GuildID: "guild", DefinitionID: created.Definition.ID,
+					ExpectedHeadRevisionID: created.Revision.ID, CreatedByPlayerID: "player-two",
+					Source: validSource("two"),
+				})
+				require.True(t, apierr.IsInternal(err), "got %v", err)
+				require.Zero(t, client.Exists(ctx, revisionKey("guild", "revision-2")).Val())
+				require.Equal(t, definitionBefore, mustRedisGet(t, client, definitionKey("guild", created.Definition.ID)))
+				require.ElementsMatch(t, indexBefore, client.SMembers(ctx, definitionIndexKey("guild")).Val())
+			})
+		}
+	}
+}
+
+func TestRedisStoredIdentityAndTimestampsFailClosed(t *testing.T) {
+	tests := map[string]func(*CreateDefinitionOutput, redisclient.Client){
+		"definition wrong guild": func(created *CreateDefinitionOutput, client redisclient.Client) {
+			stored := *created.Definition
+			stored.GuildID = "other-guild"
+			setJSON(t, client, definitionKey("guild", stored.ID), &stored)
+		},
+		"definition zero timestamp": func(created *CreateDefinitionOutput, client redisclient.Client) {
+			stored := *created.Definition
+			stored.CreatedAt = time.Time{}
+			setJSON(t, client, definitionKey("guild", stored.ID), &stored)
+		},
+		"revision wrong guild": func(created *CreateDefinitionOutput, client redisclient.Client) {
+			stored := *created.Revision
+			stored.GuildID = "other-guild"
+			setJSON(t, client, revisionKey("guild", stored.ID), &stored)
+		},
+		"revision zero timestamp": func(created *CreateDefinitionOutput, client redisclient.Client) {
+			stored := *created.Revision
+			stored.CreatedAt = time.Time{}
+			setJSON(t, client, revisionKey("guild", stored.ID), &stored)
+		},
+	}
+
+	for name, corrupt := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, client, repo := newTestRepository(t, "definition", "revision")
+			created := mustCreate(t, repo, "guild", validSource("source"))
+			corrupt(created, client)
+
+			_, err := repo.ListDefinitions(context.Background(), ListDefinitionsInput{GuildID: "guild"})
+			require.True(t, apierr.IsInternal(err), "got %v", err)
+		})
+	}
+}
+
+func TestRedisGetRevisionPreservesWrongDefinitionNotFound(t *testing.T) {
+	_, client, repo := newTestRepository(t, "definition", "revision")
+	created := mustCreate(t, repo, "guild", validSource("source"))
+
+	_, err := repo.GetRevision(context.Background(), GetRevisionInput{
+		GuildID: "guild", DefinitionID: "other-definition", RevisionID: created.Revision.ID,
+	})
+	require.True(t, apierr.IsNotFound(err), "got %v", err)
+
+	stored := *created.Revision
+	stored.DefinitionID = " invalid"
+	setJSON(t, client, revisionKey("guild", stored.ID), &stored)
+	_, err = repo.GetRevision(context.Background(), GetRevisionInput{
+		GuildID: "guild", DefinitionID: "other-definition", RevisionID: created.Revision.ID,
+	})
+	require.True(t, apierr.IsInternal(err), "invalid stored definition identity is corruption: %v", err)
+}
+
+func TestRedisHeadReadErrorDistinguishesMissingOrUnreadableHead(t *testing.T) {
+	_, client, repo := newTestRepository(t, "definition", "revision-1", "revision-2")
+	ctx := context.Background()
+	created := mustCreate(t, repo, "guild", validSource("source"))
+	require.NoError(t, client.Del(ctx, revisionKey("guild", created.Revision.ID)).Err())
+	require.NoError(t, client.SAdd(ctx, revisionKey("guild", created.Revision.ID), "wrong-type").Err())
+
+	_, err := repo.AppendRevision(ctx, AppendRevisionInput{
+		GuildID: "guild", DefinitionID: created.Definition.ID,
+		ExpectedHeadRevisionID: created.Revision.ID, CreatedByPlayerID: "player-two",
+		Source: validSource("two"),
+	})
+	require.True(t, apierr.IsInternal(err), "got %v", err)
+	require.ErrorContains(t, err, "missing or unreadable head revision")
+	require.ErrorContains(t, err, "WRONGTYPE")
+	require.Zero(t, client.Exists(ctx, revisionKey("guild", "revision-2")).Val())
+}
+
+func TestRedisListUntouchedGuildReturnsNonNilEmptyDefinitions(t *testing.T) {
+	_, _, repo := newTestRepository(t, "unused")
+
+	listed, err := repo.ListDefinitions(context.Background(), ListDefinitionsInput{GuildID: "untouched"})
+	require.NoError(t, err)
+	require.NotNil(t, listed.Definitions)
+	require.Empty(t, listed.Definitions)
 }
 
 func TestRedisCorruptJSONFailsClosed(t *testing.T) {
@@ -412,6 +600,7 @@ func TestRedisValidatesTypedBoundedSourceAndAssetRefGrammar(t *testing.T) {
 		"empty guild":     {input: CreateDefinitionInput{CreatedByPlayerID: "player", Source: validSource("source")}},
 		"empty creator":   {input: CreateDefinitionInput{GuildID: "guild", Source: validSource("source")}},
 		"wrong version":   {input: validCreateInput(mutatedSource(func(s *entities.CompositionSource) { s.Version = 2 }))},
+		"empty name":      {input: validCreateInput(mutatedSource(func(s *entities.CompositionSource) { s.Name = "" }))},
 		"no items":        {input: validCreateInput(mutatedSource(func(s *entities.CompositionSource) { s.Items = nil }))},
 		"wrong item kind": {input: validCreateInput(mutatedSource(func(s *entities.CompositionSource) { s.Items[0].Kind = "group" }))},
 		"bad ref":         {input: validCreateInput(mutatedSource(func(s *entities.CompositionSource) { s.Items[0].AssetRef = "two:segments" }))},
@@ -471,6 +660,25 @@ func TestRedisValidatesTypedBoundedSourceAndAssetRefGrammar(t *testing.T) {
 			}
 			require.Error(t, err)
 			require.True(t, apierr.IsInvalidArgument(err), "got %v", err)
+		})
+	}
+}
+
+func TestRedisInvalidGeneratedIDsReturnInternalBeforeWrites(t *testing.T) {
+	tests := map[string][]string{
+		"invalid definition ID": {""},
+		"invalid revision ID":   {"definition", "revision\n"},
+	}
+	for name, ids := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, client, repo := newTestRepository(t, ids...)
+			ctx := context.Background()
+
+			_, err := repo.CreateDefinition(ctx, validCreateInput(validSource("source")))
+			require.True(t, apierr.IsInternal(err), "got %v", err)
+			keys, keysErr := client.Keys(ctx, compositionKeyPrefix+"*").Result()
+			require.NoError(t, keysErr)
+			require.Empty(t, keys)
 		})
 	}
 }
@@ -559,4 +767,11 @@ func mustRedisGet(t *testing.T, client redisclient.Client, key string) string {
 	value, err := client.Get(context.Background(), key).Result()
 	require.NoError(t, err)
 	return value
+}
+
+func setJSON(t *testing.T, client redisclient.Client, key string, value any) {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	require.NoError(t, err)
+	require.NoError(t, client.Set(context.Background(), key, encoded, 0).Err())
 }

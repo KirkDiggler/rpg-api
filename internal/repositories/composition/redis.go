@@ -272,7 +272,7 @@ func (r *redisRepository) AppendRevision(
 		return nil, apierr.WrapWithCodef(
 			err,
 			apierr.CodeInternal,
-			"composition definition %s has a missing head",
+			"composition definition %s has a missing or unreadable head revision",
 			input.DefinitionID,
 		)
 	}
@@ -566,11 +566,19 @@ func validateIdentifier(field, value string) error {
 }
 
 func validateBoundedText(field, value string, maximum int) error {
-	if value == "" || strings.TrimSpace(value) != value || len(value) > maximum ||
-		strings.IndexFunc(value, unicode.IsControl) >= 0 {
+	if !isValidBoundedText(value, maximum) {
 		return apierr.InvalidArgumentf("%s must be a non-empty string up to %d characters", field, maximum)
 	}
 	return nil
+}
+
+func isValidIdentifier(value string) bool {
+	return isValidBoundedText(value, maxIDLength)
+}
+
+func isValidBoundedText(value string, maximum int) bool {
+	return value != "" && strings.TrimSpace(value) == value && len(value) <= maximum &&
+		strings.IndexFunc(value, unicode.IsControl) < 0
 }
 
 func hasRelationshipCycle(allIDs map[string]struct{}, dependencies map[string][]string) bool {
@@ -634,8 +642,9 @@ func decodeDefinition(stored []byte, guildID, definitionID string) (*entities.Co
 	if err != nil {
 		return nil, err
 	}
-	if definition.ID != definitionID || definition.GuildID != guildID ||
-		definition.CreatedByPlayerID == "" || definition.CreatedAt.IsZero() || definition.HeadRevisionID == "" {
+	if !isValidIdentifier(definition.ID) || !isValidIdentifier(definition.GuildID) ||
+		!isValidIdentifier(definition.CreatedByPlayerID) || !isValidIdentifier(definition.HeadRevisionID) ||
+		definition.ID != definitionID || definition.GuildID != guildID || definition.CreatedAt.IsZero() {
 		return nil, apierr.Internal("composition definition metadata is corrupt")
 	}
 	return definition, nil
@@ -650,8 +659,9 @@ func decodeRevision(
 	if err != nil {
 		return nil, err
 	}
-	if revision.ID != revisionID || revision.GuildID != guildID ||
-		revision.CreatedByPlayerID == "" || revision.CreatedAt.IsZero() {
+	if !isValidIdentifier(revision.ID) || !isValidIdentifier(revision.DefinitionID) ||
+		!isValidIdentifier(revision.GuildID) || !isValidIdentifier(revision.CreatedByPlayerID) ||
+		revision.ID != revisionID || revision.GuildID != guildID || revision.CreatedAt.IsZero() {
 		return nil, apierr.Internal("composition revision metadata is corrupt")
 	}
 	if revision.DefinitionID != definitionID {
