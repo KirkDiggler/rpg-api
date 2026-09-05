@@ -195,6 +195,28 @@ type Monster struct {
 	// launch that dropped this field would fail closed at the chief's spawn,
 	// naming him, rather than start a camp that can never learn.
 	Faction string
+
+	// Arrives is the predicate that brings this monster into the run
+	// (`place[].arrives`, rpg-project#375 step B, design §3.7, R6),
+	// compiled by dungeonspec to the composition's own Trigger: a
+	// `{ down: chief }` is a TriggerMemberDown naming the member id the
+	// chief spawns under -- which is why an authored id IS the member id
+	// (see MemberID). Nil when the monster stands there from the first
+	// frame, as every monster always did.
+	//
+	// A MONSTER IN RESERVE IS SPAWNED AT LAUNCH and held by the composition:
+	// no cell, no roster row, absent from every projection for every member
+	// until its predicate holds, then placed at its authored cell on the
+	// first verb after. Content resolves at launch; presence is the run's.
+	// A prop's arrival needs no line here -- it rides Compiled.Field on the
+	// PropInput, like everything else about a prop.
+	//
+	// CARRIED AND NOT YET FORWARDED, for the reason Faction once was:
+	// session.SpawnInput has no field for it until the session's step-B head
+	// is pinned. Until then a launch spawns a reserved monster as PLACED --
+	// three zombies standing at the gate from frame one -- which is the
+	// mutation phase 2's scene A4 exists to catch.
+	Arrives tkencounter.Trigger
 }
 
 // Compile turns one authored dungeon file into a [Dungeon].
@@ -251,6 +273,7 @@ func Compile(raw []byte) (*Dungeon, error) {
 			Ref: m.Ref, MemberID: id, At: cellOf(orientation, m.At),
 			Boss: m.Boss, Targeting: m.Targeting,
 			PlacementID: m.ID, Holds: m.Holds, Faction: m.Faction,
+			Arrives: m.Arrives,
 		}
 	}
 
@@ -286,7 +309,7 @@ func Compile(raw []byte) (*Dungeon, error) {
 		return nil, fmt.Errorf("bind scenarios: %w", err)
 	}
 
-	world, err := buildWorld(spec.Field, bossID, scenarioEndings)
+	world, err := buildWorld(spec.Field, bossID, scenarioEndings, spec.Endings)
 	if err != nil {
 		return nil, err
 	}
@@ -350,14 +373,17 @@ func describePlacement(m tkdungeonspec.MonsterPlacement) string {
 //
 // scenarioEndings are the endings every bound scenario declared, already
 // constructed and validated against this dungeon by the rulebook's own
-// scenario packages (see [endingsOfScenarios]).
+// scenario packages (see [endingsOfScenarios]); authoredEndings are the
+// file's own `endings[]`, compiled by dungeonspec to the same Trigger types
+// (rpg-project#375 step B, R10) and declared beside them (see [endingsFor]).
 //
 // bossID, when non-empty, is the member whose death ends the dungeon — an
 // ending may name a member that has not joined yet (the same contract
 // TriggerReachedPosition's filter has), which is what lets an empty world
 // declare a doom for a monster the launch spawns minutes later.
 func buildWorld(
-	field tkencounter.FieldInput, bossID string, scenarioEndings []tkencounter.EndingInput,
+	field tkencounter.FieldInput, bossID string,
+	scenarioEndings, authoredEndings []tkencounter.EndingInput,
 ) (*tkencounter.EncounterData, error) {
 	enc, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
 		// Construction-time capabilities only. The session package supplies its
@@ -402,7 +428,7 @@ func buildWorld(
 		// [Monster.Boss]), and — since rpg-project#368 — whatever each
 		// scenario the file BINDS declares for itself. A dungeon is
 		// geometry; a scenario is what it is for.
-		Endings: endingsFor(bossID, scenarioEndings),
+		Endings: endingsFor(bossID, scenarioEndings, authoredEndings),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build world: %w", err)
@@ -414,8 +440,18 @@ func buildWorld(
 }
 
 // endingsFor is every ending an authored dungeon declares: withdrawal
-// always, the boss's fall when a placement names one, and whatever each
-// bound scenario declared (rpg-project#368, design R8).
+// always, the boss's fall when a placement names one, whatever each bound
+// scenario declared (rpg-project#368, design R8), and whatever the file
+// declares in its own `endings[]` (rpg-project#375 step B, R10).
+//
+// THE AUTHORED ENDINGS ARE THE SCENARIO'S OWN GRAMMAR. `scenarios:
+// { hold-out: { convince: raiders } }` is sugar for `endings: [{ id:
+// hold-out, when: { stance: { between: [raiders, party], is: neutral } } }]`
+// -- dungeonspec compiles the spelled-out form to the very Trigger the
+// scenario package constructs, and this function declares both lists to
+// the composition the same way, so the two spellings produce the same
+// world ([TestAnEndingAuthoredInTheFileIsTheScenariosOwn]). A scenario
+// package with nothing left to do is the north star's own test.
 //
 // THE BOSS ARM IS UNTOUCHED BY THIS SLICE, deliberately. R8 ruled that
 // `boss:` keeps working here and is retired by the NAMED FOLLOW-UP — the one
@@ -428,7 +464,7 @@ func buildWorld(
 // by the composition itself (NewEncounter names the duplicate key and returns
 // ErrNoEnding), so there is no second copy of that rule here to drift from
 // the first.
-func endingsFor(bossID string, scenarioEndings []tkencounter.EndingInput) []tkencounter.EndingInput {
+func endingsFor(bossID string, scenarioEndings, authoredEndings []tkencounter.EndingInput) []tkencounter.EndingInput {
 	endings := []tkencounter.EndingInput{
 		{Key: EndingWithdrawn, Trigger: tkencounter.TriggerExternal{}},
 	}
@@ -438,8 +474,9 @@ func endingsFor(bossID string, scenarioEndings []tkencounter.EndingInput) []tken
 			Trigger: tkencounter.TriggerMemberDown{Member: tkencounter.MemberID(bossID)},
 		})
 	}
+	endings = append(endings, scenarioEndings...)
 
-	return append(endings, scenarioEndings...)
+	return append(endings, authoredEndings...)
 }
 
 // endingsOfScenarios constructs every scenario the file binds and returns the
