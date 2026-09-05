@@ -211,11 +211,10 @@ type Monster struct {
 	// A prop's arrival needs no line here -- it rides Compiled.Field on the
 	// PropInput, like everything else about a prop.
 	//
-	// CARRIED AND NOT YET FORWARDED, for the reason Faction once was:
-	// session.SpawnInput has no field for it until the session's step-B head
-	// is pinned. Until then a launch spawns a reserved monster as PLACED --
-	// three zombies standing at the gate from frame one -- which is the
-	// mutation phase 2's scene A4 exists to catch.
+	// FORWARDED by the launch (internal/orchestrators/lobby's arrivalOf) as
+	// the session seam's sealed Arrival, arm for arm; a launch that dropped
+	// it would spawn a reserved monster as PLACED -- three zombies standing
+	// at the gate from frame one -- which is what scene A4 exists to catch.
 	Arrives tkencounter.Trigger
 }
 

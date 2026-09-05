@@ -141,6 +141,21 @@ func clockKindToProto(k sdk.ClockKind) sessionpb.ClockKind {
 	}
 }
 
+// placementKindToProto maps the session's closed placement vocabulary onto
+// the wire's enum. An unrecognized kind maps to UNSPECIFIED, which the wire
+// defines as a producer defect: the session grew a kind of placement this
+// build's protos cannot name, and saying so beats calling it a monster.
+func placementKindToProto(k sdk.PlacementKind) sessionpb.PlacementKind {
+	switch k {
+	case sdk.PlacementMonster:
+		return sessionpb.PlacementKind_PLACEMENT_KIND_MONSTER
+	case sdk.PlacementProp:
+		return sessionpb.PlacementKind_PLACEMENT_KIND_PROP
+	default:
+		return sessionpb.PlacementKind_PLACEMENT_KIND_UNSPECIFIED
+	}
+}
+
 func dissolveKindToProto(k sdk.DissolveKind) sessionpb.DissolveKind {
 	switch k {
 	case sdk.DissolveByDecision:
@@ -562,6 +577,8 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_DROPPED
 	case sdk.EventStanceChanged:
 		return sessionpb.EventKind_EVENT_KIND_STANCE_CHANGED
+	case sdk.EventArrived:
+		return sessionpb.EventKind_EVENT_KIND_ARRIVED
 	default:
 		return sessionpb.EventKind_EVENT_KIND_UNKNOWN
 	}
@@ -709,6 +726,16 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		// monsters included; nothing on this side narrows the audience.
 		evt.Body = &sessionpb.Event_StanceChanged{StanceChanged: &sessionpb.StanceChanged{
 			Between: b.Between, Stance: b.Stance,
+		}}
+	case sdk.ArrivedBody:
+		// A reserved placement entered the run (rpg-project#375 step B,
+		// design §6): which one, what it is, and where it stands now.
+		// Physical state like HELD/DROPPED, so every recipient hears it
+		// and patches its map additively. The kind is a CLOSED enum on
+		// the wire because a client branches on it -- a prop is not a
+		// member -- and it maps by name, never by position.
+		evt.Body = &sessionpb.Event_Arrived{Arrived: &sessionpb.Arrived{
+			Id: b.ID, Kind: placementKindToProto(b.Kind), Cell: positionToProto(b.Cell),
 		}}
 	case sdk.HeldBody:
 		// To everyone present: an object leaving the floor folds on the

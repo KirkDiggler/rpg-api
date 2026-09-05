@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
@@ -170,7 +171,11 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	}
 
 	for _, monster := range dungeon.Monsters {
-		_, err := o.sessionManager.Spawn(ctx, &sdk.SpawnInput{
+		arrives, err := arrivalOf(monster.Arrives)
+		if err != nil {
+			return nil, fmt.Errorf("spawn %q into session %q on new stack: %w", monster.MemberID, encID, err)
+		}
+		_, err = o.sessionManager.Spawn(ctx, &sdk.SpawnInput{
 			Session: encID, ID: monster.MemberID, Ref: monster.Ref, Position: monster.At,
 			// The intel records the author placed in this monster
 			// (rpg-project#372), as COMPILED ids: dungeonspec mints
@@ -200,6 +205,18 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 			// placement's own: the mind the file names must be the member
 			// that enters.
 			Faction: monster.Faction,
+			// The predicate that brings this monster into the run
+			// (rpg-project#375 step B, design §3.7, R6), or nil for one
+			// that stands there from the first frame. A monster in
+			// reserve is SPAWNED NOW -- its sheet resolves at launch --
+			// and held by the composition: no cell, no roster row,
+			// absent from every projection for every member until the
+			// predicate holds, then placed at its authored cell with an
+			// `arrived` beat. Spawn's answer says so (Reserved), and this
+			// launch reads nothing off that answer: what a member's
+			// presence means is the run's, and the session's own reads
+			// already leave a reserved member out.
+			Arrives: arrives,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("spawn %q into session %q on new stack: %w", monster.MemberID, encID, err)
@@ -283,4 +300,35 @@ func refuseSharedMemberIDs(members []*lobbyrepo.Member, monsters []sessionworld.
 		}
 	}
 	return nil
+}
+
+// arrivalOf translates a placement's compiled arrival predicate -- the
+// composition's own Trigger, as dungeonspec hands it to sessionworld -- into
+// the session seam's sealed Arrival. Nil in, nil out: a monster with no
+// predicate is placed at once, as every monster always was.
+//
+// FOUR ARMS, ONE EACH FOR THE GRAMMAR'S FORMS (design §2: round | down |
+// fact | stance), and the translation is spelling only: a `{ down: chief }`
+// is TriggerMemberDown naming the member id the chief spawns under, and
+// arrives as ArrivesOnFall naming the same id. Whether a predicate can ever
+// hold is not this launch's to judge -- the session refuses one nothing can
+// fire (ErrNoMember), in its own words. A Trigger this switch does not know
+// is a compiler that grew a form ahead of this seam, and the launch fails
+// closed naming the type rather than spawning the monster placed as if it
+// had never been in reserve.
+func arrivalOf(t tkencounter.Trigger) (sdk.Arrival, error) {
+	switch t := t.(type) {
+	case nil:
+		return nil, nil //nolint:nilnil // nil is the documented "placed at once"; there is no arrival to hand over
+	case tkencounter.TriggerRound:
+		return sdk.ArrivesAtRound{Round: t.Round}, nil
+	case tkencounter.TriggerMemberDown:
+		return sdk.ArrivesOnFall{Member: string(t.Member)}, nil
+	case tkencounter.TriggerFact:
+		return sdk.ArrivesOnFact{Fact: t.Fact}, nil
+	case tkencounter.TriggerStance:
+		return sdk.ArrivesOnStance{Between: [2]string{t.Between[0], t.Between[1]}, Stance: string(t.Stance)}, nil
+	default:
+		return nil, fmt.Errorf("arrival predicate %T is not one this launch can hand to the session", t)
+	}
 }
