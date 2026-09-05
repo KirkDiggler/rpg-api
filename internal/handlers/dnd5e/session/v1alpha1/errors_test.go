@@ -119,6 +119,13 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrInvalidTradeOffer", sdk.ErrInvalidTradeOffer, codes.FailedPrecondition},
 		{"ErrNotAVendor", sdk.ErrNotAVendor, codes.FailedPrecondition},
 		{"ErrOutOfStock", sdk.ErrOutOfStock, codes.FailedPrecondition},
+		// Trade learns to charge (rpg-toolkit#1534, wave 4): ErrWrongPrice is
+		// a caller offering the wrong AMOUNT (the server alone decides what's
+		// correct, never a trusted client price); ErrInsufficientFunds is the
+		// right amount named but the wallet can't cover it. Both the same
+		// well-formed-call-the-world-refuses family as the sentinels above.
+		{"ErrWrongPrice", sdk.ErrWrongPrice, codes.FailedPrecondition},
+		{"ErrInsufficientFunds", sdk.ErrInsufficientFunds, codes.FailedPrecondition},
 		// ErrCannotActivate is ErrCannotAfford's shape one verb further out:
 		// an ability that could have run and said no. The SDK documents it as
 		// not currently reachable through Activate — Afford consults the same

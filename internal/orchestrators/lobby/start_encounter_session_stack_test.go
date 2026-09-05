@@ -25,8 +25,10 @@ import (
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/currency"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
@@ -110,6 +112,21 @@ func (s *SessionStackSuite) seedCharacter(id, playerID, name string) {
 		Character: &entities.Character{Data: &tkcharacter.Data{
 			ID: id, PlayerID: playerID, Name: name, Level: 1,
 			HitPoints: 10, MaxHitPoints: 10, ArmorClass: 10,
+		}},
+	})
+	s.Require().NoError(err)
+}
+
+// seedCharacterWithWallet is seedCharacter plus a starting purse, for the
+// Trade tests that need the actor to actually afford something
+// (rpg-toolkit#1534) -- kept separate from seedCharacter rather than adding
+// a parameter there, so every other test's zero-Wallet fixture is untouched.
+func (s *SessionStackSuite) seedCharacterWithWallet(id, playerID, name string, wallet currency.Money) {
+	_, err := s.charRepo.Create(s.ctx, characterrepo.CreateInput{
+		Character: &entities.Character{Data: &tkcharacter.Data{
+			ID: id, PlayerID: playerID, Name: name, Level: 1,
+			HitPoints: 10, MaxHitPoints: 10, ArmorClass: 10,
+			Wallet: wallet,
 		}},
 	})
 	s.Require().NoError(err)
@@ -477,7 +494,14 @@ func (s *SessionStackSuite) TestStartEncounter_DemoVendorIsPlacedAndInteractable
 // receive it -- the character's stored inventory gains it, and the vendor's
 // stock line for it drops by the same amount.
 func (s *SessionStackSuite) TestStartEncounter_TradeBuysFromTheDemoVendor() {
-	s.seedCharacter("char-alice", "alice", "Alice")
+	// The real longsword price, not a hardcoded number (rpg-toolkit#1534):
+	// Trade requires Give.Currency to exactly equal it, and this is the
+	// actor's whole starting purse -- also proving the wallet lands at
+	// exactly zero afterward, not merely "less than before".
+	price, err := equipment.PriceOf(weapons.Longsword)
+	s.Require().NoError(err)
+
+	s.seedCharacterWithWallet("char-alice", "alice", "Alice", price)
 	s.seedReadyLobby("lobby-1", "alice")
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
@@ -487,6 +511,7 @@ func (s *SessionStackSuite) TestStartEncounter_TradeBuysFromTheDemoVendor() {
 
 	traded, err := s.sessOrch.Manager.Trade(s.ctx, &sdk.TradeInput{
 		Session: out.EncounterID, Actor: "char-alice", Target: "demo-merchant-1",
+		Give: sdk.TradeOffer{Currency: price},
 		Receive: sdk.TradeOffer{Items: []sdk.TradeItem{
 			{Type: shared.EquipmentTypeWeapon, ID: weapons.Longsword, Quantity: 1},
 		}},
@@ -512,6 +537,12 @@ func (s *SessionStackSuite) TestStartEncounter_TradeBuysFromTheDemoVendor() {
 	s.Contains(got.Character.Data.Inventory, tkcharacter.InventoryItemData{
 		Type: shared.EquipmentTypeWeapon, ID: weapons.Longsword, Quantity: 1,
 	})
+
+	// And the price was actually charged -- Trade learns to charge
+	// (rpg-toolkit#1534) means the wallet moves, not just that stock does.
+	// The purse was seeded to exactly `price`, so this also proves the
+	// debit is exact, not a fraction or a flat fee.
+	s.Equal(currency.Money{}, got.Character.Data.Wallet)
 }
 
 // lobbyOver is SetupTest's orchestrator over a different content registry,

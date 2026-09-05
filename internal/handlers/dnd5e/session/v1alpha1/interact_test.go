@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/KirkDiggler/rpg-toolkit/npc"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
@@ -62,6 +63,13 @@ func TestInteract_HappyPath_ReturnsDescriptor(t *testing.T) {
 	require.Equal(t, "longsword", d.GetInventory()[0].GetEquipmentId())
 	require.Equal(t, sessionpb.VendorStockMode_VENDOR_STOCK_MODE_LIMITED, d.GetInventory()[0].GetStockMode())
 	require.Equal(t, int32(1), d.GetInventory()[0].GetQuantity())
+
+	// The price is server-computed via equipment.PriceOf (rpg-toolkit#1534),
+	// not carried on npcs.StockEntryView -- computed here from the real
+	// catalog rather than hardcoded, so this pins the wiring, not a number.
+	wantPrice, err := equipment.PriceOf("longsword")
+	require.NoError(t, err)
+	require.Equal(t, int32(wantPrice.Copper), d.GetInventory()[0].GetPrice().GetCopper())
 }
 
 func TestInteract_ManagerError_TranslatesViaErrorTable(t *testing.T) {

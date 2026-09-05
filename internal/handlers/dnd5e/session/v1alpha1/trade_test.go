@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/KirkDiggler/rpg-toolkit/npc"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
@@ -28,10 +29,16 @@ func TestTrade_Unauthenticated_Errors(t *testing.T) {
 func TestTrade_HappyPath_ReturnsDecrementedDescriptor(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+
+	// The real longsword price, not a hardcoded number -- pins that Give.currency
+	// (rpg-toolkit#1534) actually reaches the SDK input untouched.
+	price, err := equipment.PriceOf("longsword")
+	require.NoError(t, err)
+
 	mgr.EXPECT().
 		Trade(gomock.Any(), &sdk.TradeInput{
 			Session: "sess-1", Actor: "char-1", Target: "demo-merchant-1", Range: 1,
-			Give:    sdk.TradeOffer{Items: []sdk.TradeItem{}},
+			Give:    sdk.TradeOffer{Items: []sdk.TradeItem{}, Currency: price},
 			Receive: sdk.TradeOffer{Items: []sdk.TradeItem{{Type: shared.EquipmentTypeWeapon, ID: "longsword", Quantity: 1}}},
 		}).
 		Return(&sdk.TradeOutput{
@@ -54,6 +61,7 @@ func TestTrade_HappyPath_ReturnsDecrementedDescriptor(t *testing.T) {
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	resp, err := h.Trade(ctx, &sessionpb.TradeRequest{
 		Session: "sess-1", Actor: "char-1", Target: "demo-merchant-1", Range: 1,
+		Give: &sessionpb.TradeOffer{Currency: &sessionpb.Money{Copper: int32(price.Copper)}},
 		Receive: &sessionpb.TradeOffer{Items: []*sessionpb.TradeItem{
 			{EquipmentType: "weapon", EquipmentId: "longsword", Quantity: 1},
 		}},
@@ -109,6 +117,49 @@ func TestTrade_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 		Session: "sess-1", Actor: "char-1", Target: "demo-merchant-1",
 		Receive: &sessionpb.TradeOffer{Items: []*sessionpb.TradeItem{
 			{EquipmentType: "weapon", EquipmentId: "longsword", Quantity: 99},
+		}},
+	})
+	requireCode(t, err, codes.FailedPrecondition)
+}
+
+// TestTrade_WrongPrice_IsRefused pins that an offered price the SDK refuses
+// (rpg-toolkit#1534: the server alone decides what's correct, never a
+// trusted client amount) translates to FAILED_PRECONDITION -- the same
+// well-formed-call-the-world-refuses bucket as ErrOutOfStock above.
+func TestTrade_WrongPrice_IsRefused(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Trade(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrWrongPrice)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	_, err := h.Trade(ctx, &sessionpb.TradeRequest{
+		Session: "sess-1", Actor: "char-1", Target: "demo-merchant-1",
+		Give: &sessionpb.TradeOffer{Currency: &sessionpb.Money{Copper: 1}},
+		Receive: &sessionpb.TradeOffer{Items: []*sessionpb.TradeItem{
+			{EquipmentType: "weapon", EquipmentId: "longsword", Quantity: 1},
+		}},
+	})
+	requireCode(t, err, codes.FailedPrecondition)
+}
+
+// TestTrade_InsufficientFunds_IsRefused pins the actor-can't-pay refusal,
+// distinct from TestTrade_WrongPrice_IsRefused: the right amount was named,
+// the wallet just doesn't hold it.
+func TestTrade_InsufficientFunds_IsRefused(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Trade(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrInsufficientFunds)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	price, err := equipment.PriceOf("longsword")
+	require.NoError(t, err)
+	_, err = h.Trade(ctx, &sessionpb.TradeRequest{
+		Session: "sess-1", Actor: "char-1", Target: "demo-merchant-1",
+		Give: &sessionpb.TradeOffer{Currency: &sessionpb.Money{Copper: int32(price.Copper)}},
+		Receive: &sessionpb.TradeOffer{Items: []*sessionpb.TradeItem{
+			{EquipmentType: "weapon", EquipmentId: "longsword", Quantity: 1},
 		}},
 	})
 	requireCode(t, err, codes.FailedPrecondition)

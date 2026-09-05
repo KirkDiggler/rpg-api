@@ -25,6 +25,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/currency"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
@@ -92,6 +93,7 @@ func (s *HandlerTestSuite) fighterCharacterEntity() *entities.Character {
 			HitPoints:        20,
 			MaxHitPoints:     30,
 			ArmorClass:       10,
+			Wallet:           currency.FromGold(15),
 			AbilityScores: shared.AbilityScores{
 				abilities.STR: 16,
 				abilities.DEX: 12,
@@ -417,6 +419,12 @@ func (s *HandlerTestSuite) TestGetCharacterData_Success() {
 	s.Assert().Equal(int32(30), cd.GetHitPoints().GetMax())
 	s.Assert().Zero(cd.GetHitPoints().GetTemp())
 	s.Assert().Equal(int32(30), cd.GetBaseSpeedFeet())
+
+	// Wallet visibility (rpg-toolkit#1533): the owner's persistent purse
+	// reaches this owner-private response, gated by the same
+	// verifyCallerOwnsCharacter check every field here already runs through.
+	s.Require().NotNil(cd.GetWallet())
+	s.Assert().Equal(int32(1500), cd.GetWallet().GetCopper(), "15 gp")
 
 	s.Require().Len(cd.GetFeatures(), 2)
 	s.Assert().Equal("dnd5e", cd.GetFeatures()[0].GetRef().GetModule())
