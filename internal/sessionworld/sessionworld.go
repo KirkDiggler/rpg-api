@@ -188,14 +188,12 @@ type Monster struct {
 	// a member enters the run through session.Spawn rather than the field,
 	// so it is hand-carried across that seam exactly as Holds is.
 	//
-	// CARRIED AND NOT YET FORWARDED, for Targeting's own reason one field
-	// up: session.SpawnInput has no field for it until the session branch of
-	// this wave is pinned, so it cannot cross the seam today even though
-	// both ends know it. Until it does, a monster whose id is its faction's
-	// MIND cannot enter the run at all: the composition refuses a mind that
-	// joins any faction but its own (encounter ErrNoFaction), so the launch
-	// of a dungeon that names one fails closed and says which member, rather
-	// than starting a camp that can never learn.
+	// FORWARDED VERBATIM by the launch (internal/orchestrators/lobby's
+	// StartEncounter) to session.SpawnInput.Faction -- empty stays empty,
+	// never defaulted on this side. It has to be: the composition refuses a
+	// faction's MIND that joins any faction but its own (ErrNoFaction), so a
+	// launch that dropped this field would fail closed at the chief's spawn,
+	// naming him, rather than start a camp that can never learn.
 	Faction string
 }
 

@@ -57,8 +57,8 @@ func TestAnAuthoredIdIsTheMemberId(t *testing.T) {
 //
 // So, both halves: the chief enters his own faction under the id the file
 // gave him; and entering under that id into the DEFAULT faction — which is
-// what a launch does until it forwards Faction through Spawn — is refused by
-// the composition, naming him as the mind.
+// what a launch that dropped Faction on the way to Spawn would do — is
+// refused by the composition, naming him as the mind.
 func TestTheMindIsTheMemberIdTheRunKnows(t *testing.T) {
 	camp, _ := compileRaiderCamp(t)
 

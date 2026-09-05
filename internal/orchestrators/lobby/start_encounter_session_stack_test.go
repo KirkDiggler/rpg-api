@@ -1067,3 +1067,35 @@ func (s *SessionStackSuite) TestStartEncounter_TheHeirloomsCaptainSpawnsUnderHis
 	})
 	s.Require().ErrorIs(err, sdk.ErrNoMember, "and under nothing else")
 }
+
+// TestStartEncounter_TheCampLaunchesWithItsChiefAsTheMind is the hold-out's
+// launch (rpg-project#375): the raider camp starts, every monster enters the
+// faction the author placed it in, and the chief -- the faction's MIND --
+// is a member under the id the file names him by. The composition refuses a
+// mind that arrives in any faction but its own, so this passing at all is
+// the proof that the launch forwards `faction` verbatim; the roster is where
+// the side shows, since a placement row says nothing about sides.
+func (s *SessionStackSuite) TestStartEncounter_TheCampLaunchesWithItsChiefAsTheMind() {
+	s.seedCharacter("char-alice", "alice", "Alice")
+	s.seedReadyLobby("lobby-1", "alice")
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: "reference-raider-camp",
+	})
+	s.Require().NoError(err, "the camp launches: its mind entered its own faction")
+
+	roster, err := s.sessOrch.Manager.Roster(s.ctx, &sdk.RosterInput{
+		Session: out.EncounterID, Player: "alice",
+	})
+	s.Require().NoError(err)
+	factions := map[string]string{}
+	for _, m := range roster.Members {
+		factions[m.ID] = m.Faction
+	}
+	s.Equal("raiders", factions["chief"], "the chief is in the raiders, under the id the file names as their mind")
+	s.Equal("raiders", factions["scout"], "and so is the scout")
+	s.Equal("party", factions["char-alice"], "the party is the party")
+
+	_, err = s.sessOrch.Manager.Turn(s.ctx, &sdk.TurnInput{Session: out.EncounterID, Member: "chief"})
+	s.Require().NoError(err, "the chief is a member of the run")
+}

@@ -162,6 +162,9 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// server forwarding compiled ids. Wiring on this side, never a
 		// caller's mistake -- see errors.go.
 		{"ErrNoIntel", sdk.ErrNoIntel, codes.Internal},
+		// Same bucket, same argument (rpg-project#375): only this server's
+		// launch names a faction, forwarding the placement's own word.
+		{"ErrNoFaction", sdk.ErrNoFaction, codes.Internal},
 
 		// sdk.ErrNotFound is the SDK's repository-facing contract sentinel: the
 		// Manager translates it into a caller-facing sentinel (ErrNoSession,

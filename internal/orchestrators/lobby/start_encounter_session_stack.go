@@ -187,6 +187,19 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 			// Nothing on any wire ever says who carries intel (slice 2
 			// design P3) — the holding is engine-internal from here on.
 			Holds: monster.Holds,
+			// The faction the author placed this monster in
+			// (rpg-project#375), VERBATIM: the file's own word, or empty
+			// when the author wrote none, which the composition reads as
+			// the reserved `monsters` -- nothing here defaults it, so a
+			// dungeon authored before factions existed spawns exactly as
+			// it did. What a faction MEANS (who fights whom, and what
+			// turns it) is the run's world's business; this forwards a
+			// name. The seam refuses a name the dungeon does not declare,
+			// and a faction's MIND arriving in any faction but its own
+			// (ErrNoFaction) -- which is why the member id above is the
+			// placement's own: the mind the file names must be the member
+			// that enters.
+			Faction: monster.Faction,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("spawn %q into session %q on new stack: %w", monster.MemberID, encID, err)

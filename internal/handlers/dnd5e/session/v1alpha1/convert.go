@@ -152,6 +152,12 @@ func dissolveKindToProto(k sdk.DissolveKind) sessionpb.DissolveKind {
 		// that ended for no stated reason, which is a producer defect by this
 		// enum's own definition.
 		return sessionpb.DissolveKind_DISSOLVE_KIND_BY_DEFEAT
+	case sdk.DissolveByStance:
+		// The third cause (rpg-project#375, design §3.5/§6, R1): the two
+		// sides stopped being sides. Same trap as BY_DEFEAT above -- a
+		// missing case reports the camp turning as a fight that ended for
+		// no stated reason.
+		return sessionpb.DissolveKind_DISSOLVE_KIND_BY_STANCE
 	default:
 		return sessionpb.DissolveKind_DISSOLVE_KIND_UNSPECIFIED
 	}
@@ -170,12 +176,19 @@ func dissolveKindToProto(k sdk.DissolveKind) sessionpb.DissolveKind {
 // stricter contract than the package it transcribes, over a distinction the SDK
 // deliberately declined to enforce -- design rule 1's "no vocabulary of our
 // own" running in the subtractive direction.
+//
+// BY_STANCE is accepted by the same argument (rpg-project#375): the wire's
+// own doc calls it "like BY_DEFEAT, not honestly declarable by a caller",
+// and the SDK treats it the same way -- the verb's answer is causeOf(what
+// the composition actually did), whatever was handed in.
 func dissolveCauseFromProto(k sessionpb.DissolveKind) (sdk.DissolveCause, error) {
 	switch k {
 	case sessionpb.DissolveKind_DISSOLVE_KIND_BY_DECISION:
 		return sdk.ByDecision(), nil
 	case sessionpb.DissolveKind_DISSOLVE_KIND_BY_DEFEAT:
 		return sdk.ByDefeat(), nil
+	case sessionpb.DissolveKind_DISSOLVE_KIND_BY_STANCE:
+		return sdk.ByStance(), nil
 	default:
 		return nil, fmt.Errorf("dissolve: unrecognized cause %v: %w", k, sdk.ErrNoCause)
 	}
@@ -547,6 +560,8 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_HELD
 	case sdk.EventDropped:
 		return sessionpb.EventKind_EVENT_KIND_DROPPED
+	case sdk.EventStanceChanged:
+		return sessionpb.EventKind_EVENT_KIND_STANCE_CHANGED
 	default:
 		return sessionpb.EventKind_EVENT_KIND_UNKNOWN
 	}
@@ -685,6 +700,15 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		// reaches the looter alone, as their own DOOR_REVEALED.
 		evt.Body = &sessionpb.Event_Looted{Looted: &sessionpb.Looted{
 			Looter: b.Looter, Body: b.Body,
+		}}
+	case sdk.StanceChangedBody:
+		// Verbatim (rpg-project#375, design §6): the pair as the session
+		// sorted it, and the stance as the author's own word -- a client
+		// maps the word to a color the way it maps Ended.ending to a
+		// sentence. Reaches every recipient the session addressed it to,
+		// monsters included; nothing on this side narrows the audience.
+		evt.Body = &sessionpb.Event_StanceChanged{StanceChanged: &sessionpb.StanceChanged{
+			Between: b.Between, Stance: b.Stance,
 		}}
 	case sdk.HeldBody:
 		// To everyone present: an object leaving the floor folds on the
