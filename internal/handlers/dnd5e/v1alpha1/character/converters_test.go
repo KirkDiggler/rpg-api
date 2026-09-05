@@ -1132,3 +1132,40 @@ func (s *ConvertersTestSuite) TestConvertEquipmentSlotsToProto_Populated_StillMa
 	assert.Equal(s.T(), "chain-mail", result.GetArmor().GetItemId())
 	assert.Nil(s.T(), result.GetOffHand())
 }
+
+// TestExtractIDFromRef_KeepsTheWholeID is the ref grammar at this converter
+// (rpg-toolkit#1536): a ref is module:type:id and the id is everything after
+// the second colon, however many parts it carries.
+//
+// The four-part case is the one that used to be wrong. Taking the LAST part
+// answered "skeleton-dog", which is a different name from the one the ref
+// carries and could collide with an unrelated ref ending the same way — and
+// since both callers feed this straight into an enum mapping, a collision is
+// silently the wrong condition or feature rather than an unknown one.
+//
+// The short cases are pinned deliberately, not because they are interesting:
+// they are what the callers rely on to skip a ref they cannot read, and the
+// change from Split to SplitN must not have moved them.
+func (s *ConvertersTestSuite) TestExtractIDFromRef_KeepsTheWholeID() {
+	cases := []struct {
+		name string
+		ref  string
+		want string
+	}{
+		{"a three-part ref is its id", "dnd5e:conditions:raging", "raging"},
+		{"a four-part ref keeps every part of its id",
+			"dnd5e:props:plushie:skeleton-dog", "plushie:skeleton-dog"},
+		{"and a deeper one keeps those too",
+			"dnd5e:props:plushie:skeleton-dog:chewed", "plushie:skeleton-dog:chewed"},
+		{"two parts is not a ref and reads as nothing", "dnd5e:conditions", ""},
+		{"neither is a bare word", "raging", ""},
+		{"nor is the empty string", "", ""},
+		{"a ref with no id reads as nothing, as it always did", "dnd5e:conditions:", ""},
+	}
+
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			assert.Equal(s.T(), tc.want, extractIDFromRef(tc.ref))
+		})
+	}
+}
