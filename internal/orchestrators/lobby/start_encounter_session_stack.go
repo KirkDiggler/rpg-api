@@ -11,7 +11,13 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
+	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 )
+
+// demoVendorMemberID is the member id of the TEMPORARY demo vendor placed on
+// the reference tomb (see the block in StartEncounter). Named so the
+// launch's one-id-one-member check can count it.
+const demoVendorMemberID = "demo-merchant-1"
 
 // DungeonKey selects a registered dungeon by the key its file names itself
 // with (the `key:` line; internal/dungeons). Empty means
@@ -134,6 +140,18 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		return nil, fmt.Errorf("lobby %q has %d members and the dungeon seats %d",
 			in.LobbyID, len(members), len(dungeon.PartySeats))
 	}
+	// ONE ID, ONE MEMBER, also checked before anything is written. The
+	// compile already refuses two monsters claiming one id
+	// (sessionworld.Monster.MemberID, rpg-project#375: a named placement
+	// joins under its own id); this is the same refusal one seam out,
+	// against the ids only the launch knows — the party's characters, and
+	// the demo vendor on the tomb. The composition would refuse the
+	// duplicate too, but at its second arrival, halfway through a launch,
+	// and it reports a duplicate as "no such member", the opposite of what
+	// happened (session's own spawn tests pin the misreport as upstream's).
+	if err := refuseSharedMemberIDs(members, dungeon.Monsters, key == dungeons.DefaultKey); err != nil {
+		return nil, fmt.Errorf("lobby %q: %w", in.LobbyID, err)
+	}
 
 	encID := o.encounterIDGen.Generate()
 
@@ -199,7 +217,7 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		}
 		demoVendorPosition := spatial.Position{X: dungeon.PartySeats[0].X + 1, Y: dungeon.PartySeats[0].Y}
 		if _, err := o.sessionManager.PlaceNPC(ctx, &sdk.PlaceNPCInput{
-			Session: encID, Member: "demo-merchant-1", Position: demoVendorPosition,
+			Session: encID, Member: demoVendorMemberID, Position: demoVendorPosition,
 			NPC: demoVendor.NPC().ToData(),
 		}); err != nil {
 			return nil, fmt.Errorf("place demo vendor into session %q on new stack: %w", encID, err)
@@ -218,4 +236,38 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	})
 
 	return &StartEncounterOutput{EncounterID: encID}, nil
+}
+
+// refuseSharedMemberIDs is the launch's one-id-one-member check: every id
+// StartEncounter is about to hand the session — the party's characters, the
+// dungeon's monsters, and the demo vendor when the tomb is being played —
+// must be distinct, and a collision names both claimants the way each is
+// known: the character by its id and player, the monster by its member id
+// and ref. Fails closed before any write.
+func refuseSharedMemberIDs(members []*lobbyrepo.Member, monsters []sessionworld.Monster, withDemoVendor bool) error {
+	claimed := make(map[string]string, len(members)+len(monsters)+1)
+	claim := func(id, who string) error {
+		if prev, taken := claimed[id]; taken {
+			return fmt.Errorf("member id %q is claimed twice: by %s and by %s — every member of a run needs an id of its own",
+				id, prev, who)
+		}
+		claimed[id] = who
+		return nil
+	}
+	for _, m := range members {
+		if err := claim(m.CharacterID, fmt.Sprintf("character %q of player %q", m.CharacterID, m.PlayerID)); err != nil {
+			return err
+		}
+	}
+	for _, mo := range monsters {
+		if err := claim(mo.MemberID, fmt.Sprintf("the dungeon's monster %q (%s)", mo.MemberID, mo.Ref)); err != nil {
+			return err
+		}
+	}
+	if withDemoVendor {
+		if err := claim(demoVendorMemberID, "the demo vendor"); err != nil {
+			return err
+		}
+	}
+	return nil
 }

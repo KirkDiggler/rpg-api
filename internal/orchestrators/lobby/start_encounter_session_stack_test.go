@@ -1014,3 +1014,56 @@ func (s *SessionStackSuite) lootTheAuthoredCaptain(authored string) *sdk.Atlas {
 type alwaysTheLowestFace struct{}
 
 func (alwaysTheLowestFace) Roll(_ context.Context, _ int) (int, error) { return 1, nil }
+
+// TestStartEncounter_ACharacterSharingAMonstersIdIsRefusedBeforeAnyWrite is
+// the launch's half of one-id-one-member (rpg-project#375): a named
+// placement joins under its own id now, so the heirloom's captain is the
+// member `captain` — and a character who happens to be called that cannot
+// share a run with him. Refused BEFORE anything is written, naming both,
+// rather than at the captain's Spawn halfway through, where the session
+// would report the duplicate as "no such member".
+func (s *SessionStackSuite) TestStartEncounter_ACharacterSharingAMonstersIdIsRefusedBeforeAnyWrite() {
+	s.seedCharacter(dungeonstest.HeirloomCaptainMemberID, "cap", "Cap")
+	s.Require().NoError(s.lobbyRepo.Save(s.ctx, &lobbyrepo.Data{
+		ID: "lobby-1", HostPlayerID: "cap", Status: lobbyrepo.StatusWaiting,
+		Members: map[string]*lobbyrepo.Member{"cap": {
+			PlayerID: "cap", CharacterID: dungeonstest.HeirloomCaptainMemberID, IsHost: true, IsReady: true,
+		}},
+		MemberOrder: []string{"cap"},
+	}))
+
+	_, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "cap", LobbyID: "lobby-1", DungeonKey: "reference-tomb-heirloom",
+	})
+	s.Require().Error(err)
+	s.Contains(err.Error(), `"captain" is claimed twice`)
+	s.Contains(err.Error(), `character "captain" of player "cap"`, "one claimant, as the lobby knows it")
+	s.Contains(err.Error(), `monster "captain" (dnd5e:monsters:skeleton-captain)`, "the other, as the dungeon knows it")
+
+	lobbyData, err := s.lobbyRepo.Get(s.ctx, "lobby-1")
+	s.Require().NoError(err)
+	s.Equal(lobbyrepo.StatusWaiting, lobbyData.Status, "nothing was written: the lobby is where it was")
+	s.Empty(lobbyData.EncounterID)
+}
+
+// TestStartEncounter_TheHeirloomsCaptainSpawnsUnderHisAuthoredId is the
+// positive half, at the seam that matters: the launch spawns a named
+// placement under the author's id, so the file's word for him is the run's.
+func (s *SessionStackSuite) TestStartEncounter_TheHeirloomsCaptainSpawnsUnderHisAuthoredId() {
+	s.seedCharacter("char-alice", "alice", "Alice")
+	s.seedReadyLobby("lobby-1", "alice")
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: "reference-tomb-heirloom",
+	})
+	s.Require().NoError(err)
+
+	_, err = s.sessOrch.Manager.Turn(s.ctx, &sdk.TurnInput{
+		Session: out.EncounterID, Member: dungeonstest.HeirloomCaptainPlacementID,
+	})
+	s.Require().NoError(err, "the captain is a member under the id the author gave him")
+	_, err = s.sessOrch.Manager.Turn(s.ctx, &sdk.TurnInput{
+		Session: out.EncounterID, Member: "skeleton-captain-1",
+	})
+	s.Require().ErrorIs(err, sdk.ErrNoMember, "and under nothing else")
+}

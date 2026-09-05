@@ -88,12 +88,29 @@ type Monster struct {
 	// position}, with no ref and no display name anywhere on it. An opaque
 	// "monster-2" would therefore be all a UI had to draw a skeleton with.
 	//
-	// So it is the ref's own id plus a per-ref ordinal -- skeleton-1,
+	// THE AUTHOR'S ID WHEN THEY GAVE ONE (`place[].id`; rpg-project#375,
+	// ruled on the hold-out): a placement named `chief` is the member
+	// `chief`. That is what lets `factions[].mind: chief` and
+	// `{ down: chief }` in the file mean the same member in the run — the
+	// composition validates a faction's mind against the id the member
+	// JOINS under, so a launch that renamed the chief on the way in would
+	// spawn a camp whose mind never arrives and which can never learn.
+	//
+	// Otherwise the ref's own id plus a per-ref ordinal -- skeleton-1,
 	// skeleton-2, skeleton-captain-1 -- which is unique, stable across a
 	// recompile of the same content, and legible in a log, a story beat and a
 	// client alike. Numbering PER REF rather than per dungeon so that adding a
 	// prop or reordering a chamber cannot silently renumber a monster that
-	// nothing about it changed.
+	// nothing about it changed; and an ordinal is spent on every placement
+	// of the ref, named or not, for the same reason -- naming one skeleton
+	// `scout` must not renumber the one after it.
+	//
+	// ONE ID, ONE MONSTER. An authored id that spells what the ordinal would
+	// have minted for some other placement (`id: skeleton-1` on the second
+	// skeleton) is refused at compile, naming both placements, rather than
+	// letting the second spawn fail as "no such member" halfway through a
+	// launch. The launch makes the same refusal one seam out, against the
+	// party's own ids ([lobby.StartEncounter]).
 	MemberID string
 
 	// At is its cell, dungeon-absolute.
@@ -218,11 +235,20 @@ func Compile(raw []byte) (*Dungeon, error) {
 
 	monsters := make([]Monster, len(spec.Monsters))
 	ordinals := map[string]int{}
+	claimed := map[string]int{}
 	for i, m := range spec.Monsters {
-		id, idErr := memberIDFor(m.Ref, ordinals)
+		id, idErr := memberIDFor(m.ID, m.Ref, ordinals)
 		if idErr != nil {
 			return nil, fmt.Errorf("monster %d: %w", i, idErr)
 		}
+		if prev, taken := claimed[id]; taken {
+			return nil, fmt.Errorf(
+				"member id %q is claimed twice: by %s and by %s — a monster's member id is its authored id, "+
+					"or its ref plus an ordinal when it has none, and two monsters cannot share one",
+				id, describePlacement(spec.Monsters[prev]), describePlacement(m),
+			)
+		}
+		claimed[id] = i
 		monsters[i] = Monster{
 			Ref: m.Ref, MemberID: id, At: cellOf(orientation, m.At),
 			Boss: m.Boss, Targeting: m.Targeting,
@@ -279,21 +305,36 @@ func cellOf(o tkencounter.Orientation, at spatial.Position) spatial.Position {
 	return tkencounter.HexCellAt(o, int(at.X), int(at.Y))
 }
 
-// memberIDFor derives a monster's in-encounter ID from its ref and how many of
-// that ref have already been named. See [Monster.MemberID] for why the ID is
-// built from the ref at all.
+// memberIDFor derives a monster's in-encounter ID: the author's own when the
+// placement has one, else its ref plus how many of that ref have been placed
+// so far. See [Monster.MemberID] for why the ID is built from the ref at all,
+// and why the ordinal is spent whether or not it is used.
 //
-// The ref is PARSED rather than string-split, so a malformed one is an error
-// here instead of a member called "dnd5e:monsters:skeleton-1" that nothing
-// downstream can read.
-func memberIDFor(ref string, ordinals map[string]int) (string, error) {
+// The ref is PARSED rather than string-split, and parsed for a named
+// placement too, so a malformed one is an error here instead of a member
+// called "dnd5e:monsters:skeleton-1" that nothing downstream can read.
+func memberIDFor(authored, ref string, ordinals map[string]int) (string, error) {
 	parsed, err := core.ParseString(ref)
 	if err != nil {
 		return "", fmt.Errorf("parse ref %q: %w", ref, err)
 	}
 	ordinals[ref]++
+	if authored != "" {
+		return authored, nil
+	}
 
 	return fmt.Sprintf("%s-%d", parsed.ID, ordinals[ref]), nil
+}
+
+// describePlacement names one monster placement the way an author would find
+// it in the file: by its id when it has one, and by its ref and authored
+// cell either way.
+func describePlacement(m tkdungeonspec.MonsterPlacement) string {
+	where := fmt.Sprintf("%s at [%d,%d]", m.Ref, int(m.At.X), int(m.At.Y))
+	if m.ID == "" {
+		return where
+	}
+	return fmt.Sprintf("%q (%s)", m.ID, where)
 }
 
 // buildWorld constructs the world the session actually plays in: the compiled
