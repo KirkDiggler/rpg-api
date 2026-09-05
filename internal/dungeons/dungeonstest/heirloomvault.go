@@ -157,14 +157,19 @@ const (
 	ScrollIntelRecordID   = HeirloomVaultKey + "/" + ScrollIntelAuthoredID
 
 	// HeirloomCaptainPlacementID is the author's name for the monster who
-	// knows the way into the vault. Its MEMBER id inside a run is derived
-	// from the ref, not from this (sessionworld.Monster.MemberID), which is
-	// why the two are named apart.
+	// knows the way into the vault.
 	HeirloomCaptainPlacementID = "captain"
 
-	// HeirloomCaptainMemberID is that monster's id inside a run: the ref's
-	// own id plus a per-ref ordinal, exactly as the launch derives it.
-	HeirloomCaptainMemberID = "skeleton-captain-1"
+	// HeirloomCaptainMemberID is that monster's id inside a run, and it IS
+	// the author's name (rpg-project#375, ruled on the hold-out): a named
+	// placement joins under its own id, so what the file says about it —
+	// a faction's mind, a `{ down }` predicate — means the same member in
+	// the run. It was "skeleton-captain-1", the ref plus an ordinal, until
+	// the hold-out needed the two to agree; the ordinal form remains for
+	// placements the author left unnamed (sessionworld.Monster.MemberID).
+	// Named apart from the placement id all the same, because a scene that
+	// spawns, loots or downs the captain is naming the MEMBER.
+	HeirloomCaptainMemberID = HeirloomCaptainPlacementID
 
 	// HeirloomBoundExitID is the way out the scenario counts as escaping.
 	HeirloomBoundExitID = "front-gate"

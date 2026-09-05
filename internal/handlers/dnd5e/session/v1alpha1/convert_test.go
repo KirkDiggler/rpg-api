@@ -182,7 +182,33 @@ func TestDissolveCauseFromProto_Unspecified_ReturnsErrNoCause(t *testing.T) {
 
 func TestDissolveKindToProto(t *testing.T) {
 	require.Equal(t, sessionpb.DissolveKind_DISSOLVE_KIND_BY_DECISION, dissolveKindToProto(sdk.DissolveByDecision))
+	require.Equal(t, sessionpb.DissolveKind_DISSOLVE_KIND_BY_DEFEAT, dissolveKindToProto(sdk.DissolveByDefeat))
+	// The camp turning (rpg-project#375): a missing case here would reach a
+	// client as a fight that ended for no stated reason.
+	require.Equal(t, sessionpb.DissolveKind_DISSOLVE_KIND_BY_STANCE, dissolveKindToProto(sdk.DissolveByStance))
 	require.Equal(t, sessionpb.DissolveKind_DISSOLVE_KIND_UNSPECIFIED, dissolveKindToProto(sdk.DissolveKind("bogus")))
+}
+
+// TestPlacementKindToProto: the session's closed placement vocabulary onto
+// the wire's enum, by name; a kind this build's protos cannot name is
+// UNSPECIFIED, the wire's word for a producer defect, never a guess.
+func TestPlacementKindToProto(t *testing.T) {
+	require.Equal(t, sessionpb.PlacementKind_PLACEMENT_KIND_MONSTER, placementKindToProto(sdk.PlacementMonster))
+	require.Equal(t, sessionpb.PlacementKind_PLACEMENT_KIND_PROP, placementKindToProto(sdk.PlacementProp))
+	require.Equal(t, sessionpb.PlacementKind_PLACEMENT_KIND_UNSPECIFIED, placementKindToProto(sdk.PlacementKind("bogus")))
+}
+
+// TestDissolveCauseFromProto_ByStanceIsAcceptedLikeByDefeat pins the inbound
+// half of the third cause: not a caller's to declare honestly, and accepted
+// anyway for BY_DEFEAT's reason -- the SDK answers with what the composition
+// actually did, whatever was handed in.
+func TestDissolveCauseFromProto_ByStanceIsAcceptedLikeByDefeat(t *testing.T) {
+	cause, err := dissolveCauseFromProto(sessionpb.DissolveKind_DISSOLVE_KIND_BY_STANCE)
+	require.NoError(t, err)
+	require.Equal(t, sdk.DissolveByStance, cause.Kind())
+
+	_, err = dissolveCauseFromProto(sessionpb.DissolveKind_DISSOLVE_KIND_UNSPECIFIED)
+	require.ErrorIs(t, err, sdk.ErrNoCause, "and nothing is guessed at")
 }
 
 func TestMemberToProto(t *testing.T) {
@@ -1224,6 +1250,48 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 			Body: sdk.FightEndedBody{Cause: sdk.DissolveByDefeat},
 		})
 		require.Equal(t, sessionpb.DissolveKind_DISSOLVE_KIND_BY_DEFEAT, got.GetFightEnded().GetCause())
+	})
+
+	t.Run("FightEnded by stance", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventFightEnded,
+			Body: sdk.FightEndedBody{Cause: sdk.DissolveByStance},
+		})
+		require.Equal(t, sessionpb.DissolveKind_DISSOLVE_KIND_BY_STANCE, got.GetFightEnded().GetCause())
+	})
+
+	// The arrival beat (rpg-project#375 step B, design §6): which placement
+	// entered the run, what it is -- a closed enum, mapped by name -- and
+	// the cell it stands on now.
+	t.Run("Arrived", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventArrived,
+			Body: sdk.ArrivedBody{ID: "reinforcement-1", Kind: sdk.PlacementMonster, Cell: spatial.Position{X: 1, Y: 4}},
+		})
+		require.Equal(t, sessionpb.EventKind_EVENT_KIND_ARRIVED, got.GetKind())
+		require.Equal(t, "reinforcement-1", got.GetArrived().GetId())
+		require.Equal(t, sessionpb.PlacementKind_PLACEMENT_KIND_MONSTER, got.GetArrived().GetKind())
+		require.Equal(t, 1.0, got.GetArrived().GetCell().GetX())
+		require.Equal(t, 4.0, got.GetArrived().GetCell().GetY())
+
+		prop := eventToProto(sdk.Event{
+			Kind: sdk.EventArrived,
+			Body: sdk.ArrivedBody{ID: "letter", Kind: sdk.PlacementProp, Cell: spatial.Position{X: 0, Y: 3}},
+		})
+		require.Equal(t, sessionpb.PlacementKind_PLACEMENT_KIND_PROP, prop.GetArrived().GetKind(),
+			"a prop is not a member, and the client branches on it")
+	})
+
+	// The stance beat (rpg-project#375, design §6): kind and body, verbatim
+	// -- the pair as the session sorted it, the stance as the author's word.
+	t.Run("StanceChanged", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventStanceChanged,
+			Body: sdk.StanceChangedBody{Between: []string{"party", "raiders"}, Stance: "neutral"},
+		})
+		require.Equal(t, sessionpb.EventKind_EVENT_KIND_STANCE_CHANGED, got.GetKind())
+		require.Equal(t, []string{"party", "raiders"}, got.GetStanceChanged().GetBetween())
+		require.Equal(t, "neutral", got.GetStanceChanged().GetStance())
 	})
 
 	t.Run("Moved", func(t *testing.T) {

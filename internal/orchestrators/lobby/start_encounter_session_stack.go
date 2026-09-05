@@ -5,13 +5,20 @@ import (
 	"errors"
 	"fmt"
 
+	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
+	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 )
+
+// demoVendorMemberID is the member id of the TEMPORARY demo vendor placed on
+// the reference tomb (see the block in StartEncounter). Named so the
+// launch's one-id-one-member check can count it.
+const demoVendorMemberID = "demo-merchant-1"
 
 // DungeonKey selects a registered dungeon by the key its file names itself
 // with (the `key:` line; internal/dungeons). Empty means
@@ -134,6 +141,18 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		return nil, fmt.Errorf("lobby %q has %d members and the dungeon seats %d",
 			in.LobbyID, len(members), len(dungeon.PartySeats))
 	}
+	// ONE ID, ONE MEMBER, also checked before anything is written. The
+	// compile already refuses two monsters claiming one id
+	// (sessionworld.Monster.MemberID, rpg-project#375: a named placement
+	// joins under its own id); this is the same refusal one seam out,
+	// against the ids only the launch knows — the party's characters, and
+	// the demo vendor on the tomb. The composition would refuse the
+	// duplicate too, but at its second arrival, halfway through a launch,
+	// and it reports a duplicate as "no such member", the opposite of what
+	// happened (session's own spawn tests pin the misreport as upstream's).
+	if err := refuseSharedMemberIDs(members, dungeon.Monsters, key == dungeons.DefaultKey); err != nil {
+		return nil, fmt.Errorf("lobby %q: %w", in.LobbyID, err)
+	}
 
 	encID := o.encounterIDGen.Generate()
 
@@ -152,7 +171,11 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	}
 
 	for _, monster := range dungeon.Monsters {
-		_, err := o.sessionManager.Spawn(ctx, &sdk.SpawnInput{
+		arrives, err := arrivalOf(monster.Arrives)
+		if err != nil {
+			return nil, fmt.Errorf("spawn %q into session %q on new stack: %w", monster.MemberID, encID, err)
+		}
+		_, err = o.sessionManager.Spawn(ctx, &sdk.SpawnInput{
 			Session: encID, ID: monster.MemberID, Ref: monster.Ref, Position: monster.At,
 			// The intel records the author placed in this monster
 			// (rpg-project#372), as COMPILED ids: dungeonspec mints
@@ -169,6 +192,31 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 			// Nothing on any wire ever says who carries intel (slice 2
 			// design P3) — the holding is engine-internal from here on.
 			Holds: monster.Holds,
+			// The faction the author placed this monster in
+			// (rpg-project#375), VERBATIM: the file's own word, or empty
+			// when the author wrote none, which the composition reads as
+			// the reserved `monsters` -- nothing here defaults it, so a
+			// dungeon authored before factions existed spawns exactly as
+			// it did. What a faction MEANS (who fights whom, and what
+			// turns it) is the run's world's business; this forwards a
+			// name. The seam refuses a name the dungeon does not declare,
+			// and a faction's MIND arriving in any faction but its own
+			// (ErrNoFaction) -- which is why the member id above is the
+			// placement's own: the mind the file names must be the member
+			// that enters.
+			Faction: monster.Faction,
+			// The predicate that brings this monster into the run
+			// (rpg-project#375 step B, design §3.7, R6), or nil for one
+			// that stands there from the first frame. A monster in
+			// reserve is SPAWNED NOW -- its sheet resolves at launch --
+			// and held by the composition: no cell, no roster row,
+			// absent from every projection for every member until the
+			// predicate holds, then placed at its authored cell with an
+			// `arrived` beat. Spawn's answer says so (Reserved), and this
+			// launch reads nothing off that answer: what a member's
+			// presence means is the run's, and the session's own reads
+			// already leave a reserved member out.
+			Arrives: arrives,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("spawn %q into session %q on new stack: %w", monster.MemberID, encID, err)
@@ -199,7 +247,7 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		}
 		demoVendorPosition := spatial.Position{X: dungeon.PartySeats[0].X + 1, Y: dungeon.PartySeats[0].Y}
 		if _, err := o.sessionManager.PlaceNPC(ctx, &sdk.PlaceNPCInput{
-			Session: encID, Member: "demo-merchant-1", Position: demoVendorPosition,
+			Session: encID, Member: demoVendorMemberID, Position: demoVendorPosition,
 			NPC: demoVendor.NPC().ToData(),
 		}); err != nil {
 			return nil, fmt.Errorf("place demo vendor into session %q on new stack: %w", encID, err)
@@ -218,4 +266,69 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	})
 
 	return &StartEncounterOutput{EncounterID: encID}, nil
+}
+
+// refuseSharedMemberIDs is the launch's one-id-one-member check: every id
+// StartEncounter is about to hand the session — the party's characters, the
+// dungeon's monsters, and the demo vendor when the tomb is being played —
+// must be distinct, and a collision names both claimants the way each is
+// known: the character by its id and player, the monster by its member id
+// and ref. Fails closed before any write.
+func refuseSharedMemberIDs(members []*lobbyrepo.Member, monsters []sessionworld.Monster, withDemoVendor bool) error {
+	claimed := make(map[string]string, len(members)+len(monsters)+1)
+	claim := func(id, who string) error {
+		if prev, taken := claimed[id]; taken {
+			return fmt.Errorf("member id %q is claimed twice: by %s and by %s — every member of a run needs an id of its own",
+				id, prev, who)
+		}
+		claimed[id] = who
+		return nil
+	}
+	for _, m := range members {
+		if err := claim(m.CharacterID, fmt.Sprintf("character %q of player %q", m.CharacterID, m.PlayerID)); err != nil {
+			return err
+		}
+	}
+	for _, mo := range monsters {
+		if err := claim(mo.MemberID, fmt.Sprintf("the dungeon's monster %q (%s)", mo.MemberID, mo.Ref)); err != nil {
+			return err
+		}
+	}
+	if withDemoVendor {
+		if err := claim(demoVendorMemberID, "the demo vendor"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// arrivalOf translates a placement's compiled arrival predicate -- the
+// composition's own Trigger, as dungeonspec hands it to sessionworld -- into
+// the session seam's sealed Arrival. Nil in, nil out: a monster with no
+// predicate is placed at once, as every monster always was.
+//
+// FOUR ARMS, ONE EACH FOR THE GRAMMAR'S FORMS (design §2: round | down |
+// fact | stance), and the translation is spelling only: a `{ down: chief }`
+// is TriggerMemberDown naming the member id the chief spawns under, and
+// arrives as ArrivesOnFall naming the same id. Whether a predicate can ever
+// hold is not this launch's to judge -- the session refuses one nothing can
+// fire (ErrNoMember), in its own words. A Trigger this switch does not know
+// is a compiler that grew a form ahead of this seam, and the launch fails
+// closed naming the type rather than spawning the monster placed as if it
+// had never been in reserve.
+func arrivalOf(t tkencounter.Trigger) (sdk.Arrival, error) {
+	switch t := t.(type) {
+	case nil:
+		return nil, nil //nolint:nilnil // nil is the documented "placed at once"; there is no arrival to hand over
+	case tkencounter.TriggerRound:
+		return sdk.ArrivesAtRound{Round: t.Round}, nil
+	case tkencounter.TriggerMemberDown:
+		return sdk.ArrivesOnFall{Member: string(t.Member)}, nil
+	case tkencounter.TriggerFact:
+		return sdk.ArrivesOnFact{Fact: t.Fact}, nil
+	case tkencounter.TriggerStance:
+		return sdk.ArrivesOnStance{Between: [2]string{t.Between[0], t.Between[1]}, Stance: string(t.Stance)}, nil
+	default:
+		return nil, fmt.Errorf("arrival predicate %T is not one this launch can hand to the session", t)
+	}
 }

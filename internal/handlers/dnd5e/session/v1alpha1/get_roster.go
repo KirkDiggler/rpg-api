@@ -58,6 +58,13 @@ func publicMemberToProto(member sdk.PublicMember) *sessionpb.PublicMemberInfo {
 		RaceRef:       member.RaceRef,
 		MonsterRef:    member.MonsterRef,
 		Customization: customizationToProto(member.Customization),
+		// The side this member is on (rpg-project#375, design §6): the
+		// dungeon file's own faction id, or the reserved `party` /
+		// `monsters`, as the session resolved it. Free-form on both sides
+		// -- factions are content, never an enum -- and always written by
+		// the session for a player or a monster, so an empty value here
+		// means a world NPC, which is in no faction.
+		Faction: member.Faction,
 	}
 }
 

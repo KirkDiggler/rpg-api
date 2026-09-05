@@ -88,12 +88,29 @@ type Monster struct {
 	// position}, with no ref and no display name anywhere on it. An opaque
 	// "monster-2" would therefore be all a UI had to draw a skeleton with.
 	//
-	// So it is the ref's own id plus a per-ref ordinal -- skeleton-1,
+	// THE AUTHOR'S ID WHEN THEY GAVE ONE (`place[].id`; rpg-project#375,
+	// ruled on the hold-out): a placement named `chief` is the member
+	// `chief`. That is what lets `factions[].mind: chief` and
+	// `{ down: chief }` in the file mean the same member in the run — the
+	// composition validates a faction's mind against the id the member
+	// JOINS under, so a launch that renamed the chief on the way in would
+	// spawn a camp whose mind never arrives and which can never learn.
+	//
+	// Otherwise the ref's own id plus a per-ref ordinal -- skeleton-1,
 	// skeleton-2, skeleton-captain-1 -- which is unique, stable across a
 	// recompile of the same content, and legible in a log, a story beat and a
 	// client alike. Numbering PER REF rather than per dungeon so that adding a
 	// prop or reordering a chamber cannot silently renumber a monster that
-	// nothing about it changed.
+	// nothing about it changed; and an ordinal is spent on every placement
+	// of the ref, named or not, for the same reason -- naming one skeleton
+	// `scout` must not renumber the one after it.
+	//
+	// ONE ID, ONE MONSTER. An authored id that spells what the ordinal would
+	// have minted for some other placement (`id: skeleton-1` on the second
+	// skeleton) is refused at compile, naming both placements, rather than
+	// letting the second spawn fail as "no such member" halfway through a
+	// launch. The launch makes the same refusal one seam out, against the
+	// party's own ids ([lobby.StartEncounter]).
 	MemberID string
 
 	// At is its cell, dungeon-absolute.
@@ -156,6 +173,49 @@ type Monster struct {
 	// the way into the vault are byte-identical to every observer until
 	// somebody loots them.
 	Holds []string
+
+	// Faction is the faction this monster was placed in, AS AUTHORED
+	// (`place[].faction`, rpg-project#375): empty when the author wrote
+	// none, which the composition reads as the reserved `monsters` faction
+	// -- so a dungeon authored before factions existed spawns exactly as it
+	// did. Verbatim, not key-prefixed: a faction is a word the roster shows
+	// and a scenario binds by name.
+	//
+	// THE ONE FACT ABOUT SIDES THAT NEEDS FORWARDING. Factions, dispositions
+	// and what a record reveals are field structure and ride Compiled.Field
+	// whole into the world ([TestFactionsRideTheFieldRatherThanBeingForwarded]);
+	// a monster's membership is the one thing that is about the MEMBER, and
+	// a member enters the run through session.Spawn rather than the field,
+	// so it is hand-carried across that seam exactly as Holds is.
+	//
+	// FORWARDED VERBATIM by the launch (internal/orchestrators/lobby's
+	// StartEncounter) to session.SpawnInput.Faction -- empty stays empty,
+	// never defaulted on this side. It has to be: the composition refuses a
+	// faction's MIND that joins any faction but its own (ErrNoFaction), so a
+	// launch that dropped this field would fail closed at the chief's spawn,
+	// naming him, rather than start a camp that can never learn.
+	Faction string
+
+	// Arrives is the predicate that brings this monster into the run
+	// (`place[].arrives`, rpg-project#375 step B, design §3.7, R6),
+	// compiled by dungeonspec to the composition's own Trigger: a
+	// `{ down: chief }` is a TriggerMemberDown naming the member id the
+	// chief spawns under -- which is why an authored id IS the member id
+	// (see MemberID). Nil when the monster stands there from the first
+	// frame, as every monster always did.
+	//
+	// A MONSTER IN RESERVE IS SPAWNED AT LAUNCH and held by the composition:
+	// no cell, no roster row, absent from every projection for every member
+	// until its predicate holds, then placed at its authored cell on the
+	// first verb after. Content resolves at launch; presence is the run's.
+	// A prop's arrival needs no line here -- it rides Compiled.Field on the
+	// PropInput, like everything else about a prop.
+	//
+	// FORWARDED by the launch (internal/orchestrators/lobby's arrivalOf) as
+	// the session seam's sealed Arrival, arm for arm; a launch that dropped
+	// it would spawn a reserved monster as PLACED -- three zombies standing
+	// at the gate from frame one -- which is what scene A4 exists to catch.
+	Arrives tkencounter.Trigger
 }
 
 // Compile turns one authored dungeon file into a [Dungeon].
@@ -194,15 +254,25 @@ func Compile(raw []byte) (*Dungeon, error) {
 
 	monsters := make([]Monster, len(spec.Monsters))
 	ordinals := map[string]int{}
+	claimed := map[string]int{}
 	for i, m := range spec.Monsters {
-		id, idErr := memberIDFor(m.Ref, ordinals)
+		id, idErr := memberIDFor(m.ID, m.Ref, ordinals)
 		if idErr != nil {
 			return nil, fmt.Errorf("monster %d: %w", i, idErr)
 		}
+		if prev, taken := claimed[id]; taken {
+			return nil, fmt.Errorf(
+				"member id %q is claimed twice: by %s and by %s — a monster's member id is its authored id, "+
+					"or its ref plus an ordinal when it has none, and two monsters cannot share one",
+				id, describePlacement(spec.Monsters[prev]), describePlacement(m),
+			)
+		}
+		claimed[id] = i
 		monsters[i] = Monster{
 			Ref: m.Ref, MemberID: id, At: cellOf(orientation, m.At),
 			Boss: m.Boss, Targeting: m.Targeting,
-			PlacementID: m.ID, Holds: m.Holds,
+			PlacementID: m.ID, Holds: m.Holds, Faction: m.Faction,
+			Arrives: m.Arrives,
 		}
 	}
 
@@ -238,7 +308,7 @@ func Compile(raw []byte) (*Dungeon, error) {
 		return nil, fmt.Errorf("bind scenarios: %w", err)
 	}
 
-	world, err := buildWorld(spec.Field, bossID, scenarioEndings)
+	world, err := buildWorld(spec.Field, bossID, scenarioEndings, spec.Endings)
 	if err != nil {
 		return nil, err
 	}
@@ -255,21 +325,36 @@ func cellOf(o tkencounter.Orientation, at spatial.Position) spatial.Position {
 	return tkencounter.HexCellAt(o, int(at.X), int(at.Y))
 }
 
-// memberIDFor derives a monster's in-encounter ID from its ref and how many of
-// that ref have already been named. See [Monster.MemberID] for why the ID is
-// built from the ref at all.
+// memberIDFor derives a monster's in-encounter ID: the author's own when the
+// placement has one, else its ref plus how many of that ref have been placed
+// so far. See [Monster.MemberID] for why the ID is built from the ref at all,
+// and why the ordinal is spent whether or not it is used.
 //
-// The ref is PARSED rather than string-split, so a malformed one is an error
-// here instead of a member called "dnd5e:monsters:skeleton-1" that nothing
-// downstream can read.
-func memberIDFor(ref string, ordinals map[string]int) (string, error) {
+// The ref is PARSED rather than string-split, and parsed for a named
+// placement too, so a malformed one is an error here instead of a member
+// called "dnd5e:monsters:skeleton-1" that nothing downstream can read.
+func memberIDFor(authored, ref string, ordinals map[string]int) (string, error) {
 	parsed, err := core.ParseString(ref)
 	if err != nil {
 		return "", fmt.Errorf("parse ref %q: %w", ref, err)
 	}
 	ordinals[ref]++
+	if authored != "" {
+		return authored, nil
+	}
 
 	return fmt.Sprintf("%s-%d", parsed.ID, ordinals[ref]), nil
+}
+
+// describePlacement names one monster placement the way an author would find
+// it in the file: by its id when it has one, and by its ref and authored
+// cell either way.
+func describePlacement(m tkdungeonspec.MonsterPlacement) string {
+	where := fmt.Sprintf("%s at [%d,%d]", m.Ref, int(m.At.X), int(m.At.Y))
+	if m.ID == "" {
+		return where
+	}
+	return fmt.Sprintf("%q (%s)", m.ID, where)
 }
 
 // buildWorld constructs the world the session actually plays in: the compiled
@@ -287,14 +372,17 @@ func memberIDFor(ref string, ordinals map[string]int) (string, error) {
 //
 // scenarioEndings are the endings every bound scenario declared, already
 // constructed and validated against this dungeon by the rulebook's own
-// scenario packages (see [endingsOfScenarios]).
+// scenario packages (see [endingsOfScenarios]); authoredEndings are the
+// file's own `endings[]`, compiled by dungeonspec to the same Trigger types
+// (rpg-project#375 step B, R10) and declared beside them (see [endingsFor]).
 //
 // bossID, when non-empty, is the member whose death ends the dungeon — an
 // ending may name a member that has not joined yet (the same contract
 // TriggerReachedPosition's filter has), which is what lets an empty world
 // declare a doom for a monster the launch spawns minutes later.
 func buildWorld(
-	field tkencounter.FieldInput, bossID string, scenarioEndings []tkencounter.EndingInput,
+	field tkencounter.FieldInput, bossID string,
+	scenarioEndings, authoredEndings []tkencounter.EndingInput,
 ) (*tkencounter.EncounterData, error) {
 	enc, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
 		// Construction-time capabilities only. The session package supplies its
@@ -339,7 +427,7 @@ func buildWorld(
 		// [Monster.Boss]), and — since rpg-project#368 — whatever each
 		// scenario the file BINDS declares for itself. A dungeon is
 		// geometry; a scenario is what it is for.
-		Endings: endingsFor(bossID, scenarioEndings),
+		Endings: endingsFor(bossID, scenarioEndings, authoredEndings),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build world: %w", err)
@@ -351,8 +439,18 @@ func buildWorld(
 }
 
 // endingsFor is every ending an authored dungeon declares: withdrawal
-// always, the boss's fall when a placement names one, and whatever each
-// bound scenario declared (rpg-project#368, design R8).
+// always, the boss's fall when a placement names one, whatever each bound
+// scenario declared (rpg-project#368, design R8), and whatever the file
+// declares in its own `endings[]` (rpg-project#375 step B, R10).
+//
+// THE AUTHORED ENDINGS ARE THE SCENARIO'S OWN GRAMMAR. `scenarios:
+// { hold-out: { convince: raiders } }` is sugar for `endings: [{ id:
+// hold-out, when: { stance: { between: [raiders, party], is: neutral } } }]`
+// -- dungeonspec compiles the spelled-out form to the very Trigger the
+// scenario package constructs, and this function declares both lists to
+// the composition the same way, so the two spellings produce the same
+// world ([TestAnEndingAuthoredInTheFileIsTheScenariosOwn]). A scenario
+// package with nothing left to do is the north star's own test.
 //
 // THE BOSS ARM IS UNTOUCHED BY THIS SLICE, deliberately. R8 ruled that
 // `boss:` keeps working here and is retired by the NAMED FOLLOW-UP — the one
@@ -365,7 +463,7 @@ func buildWorld(
 // by the composition itself (NewEncounter names the duplicate key and returns
 // ErrNoEnding), so there is no second copy of that rule here to drift from
 // the first.
-func endingsFor(bossID string, scenarioEndings []tkencounter.EndingInput) []tkencounter.EndingInput {
+func endingsFor(bossID string, scenarioEndings, authoredEndings []tkencounter.EndingInput) []tkencounter.EndingInput {
 	endings := []tkencounter.EndingInput{
 		{Key: EndingWithdrawn, Trigger: tkencounter.TriggerExternal{}},
 	}
@@ -375,8 +473,9 @@ func endingsFor(bossID string, scenarioEndings []tkencounter.EndingInput) []tken
 			Trigger: tkencounter.TriggerMemberDown{Member: tkencounter.MemberID(bossID)},
 		})
 	}
+	endings = append(endings, scenarioEndings...)
 
-	return append(endings, scenarioEndings...)
+	return append(endings, authoredEndings...)
 }
 
 // endingsOfScenarios constructs every scenario the file binds and returns the

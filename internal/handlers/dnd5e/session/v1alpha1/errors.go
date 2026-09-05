@@ -314,7 +314,15 @@ func statusError(err error) error {
 		// Unreachable through this service today, and mapped anyway: the day
 		// a verb does take an intel id, the failure needs a name that is not
 		// a lie.
-		errors.Is(err, sdk.ErrNoIntel):
+		errors.Is(err, sdk.ErrNoIntel),
+		// ErrNoFaction (rpg-project#375) for ErrNoIntel's reason, one row
+		// down: NO SessionService RPC NAMES A FACTION. It is raised when a
+		// spawn names a faction the dungeon does not declare, or spawns a
+		// faction's MIND into some other faction, and the only thing that
+		// spawns is this server forwarding the placement's own `faction`
+		// (internal/orchestrators/lobby's StartEncounter). Wiring on this
+		// side of the wire, never a client's list.
+		errors.Is(err, sdk.ErrNoFaction):
 		return status.Error(codes.Internal, err.Error())
 
 	default:

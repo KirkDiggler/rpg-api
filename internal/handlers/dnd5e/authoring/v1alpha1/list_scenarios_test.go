@@ -90,6 +90,7 @@ func (s *HandlerSuite) TestListScenarios_GuidanceIsTheRefusal() {
 		// an id spells.
 		facts := &scenarios.DungeonFacts{
 			Props: map[string]bool{}, Exits: map[string]bool{},
+			Factions: map[string]scenarios.FactionFacts{}, Reveals: map[string]bool{},
 		}
 		filled := map[string]string{}
 		for _, field := range got.GetFields() {
@@ -102,6 +103,17 @@ func (s *HandlerSuite) TestListScenarios_GuidanceIsTheRefusal() {
 				facts.Props[field.GetKey()] = true // holdable: the only prop a binding accepts
 			case "exit":
 				facts.Exits[field.GetKey()] = true
+			case "faction":
+				// The only faction a hold-out binding accepts (rpg-project#375
+				// §2): one with a mind to learn through, hostile to the party
+				// until a fact, and a record somewhere that reveals that fact.
+				// The fact's id is as invented as the faction's.
+				fact := field.GetKey() + "-fact"
+				facts.Factions[field.GetKey()] = scenarios.FactionFacts{
+					CanLearn:  true,
+					UntilFact: map[string]string{"party": fact},
+				}
+				facts.Reveals[fact] = true
 			default:
 				s.Require().Failf("unsatisfiable kind",
 					"%q.%q binds kind %q, which this test does not know how to place -- "+
@@ -131,4 +143,31 @@ func (s *HandlerSuite) TestListScenarios_GuidanceIsTheRefusal() {
 				got.GetId(), field.GetKey())
 		}
 	}
+}
+
+// TestListScenarios_ServesTheHoldOutWithAFactionToConvince is the hold-out
+// arriving on this wire (rpg-project#375, design §6): the second scenario is
+// served beside the first, and its one blank binds a FACTION -- the first
+// field of that kind, and the reason the wire's open `kind` vocabulary grew
+// a word without a proto enum changing. Named rather than left to the
+// verbatim sweep above so a build that lost the scenario, or a picker that
+// cannot narrow by faction, fails on a line that says which.
+func (s *HandlerSuite) TestListScenarios_ServesTheHoldOutWithAFactionToConvince() {
+	resp, err := s.handler.ListScenarios(s.ctx, &authoringpb.ListScenariosRequest{})
+	s.Require().NoError(err)
+
+	var holdOut *authoringpb.ScenarioDescriptor
+	for _, d := range resp.GetScenarios() {
+		if d.GetId() == scenarios.HoldOutID {
+			holdOut = d
+		}
+	}
+	s.Require().NotNil(holdOut, "this build serves the hold-out")
+	s.Require().Len(holdOut.GetFields(), 1, "one blank: whom to convince")
+
+	convince := holdOut.GetFields()[0]
+	s.Equal(scenarios.FieldConvince, convince.GetKey())
+	s.Equal(authoringpb.FieldType_FIELD_TYPE_ENTITY_REF, convince.GetType())
+	s.Equal("faction", convince.GetKind(), "the picker lists the file's declared factions")
+	s.NotEmpty(convince.GetGuidance())
 }
