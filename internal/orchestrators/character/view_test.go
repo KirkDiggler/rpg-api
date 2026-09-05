@@ -13,6 +13,7 @@ import (
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/currency"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
@@ -49,6 +50,7 @@ func TestProjectView_StrictLevel3Fighter(t *testing.T) {
 	)
 	require.Len(t, view.Equipment.Items, 3)
 	require.Equal(t, "longsword", view.Equipment.Items[0].ItemID)
+	require.Equal(t, currency.FromGold(15), view.Wallet)
 
 	// Both projections are detached values. Mutating persistence after the
 	// projection cannot rewrite a response already handed to a caller.
@@ -162,6 +164,7 @@ func level3FighterData(t *testing.T, id string) *tkcharacter.Data {
 		HitPoints:    24,
 		MaxHitPoints: 30,
 		ArmorClass:   10,
+		Wallet:       currency.FromGold(15),
 		Inventory: []tkcharacter.InventoryItemData{
 			{Type: "weapon", ID: "longsword", Quantity: 1},
 			{Type: "armor", ID: "shield", Quantity: 1},
