@@ -9,6 +9,7 @@ import (
 	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/currency"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
@@ -34,6 +35,7 @@ func BuildCharacterData(view *orchcharacter.View) *encounterv2pb.CharacterData {
 	mapIdentity(cd, view)
 	mapEquipment(cd, view)
 	mapStatus(cd, view)
+	cd.Wallet = walletToProto(view.Wallet)
 	return cd
 }
 
@@ -169,6 +171,14 @@ func ownerDeathSaveProgressToProto(progress *tkcharacter.DeathSaveProgress) *ses
 		Stabilized:        progress.Stabilized,
 		Dead:              progress.Dead,
 	}
+}
+
+// walletToProto mirrors the character's persistent purse (rpg-toolkit#1533)
+// onto the wire Money -- the same shape session.Trade prices with
+// (dnd5e.api.session.v1alpha1.Money), reused here rather than a second
+// Money type (the wire message's own doc says so directly).
+func walletToProto(w currency.Money) *sessionpb.Money {
+	return &sessionpb.Money{Copper: int32(w.Copper)}
 }
 
 func refToProto(ref core.Ref) *encounterv2pb.Ref {

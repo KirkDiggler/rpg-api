@@ -231,6 +231,23 @@ func statusError(err error) error {
 		errors.Is(err, sdk.ErrInvalidTradeOffer),
 		errors.Is(err, sdk.ErrNotAVendor),
 		errors.Is(err, sdk.ErrOutOfStock),
+		// Trade learns to charge (rpg-toolkit#1534, wave 4): two more join,
+		// both refusing a well-formed Trade call over the actor's payment
+		// rather than the shape of the request:
+		//
+		//   ErrWrongPrice -- Give.Currency does not exactly equal the
+		//   server-computed price of what Receive names. The SDK's own doc
+		//   is emphatic this is a caller offering the WRONG AMOUNT, never a
+		//   trusted client price -- the server alone decides whether an
+		//   offer is correct. Same bucket as ErrCannotAfford above: a
+		//   well-formed call the world's own arithmetic refuses.
+		//
+		//   ErrInsufficientFunds -- the actor's wallet cannot cover the
+		//   (already price-verified) cost. Distinct from ErrWrongPrice on
+		//   purpose, the SDK's own doc says so: this is a caller who named
+		//   the right amount and simply cannot pay it, not a wrong amount.
+		errors.Is(err, sdk.ErrWrongPrice),
+		errors.Is(err, sdk.ErrInsufficientFunds),
 		// ErrCannotActivate is ErrCannotAfford's shape one verb further out:
 		// an ability that could have run and said no. The SDK documents it as
 		// not currently reachable through Activate -- Afford consults the same

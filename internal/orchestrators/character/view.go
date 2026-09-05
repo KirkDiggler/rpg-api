@@ -10,6 +10,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/currency"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 )
 
@@ -39,6 +40,13 @@ type View struct {
 	Identity  IdentityView
 	Equipment *tkcharacter.EquipmentView
 	Status    *tkcharacter.StatusView
+
+	// Wallet is the character's persistent coin purse (rpg-toolkit#1533),
+	// carried straight off Data.Wallet rather than through StatusView -- the
+	// toolkit's own StatusView does not project it (same shape as
+	// npcs.StockEntryView not carrying a vendor price), so this is the raw
+	// persisted field, not a toolkit computation.
+	Wallet currency.Money
 }
 
 // ProjectViewInput contains persisted character data to project strictly.
@@ -185,5 +193,6 @@ func projectLoadedCharacter(
 		},
 		Equipment: equipment,
 		Status:    status.View,
+		Wallet:    data.Wallet,
 	}}, nil
 }

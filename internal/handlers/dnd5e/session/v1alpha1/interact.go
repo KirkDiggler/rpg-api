@@ -3,6 +3,9 @@ package sessionv1alpha1
 import (
 	"context"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
@@ -27,8 +30,13 @@ func (h *Handler) Interact(ctx context.Context, req *sessionpb.InteractRequest) 
 		return nil, statusError(err)
 	}
 
+	descriptor, err := worldNPCDescriptorToProto(out.Descriptor)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
 	return &sessionpb.InteractResponse{
-		Descriptor_: worldNPCDescriptorToProto(out.Descriptor),
+		Descriptor_: descriptor,
 		Seq:         out.Seq,
 		Saved:       saveReportToProto(out.Saved),
 		Delivery:    deliveryReportToProto(out.Delivery),
