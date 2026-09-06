@@ -95,7 +95,11 @@ func (h *Handler) EquipItem(
 		return nil, characterRPCError(errors.New("equip item returned incomplete character post-state"))
 	}
 
-	return &characterpb.EquipItemResponse{Character: BuildCharacterData(out.View)}, nil
+	cd, err := BuildCharacterData(out.View)
+	if err != nil {
+		return nil, characterRPCError(err)
+	}
+	return &characterpb.EquipItemResponse{Character: cd}, nil
 }
 
 // UnequipItem clears a slot, returning its occupant to inventory.
@@ -127,7 +131,11 @@ func (h *Handler) UnequipItem(
 		return nil, characterRPCError(errors.New("unequip item returned incomplete character post-state"))
 	}
 
-	return &characterpb.UnequipItemResponse{Character: BuildCharacterData(out.View)}, nil
+	cd, err := BuildCharacterData(out.View)
+	if err != nil {
+		return nil, characterRPCError(err)
+	}
+	return &characterpb.UnequipItemResponse{Character: cd}, nil
 }
 
 // GetCharacterData reads one character's current view without changing it —
@@ -231,5 +239,9 @@ func (h *Handler) characterDataFromEntity(
 		return nil, characterRPCError(errors.New("project character returned no view"))
 	}
 
-	return BuildCharacterData(projected.View), nil
+	cd, err := BuildCharacterData(projected.View)
+	if err != nil {
+		return nil, characterRPCError(err)
+	}
+	return cd, nil
 }
