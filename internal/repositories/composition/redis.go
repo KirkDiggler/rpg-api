@@ -2,8 +2,6 @@ package composition
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"sort"
 
@@ -62,6 +60,11 @@ func (r *redisRepository) Create(ctx context.Context, input *CreateInput) (*Crea
 	if err != nil {
 		return nil, apierr.Wrapf(err, "marshal composition %q", input.Composition.ID)
 	}
+	composition, err := decodeComposition(stored, input.Composition.WorldID, input.Composition.ID)
+	if err != nil {
+		return nil, err
+	}
+
 	created, err := r.client.HSetNX(
 		ctx,
 		compositionKey(input.Composition.WorldID),
@@ -75,10 +78,6 @@ func (r *redisRepository) Create(ctx context.Context, input *CreateInput) (*Crea
 		return nil, apierr.AlreadyExistsf("composition %s already exists", input.Composition.ID)
 	}
 
-	composition, err := decodeComposition(stored, input.Composition.WorldID, input.Composition.ID)
-	if err != nil {
-		return nil, err
-	}
 	return &CreateOutput{Composition: composition}, nil
 }
 
@@ -148,6 +147,5 @@ func decodeComposition(stored []byte, worldID, id string) (*worldcomposition.Dat
 }
 
 func compositionKey(worldID string) string {
-	digest := sha256.Sum256([]byte(worldID))
-	return compositionKeyPrefix + hex.EncodeToString(digest[:])
+	return compositionKeyPrefix + worldID
 }

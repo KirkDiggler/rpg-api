@@ -286,7 +286,7 @@ Dice session repository (`repositories/dice_session/redis.go`):
 - `dice_session:{playerID}:{sessionID}` — JSON-serialized session state
 
 Composition repository (`repositories/composition/redis.go`):
-- `composition:<world-sha256>` — hash with composition ID fields and serialized toolkit
+- `composition:<WorldID>` — hash with composition ID fields and serialized toolkit
   `composition.Data` values; no TTL
 
 ~~Encounter events (publisher, `publishers/encounter/redis.go`):~~ DELETED

@@ -59,6 +59,7 @@ func (s *RedisSuite) TestCreateGetListRoundTripAndNoTTL() {
 
 	keys := s.server.Keys()
 	s.Require().Len(keys, 1)
+	s.Equal("composition:world-a", keys[0])
 	s.Equal(time.Duration(0), s.server.TTL(keys[0]))
 	fields, err := s.server.HKeys(keys[0])
 	s.Require().NoError(err)
@@ -117,6 +118,18 @@ func (s *RedisSuite) TestAbsentGetAndEmptyList() {
 	s.Require().NoError(err)
 	s.NotNil(listed.Compositions)
 	s.Empty(listed.Compositions)
+}
+
+func (s *RedisSuite) TestCreateDecodeFailureDoesNotWrite() {
+	malformedID := string([]byte{0xff})
+	input := data("world-a", malformedID, `{}`)
+
+	created, err := s.repo.Create(context.Background(), &CreateInput{Composition: input})
+	s.Require().Error(err)
+	s.Nil(created)
+	s.True(apierr.IsInternal(err), "got %v", err)
+	s.Empty(s.server.Keys())
+	s.Equal(malformedID, input.ID)
 }
 
 func (s *RedisSuite) TestPersistedSnapshotsDoNotAliasCallerOrOutputs() {

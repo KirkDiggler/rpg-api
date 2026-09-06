@@ -66,7 +66,7 @@ World-scoped Redis storage for toolkit `world/composition.Data`. The typed contr
 creates a caller-identified composition without overwrite, gets one composition by
 WorldID and ID, and lists a world's compositions in deterministic ID order.
 
-Each world has one `composition:<world-sha256>` Redis hash. Fields are composition IDs and
+Each world has one `composition:<WorldID>` Redis hash. Fields are composition IDs and
 values are serialized `composition.Data`; HSETNX, HGET, and HGETALL are the only storage
 operations and the hash has no TTL. The repository validates required identifiers and
 stored envelope identity but leaves the opaque JSON schema to its owner.
