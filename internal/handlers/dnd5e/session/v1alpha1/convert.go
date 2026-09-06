@@ -97,6 +97,11 @@ func vendorStockEntryToProto(e npcs.StockEntryView) (*sessionpb.VendorStockEntry
 		DisplayName:   e.Name,
 		StockMode:     vendorStockModeToProto(e.Mode),
 		Price:         moneyToProto(price),
+		// PlayerSold (rpg-toolkit#1537) is carried straight across, unlike
+		// Price -- a plain bool the toolkit already resolved, not a lookup
+		// this handler performs. Display treatment is the client's call
+		// (both the toolkit's and the wire message's own doc say so).
+		PlayerSold: e.PlayerSold,
 	}
 	if e.Mode == npcs.StockModeLimited {
 		quantity := int32(e.Quantity)
