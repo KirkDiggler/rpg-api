@@ -50,6 +50,7 @@ type Manager interface {
 	Loot(ctx context.Context, in *sdk.LootInput) (*sdk.LootOutput, error)
 	Hold(ctx context.Context, in *sdk.HoldInput) (*sdk.HoldOutput, error)
 	Trade(ctx context.Context, in *sdk.TradeInput) (*sdk.TradeOutput, error)
+	Unpack(ctx context.Context, in *sdk.UnpackInput) (*sdk.UnpackOutput, error)
 }
 
 // Handler is the wire form of the toolkit's rulebooks/dnd5e/session SDK.

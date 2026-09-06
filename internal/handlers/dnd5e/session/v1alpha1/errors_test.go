@@ -70,6 +70,12 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrInvalidWorld", sdk.ErrInvalidWorld, codes.InvalidArgument},
 		{"ErrNoCause", sdk.ErrNoCause, codes.InvalidArgument},
 		{"ErrNoDeclarationID", sdk.ErrNoDeclarationID, codes.InvalidArgument},
+		// ErrInvalidUnpackRequest (Unpack, rpg-toolkit#1544) is
+		// INVALID_ARGUMENT per the wire's own UnpackRequest doc -- DIFFERENT
+		// from Trade's analogous ErrInvalidTradeOffer (FAILED_PRECONDITION
+		// below), a deliberate choice this table follows rather than
+		// pattern-matches.
+		{"ErrInvalidUnpackRequest", sdk.ErrInvalidUnpackRequest, codes.InvalidArgument},
 
 		// FAILED_PRECONDITION -- well-formed request, world state refuses it.
 		{"ErrInBubble", sdk.ErrInBubble, codes.FailedPrecondition},
@@ -124,12 +130,17 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// server alone decides what's correct, never a trusted client
 		// price); ErrInsufficientFunds is the right amount named but the
 		// payer (actor buying, or the vendor's own optional Wallet selling)
-		// can't cover it; ErrNotInInventory is selling without enough of the
-		// item to sell. All three the same well-formed-call-the-world-refuses
-		// family as the sentinels above.
+		// can't cover it; ErrNotInInventory is not owning enough of an item
+		// a verb needs to remove -- Trade selling, or Unpack against the
+		// pack it names (rpg-toolkit#1544, the sentinel's doc generalized
+		// when Unpack reused it). All three the same
+		// well-formed-call-the-world-refuses family as the sentinels above.
 		{"ErrWrongPrice", sdk.ErrWrongPrice, codes.FailedPrecondition},
 		{"ErrInsufficientFunds", sdk.ErrInsufficientFunds, codes.FailedPrecondition},
 		{"ErrNotInInventory", sdk.ErrNotInInventory, codes.FailedPrecondition},
+		// ErrNotAPack (Unpack, rpg-toolkit#1544): a real, resolvable item
+		// that simply isn't a Pack. Same shape as ErrNotAVendor above.
+		{"ErrNotAPack", sdk.ErrNotAPack, codes.FailedPrecondition},
 		// ErrCannotActivate is ErrCannotAfford's shape one verb further out:
 		// an ability that could have run and said no. The SDK documents it as
 		// not currently reachable through Activate — Afford consults the same
@@ -153,6 +164,11 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrBadCost", sdk.ErrBadCost, codes.Internal},
 		{"ErrBadCharacter", sdk.ErrBadCharacter, codes.Internal},
 		{"ErrBadNPC", sdk.ErrBadNPC, codes.Internal},
+		// ErrBadPackContents (Unpack, rpg-toolkit#1544): the named item IS a
+		// pack, but one of its own Contents lines doesn't resolve against
+		// the catalog -- a content-authoring defect, ErrBadNPC's shape one
+		// content type over.
+		{"ErrBadPackContents", sdk.ErrBadPackContents, codes.Internal},
 		{"ErrInvalidSession", sdk.ErrInvalidSession, codes.Internal},
 		{"ErrNilConfig", sdk.ErrNilConfig, codes.Internal},
 		{"ErrIncompleteConfig", sdk.ErrIncompleteConfig, codes.Internal},

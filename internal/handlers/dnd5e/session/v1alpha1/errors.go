@@ -99,7 +99,15 @@ func statusError(err error) error {
 		// refuses that rather than ignoring it, precisely so a client that
 		// believes it aimed Dodge at somebody is told, and a value quietly
 		// dropped never becomes a disagreement nobody finds.
-		errors.Is(err, sdk.ErrBadActivation):
+		errors.Is(err, sdk.ErrBadActivation),
+		// ErrInvalidUnpackRequest (Unpack, rpg-toolkit#1544) is an empty
+		// ItemID or a nonpositive Quantity -- the wire's own UnpackRequest
+		// doc states this bucket explicitly, INVALID_ARGUMENT, DIFFERENT
+		// from Trade's analogous ErrInvalidTradeOffer (FAILED_PRECONDITION
+		// below): a caller defect in the request's own shape, the same
+		// family ErrNoMemberID/ErrBadPosition above already sit in, not a
+		// well-formed call the world refuses.
+		errors.Is(err, sdk.ErrInvalidUnpackRequest):
 		return status.Error(codes.InvalidArgument, err.Error())
 
 	// FAILED_PRECONDITION -- the request is well-formed but the world's
@@ -249,13 +257,21 @@ func statusError(err error) error {
 		//   purpose, the SDK's own doc says so: this is a caller who named
 		//   the right amount and simply cannot pay it, not a wrong amount.
 		//
-		//   ErrNotInInventory (selling, rpg-toolkit#1537) -- the actor does
-		//   not hold enough of what they're offering to sell. Same shape as
-		//   ErrOutOfStock above, one direction over: a real actor, a real
-		//   item, and the actor's own stored sheet is what refuses it.
+		//   ErrNotInInventory -- the actor does not hold enough of an item a
+		//   verb needs to remove: Trade's selling actor against Give
+		//   (rpg-toolkit#1537), or Unpack's actor against the pack it names
+		//   (rpg-toolkit#1544, generalized from Sell's own doc when Unpack
+		//   reused it). Same shape as ErrOutOfStock above, one direction
+		//   over: a real actor, a real item, and the actor's own stored
+		//   sheet is what refuses it.
 		errors.Is(err, sdk.ErrWrongPrice),
 		errors.Is(err, sdk.ErrInsufficientFunds),
 		errors.Is(err, sdk.ErrNotInInventory),
+		// ErrNotAPack (Unpack, rpg-toolkit#1544) -- ItemID names a real,
+		// resolvable catalog item that simply isn't a Pack. Same shape as
+		// ErrNotAVendor above: the item exists, it's just the wrong kind
+		// for this verb.
+		errors.Is(err, sdk.ErrNotAPack),
 		// ErrCannotActivate is ErrCannotAfford's shape one verb further out:
 		// an ability that could have run and said no. The SDK documents it as
 		// not currently reachable through Activate -- Afford consults the same
@@ -322,6 +338,13 @@ func statusError(err error) error {
 		errors.Is(err, sdk.ErrBadCost),
 		errors.Is(err, sdk.ErrBadCharacter),
 		errors.Is(err, sdk.ErrBadNPC),
+		// ErrBadPackContents (Unpack, rpg-toolkit#1544) is ErrBadNPC's shape
+		// one content type over: the named item IS a pack, but one of its
+		// own Contents lines does not resolve against the catalog -- a
+		// content-authoring defect, never reachable through the current
+		// catalog (the SDK's own doc says every shipped pack is verified
+		// clean), mapped for the day a broken one ships.
+		errors.Is(err, sdk.ErrBadPackContents),
 		errors.Is(err, sdk.ErrInvalidSession),
 		errors.Is(err, sdk.ErrNilConfig),
 		errors.Is(err, sdk.ErrIncompleteConfig),
