@@ -1161,6 +1161,11 @@ func (s *ConvertersTestSuite) TestExtractIDFromRef_KeepsTheWholeID() {
 		{"neither is a bare word", "raging", ""},
 		{"nor is the empty string", "", ""},
 		{"a ref with no id reads as nothing, as it always did", "dnd5e:conditions:", ""},
+		// A malformed ref reaches the enum mapping as an unknown id and
+		// becomes UNSPECIFIED, where taking the last part used to answer
+		// "raging" and quietly map it to the real condition.
+		{"a trailing colon is visible rather than dropped",
+			"dnd5e:conditions:raging:", "raging:"},
 	}
 
 	for _, tc := range cases {
