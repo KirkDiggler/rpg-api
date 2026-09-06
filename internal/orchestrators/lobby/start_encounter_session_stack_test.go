@@ -21,6 +21,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/npc"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/ammunition"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
@@ -127,6 +128,24 @@ func (s *SessionStackSuite) seedCharacterWithWallet(id, playerID, name string, w
 			ID: id, PlayerID: playerID, Name: name, Level: 1,
 			HitPoints: 10, MaxHitPoints: 10, ArmorClass: 10,
 			Wallet: wallet,
+		}},
+	})
+	s.Require().NoError(err)
+}
+
+// seedCharacterWithInventory is seedCharacter plus a starting item, for the
+// Sell tests that need the actor to actually own what they're selling
+// (rpg-toolkit#1537) -- kept separate from seedCharacter for the same
+// reason seedCharacterWithWallet is: every other test's empty-Inventory
+// fixture stays untouched.
+func (s *SessionStackSuite) seedCharacterWithInventory(
+	id, playerID, name string, items ...tkcharacter.InventoryItemData,
+) {
+	_, err := s.charRepo.Create(s.ctx, characterrepo.CreateInput{
+		Character: &entities.Character{Data: &tkcharacter.Data{
+			ID: id, PlayerID: playerID, Name: name, Level: 1,
+			HitPoints: 10, MaxHitPoints: 10, ArmorClass: 10,
+			Inventory: items,
 		}},
 	})
 	s.Require().NoError(err)
@@ -543,6 +562,62 @@ func (s *SessionStackSuite) TestStartEncounter_TradeBuysFromTheDemoVendor() {
 	// The purse was seeded to exactly `price`, so this also proves the
 	// debit is exact, not a fraction or a flat fee.
 	s.Equal(currency.Money{}, got.Character.Data.Wallet)
+}
+
+// TestStartEncounter_SellToTheDemoVendor is rpg-toolkit#1537's own
+// definition of done for the sell direction, proven directly against the
+// real Manager (no mocks): a seated player can sell an item the vendor
+// doesn't already stock, and it actually leaves their inventory, actually
+// pays out, and actually joins the vendor's stock flagged as a player's
+// sale -- a brand-new row, not merged into an authored one (a shield is
+// used precisely because the demo vendor doesn't carry one; selling back
+// the longsword it DOES stock would merge into that existing authored row
+// and leave PlayerSold false, per AddToVendorStock's own documented rule).
+func (s *SessionStackSuite) TestStartEncounter_SellToTheDemoVendor() {
+	price, err := equipment.PriceOf(armor.Shield)
+	s.Require().NoError(err)
+
+	s.seedCharacterWithInventory("char-alice", "alice", "Alice",
+		tkcharacter.InventoryItemData{Type: shared.EquipmentTypeArmor, ID: armor.Shield, Quantity: 1},
+	)
+	s.seedReadyLobby("lobby-1", "alice")
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-1",
+	})
+	s.Require().NoError(err)
+
+	traded, err := s.sessOrch.Manager.Trade(s.ctx, &sdk.TradeInput{
+		Session: out.EncounterID, Actor: "char-alice", Target: "demo-merchant-1",
+		Give: sdk.TradeOffer{Items: []sdk.TradeItem{
+			{Type: shared.EquipmentTypeArmor, ID: armor.Shield, Quantity: 1},
+		}},
+		Receive: sdk.TradeOffer{Currency: price},
+	})
+	s.Require().NoError(err)
+
+	// The vendor's stock gained a new, player-sold shield row -- the demo
+	// vendor never carried one, so this cannot be an authored row's
+	// quantity merely incrementing.
+	byID := make(map[string]npcs.StockEntryView, len(traded.Descriptor.Inventory))
+	for _, entry := range traded.Descriptor.Inventory {
+		byID[entry.ID] = entry
+	}
+	shieldRow, ok := byID[armor.Shield]
+	s.Require().True(ok, "the sold shield joined the vendor's stock")
+	s.True(shieldRow.PlayerSold)
+	s.Equal(npcs.StockModeLimited, shieldRow.Mode)
+	s.Equal(1, shieldRow.Quantity)
+
+	// And the seller's own stored character record actually lost it and
+	// actually got paid -- the point of the whole direction, not just a
+	// descriptor that says so.
+	got, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-alice"})
+	s.Require().NoError(err)
+	s.NotContains(got.Character.Data.Inventory, tkcharacter.InventoryItemData{
+		Type: shared.EquipmentTypeArmor, ID: armor.Shield, Quantity: 1,
+	})
+	s.Equal(price, got.Character.Data.Wallet, "started at zero, paid exactly the real shield price")
 }
 
 // lobbyOver is SetupTest's orchestrator over a different content registry,

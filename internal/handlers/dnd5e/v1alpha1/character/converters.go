@@ -3215,13 +3215,26 @@ func convertActionTypeToProto(actionType combat.ActionType) dnd5ev1alpha1.Action
 	}
 }
 
-// extractIDFromRef extracts the ID part from a ref string (e.g., "dnd5e:conditions:raging" -> "raging")
+// extractIDFromRef returns a ref's id: EVERYTHING after the second colon
+// ("dnd5e:conditions:raging" -> "raging").
+//
+// The whole id, not its last part. An id may carry colon-separated parts
+// (rpg-toolkit#1536), and "dnd5e:props:plushie:skeleton-dog" names one thing
+// called "plushie:skeleton-dog" rather than a thing called "skeleton-dog" in
+// some outer family. Both callers hand the result to an enum mapping, so
+// keeping the last part alone would let a multi-part id COLLIDE with an
+// unrelated ref that happens to end the same way. Keeping the whole id makes
+// an id nothing knows yet map to UNSPECIFIED, which is the honest answer.
+//
+// A string with fewer than two colons is not a ref, and it answers "" the way
+// it always has: the callers skip on empty, so an unreadable ref contributes
+// nothing rather than half of something.
 func extractIDFromRef(ref string) string {
-	parts := strings.Split(ref, ":")
+	parts := strings.SplitN(ref, ":", 3)
 	if len(parts) < 3 {
 		return ""
 	}
-	return parts[len(parts)-1]
+	return parts[2]
 }
 
 // toTitleCase converts snake_case to Title Case (e.g., "sneak_attack" -> "Sneak Attack")

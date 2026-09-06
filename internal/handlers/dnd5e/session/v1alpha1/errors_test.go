@@ -106,26 +106,30 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrNotDown", sdk.ErrNotDown, codes.FailedPrecondition},
 		{"ErrNotHoldable", sdk.ErrNotHoldable, codes.FailedPrecondition},
 		{"ErrAlreadyHeld", sdk.ErrAlreadyHeld, codes.FailedPrecondition},
-		// Trade (rpg-project#369/#370, wave 1 of rpg-toolkit#1275): the wire's
-		// own TradeRequest.give doc already states ErrGiveNotSupported's code
-		// in writing (FAILED_PRECONDITION) -- a legal field on a legal
-		// message, refused by this wave's own rule, the same shape
-		// ErrCannotAfford already sits in. The other three are the same
-		// well-formed-call-the-world-refuses family: ErrInvalidTradeOffer
-		// (Receive isn't exactly one valid item), ErrNotAVendor (a real,
-		// visible world NPC with no vendor capability), ErrOutOfStock (a
-		// real vendor that doesn't carry enough of it).
-		{"ErrGiveNotSupported", sdk.ErrGiveNotSupported, codes.FailedPrecondition},
+		// Trade (rpg-project#369/#370, buy wave of rpg-toolkit#1275): the
+		// same well-formed-call-the-world-refuses family: ErrInvalidTradeOffer
+		// (the populated side isn't exactly one valid item, both/neither side
+		// carries items), ErrNotAVendor (a real, visible world NPC with no
+		// vendor capability), ErrOutOfStock (buying: a real vendor that
+		// doesn't carry enough of it). ErrGiveNotSupported (this bucket's
+		// original occupant, the buy-only wave's refusal for a populated
+		// Give) is RETIRED as of rpg-toolkit#1537 -- giving items now means
+		// selling -- and dropped from this table entirely, not just unused.
 		{"ErrInvalidTradeOffer", sdk.ErrInvalidTradeOffer, codes.FailedPrecondition},
 		{"ErrNotAVendor", sdk.ErrNotAVendor, codes.FailedPrecondition},
 		{"ErrOutOfStock", sdk.ErrOutOfStock, codes.FailedPrecondition},
-		// Trade learns to charge (rpg-toolkit#1534, wave 4): ErrWrongPrice is
-		// a caller offering the wrong AMOUNT (the server alone decides what's
-		// correct, never a trusted client price); ErrInsufficientFunds is the
-		// right amount named but the wallet can't cover it. Both the same
-		// well-formed-call-the-world-refuses family as the sentinels above.
+		// Trade learns to charge (rpg-toolkit#1534) and learns to sell
+		// (rpg-toolkit#1537): ErrWrongPrice is a caller offering the wrong
+		// AMOUNT, symmetrically for a buy's payment or a sell's payout (the
+		// server alone decides what's correct, never a trusted client
+		// price); ErrInsufficientFunds is the right amount named but the
+		// payer (actor buying, or the vendor's own optional Wallet selling)
+		// can't cover it; ErrNotInInventory is selling without enough of the
+		// item to sell. All three the same well-formed-call-the-world-refuses
+		// family as the sentinels above.
 		{"ErrWrongPrice", sdk.ErrWrongPrice, codes.FailedPrecondition},
 		{"ErrInsufficientFunds", sdk.ErrInsufficientFunds, codes.FailedPrecondition},
+		{"ErrNotInInventory", sdk.ErrNotInInventory, codes.FailedPrecondition},
 		// ErrCannotActivate is ErrCannotAfford's shape one verb further out:
 		// an ability that could have run and said no. The SDK documents it as
 		// not currently reachable through Activate — Afford consults the same
