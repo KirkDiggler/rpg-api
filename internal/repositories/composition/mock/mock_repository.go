@@ -41,62 +41,47 @@ func (m *MockRepository) EXPECT() *MockRepositoryMockRecorder {
 	return m.recorder
 }
 
-// AppendRevision mocks base method.
-func (m *MockRepository) AppendRevision(arg0 context.Context, arg1 composition.AppendRevisionInput) (*composition.AppendRevisionOutput, error) {
+// Create mocks base method.
+func (m *MockRepository) Create(arg0 context.Context, arg1 *composition.CreateInput) (*composition.CreateOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AppendRevision", arg0, arg1)
-	ret0, _ := ret[0].(*composition.AppendRevisionOutput)
+	ret := m.ctrl.Call(m, "Create", arg0, arg1)
+	ret0, _ := ret[0].(*composition.CreateOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// AppendRevision indicates an expected call of AppendRevision.
-func (mr *MockRepositoryMockRecorder) AppendRevision(arg0, arg1 any) *gomock.Call {
+// Create indicates an expected call of Create.
+func (mr *MockRepositoryMockRecorder) Create(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AppendRevision", reflect.TypeOf((*MockRepository)(nil).AppendRevision), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Create", reflect.TypeOf((*MockRepository)(nil).Create), arg0, arg1)
 }
 
-// CreateDefinition mocks base method.
-func (m *MockRepository) CreateDefinition(arg0 context.Context, arg1 composition.CreateDefinitionInput) (*composition.CreateDefinitionOutput, error) {
+// Get mocks base method.
+func (m *MockRepository) Get(arg0 context.Context, arg1 *composition.GetInput) (*composition.GetOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateDefinition", arg0, arg1)
-	ret0, _ := ret[0].(*composition.CreateDefinitionOutput)
+	ret := m.ctrl.Call(m, "Get", arg0, arg1)
+	ret0, _ := ret[0].(*composition.GetOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// CreateDefinition indicates an expected call of CreateDefinition.
-func (mr *MockRepositoryMockRecorder) CreateDefinition(arg0, arg1 any) *gomock.Call {
+// Get indicates an expected call of Get.
+func (mr *MockRepositoryMockRecorder) Get(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateDefinition", reflect.TypeOf((*MockRepository)(nil).CreateDefinition), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockRepository)(nil).Get), arg0, arg1)
 }
 
-// GetRevision mocks base method.
-func (m *MockRepository) GetRevision(arg0 context.Context, arg1 composition.GetRevisionInput) (*composition.GetRevisionOutput, error) {
+// List mocks base method.
+func (m *MockRepository) List(arg0 context.Context, arg1 *composition.ListInput) (*composition.ListOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetRevision", arg0, arg1)
-	ret0, _ := ret[0].(*composition.GetRevisionOutput)
+	ret := m.ctrl.Call(m, "List", arg0, arg1)
+	ret0, _ := ret[0].(*composition.ListOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetRevision indicates an expected call of GetRevision.
-func (mr *MockRepositoryMockRecorder) GetRevision(arg0, arg1 any) *gomock.Call {
+// List indicates an expected call of List.
+func (mr *MockRepositoryMockRecorder) List(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRevision", reflect.TypeOf((*MockRepository)(nil).GetRevision), arg0, arg1)
-}
-
-// ListDefinitions mocks base method.
-func (m *MockRepository) ListDefinitions(arg0 context.Context, arg1 composition.ListDefinitionsInput) (*composition.ListDefinitionsOutput, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListDefinitions", arg0, arg1)
-	ret0, _ := ret[0].(*composition.ListDefinitionsOutput)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ListDefinitions indicates an expected call of ListDefinitions.
-func (mr *MockRepositoryMockRecorder) ListDefinitions(arg0, arg1 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListDefinitions", reflect.TypeOf((*MockRepository)(nil).ListDefinitions), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockRepository)(nil).List), arg0, arg1)
 }

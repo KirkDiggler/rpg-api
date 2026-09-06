@@ -38,8 +38,8 @@ github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.62.0 h1:GIZJk/3UNb
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.62.0/go.mod h1:jUP/YtnwQgMwYM4fFyJw9XicEb3Y3ZEziQPQxEa2WcY=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.11.0 h1:FzCB2NbNS/BMRuKwEr8GRnadWJvdYermOs3smTd8Ss0=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.11.0/go.mod h1:3SZFDKtQWXwplGyRfUDSsdrGH25Etkm62BdZig0Q3rY=
-github.com/KirkDiggler/rpg-toolkit/world v0.4.0 h1:/Ag3BfgOH5wXODtnw8jDqX1dtURZWYdQeYtnm85veko=
-github.com/KirkDiggler/rpg-toolkit/world v0.4.0/go.mod h1:HguA/PKp3dW1zKbdiU/4qwtrxZ1Uj6eBoVcLaBKzhsw=
+github.com/KirkDiggler/rpg-toolkit/world v0.4.1 h1:YiVCVlOfG+7YJzZQtaME9QUpktv0ks/myMDiFsII/HA=
+github.com/KirkDiggler/rpg-toolkit/world v0.4.1/go.mod h1:HguA/PKp3dW1zKbdiU/4qwtrxZ1Uj6eBoVcLaBKzhsw=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/alicebob/miniredis/v2 v2.35.0 h1:QwLphYqCEAo1eu1TqPRN2jgVMPBweeQcR21jeqDCONI=

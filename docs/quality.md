@@ -1,8 +1,8 @@
 ---
 name: rpg-api quality scorecard
 description: Per-component grade with rationale — a graded scorecard to update as the codebase evolves
-updated: 2026-09-05
-confidence: medium-high — #921 composition persistence is verified by focused Redis race tests; #897 Appearance conversion/delegation remains verified by focused and Docker-backed integration tests
+updated: 2026-09-06
+confidence: medium-high — #921 simple composition persistence is verified by focused Redis race tests; #897 Appearance conversion/delegation remains verified by focused and Docker-backed integration tests
 ---
 
 # Quality Scorecard
@@ -291,21 +291,18 @@ Unit tests cover key hashing, TTL, duplicate/conflict behavior, fan-out, and clo
 `internal/integration/sessionpresentation` proves two server instances over one Redis.
 Held below A until web traffic exercises the live channel.
 
-### Composition repository — B (new, 2026-09-05)
+### Composition repository — B (new, 2026-09-06)
 
-`internal/repositories/composition/` provides typed guild-scoped create, expected-head
-append, exact pinned revision reads, and deterministic current-head listing. Generated
-IDs/timestamps, immutable JSON records, no TTL, one safe Redis Cluster hash tag, and Lua
-preflight of modeled conflicts/types/identity are covered by miniredis tests, including
-race-stressed concurrent CAS and corrupt-record refusal. Listing deliberately fails
-closed on any invalid indexed definition/head. Stored source version 1 must continue to
-use stable version-1 validation semantics when future versions are introduced.
+`internal/repositories/composition/` provides typed Create, Get, and List operations over
+toolkit `world/composition.Data`. One Redis hash per world stores each composition under
+its caller-supplied ID; HSETNX prevents overwrite, HGET/HGETALL serve reads, records do
+not expire, and lists are sorted by ID. Miniredis tests cover round trips, same-ID world
+isolation, duplicate refusal, absent/empty results, storage/decode errors, and snapshot
+independence.
 
-Held at B because this is repository-only and has no production traffic or live Redis
-Cluster proof. It is not wired into DI/RPC and supplies no guild authorization or
-world/dungeon integration. Lua atomicity also does not provide exactly-once request
-acknowledgment across go-redis retry after a lost reply; service integration must prove
-idempotent requests or outcome reconciliation before RPC exposure.
+Held at B because this is repository-only and has no production traffic or handler/DI
+integration. Authenticated world resolution and proto translation remain separate edge
+work.
 
 ### Character repository — B+
 

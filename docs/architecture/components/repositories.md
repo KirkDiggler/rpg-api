@@ -1,8 +1,8 @@
 ---
 name: repositories
 description: All data access components — interface definitions, implementations, and storage schemas
-updated: 2026-09-05
-confidence: high — #921 composition persistence is verified through focused Redis repository tests; older repository notes retain stated caveats
+updated: 2026-09-06
+confidence: high — #921 simple composition persistence is verified through focused Redis repository tests; older repository notes retain stated caveats
 ---
 
 # repositories
@@ -62,30 +62,17 @@ Redis tests cover complete Appearance and present-zero optional values.
 
 **Path:** `repositories/composition/`
 
-Guild-scoped Redis storage for stable composition definitions and immutable source
-revisions. The typed contract creates a definition, appends a revision with an
-expected-head CAS, gets one pinned revision, and lists current definition/head pairs in
-definition-ID order. `ListDefinitions` deliberately fails closed if any indexed
-definition or head is missing, unreadable, or corrupt; it never returns a silently
-partial library.
+World-scoped Redis storage for toolkit `world/composition.Data`. The typed contract
+creates a caller-identified composition without overwrite, gets one composition by
+WorldID and ID, and lists a world's compositions in deterministic ID order.
 
-One SHA-256 guild hash tag keeps the definition, revision, and index keys in one Redis
-Cluster slot. Lua scripts preflight modeled type, identity, collision, index, and head
-conflicts before writes; append also compares the exact definition/head bytes validated
-by its read preflight, so those refusals are atomic. This is not an end-to-end
-exactly-once acknowledgment guarantee: go-redis may retry a script after a lost reply
-and report a collision/stale-head result even if the first execution committed. Before
-any RPC exposure, the service integration must provide and test idempotent requests or
-outcome reconciliation for that indeterminate result.
+Each world has one `composition:<world-sha256>` Redis hash. Fields are composition IDs and
+values are serialized `composition.Data`; HSETNX, HGET, and HGETALL are the only storage
+operations and the hash has no TTL. The repository validates required identifiers and
+stored envelope identity but leaves the opaque JSON schema to its owner.
 
-Stored source version 1 is read-validated with its version-1 semantics. Those semantics
-must remain stable for immutable historical reads when future source versions are
-introduced; new validation rules must be selected by the stored version rather than
-retroactively tightened.
-
-This is repository-only infrastructure. It is not wired into server DI or RPCs and adds
-no guild authorization, dungeon/world integration, toolkit rule, rendering pipeline, or
-user-visible readiness.
+This is repository-only infrastructure. It is not wired into server DI or RPCs;
+authenticated world resolution and proto translation remain handler-edge work.
 
 ## Dice session repository
 
