@@ -1,8 +1,8 @@
 ---
 name: rpg-api data model
 description: Entities, relationships, storage schemas, and known gaps in the data layer
-updated: 2026-09-04
-confidence: medium-high — Character/CharacterDraft Appearance storage is verified against current toolkit-owned entities and Redis tests; the v1 encounter/dungeon entity model this doc used to describe remains deleted (rpg-api#642)
+updated: 2026-09-06
+confidence: medium-high — #921 toolkit composition storage and Character/CharacterDraft Appearance storage are verified by focused Redis tests; the historical v1 encounter/dungeon model remains deleted
 ---
 
 # rpg-api data model
@@ -41,6 +41,8 @@ EncounterEvent ─────────────── DELETED (rpg-api#64
 CharacterDraft ─────────────── owned by character_draft repo (Redis)
 
 DiceSession ────────────────── owned by dice_session repo (Redis)
+
+composition.Data ───────────── toolkit-owned opaque JSON snapshot, scoped by WorldID (Redis)
 ```
 
 The v2 encounter path's data model (encounter state owned by
@@ -244,6 +246,16 @@ type ActionEconomyState struct {
 
 `ActionEconomyState` has methods (`HasAction`, `UseAction`, `HasBonusAction`, etc.) — this is intentional behavior on entities (not game rules, just state tracking).
 
+## Composition (`rpg-toolkit/world/composition.Data`)
+
+The toolkit type is canonical: `ID` and `WorldID` identify a composition, and `JSON`
+holds its opaque authoring payload. rpg-api does not duplicate or interpret that payload.
+For the local-dev RPC, the orchestrator mints `ID` and the handler supplies its configured
+WorldID after player/world checks; the repository remains a typed caller-supplied storage
+contract. It stores a serialized `composition.Data` snapshot directly, with no API-owned
+definition/revision/head model. Production guild-to-world mapping and rendering
+integration do not exist here.
+
 ## DiceSession (repositories/dice_session)
 
 Tracks in-progress ability score rolls for character creation. Redis-backed. Narrow scope; stores the rolls until assigned to a draft.
@@ -273,6 +285,10 @@ Character draft repository (`repositories/character_draft/redis.go`):
 
 Dice session repository (`repositories/dice_session/redis.go`):
 - `dice_session:{playerID}:{sessionID}` — JSON-serialized session state
+
+Composition repository (`repositories/composition/redis.go`):
+- `composition:<WorldID>` — hash with composition ID fields and serialized toolkit
+  `composition.Data` values; no TTL
 
 ~~Encounter events (publisher, `publishers/encounter/redis.go`):~~ DELETED
 (rpg-api#642, 2026-07-13) — the v1 pub/sub publisher and the `EncounterEvent`

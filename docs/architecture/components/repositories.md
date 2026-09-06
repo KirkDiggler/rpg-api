@@ -1,8 +1,8 @@
 ---
 name: repositories
 description: All data access components — interface definitions, implementations, and storage schemas
-updated: 2026-09-04
-confidence: high — #897 verified nested toolkit Appearance Redis/session storage through focused repository and adapter tests; older repository notes retain stated caveats
+updated: 2026-09-06
+confidence: high — #921 simple composition persistence is verified through focused Redis repository tests; older repository notes retain stated caveats
 ---
 
 # repositories
@@ -18,6 +18,7 @@ served. The later v2 encounter repository is also deleted with rpg-project#227.
 |---|---|---|---|---|
 | `character` | `repository.go` | `redis.go` | Redis | B |
 | `character_draft` | `repository.go` | `redis.go` | Redis | B- |
+| `composition` | `repository.go` | `redis.go` | Redis | B |
 | `dice_session` | `repository.go` | `redis.go` | Redis | B- |
 | ~~`encounters/v2`~~ | DELETED | DELETED | DELETED | n/a |
 | `lobby` | `repository.go` | `redis.go` + `in_memory.go` | Redis + in-memory | B |
@@ -56,6 +57,24 @@ Interface methods: `Create`, `Get`, `List`, `Update`, `Delete`.
 **Storage:** Redis keys per draft. JSON stores the thin `entities.CharacterDraft`
 wrapper around toolkit `character.DraftData`, including nested Appearance. Focused
 Redis tests cover complete Appearance and present-zero optional values.
+
+## Composition repository
+
+**Path:** `repositories/composition/`
+
+World-scoped Redis storage for toolkit `world/composition.Data`. The typed contract
+creates a caller-identified composition without overwrite, gets one composition by
+WorldID and ID, and lists a world's compositions in deterministic ID order.
+
+Each world has one `composition:<WorldID>` Redis hash. Fields are composition IDs and
+values are serialized `composition.Data`; HSETNX, HGET, and HGETALL are the only storage
+operations and the hash has no TTL. The repository validates required identifiers and
+stored envelope identity but leaves the opaque JSON schema to its owner.
+
+The local-dev `CompositionService` now calls this repository through a thin service and
+orchestrator. The orchestrator supplies newly generated IDs; the handler supplies the
+configured dev WorldID only after existing player-auth and requested-world checks. The
+repository itself remains authorization-agnostic and unchanged.
 
 ## Dice session repository
 
