@@ -2,7 +2,7 @@
 name: rpg-api quality scorecard
 description: Per-component grade with rationale — a graded scorecard to update as the codebase evolves
 updated: 2026-09-06
-confidence: medium-high — #921 simple composition persistence is verified by focused Redis race tests; #897 Appearance conversion/delegation remains verified by focused and Docker-backed integration tests
+confidence: medium-high — #921 local-dev composition RPC integration is verified by focused handler/orchestrator, registration, and miniredis tests; #897 Appearance conversion/delegation remains verified by focused and Docker-backed integration tests
 ---
 
 # Quality Scorecard
@@ -300,9 +300,14 @@ not expire, and lists are sorted by ID. Miniredis tests cover round trips, same-
 isolation, duplicate refusal, absent/empty results, storage/decode errors, and snapshot
 independence.
 
-Held at B because this is repository-only and has no production traffic or handler/DI
-integration. Authenticated world resolution and proto translation remain separate edge
-work.
+The published Create/Get/List wire contract now has a thin handler and orchestrator:
+the handler requires the existing player context, matches the configured dev-only world,
+and maps JSON strings to `json.RawMessage`; the orchestrator mints IDs before repository
+Create. Registration is limited to `AUTH_DEV_MODE=true`, Create retains the separate
+`RPG_AUTHORING_ENABLED=1` mutation gate, and reads remain available within dev mode.
+Focused tests exercise the wire boundary through miniredis and prove non-dev absence.
+Held at B because this local stub intentionally has no production guild-to-world mapping
+or production traffic.
 
 ### Character repository — B+
 

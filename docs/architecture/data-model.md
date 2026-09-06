@@ -248,12 +248,13 @@ type ActionEconomyState struct {
 
 ## Composition (`rpg-toolkit/world/composition.Data`)
 
-The toolkit type is canonical: caller-supplied `ID` and `WorldID` identify a composition,
-and `JSON` holds its opaque authoring payload. rpg-api does not duplicate or interpret
-that payload. The repository stores a serialized `composition.Data` snapshot directly;
-there is no API-owned definition/revision/head model. This data model is repository-only:
-server DI, RPC translation, authenticated world resolution, and rendering integration do
-not exist yet.
+The toolkit type is canonical: `ID` and `WorldID` identify a composition, and `JSON`
+holds its opaque authoring payload. rpg-api does not duplicate or interpret that payload.
+For the local-dev RPC, the orchestrator mints `ID` and the handler supplies its configured
+WorldID after player/world checks; the repository remains a typed caller-supplied storage
+contract. It stores a serialized `composition.Data` snapshot directly, with no API-owned
+definition/revision/head model. Production guild-to-world mapping and rendering
+integration do not exist here.
 
 ## DiceSession (repositories/dice_session)
 

@@ -125,8 +125,9 @@ func runServer(_ *cobra.Command, _ []string) error {
 
 	// Check if dev mode is enabled (allows "Dev <player_id>" auth scheme)
 	authConfig := &auth.InterceptorConfig{
-		DevMode: os.Getenv("AUTH_DEV_MODE") == "true",
+		DevMode: os.Getenv(envAuthDevMode) == "true",
 	}
+	authoringEnabled := os.Getenv(envAuthoringEnabled) == "1"
 	if authConfig.DevMode {
 		// The StreamEvents send trace (rpg-api#819, session/v1alpha1/stream_events.go)
 		// and other per-call debug logging are cheap but silent under
@@ -273,7 +274,6 @@ func runServer(_ *cobra.Command, _ []string) error {
 	// reference tomb must load whether or not authoring is on, because a
 	// StartEncounter with no dungeon_key plays it. A file that does not
 	// compile fails the boot here, naming itself.
-	authoringEnabled := os.Getenv(envAuthoringEnabled) == "1"
 	contentDir := os.Getenv(envContentDir)
 	if contentDir == "" {
 		if authoringEnabled {
@@ -345,6 +345,18 @@ func runServer(_ *cobra.Command, _ []string) error {
 	healthServer.SetServingStatus("dnd5e.api.session.v1alpha1.SessionService", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus(sessionpresentationv1alpha1pb.SessionPresentationService_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("dnd5e.api.lobby.v1alpha1.LobbyService", grpc_health_v1.HealthCheckResponse_SERVING)
+
+	compositionRegistered, err := registerCompositionService(srv, &compositionRegistrationConfig{
+		DevMode:          authConfig.DevMode,
+		AuthoringEnabled: authoringEnabled,
+		Redis:            redisClient,
+	})
+	if err != nil {
+		return fmt.Errorf("composition service: %w", err)
+	}
+	if compositionRegistered {
+		healthServer.SetServingStatus(compositionv1alpha1ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
+	}
 
 	// AuthoringService v1alpha1 (rpg-api#806, rpg-project#256): the dungeon
 	// builder's seam. Registered only when RPG_AUTHORING_ENABLED=1, so a

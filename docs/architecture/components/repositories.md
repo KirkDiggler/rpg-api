@@ -71,8 +71,10 @@ values are serialized `composition.Data`; HSETNX, HGET, and HGETALL are the only
 operations and the hash has no TTL. The repository validates required identifiers and
 stored envelope identity but leaves the opaque JSON schema to its owner.
 
-This is repository-only infrastructure. It is not wired into server DI or RPCs;
-authenticated world resolution and proto translation remain handler-edge work.
+The local-dev `CompositionService` now calls this repository through a thin service and
+orchestrator. The orchestrator supplies newly generated IDs; the handler supplies the
+configured dev WorldID only after existing player-auth and requested-world checks. The
+repository itself remains authorization-agnostic and unchanged.
 
 ## Dice session repository
 

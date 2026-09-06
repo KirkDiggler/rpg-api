@@ -158,6 +158,9 @@ repo~~ / ~~Encounter log repo~~ — all DELETED (rpg-api#642, 2026-07-13).
   the v1alpha1 EncounterService is unregistered and deleted — see
   `docs/status.md` "Active work".
 - `api.v1alpha1` — DiceService
+- `api.composition.v1alpha1` — CompositionService Create/Get/List; registered only with
+  `AUTH_DEV_MODE=true`, using configured local-world mapping until a verified production
+  Discord guild-to-world edge exists.
 - `dnd5e.api.session.v1alpha1` — SessionService, the gameplay/session SDK wire surface.
 - `dnd5e.api.session.presentation.v1alpha1` — SessionPresentationService, live-only shared dice presentation; health service name matches this string exactly.
 - ~~`dnd5e.api.v1alpha2.encounter`~~ — deleted with the old encounter stack.
