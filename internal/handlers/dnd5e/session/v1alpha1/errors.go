@@ -99,7 +99,15 @@ func statusError(err error) error {
 		// refuses that rather than ignoring it, precisely so a client that
 		// believes it aimed Dodge at somebody is told, and a value quietly
 		// dropped never becomes a disagreement nobody finds.
-		errors.Is(err, sdk.ErrBadActivation):
+		errors.Is(err, sdk.ErrBadActivation),
+		// ErrInvalidUnpackRequest (Unpack, rpg-toolkit#1544) is an empty
+		// ItemID or a nonpositive Quantity -- the wire's own UnpackRequest
+		// doc states this bucket explicitly, INVALID_ARGUMENT, DIFFERENT
+		// from Trade's analogous ErrInvalidTradeOffer (FAILED_PRECONDITION
+		// below): a caller defect in the request's own shape, the same
+		// family ErrNoMemberID/ErrBadPosition above already sit in, not a
+		// well-formed call the world refuses.
+		errors.Is(err, sdk.ErrInvalidUnpackRequest):
 		return status.Error(codes.InvalidArgument, err.Error())
 
 	// FAILED_PRECONDITION -- the request is well-formed but the world's
@@ -249,26 +257,73 @@ func statusError(err error) error {
 		//   purpose, the SDK's own doc says so: this is a caller who named
 		//   the right amount and simply cannot pay it, not a wrong amount.
 		//
-		//   ErrNotInInventory (selling, rpg-toolkit#1537) -- the actor does
-		//   not hold enough of what they're offering to sell. Same shape as
-		//   ErrOutOfStock above, one direction over: a real actor, a real
-		//   item, and the actor's own stored sheet is what refuses it.
+		//   ErrNotInInventory -- the actor does not hold enough of an item a
+		//   verb needs to remove: Trade's selling actor against Give
+		//   (rpg-toolkit#1537), or Unpack's actor against the pack it names
+		//   (rpg-toolkit#1544, generalized from Sell's own doc when Unpack
+		//   reused it). Same shape as ErrOutOfStock above, one direction
+		//   over: a real actor, a real item, and the actor's own stored
+		//   sheet is what refuses it.
 		errors.Is(err, sdk.ErrWrongPrice),
 		errors.Is(err, sdk.ErrInsufficientFunds),
 		errors.Is(err, sdk.ErrNotInInventory),
+		// ErrNotAPack (Unpack, rpg-toolkit#1544) -- ItemID names a real,
+		// resolvable catalog item that simply isn't a Pack. Same shape as
+		// ErrNotAVendor above: the item exists, it's just the wrong kind
+		// for this verb.
+		errors.Is(err, sdk.ErrNotAPack),
 		// ErrCannotActivate is ErrCannotAfford's shape one verb further out:
 		// an ability that could have run and said no. The SDK documents it as
 		// not currently reachable through Activate -- Afford consults the same
 		// gates the sheet does, so an unavailable ability is a stale selector
 		// first -- and it is mapped anyway, for ErrBadCost's reason: the day
 		// the two gates disagree, the failure needs a name that is not a lie.
-		errors.Is(err, sdk.ErrCannotActivate):
+		errors.Is(err, sdk.ErrCannotActivate),
+		// The interrupt window (rpg-project#316 rung 3). All three are the
+		// same family the bucket already holds -- a well-formed call the
+		// world's current state refuses -- and none of them is a caller
+		// defect in the request's own shape.
+		//
+		//   ErrWindowOpen -- the FREEZE, and the only one of the three a
+		//   caller sees from a verb other than React: a monster's step
+		//   stopped to ask somebody whether they react, and until that
+		//   answer arrives no change verb may run. Exactly ErrNotYourTurn's
+		//   shape one clock over, and it arrives as a *sdk.WindowOpenError
+		//   naming the open windows and who each waits on, so err.Error()
+		//   already says who the table is waiting for.
+		//
+		//   ErrNoWindow -- a declaration id naming no open window: answered
+		//   already, or belonging to a fight that moved on. A STALE answer,
+		//   not a malformed one (the SDK's own doc says a host maps this to
+		//   a stale refusal and ErrNotAudience to a permission one), so it
+		//   sits beside ErrStaleDeclaration above rather than in NOT_FOUND
+		//   -- the id is opaque and a client echoes it back verbatim, so
+		//   "that thing does not exist" would blame the client for a second
+		//   click on a button whose question somebody else already closed.
+		//
+		//   ErrNotOffered -- a choice this window does not offer. Reachable
+		//   only for a value React's own reactChoiceFromProto recognized,
+		//   which is strike or hold, and a window offers both; it is mapped
+		//   anyway for ErrBadCost's reason -- the day the two option sets
+		//   disagree, the failure needs a name that is not a lie.
+		errors.Is(err, sdk.ErrWindowOpen),
+		errors.Is(err, sdk.ErrNoWindow),
+		errors.Is(err, sdk.ErrNotOffered):
 		return status.Error(codes.FailedPrecondition, err.Error())
 
 	// PERMISSION_DENIED -- the authenticated principal is real but owns no
 	// current player seat in this session. NotFound would expose roster state;
 	// Unauthenticated would deny that authentication already succeeded.
-	case errors.Is(err, sdk.ErrNotSeated):
+	//
+	// ErrNotAudience joins with the interrupt window (rpg-project#316 rung 3):
+	// the window is real and open, and this caller is simply not the one being
+	// asked. Two fighters can be asked about one step (ruling R3) and each may
+	// answer only their own. Same shape as ErrNotSeated -- a real principal
+	// reaching for something that is not theirs -- and deliberately NOT
+	// ErrNoWindow's bucket, which is what makes "somebody else's window" and
+	// "a window nobody is holding open" tell a client different things.
+	case errors.Is(err, sdk.ErrNotSeated),
+		errors.Is(err, sdk.ErrNotAudience):
 		return status.Error(codes.PermissionDenied, err.Error())
 
 	// ALREADY_EXISTS
@@ -322,6 +377,13 @@ func statusError(err error) error {
 		errors.Is(err, sdk.ErrBadCost),
 		errors.Is(err, sdk.ErrBadCharacter),
 		errors.Is(err, sdk.ErrBadNPC),
+		// ErrBadPackContents (Unpack, rpg-toolkit#1544) is ErrBadNPC's shape
+		// one content type over: the named item IS a pack, but one of its
+		// own Contents lines does not resolve against the catalog -- a
+		// content-authoring defect, never reachable through the current
+		// catalog (the SDK's own doc says every shipped pack is verified
+		// clean), mapped for the day a broken one ships.
+		errors.Is(err, sdk.ErrBadPackContents),
 		errors.Is(err, sdk.ErrInvalidSession),
 		errors.Is(err, sdk.ErrNilConfig),
 		errors.Is(err, sdk.ErrIncompleteConfig),

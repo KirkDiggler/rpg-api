@@ -32,6 +32,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/packs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	dnd5eResources "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
@@ -618,6 +619,45 @@ func (s *SessionStackSuite) TestStartEncounter_SellToTheDemoVendor() {
 		Type: shared.EquipmentTypeArmor, ID: armor.Shield, Quantity: 1,
 	})
 	s.Equal(price, got.Character.Data.Wallet, "started at zero, paid exactly the real shield price")
+}
+
+// TestStartEncounter_UnpackDecomposesAnOwnedPack is rpg-toolkit#1544's own
+// definition of done, proven directly against the real Manager (no mocks):
+// unpacking a pack the actor owns actually removes it and actually adds
+// its real resolved contents in its place -- not a hardcoded content list,
+// so this breaks if the catalog's own pack contents ever drift from what
+// this test assumes.
+func (s *SessionStackSuite) TestStartEncounter_UnpackDecomposesAnOwnedPack() {
+	contents, isPack, err := equipment.ResolvePackContents(packs.ExplorerPack)
+	s.Require().NoError(err)
+	s.Require().True(isPack)
+	s.Require().NotEmpty(contents, "the explorer's pack has real contents to decompose into")
+
+	s.seedCharacterWithInventory("char-alice", "alice", "Alice",
+		tkcharacter.InventoryItemData{Type: shared.EquipmentTypePack, ID: packs.ExplorerPack, Quantity: 1},
+	)
+	s.seedReadyLobby("lobby-1", "alice")
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-1",
+	})
+	s.Require().NoError(err)
+
+	_, err = s.sessOrch.Manager.Unpack(s.ctx, &sdk.UnpackInput{
+		Session: out.EncounterID, Actor: "char-alice", ItemID: packs.ExplorerPack, Quantity: 1,
+	})
+	s.Require().NoError(err)
+
+	got, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-alice"})
+	s.Require().NoError(err)
+	s.NotContains(got.Character.Data.Inventory, tkcharacter.InventoryItemData{
+		Type: shared.EquipmentTypePack, ID: packs.ExplorerPack, Quantity: 1,
+	}, "the pack itself is gone, decomposed rather than merely kept")
+	for _, content := range contents {
+		s.Contains(got.Character.Data.Inventory, tkcharacter.InventoryItemData{
+			Type: content.Type, ID: content.ID, Quantity: content.Quantity,
+		}, "content line %q joined inventory in the pack's place", content.ID)
+	}
 }
 
 // lobbyOver is SetupTest's orchestrator over a different content registry,

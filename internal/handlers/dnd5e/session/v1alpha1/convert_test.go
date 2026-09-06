@@ -69,6 +69,12 @@ func TestVerbToProto(t *testing.T) {
 	// VERB_UNSPECIFIED — not one mislabelled row but six, on the panel
 	// rpg-project#300 exists to fill.
 	require.Equal(t, sessionpb.Verb_VERB_ACTIVATE, verbToProto(sdk.VerbActivate))
+	require.Equal(t, sessionpb.Verb_VERB_DEATH_SAVE, verbToProto(sdk.VerbDeathSave))
+	// The first verb offered off the member's own turn (rpg-project#316 rung
+	// 3). Unmapped, the one row a frozen Afford returns -- the ONLY row a
+	// client can act on while the fight waits -- would arrive UNSPECIFIED,
+	// and the panel would have nothing to draw but a dead table.
+	require.Equal(t, sessionpb.Verb_VERB_REACT, verbToProto(sdk.VerbReact))
 	require.Equal(t, sessionpb.Verb_VERB_UNSPECIFIED, verbToProto(sdk.Verb("bogus")))
 }
 
@@ -1049,6 +1055,11 @@ func TestShortfallReasonToProto(t *testing.T) {
 		// from NO_BUDGET on purpose: nothing ran out, and telling a raging
 		// barbarian to come back next turn is the wrong sentence.
 		{sdk.ShortfallUnavailable, sessionpb.ShortfallReason_SHORTFALL_REASON_UNAVAILABLE},
+		// The freeze (rpg-project#316 rung 3). It is what EVERY other verb
+		// says while somebody is being asked whether they react, so leaving
+		// it unmapped would blank the reason on the whole panel at the one
+		// moment a player most needs to be told why nothing works.
+		{sdk.ShortfallWindowOpen, sessionpb.ShortfallReason_SHORTFALL_REASON_WINDOW_OPEN},
 		{sdk.ShortfallReason("bogus"), sessionpb.ShortfallReason_SHORTFALL_REASON_UNSPECIFIED},
 	}
 	for _, tt := range tests {
@@ -1469,4 +1480,107 @@ func TestShortfallToProto_ChargesCrossWhole(t *testing.T) {
 	require.Equal(t, int32(1), out.GetNeeded())
 	require.Equal(t, int32(0), out.GetLeft())
 	require.Equal(t, "no rage uses remaining", out.GetText())
+}
+
+// TestReactionRefToProto pins the presence law: a reaction identity is a
+// POINTER on Struck, Missed and a Declaration, and absent means "not taken as
+// a reaction" rather than "taken as one whose name we lost". A zeroed message
+// on the wire would read as the second, and a client drawing "reacted with
+// ..." would label an ordinary swing.
+func TestReactionRefToProto(t *testing.T) {
+	got := reactionRefToProto(&sdk.ReactionRef{
+		Ref: "dnd5e:conditions:opportunity_attack", Name: "Opportunity Attack",
+	})
+	require.Equal(t, "dnd5e:conditions:opportunity_attack", got.GetRef())
+	require.Equal(t, "Opportunity Attack", got.GetName())
+
+	require.Nil(t, reactionRefToProto(nil), "absent must stay absent, never a zeroed message")
+}
+
+// TestDeclarationToProto_CarriesTheReaction covers the REACT row Afford
+// returns while a window is open (rpg-project#316 rung 3): what the member is
+// being asked to react with, and the mover as the sole candidate. The two
+// choices are NOT here -- strike and hold are implied by the verb and travel
+// as ReactChoice on the request.
+func TestDeclarationToProto_CarriesTheReaction(t *testing.T) {
+	out := declarationToProto(sdk.Declaration{
+		Verb:       sdk.VerbReact,
+		Slot:       sdk.SlotReaction,
+		Available:  true,
+		ID:         "decl-react-1",
+		TargetKind: sdk.TargetMember,
+		Candidates: []sdk.TargetCandidate{{Member: "skel-1", Available: true}},
+		Reaction: &sdk.ReactionRef{
+			Ref: "dnd5e:conditions:opportunity_attack", Name: "Opportunity Attack",
+		},
+	})
+
+	require.Equal(t, sessionpb.Verb_VERB_REACT, out.GetVerb())
+	require.Equal(t, sessionpb.Slot_SLOT_REACTION, out.GetSlot())
+	require.Equal(t, "Opportunity Attack", out.GetReaction().GetName())
+	require.Len(t, out.GetCandidates(), 1)
+	require.Equal(t, "skel-1", out.GetCandidates()[0].GetMember())
+}
+
+// A row that is not a reaction carries no reaction, and this is the half that
+// makes the field mean something: every OTHER declaration Afford compiles is
+// on the same wire message.
+func TestDeclarationToProto_OmitsTheReactionOnAnOrdinaryRow(t *testing.T) {
+	out := declarationToProto(sdk.Declaration{Verb: sdk.VerbMove, ID: "decl-move-1"})
+	require.Nil(t, out.GetReaction())
+}
+
+// TestEventWindowOpened_ReachesTheWireTyped is the beat half of the done-when:
+// the fight paused, and the log says whose step, between which cells, who is
+// being asked, and with what.
+func TestEventWindowOpened_ReachesTheWireTyped(t *testing.T) {
+	got := eventToProto(sdk.Event{
+		Session: "sess-1",
+		Kind:    sdk.EventWindowOpened,
+		Body: sdk.WindowOpenedBody{
+			Mover:    "skel-1",
+			From:     spatial.Position{X: 3, Y: 4},
+			To:       spatial.Position{X: 4, Y: 4},
+			Audience: []string{"char-1", "char-2"},
+			Reaction: sdk.ReactionRef{
+				Ref: "dnd5e:conditions:opportunity_attack", Name: "Opportunity Attack",
+			},
+		},
+	})
+
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_WINDOW_OPENED, got.GetKind())
+	w := got.GetWindowOpened()
+	require.NotNil(t, w, "the kind and the body arm are one-to-one")
+	require.Equal(t, "skel-1", w.GetMover())
+	// The mover is STANDING ON From: the step is announced and not taken,
+	// which is the whole reason reach can still be checked against them.
+	require.Equal(t, float64(3), w.GetFrom().GetX())
+	require.Equal(t, float64(4), w.GetTo().GetX())
+	require.Equal(t, []string{"char-1", "char-2"}, w.GetAudience())
+	require.Equal(t, "Opportunity Attack", w.GetReaction().GetName())
+}
+
+// TestStruckAndMissedCarryTheReaction closes the gap protos#258 opened and
+// nothing filled: the wire field existed, the encounter recorded the identity,
+// and the beat arrived saying nothing about why a fighter swung on a
+// skeleton's turn.
+func TestStruckAndMissedCarryTheReaction(t *testing.T) {
+	oa := &sdk.ReactionRef{Ref: "dnd5e:conditions:opportunity_attack", Name: "Opportunity Attack"}
+
+	struck := eventToProto(sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
+		Attacker: "char-1", Target: "skel-1", Reaction: oa,
+	}}).GetStruck()
+	require.Equal(t, "Opportunity Attack", struck.GetReaction().GetName())
+
+	missed := eventToProto(sdk.Event{Kind: sdk.EventMissed, Body: sdk.MissedBody{
+		Attacker: "char-1", Target: "skel-1", Reaction: oa,
+	}}).GetMissed()
+	require.Equal(t, "Opportunity Attack", missed.GetReaction().GetName())
+
+	// An ordinary swing on the actor's own turn was taken as nothing, and
+	// absent is the truth. False-vs-absent is the whole point of the field.
+	plain := eventToProto(sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
+		Attacker: "char-1", Target: "skel-1",
+	}}).GetStruck()
+	require.Nil(t, plain.GetReaction())
 }

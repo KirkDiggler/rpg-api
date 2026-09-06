@@ -54,7 +54,7 @@ func (s *ReferenceTombSuite) load() *tkencounter.Encounter {
 	enc, err := tkencounter.LoadEncounter(&tkencounter.LoadEncounterInput{
 		Data:       *s.tomb.World,
 		Initiative: orderAsGiven{}, Standing: nobodyDown{}, Sight: nobodySees{},
-		TurnDriver: tkencounter.PassDriver{}, Striker: tkencounter.RefusingStriker{},
+		TurnDriver: tkencounter.PassDriver{}, Striker: tkencounter.RefusingStriker{}, Mover: tkencounter.RefusingMover{},
 		// Nobody is in this world, so no clock can advance in it — the same
 		// argument RefusingStriker beside it is making.
 		Announcer: tkencounter.RefusingAnnouncer{},
@@ -365,6 +365,7 @@ func TestAFightsUnplayedTurnPassesWithoutTouchingTheStriker(t *testing.T) {
 		Sight:      allSeeing{},
 		TurnDriver: tkencounter.PassDriver{},
 		Striker:    tkencounter.RefusingStriker{},
+		Mover:      tkencounter.RefusingMover{},
 		// NOT refusing, unlike every other fixture here: this test exists to
 		// pass a turn, and passing a turn crosses a boundary. What the
 		// boundary MEANS is the rulebook's business and not this package's,

@@ -55,6 +55,21 @@ type Config struct {
 	// generator so token identity is deterministic without deriving it from a
 	// Story or recipient-local sequence.
 	PresentationIDs sdk.PresentationIDGenerator
+
+	// TurnDriver decides what an unplayed member does on its turn. Optional:
+	// nil selects sdk.Behavior(), the production driver (see turnDriver
+	// below). Dice's own doc explains the shape and it applies verbatim here
+	// -- what New hands to sdk.Config.TurnDriver is always explicit and never
+	// nil, and the override exists so a test can script a monster's turn
+	// without reaching past this package into the SDK's construction.
+	//
+	// The reason a test needs to: sdk.Behavior() attacks the closest standing
+	// player and otherwise closes the distance, so it will never walk OUT of
+	// a fighter's reach. A reaction window is exactly what a monster leaving
+	// reach opens (rpg-project#316), which means the interrupt path has no
+	// producer under the shipped driver and could not otherwise be proven
+	// through this stack at all.
+	TurnDriver sdk.TurnDriver
 }
 
 // turnDriver answers "what happens when the clock lands on a member with no
@@ -111,6 +126,11 @@ func New(cfg Config) (*Orchestrator, error) {
 		presentationIDs = newDefaultPresentationIDs()
 	}
 
+	driver := cfg.TurnDriver
+	if driver == nil {
+		driver = turnDriver
+	}
+
 	broker := NewBroker()
 	mgr, err := sdk.NewManager(&sdk.Config{
 		PresentationIDs: presentationIDs,
@@ -119,7 +139,7 @@ func New(cfg Config) (*Orchestrator, error) {
 		Characters:      NewCharacterRepository(cfg.Characters),
 		Events:          broker,
 		Dice:            roller,
-		TurnDriver:      turnDriver,
+		TurnDriver:      driver,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("construct session manager: %w", err)

@@ -623,6 +623,8 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_STANCE_CHANGED
 	case sdk.EventArrived:
 		return sessionpb.EventKind_EVENT_KIND_ARRIVED
+	case sdk.EventWindowOpened:
+		return sessionpb.EventKind_EVENT_KIND_WINDOW_OPENED
 	default:
 		return sessionpb.EventKind_EVENT_KIND_UNKNOWN
 	}
@@ -713,6 +715,12 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			DamageComponents:    damageComponentsToProto(b.DamageComponents),
 			AdvantageSources:    attackModifierSourcesToProto(b.AdvantageSources),
 			DisadvantageSources: attackModifierSourcesToProto(b.DisadvantageSources),
+			// Why this swing happened out of turn, when it did
+			// (rpg-project#316). The field has been on the wire since
+			// protos#258 and had nothing to copy until session's body
+			// carried the identity; absent on every ordinary swing, which
+			// is the truth rather than a gap.
+			Reaction: reactionRefToProto(b.Reaction),
 		}}
 	case sdk.MissedBody:
 		evt.Body = &sessionpb.Event_Missed{Missed: &sessionpb.Missed{
@@ -722,6 +730,7 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			Total:    int32(b.Total),
 			Against:  int32(b.Against),
 			Attack:   attackRefToProto(b.Attack),
+			Reaction: reactionRefToProto(b.Reaction),
 		}}
 	case sdk.ActivatedBody:
 		evt.Body = &sessionpb.Event_Activated{Activated: activatedBodyToProto(b)}
@@ -859,6 +868,30 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			Boundaries: atlasBoundariesToProto(b.Boundaries),
 			Segments:   atlasSegmentsToProto(b.Segments),
 			Sealed:     sealed,
+		}}
+	case sdk.WindowOpenedBody:
+		// The fight stopped to ask somebody something (rpg-project#316 rung
+		// 3). Everything a client needs to draw the pause: whose step it
+		// was, the two cells it stopped between -- the mover is standing on
+		// From, because the step is announced and NOT taken -- who is being
+		// asked, and what they are being asked to react with.
+		//
+		// AUDIENCE IS A LIST AND REACTION IS NOT, verbatim from the SDK.
+		// One step asks every player reactor at once (ruling R3) and today
+		// exactly one reaction can reach a movement fold, so the asymmetry
+		// is the SDK's own and this converter neither flattens nor fans it
+		// out. Nothing here says which OPTIONS were posed: strike and hold
+		// are implied by the verb, and the answer travels as ReactChoice.
+		//
+		// Reaction is a value on this body, not a pointer as it is on
+		// Struck/Missed -- a window that named no reaction could not have
+		// been posed -- so it always converts to a non-nil message.
+		evt.Body = &sessionpb.Event_WindowOpened{WindowOpened: &sessionpb.WindowOpened{
+			Audience: b.Audience,
+			Mover:    b.Mover,
+			From:     positionToProto(b.From),
+			To:       positionToProto(b.To),
+			Reaction: reactionRefToProto(&b.Reaction),
 		}}
 	default:
 		// nil (no typed body for this kind) or a body type this build does
@@ -1163,6 +1196,8 @@ func verbToProto(v sdk.Verb) sessionpb.Verb {
 		return sessionpb.Verb_VERB_ACTIVATE
 	case sdk.VerbDeathSave:
 		return sessionpb.Verb_VERB_DEATH_SAVE
+	case sdk.VerbReact:
+		return sessionpb.Verb_VERB_REACT
 	default:
 		return sessionpb.Verb_VERB_UNSPECIFIED
 	}
@@ -1258,6 +1293,9 @@ func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
 	if d.DeathSave != nil {
 		out.DeathSave = deathSaveRefToProto(*d.DeathSave)
 	}
+	if d.Reaction != nil {
+		out.Reaction = reactionRefToProto(d.Reaction)
+	}
 	return out
 }
 
@@ -1283,6 +1321,14 @@ func shortfallReasonToProto(r sdk.ShortfallReason) sessionpb.ShortfallReason {
 		// collapsing it into NO_BUDGET would tell a raging barbarian to come
 		// back next turn.
 		return sessionpb.ShortfallReason_SHORTFALL_REASON_UNAVAILABLE
+	case sdk.ShortfallWindowOpen:
+		// The freeze (rpg-project#316 rung 3). Somebody at this table is
+		// being asked whether they react, and until that answer arrives
+		// nothing else may move -- so every other verb comes back
+		// unavailable for this one reason, on this member's own turn as
+		// much as on anybody else's. NOT NOT_YOUR_TURN, which would tell a
+		// player to wait for a clock that is not what is holding them.
+		return sessionpb.ShortfallReason_SHORTFALL_REASON_WINDOW_OPEN
 	default:
 		return sessionpb.ShortfallReason_SHORTFALL_REASON_UNSPECIFIED
 	}
@@ -1513,6 +1559,19 @@ func abilityRefToProto(a sdk.AbilityRef) *sessionpb.AbilityRef {
 
 func deathSaveRefToProto(d sdk.DeathSaveRef) *sessionpb.DeathSaveRef {
 	return &sessionpb.DeathSaveRef{Name: d.Name}
+}
+
+// reactionRefToProto mirrors what a beat or an offer was taken AS: the
+// opportunity attack that let a fighter swing on somebody else's turn
+// (rpg-project#316). Pointer in and pointer out, because absence is the
+// common case and it MEANS something -- an ordinary swing on the actor's own
+// turn was taken as nothing, and a zeroed ReactionRef on the wire would read
+// as a reaction with no name rather than as no reaction.
+func reactionRefToProto(r *sdk.ReactionRef) *sessionpb.ReactionRef {
+	if r == nil {
+		return nil
+	}
+	return &sessionpb.ReactionRef{Ref: r.Ref, Name: r.Name}
 }
 
 // attackRefToProto mirrors session.AttackRef field-for-field (rpg-toolkit#866):

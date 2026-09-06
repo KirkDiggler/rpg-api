@@ -281,6 +281,21 @@ func (mr *MockManagerMockRecorder) OpenDoor(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OpenDoor", reflect.TypeOf((*MockManager)(nil).OpenDoor), ctx, in)
 }
 
+// React mocks base method.
+func (m *MockManager) React(ctx context.Context, in *session.ReactInput) (*session.ReactOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "React", ctx, in)
+	ret0, _ := ret[0].(*session.ReactOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// React indicates an expected call of React.
+func (mr *MockManagerMockRecorder) React(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "React", reflect.TypeOf((*MockManager)(nil).React), ctx, in)
+}
+
 // Roster mocks base method.
 func (m *MockManager) Roster(ctx context.Context, in *session.RosterInput) (*session.RosterOutput, error) {
 	m.ctrl.T.Helper()
@@ -384,6 +399,21 @@ func (m *MockManager) Unlock(ctx context.Context, in *session.UnlockInput) (*ses
 func (mr *MockManagerMockRecorder) Unlock(ctx, in any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Unlock", reflect.TypeOf((*MockManager)(nil).Unlock), ctx, in)
+}
+
+// Unpack mocks base method.
+func (m *MockManager) Unpack(ctx context.Context, in *session.UnpackInput) (*session.UnpackOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Unpack", ctx, in)
+	ret0, _ := ret[0].(*session.UnpackOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Unpack indicates an expected call of Unpack.
+func (mr *MockManagerMockRecorder) Unpack(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Unpack", reflect.TypeOf((*MockManager)(nil).Unpack), ctx, in)
 }
 
 // View mocks base method.

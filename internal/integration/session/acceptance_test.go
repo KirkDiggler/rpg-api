@@ -259,6 +259,7 @@ func buildTomb(t *testing.T, mutate func(*tkencounter.SetupInput)) *tkencounter.
 		// turn does here never matters.
 		TurnDriver: tkencounter.PassDriver{},
 		Striker:    tkencounter.RefusingStriker{},
+		Mover:      tkencounter.RefusingMover{},
 		// This builds the scene; the session Manager loads it and supplies the
 		// real announcer when the fight actually runs.
 		Announcer: tkencounter.RefusingAnnouncer{},
@@ -377,6 +378,15 @@ func newAcceptanceHarness(t *testing.T) *acceptanceHarness {
 
 func newAcceptanceHarnessWithDice(t *testing.T, roller sdk.Roller) *acceptanceHarness {
 	t.Helper()
+	return newAcceptanceHarnessWith(t, roller, nil)
+}
+
+// newAcceptanceHarnessWith is the same harness over a scripted turn driver.
+// A nil driver keeps the production one (sdk.Behavior()), so every existing
+// scene is unchanged; interrupt_acceptance_test.go is the one caller that
+// passes something, and its own doc says why it has to.
+func newAcceptanceHarnessWith(t *testing.T, roller sdk.Roller, driver sdk.TurnDriver) *acceptanceHarness {
+	t.Helper()
 
 	mr := miniredis.RunT(t)
 	client := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
@@ -392,7 +402,7 @@ func newAcceptanceHarnessWithDice(t *testing.T, roller sdk.Roller) *acceptanceHa
 	// "a test wires a fixed one and gets a reproducible fight").
 	orch, err := sessionorch.New(sessionorch.Config{
 		Redis: client, Characters: charRepo, TTL: 24 * time.Hour, Dice: roller,
-		PresentationIDs: idgen.NewSequential("presentation"),
+		PresentationIDs: idgen.NewSequential("presentation"), TurnDriver: driver,
 	})
 	require.NoError(t, err)
 

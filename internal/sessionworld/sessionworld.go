@@ -403,6 +403,11 @@ func buildWorld(
 		// when it loads this world to actually play it.
 		TurnDriver: tkencounter.PassDriver{},
 		Striker:    tkencounter.RefusingStriker{},
+		// Mover is Striker's exact twin (rpg-toolkit#1321): a step is
+		// announced before it is taken, and nobody steps in a world that is
+		// being built. The session package installs the real one when it
+		// loads this world to play it; here, reaching it is a host bug.
+		Mover: tkencounter.RefusingMover{},
 		// And REFUSING one seam further on. A world with nobody in it has no
 		// clock to advance, so a temporal boundary announced while building
 		// one is a bug rather than an event -- and this says so at the point

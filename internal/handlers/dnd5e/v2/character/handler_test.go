@@ -478,6 +478,12 @@ func (s *HandlerTestSuite) TestBuildCharacterData_MapsQuantityAndAuthoritativeEq
 	wantPrice, err := equipment.PriceOf(weapons.Handaxe)
 	s.Require().NoError(err)
 	s.Equal(int32(wantPrice.Copper), cd.GetInventory()[0].GetPrice().GetCopper())
+
+	// Item.equipment_type (rpg-api-protos#301) mirrors the toolkit's real
+	// shared.EquipmentType, distinct from the narrower Kind above -- also
+	// computed from the real catalog, not hardcoded.
+	wantType := equipment.ResolveEquipmentDetail(weapons.Handaxe).Type
+	s.Equal(string(wantType), cd.GetInventory()[0].GetEquipmentType())
 }
 
 func (s *HandlerTestSuite) TestBuildCharacterData_FourBuildStatusMapping() {
