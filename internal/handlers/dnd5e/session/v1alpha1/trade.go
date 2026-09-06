@@ -12,9 +12,9 @@ import (
 // rpg-toolkit#1275): Interact already answers what a vendor carries, this
 // verb is what actually moves an item — decrementing the vendor's stock and
 // adding it to the actor's inventory. Pure proto <-> SDK translation, no
-// rule lives here (design rule 8): Give must be empty and Receive must name
-// exactly one item this wave, but that shape is the SDK's own rule to
-// enforce (ErrGiveNotSupported, ErrInvalidTradeOffer), not this handler's.
+// rule lives here (design rule 8): what shape an offer must have, and what
+// it costs, are the SDK's own rules to enforce (ErrInvalidTradeOffer and the
+// refusals beside it), never this handler's.
 func (h *Handler) Trade(ctx context.Context, req *sessionpb.TradeRequest) (*sessionpb.TradeResponse, error) {
 	if err := h.callerActingAs(ctx, req.GetActor()); err != nil {
 		return nil, err

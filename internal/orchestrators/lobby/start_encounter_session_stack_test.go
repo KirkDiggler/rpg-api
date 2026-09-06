@@ -25,8 +25,10 @@ import (
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/currency"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
@@ -110,6 +112,21 @@ func (s *SessionStackSuite) seedCharacter(id, playerID, name string) {
 		Character: &entities.Character{Data: &tkcharacter.Data{
 			ID: id, PlayerID: playerID, Name: name, Level: 1,
 			HitPoints: 10, MaxHitPoints: 10, ArmorClass: 10,
+		}},
+	})
+	s.Require().NoError(err)
+}
+
+// seedRichCharacter is seedCharacter with a funded wallet, for the one scene
+// that buys something. Separate rather than a parameter on seedCharacter, so
+// the twenty scenes that never trade keep saying what they mean: a level 1
+// character with nothing in particular.
+func (s *SessionStackSuite) seedRichCharacter(id, playerID, name string, purse currency.Money) {
+	_, err := s.charRepo.Create(s.ctx, characterrepo.CreateInput{
+		Character: &entities.Character{Data: &tkcharacter.Data{
+			ID: id, PlayerID: playerID, Name: name, Level: 1,
+			HitPoints: 10, MaxHitPoints: 10, ArmorClass: 10,
+			Wallet: purse,
 		}},
 	})
 	s.Require().NoError(err)
@@ -477,7 +494,14 @@ func (s *SessionStackSuite) TestStartEncounter_DemoVendorIsPlacedAndInteractable
 // receive it -- the character's stored inventory gains it, and the vendor's
 // stock line for it drops by the same amount.
 func (s *SessionStackSuite) TestStartEncounter_TradeBuysFromTheDemoVendor() {
-	s.seedCharacter("char-alice", "alice", "Alice")
+	// A buyer with coin in the purse. Selling arrived with session v0.62.0
+	// (rpg-toolkit#1535) and brought server-side price validation with it:
+	// a buy names its own payment and the server checks it against the
+	// catalog, so a character with an empty wallet can no longer buy
+	// anything and this scene has to fund one.
+	price, err := equipment.PriceOf(weapons.Longsword)
+	s.Require().NoError(err, "the catalog has to price what this scene buys")
+	s.seedRichCharacter("char-alice", "alice", "Alice", currency.Money{Copper: price.Copper * 2})
 	s.seedReadyLobby("lobby-1", "alice")
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
@@ -485,8 +509,14 @@ func (s *SessionStackSuite) TestStartEncounter_TradeBuysFromTheDemoVendor() {
 	})
 	s.Require().NoError(err)
 
+	// The price is ASKED OF THE CATALOG rather than written out here. The
+	// server computes the same number and refuses anything else
+	// (ErrWrongPrice), so a literal in this test would be a second copy of
+	// a price it does not own — and a silent failure the day the longsword
+	// is repriced.
 	traded, err := s.sessOrch.Manager.Trade(s.ctx, &sdk.TradeInput{
 		Session: out.EncounterID, Actor: "char-alice", Target: "demo-merchant-1",
+		Give: sdk.TradeOffer{Currency: price},
 		Receive: sdk.TradeOffer{Items: []sdk.TradeItem{
 			{Type: shared.EquipmentTypeWeapon, ID: weapons.Longsword, Quantity: 1},
 		}},

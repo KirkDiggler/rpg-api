@@ -1597,9 +1597,9 @@ func tradeItemFromProto(i *sessionpb.TradeItem) sdk.TradeItem {
 
 // tradeOfferFromProto mirrors one wire TradeOffer. A nil proto offer (the
 // field unset) becomes the zero TradeOffer -- an empty Items slice, which is
-// exactly what an omitted `give` on the wire means (session.TradeInput's own
-// doc: Give must be empty this wave; the SDK's own ErrGiveNotSupported
-// refusal is what tells a caller who sent one anyway, not a nil check here).
+// exactly what an omitted `give` on the wire means. Whether an offer is one
+// the trade accepts is session.Trade's question, answered by its own
+// refusals, not a nil check made here.
 func tradeOfferFromProto(o *sessionpb.TradeOffer) sdk.TradeOffer {
 	items := make([]sdk.TradeItem, len(o.GetItems()))
 	for i, it := range o.GetItems() {

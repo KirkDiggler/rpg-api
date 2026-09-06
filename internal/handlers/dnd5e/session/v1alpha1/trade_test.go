@@ -68,9 +68,16 @@ func TestTrade_HappyPath_ReturnsDecrementedDescriptor(t *testing.T) {
 }
 
 // TestTrade_GiveIsForwardedUntouched proves this handler does not
-// pre-validate or drop a populated `give` -- Give must be empty this wave,
-// but that is session.Trade's own rule to enforce (ErrGiveNotSupported), not
-// a silent correction made at the wire boundary (design rule 8).
+// pre-validate or drop a populated `give`: it hands the offer to
+// session.Trade exactly as the wire carried it, and returns whatever that
+// verb says about it (design rule 8).
+//
+// Give is a real offer now -- selling arrived in rpg-toolkit#1535 -- so what
+// makes a populated one legal or not is the SDK's rule about the trade, not a
+// shape this boundary is allowed to correct. The refusal below stands in for
+// any of them; what the test pins is that the shield reached the SDK intact
+// and the answer came back as FailedPrecondition rather than being turned
+// into a nil check here.
 func TestTrade_GiveIsForwardedUntouched(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
@@ -79,7 +86,7 @@ func TestTrade_GiveIsForwardedUntouched(t *testing.T) {
 		DoAndReturn(func(_ context.Context, in *sdk.TradeInput) (*sdk.TradeOutput, error) {
 			require.Len(t, in.Give.Items, 1)
 			require.Equal(t, "shield", in.Give.Items[0].ID)
-			return nil, sdk.ErrGiveNotSupported
+			return nil, sdk.ErrInvalidTradeOffer
 		})
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
@@ -94,7 +101,8 @@ func TestTrade_GiveIsForwardedUntouched(t *testing.T) {
 		}},
 	})
 	// FailedPrecondition, not InvalidArgument: give is a legal field on a
-	// legal message, refused by this wave's own rule, not a malformed request.
+	// legal message, refused by the SDK's own rule about the offer, not a
+	// malformed request.
 	requireCode(t, err, codes.FailedPrecondition)
 }
 

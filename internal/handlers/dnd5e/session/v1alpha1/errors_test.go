@@ -106,16 +106,12 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrNotDown", sdk.ErrNotDown, codes.FailedPrecondition},
 		{"ErrNotHoldable", sdk.ErrNotHoldable, codes.FailedPrecondition},
 		{"ErrAlreadyHeld", sdk.ErrAlreadyHeld, codes.FailedPrecondition},
-		// Trade (rpg-project#369/#370, wave 1 of rpg-toolkit#1275): the wire's
-		// own TradeRequest.give doc already states ErrGiveNotSupported's code
-		// in writing (FAILED_PRECONDITION) -- a legal field on a legal
-		// message, refused by this wave's own rule, the same shape
-		// ErrCannotAfford already sits in. The other three are the same
-		// well-formed-call-the-world-refuses family: ErrInvalidTradeOffer
-		// (Receive isn't exactly one valid item), ErrNotAVendor (a real,
-		// visible world NPC with no vendor capability), ErrOutOfStock (a
-		// real vendor that doesn't carry enough of it).
-		{"ErrGiveNotSupported", sdk.ErrGiveNotSupported, codes.FailedPrecondition},
+		// Trade (rpg-project#369/#370, wave 1 of rpg-toolkit#1275): three
+		// of the well-formed-call-the-world-refuses family.
+		// ErrInvalidTradeOffer (the offer is not the shape the trade needs),
+		// ErrNotAVendor (a real, visible world NPC with no vendor
+		// capability), ErrOutOfStock (a real vendor that doesn't carry
+		// enough of it).
 		{"ErrInvalidTradeOffer", sdk.ErrInvalidTradeOffer, codes.FailedPrecondition},
 		{"ErrNotAVendor", sdk.ErrNotAVendor, codes.FailedPrecondition},
 		{"ErrOutOfStock", sdk.ErrOutOfStock, codes.FailedPrecondition},
@@ -199,6 +195,24 @@ var errorsGoDefaultCaseSentinels = map[string]bool{
 	// any verb returns, so it should never reach a handler. See errors.go's
 	// own doc on statusError for the full reasoning.
 	"ErrNotFound": true,
+
+	// Selling's three refusals, which arrived with session v0.62.0
+	// (rpg-toolkit#1535). DEFERRED, NOT DECIDED, and that is the difference
+	// between these and the row above: ErrNotFound rides the default case
+	// because Internal is the right answer for it, while all three of these
+	// are caller-facing world refusals that will want FailedPrecondition —
+	// the same shape ErrOutOfStock and ErrCannotAfford already have.
+	//
+	// Unmapped here because this pin is a REF-GRAMMAR change and mapping
+	// them is the trade lane's call to make with the verb it owns: whether
+	// "that's not the price" and "you can't afford that" stay two codes or
+	// two messages under one is a decision about Trade, not about refs.
+	// Listed rather than left to fail so the deferral is a written choice
+	// with an owner, which is what this allowlist is for; until they are
+	// mapped a seller who cannot pay is told Internal, and that is wrong.
+	"ErrNotInInventory":    true,
+	"ErrWrongPrice":        true,
+	"ErrInsufficientFunds": true,
 }
 
 // sdkSentinelNames reads every exported Err* sentinel declared in the PINNED

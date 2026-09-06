@@ -203,21 +203,17 @@ func statusError(err error) error {
 		errors.Is(err, sdk.ErrNotDown),
 		errors.Is(err, sdk.ErrNotHoldable),
 		errors.Is(err, sdk.ErrAlreadyHeld),
-		// Trade (rpg-project#369/#370, wave 1 of rpg-toolkit#1275) adds four,
-		// all the same well-formed-call-the-world-refuses shape as the rows
-		// above:
+		// Trade (rpg-project#369/#370, wave 1 of rpg-toolkit#1275) adds
+		// three, all the same well-formed-call-the-world-refuses shape as
+		// the rows above:
 		//
-		//   ErrGiveNotSupported -- the wire's own TradeRequest.give doc
-		//   already states the intended code in writing: a caller that
-		//   populates it is refused FAILED_PRECONDITION. Give is a legal
-		//   field on a legal message; this wave's own rule refuses it, the
-		//   same way ErrCannotAfford refuses a second swing a turn already
-		//   bought one of.
-		//
-		//   ErrInvalidTradeOffer -- Receive does not name exactly one item,
-		//   or that item has an empty ID or a nonpositive quantity. Shaped
-		//   correctly as a message; this verb's own rule for THIS wave is
-		//   what refuses it.
+		//   ErrInvalidTradeOffer -- the offer does not have the shape the
+		//   trade needs: an item side that does not name exactly one item,
+		//   an item with an empty ID or a nonpositive quantity, or currency
+		//   on the side that must not carry it. Shaped correctly as a
+		//   message; this verb's own rule is what refuses it. It absorbed
+		//   ErrGiveNotSupported, which session retired once selling gave a
+		//   populated Give a legal meaning (rpg-toolkit#1535, #1537).
 		//
 		//   ErrNotAVendor -- the target is a confirmed, visible world NPC
 		//   with no npc.CapabilityVendor. Not NotFound: the target exists
@@ -227,7 +223,6 @@ func statusError(err error) error {
 		//   ErrOutOfStock -- the vendor is real and reachable, and does not
 		//   carry the item or not enough of it. World state, not a
 		//   malformed request.
-		errors.Is(err, sdk.ErrGiveNotSupported),
 		errors.Is(err, sdk.ErrInvalidTradeOffer),
 		errors.Is(err, sdk.ErrNotAVendor),
 		errors.Is(err, sdk.ErrOutOfStock),
