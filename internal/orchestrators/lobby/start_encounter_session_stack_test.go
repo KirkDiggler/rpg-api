@@ -21,6 +21,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/npc"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/ammunition"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
@@ -117,16 +118,34 @@ func (s *SessionStackSuite) seedCharacter(id, playerID, name string) {
 	s.Require().NoError(err)
 }
 
-// seedRichCharacter is seedCharacter with a funded wallet, for the one scene
-// that buys something. Separate rather than a parameter on seedCharacter, so
-// the twenty scenes that never trade keep saying what they mean: a level 1
-// character with nothing in particular.
-func (s *SessionStackSuite) seedRichCharacter(id, playerID, name string, purse currency.Money) {
+// seedCharacterWithWallet is seedCharacter plus a starting purse, for the
+// Trade tests that need the actor to actually afford something
+// (rpg-toolkit#1534) -- kept separate from seedCharacter rather than adding
+// a parameter there, so every other test's zero-Wallet fixture is untouched.
+func (s *SessionStackSuite) seedCharacterWithWallet(id, playerID, name string, wallet currency.Money) {
 	_, err := s.charRepo.Create(s.ctx, characterrepo.CreateInput{
 		Character: &entities.Character{Data: &tkcharacter.Data{
 			ID: id, PlayerID: playerID, Name: name, Level: 1,
 			HitPoints: 10, MaxHitPoints: 10, ArmorClass: 10,
-			Wallet: purse,
+			Wallet: wallet,
+		}},
+	})
+	s.Require().NoError(err)
+}
+
+// seedCharacterWithInventory is seedCharacter plus a starting item, for the
+// Sell tests that need the actor to actually own what they're selling
+// (rpg-toolkit#1537) -- kept separate from seedCharacter for the same
+// reason seedCharacterWithWallet is: every other test's empty-Inventory
+// fixture stays untouched.
+func (s *SessionStackSuite) seedCharacterWithInventory(
+	id, playerID, name string, items ...tkcharacter.InventoryItemData,
+) {
+	_, err := s.charRepo.Create(s.ctx, characterrepo.CreateInput{
+		Character: &entities.Character{Data: &tkcharacter.Data{
+			ID: id, PlayerID: playerID, Name: name, Level: 1,
+			HitPoints: 10, MaxHitPoints: 10, ArmorClass: 10,
+			Inventory: items,
 		}},
 	})
 	s.Require().NoError(err)
@@ -494,14 +513,14 @@ func (s *SessionStackSuite) TestStartEncounter_DemoVendorIsPlacedAndInteractable
 // receive it -- the character's stored inventory gains it, and the vendor's
 // stock line for it drops by the same amount.
 func (s *SessionStackSuite) TestStartEncounter_TradeBuysFromTheDemoVendor() {
-	// A buyer with coin in the purse. Selling arrived with session v0.62.0
-	// (rpg-toolkit#1535) and brought server-side price validation with it:
-	// a buy names its own payment and the server checks it against the
-	// catalog, so a character with an empty wallet can no longer buy
-	// anything and this scene has to fund one.
+	// The real longsword price, not a hardcoded number (rpg-toolkit#1534):
+	// Trade requires Give.Currency to exactly equal it, and this is the
+	// actor's whole starting purse -- also proving the wallet lands at
+	// exactly zero afterward, not merely "less than before".
 	price, err := equipment.PriceOf(weapons.Longsword)
-	s.Require().NoError(err, "the catalog has to price what this scene buys")
-	s.seedRichCharacter("char-alice", "alice", "Alice", currency.Money{Copper: price.Copper * 2})
+	s.Require().NoError(err)
+
+	s.seedCharacterWithWallet("char-alice", "alice", "Alice", price)
 	s.seedReadyLobby("lobby-1", "alice")
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
@@ -509,11 +528,6 @@ func (s *SessionStackSuite) TestStartEncounter_TradeBuysFromTheDemoVendor() {
 	})
 	s.Require().NoError(err)
 
-	// The price is ASKED OF THE CATALOG rather than written out here. The
-	// server computes the same number and refuses anything else
-	// (ErrWrongPrice), so a literal in this test would be a second copy of
-	// a price it does not own — and a silent failure the day the longsword
-	// is repriced.
 	traded, err := s.sessOrch.Manager.Trade(s.ctx, &sdk.TradeInput{
 		Session: out.EncounterID, Actor: "char-alice", Target: "demo-merchant-1",
 		Give: sdk.TradeOffer{Currency: price},
@@ -542,6 +556,68 @@ func (s *SessionStackSuite) TestStartEncounter_TradeBuysFromTheDemoVendor() {
 	s.Contains(got.Character.Data.Inventory, tkcharacter.InventoryItemData{
 		Type: shared.EquipmentTypeWeapon, ID: weapons.Longsword, Quantity: 1,
 	})
+
+	// And the price was actually charged -- Trade learns to charge
+	// (rpg-toolkit#1534) means the wallet moves, not just that stock does.
+	// The purse was seeded to exactly `price`, so this also proves the
+	// debit is exact, not a fraction or a flat fee.
+	s.Equal(currency.Money{}, got.Character.Data.Wallet)
+}
+
+// TestStartEncounter_SellToTheDemoVendor is rpg-toolkit#1537's own
+// definition of done for the sell direction, proven directly against the
+// real Manager (no mocks): a seated player can sell an item the vendor
+// doesn't already stock, and it actually leaves their inventory, actually
+// pays out, and actually joins the vendor's stock flagged as a player's
+// sale -- a brand-new row, not merged into an authored one (a shield is
+// used precisely because the demo vendor doesn't carry one; selling back
+// the longsword it DOES stock would merge into that existing authored row
+// and leave PlayerSold false, per AddToVendorStock's own documented rule).
+func (s *SessionStackSuite) TestStartEncounter_SellToTheDemoVendor() {
+	price, err := equipment.PriceOf(armor.Shield)
+	s.Require().NoError(err)
+
+	s.seedCharacterWithInventory("char-alice", "alice", "Alice",
+		tkcharacter.InventoryItemData{Type: shared.EquipmentTypeArmor, ID: armor.Shield, Quantity: 1},
+	)
+	s.seedReadyLobby("lobby-1", "alice")
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-1",
+	})
+	s.Require().NoError(err)
+
+	traded, err := s.sessOrch.Manager.Trade(s.ctx, &sdk.TradeInput{
+		Session: out.EncounterID, Actor: "char-alice", Target: "demo-merchant-1",
+		Give: sdk.TradeOffer{Items: []sdk.TradeItem{
+			{Type: shared.EquipmentTypeArmor, ID: armor.Shield, Quantity: 1},
+		}},
+		Receive: sdk.TradeOffer{Currency: price},
+	})
+	s.Require().NoError(err)
+
+	// The vendor's stock gained a new, player-sold shield row -- the demo
+	// vendor never carried one, so this cannot be an authored row's
+	// quantity merely incrementing.
+	byID := make(map[string]npcs.StockEntryView, len(traded.Descriptor.Inventory))
+	for _, entry := range traded.Descriptor.Inventory {
+		byID[entry.ID] = entry
+	}
+	shieldRow, ok := byID[armor.Shield]
+	s.Require().True(ok, "the sold shield joined the vendor's stock")
+	s.True(shieldRow.PlayerSold)
+	s.Equal(npcs.StockModeLimited, shieldRow.Mode)
+	s.Equal(1, shieldRow.Quantity)
+
+	// And the seller's own stored character record actually lost it and
+	// actually got paid -- the point of the whole direction, not just a
+	// descriptor that says so.
+	got, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-alice"})
+	s.Require().NoError(err)
+	s.NotContains(got.Character.Data.Inventory, tkcharacter.InventoryItemData{
+		Type: shared.EquipmentTypeArmor, ID: armor.Shield, Quantity: 1,
+	})
+	s.Equal(price, got.Character.Data.Wallet, "started at zero, paid exactly the real shield price")
 }
 
 // lobbyOver is SetupTest's orchestrator over a different content registry,

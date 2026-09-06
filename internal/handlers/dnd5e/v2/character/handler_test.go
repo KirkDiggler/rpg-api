@@ -25,6 +25,8 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/currency"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
@@ -92,6 +94,7 @@ func (s *HandlerTestSuite) fighterCharacterEntity() *entities.Character {
 			HitPoints:        20,
 			MaxHitPoints:     30,
 			ArmorClass:       10,
+			Wallet:           currency.FromGold(15),
 			AbilityScores: shared.AbilityScores{
 				abilities.STR: 16,
 				abilities.DEX: 12,
@@ -418,6 +421,12 @@ func (s *HandlerTestSuite) TestGetCharacterData_Success() {
 	s.Assert().Zero(cd.GetHitPoints().GetTemp())
 	s.Assert().Equal(int32(30), cd.GetBaseSpeedFeet())
 
+	// Wallet visibility (rpg-toolkit#1533): the owner's persistent purse
+	// reaches this owner-private response, gated by the same
+	// verifyCallerOwnsCharacter check every field here already runs through.
+	s.Require().NotNil(cd.GetWallet())
+	s.Assert().Equal(int32(1500), cd.GetWallet().GetCopper(), "15 gp")
+
 	s.Require().Len(cd.GetFeatures(), 2)
 	s.Assert().Equal("dnd5e", cd.GetFeatures()[0].GetRef().GetModule())
 	s.Assert().Equal("features", cd.GetFeatures()[0].GetRef().GetType())
@@ -439,7 +448,7 @@ func (s *HandlerTestSuite) TestGetCharacterData_Success() {
 }
 
 func (s *HandlerTestSuite) TestBuildCharacterData_MapsQuantityAndAuthoritativeEquipmentSlots() {
-	cd := BuildCharacterData(&orchcharacter.View{
+	cd, err := BuildCharacterData(&orchcharacter.View{
 		Equipment: &character.EquipmentView{
 			Items: []character.EquippedItemView{{
 				ItemID:   weapons.Handaxe,
@@ -455,11 +464,20 @@ func (s *HandlerTestSuite) TestBuildCharacterData_MapsQuantityAndAuthoritativeEq
 			},
 		},
 	})
+	s.Require().NoError(err)
 
 	s.Require().Len(cd.GetInventory(), 1)
 	s.Equal(int32(2), cd.GetInventory()[0].GetQuantity())
 	s.Equal(weapons.Handaxe, cd.GetEquipped()[string(character.SlotMainHand)].GetId())
 	s.Equal(weapons.Handaxe, cd.GetEquipped()[string(character.SlotOffHand)].GetId())
+
+	// Item.price (rpg-api-protos#298) is server-computed via
+	// equipment.PriceOf, the inventory-side mirror of
+	// VendorStockEntry.price -- computed here from the real catalog rather
+	// than hardcoded, so this pins the wiring, not a number.
+	wantPrice, err := equipment.PriceOf(weapons.Handaxe)
+	s.Require().NoError(err)
+	s.Equal(int32(wantPrice.Copper), cd.GetInventory()[0].GetPrice().GetCopper())
 }
 
 func (s *HandlerTestSuite) TestBuildCharacterData_FourBuildStatusMapping() {
@@ -529,10 +547,11 @@ func (s *HandlerTestSuite) TestBuildCharacterData_FourBuildStatusMapping() {
 
 	for _, tc := range tests {
 		s.Run(tc.name, func() {
-			cd := BuildCharacterData(&orchcharacter.View{
+			cd, err := BuildCharacterData(&orchcharacter.View{
 				Identity: orchcharacter.IdentityView{PlayerID: s.testPlayerID, ClassID: tc.classID, RaceID: tc.raceID},
 				Status:   tc.status,
 			})
+			s.Require().NoError(err)
 			s.assertOwnerIdentity(cd, tc.classID, tc.raceID)
 			s.Require().Len(cd.GetFeatures(), 1)
 			s.Equal(tc.featureRef, protoRefString(cd.GetFeatures()[0].GetRef()))
@@ -728,13 +747,14 @@ func (s *HandlerTestSuite) TestVerifyCallerOwnsCharacter_MissingAndForeign_Ident
 }
 
 func (s *HandlerTestSuite) TestBuildCharacterData_MapsExplicitDeadLifeStateAndProviderProgress() {
-	cd := BuildCharacterData(&orchcharacter.View{Status: &character.StatusView{
+	cd, err := BuildCharacterData(&orchcharacter.View{Status: &character.StatusView{
 		LifeState: combat.LifeStateDead,
 		DeathSaves: &character.DeathSaveProgress{
 			Successes: 1, Failures: 3, SuccessesNeeded: 2, FailuresRemaining: 0,
 			Dead: true,
 		},
 	}})
+	s.Require().NoError(err)
 
 	s.Require().NotNil(cd)
 	s.Equal(sessionpb.LifeState_LIFE_STATE_DEAD, cd.GetLifeState())

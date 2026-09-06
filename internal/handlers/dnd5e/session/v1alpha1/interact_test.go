@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/KirkDiggler/rpg-toolkit/npc"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
@@ -39,6 +40,12 @@ func TestInteract_HappyPath_ReturnsDescriptor(t *testing.T) {
 				CombatPolicy: npc.CombatPolicyNonCombatant,
 				Inventory: []npcs.StockEntryView{
 					{Type: shared.EquipmentTypeWeapon, ID: "longsword", Name: "Longsword", Mode: npcs.StockModeLimited, Quantity: 1},
+					// A row a player's sale created (rpg-toolkit#1537), to
+					// prove PlayerSold survives to the wire alongside price.
+					{
+						Type: shared.EquipmentTypeWeapon, ID: "greatsword", Name: "Greatsword",
+						Mode: npcs.StockModeLimited, Quantity: 1, PlayerSold: true,
+					},
 				},
 			},
 			Seq: 42,
@@ -58,10 +65,23 @@ func TestInteract_HappyPath_ReturnsDescriptor(t *testing.T) {
 	require.Equal(t, []string{"vendor"}, d.GetCapabilities())
 	require.Equal(t, "non_combatant", d.GetCombatPolicy())
 	require.Equal(t, uint64(42), resp.GetSeq())
-	require.Len(t, d.GetInventory(), 1)
+	require.Len(t, d.GetInventory(), 2)
 	require.Equal(t, "longsword", d.GetInventory()[0].GetEquipmentId())
 	require.Equal(t, sessionpb.VendorStockMode_VENDOR_STOCK_MODE_LIMITED, d.GetInventory()[0].GetStockMode())
 	require.Equal(t, int32(1), d.GetInventory()[0].GetQuantity())
+	require.False(t, d.GetInventory()[0].GetPlayerSold(), "authored stock, not a player's sale")
+
+	// The price is server-computed via equipment.PriceOf (rpg-toolkit#1534),
+	// not carried on npcs.StockEntryView -- computed here from the real
+	// catalog rather than hardcoded, so this pins the wiring, not a number.
+	wantPrice, err := equipment.PriceOf("longsword")
+	require.NoError(t, err)
+	require.Equal(t, int32(wantPrice.Copper), d.GetInventory()[0].GetPrice().GetCopper())
+
+	// PlayerSold (rpg-toolkit#1537) survives to the wire, the same
+	// carried-straight-across pattern price already proved for this row.
+	require.Equal(t, "greatsword", d.GetInventory()[1].GetEquipmentId())
+	require.True(t, d.GetInventory()[1].GetPlayerSold())
 }
 
 func TestInteract_ManagerError_TranslatesViaErrorTable(t *testing.T) {

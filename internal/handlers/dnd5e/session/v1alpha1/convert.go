@@ -3,6 +3,8 @@ package sessionv1alpha1
 import (
 	"fmt"
 
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/currency"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
@@ -31,6 +33,18 @@ func positionFromProto(p *sessionpb.Position) spatial.Position {
 	return spatial.Position{X: p.GetX(), Y: p.GetY()}
 }
 
+// moneyToProto mirrors currency.Money onto the wire Money.
+func moneyToProto(m currency.Money) *sessionpb.Money {
+	return &sessionpb.Money{Copper: int32(m.Copper)}
+}
+
+// moneyFromProto mirrors the wire Money onto currency.Money. A nil proto
+// Money (unset field) becomes the zero Money -- the same nil-safety
+// convention positionFromProto keeps for its own zero value.
+func moneyFromProto(m *sessionpb.Money) currency.Money {
+	return currency.Money{Copper: int(m.GetCopper())}
+}
+
 func memberKindToProto(k sdk.MemberKind) sessionpb.MemberKind {
 	switch k {
 	case sdk.KindPlayer:
@@ -57,40 +71,70 @@ func vendorStockModeToProto(m npcs.StockMode) sessionpb.VendorStockMode {
 	}
 }
 
-// vendorStockEntryToProto mirrors one resolved vendor stock row. Quantity is
-// meaningful only when Mode is LIMITED (the wire message's own doc); an
-// unlimited entry's Quantity is the toolkit's own zero value and stays
-// unset here rather than carried as a meaningless zero.
-func vendorStockEntryToProto(e npcs.StockEntryView) *sessionpb.VendorStockEntry {
+// vendorStockEntryToProto mirrors one resolved vendor stock row, and resolves
+// its unit price via equipment.PriceOf (rpg-toolkit#1534) -- a pure toolkit
+// lookup composed here, not a rule computed by this handler (design rule 8):
+// npcs.StockEntryView itself carries no price (the toolkit's own
+// TestVendorViewUsesResolvedEquipmentWithoutPrices pins that), and
+// VendorStockEntry.price's own wire doc says it is "server-computed
+// (equipment.PriceOf)" -- this is that computation. Quantity is meaningful
+// only when Mode is LIMITED (the wire message's own doc); an unlimited
+// entry's Quantity is the toolkit's own zero value and stays unset here
+// rather than carried as a meaningless zero.
+//
+// PriceOf can fail only for a catalog entry whose Cost string does not parse
+// (an ErrBadCost-class data defect, rpg-toolkit#1524's own doc) -- never for
+// an unknown id, because e already came from a stock entry the toolkit
+// itself resolved a Name for from that same catalog.
+func vendorStockEntryToProto(e npcs.StockEntryView) (*sessionpb.VendorStockEntry, error) {
+	price, err := equipment.PriceOf(e.ID)
+	if err != nil {
+		return nil, fmt.Errorf("vendor stock entry %q: %w", e.ID, err)
+	}
 	out := &sessionpb.VendorStockEntry{
 		EquipmentType: string(e.Type),
 		EquipmentId:   e.ID,
 		DisplayName:   e.Name,
 		StockMode:     vendorStockModeToProto(e.Mode),
+		Price:         moneyToProto(price),
+		// PlayerSold (rpg-toolkit#1537) is carried straight across, unlike
+		// Price -- a plain bool the toolkit already resolved, not a lookup
+		// this handler performs. Display treatment is the client's call
+		// (both the toolkit's and the wire message's own doc say so).
+		PlayerSold: e.PlayerSold,
 	}
 	if e.Mode == npcs.StockModeLimited {
 		quantity := int32(e.Quantity)
 		out.Quantity = &quantity
 	}
-	return out
+	return out, nil
 }
 
-func vendorStockEntriesToProto(es []npcs.StockEntryView) []*sessionpb.VendorStockEntry {
+func vendorStockEntriesToProto(es []npcs.StockEntryView) ([]*sessionpb.VendorStockEntry, error) {
 	out := make([]*sessionpb.VendorStockEntry, len(es))
 	for i, e := range es {
-		out[i] = vendorStockEntryToProto(e)
+		converted, err := vendorStockEntryToProto(e)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = converted
 	}
-	return out
+	return out, nil
 }
 
 // worldNPCDescriptorToProto mirrors session.WorldNPCDescriptor field-for-
 // field: capabilities and combat_policy cross as plain strings, the same
 // open-vocabulary convention the toolkit's own npc.Capability/CombatPolicy
-// types already use, so this seam invents no vocabulary of its own.
-func worldNPCDescriptorToProto(d sdk.WorldNPCDescriptor) *sessionpb.WorldNPCDescriptor {
+// types already use, so this seam invents no vocabulary of its own. Fallible
+// only because vendorStockEntriesToProto is (see its own doc).
+func worldNPCDescriptorToProto(d sdk.WorldNPCDescriptor) (*sessionpb.WorldNPCDescriptor, error) {
 	capabilities := make([]string, len(d.Capabilities))
 	for i, c := range d.Capabilities {
 		capabilities[i] = string(c)
+	}
+	inventory, err := vendorStockEntriesToProto(d.Inventory)
+	if err != nil {
+		return nil, err
 	}
 	return &sessionpb.WorldNPCDescriptor{
 		TargetId:     d.TargetID,
@@ -98,8 +142,8 @@ func worldNPCDescriptorToProto(d sdk.WorldNPCDescriptor) *sessionpb.WorldNPCDesc
 		DisplayName:  d.DisplayName,
 		Capabilities: capabilities,
 		CombatPolicy: string(d.CombatPolicy),
-		Inventory:    vendorStockEntriesToProto(d.Inventory),
-	}
+		Inventory:    inventory,
+	}, nil
 }
 
 // gridKindToProto mirrors session.GridKind. Hex is the only kind a map can
@@ -1596,14 +1640,18 @@ func tradeItemFromProto(i *sessionpb.TradeItem) sdk.TradeItem {
 }
 
 // tradeOfferFromProto mirrors one wire TradeOffer. A nil proto offer (the
-// field unset) becomes the zero TradeOffer -- an empty Items slice, which is
-// exactly what an omitted `give` on the wire means. Whether an offer is one
-// the trade accepts is session.Trade's question, answered by its own
-// refusals, not a nil check made here.
+// field unset) becomes the zero TradeOffer -- an empty Items slice and zero
+// Currency, which is exactly what an omitted `give`/`receive` on the wire
+// means (session.TradeInput's own doc: Give must be empty this wave; the
+// SDK's own ErrGiveNotSupported refusal is what tells a caller who sent one
+// anyway, not a nil check here). On `give`, Currency is the payment
+// (rpg-toolkit#1534) -- carried untouched, never adjusted or defaulted here:
+// session.Trade alone decides whether it matches the required price
+// (ErrWrongPrice).
 func tradeOfferFromProto(o *sessionpb.TradeOffer) sdk.TradeOffer {
 	items := make([]sdk.TradeItem, len(o.GetItems()))
 	for i, it := range o.GetItems() {
 		items[i] = tradeItemFromProto(it)
 	}
-	return sdk.TradeOffer{Items: items}
+	return sdk.TradeOffer{Items: items, Currency: moneyFromProto(o.GetCurrency())}
 }

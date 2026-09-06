@@ -203,29 +203,59 @@ func statusError(err error) error {
 		errors.Is(err, sdk.ErrNotDown),
 		errors.Is(err, sdk.ErrNotHoldable),
 		errors.Is(err, sdk.ErrAlreadyHeld),
-		// Trade (rpg-project#369/#370, wave 1 of rpg-toolkit#1275) adds
+		// Trade (rpg-project#369/#370, buy wave of rpg-toolkit#1275) adds
 		// three, all the same well-formed-call-the-world-refuses shape as
 		// the rows above:
 		//
-		//   ErrInvalidTradeOffer -- the offer does not have the shape the
-		//   trade needs: an item side that does not name exactly one item,
-		//   an item with an empty ID or a nonpositive quantity, or currency
-		//   on the side that must not carry it. Shaped correctly as a
-		//   message; this verb's own rule is what refuses it. It absorbed
-		//   ErrGiveNotSupported, which session retired once selling gave a
-		//   populated Give a legal meaning (rpg-toolkit#1535, #1537).
+		//   ErrInvalidTradeOffer -- the populated side (Give on a sell,
+		//   Receive on a buy) does not name exactly one item, that item has
+		//   an empty ID or a nonpositive quantity, both sides carry items
+		//   (barter, not yet supported), or neither does. Shaped correctly
+		//   as a message; this verb's own rule for THIS wave is what
+		//   refuses it. ErrGiveNotSupported (the buy-only wave's own
+		//   refusal for a populated Give) is RETIRED as of
+		//   rpg-toolkit#1537 -- giving items now has a legal meaning
+		//   (selling) -- and this sentinel is what a populated Give now
+		//   falls into if IT'S the malformed side (e.g. both sides
+		//   populated).
 		//
 		//   ErrNotAVendor -- the target is a confirmed, visible world NPC
 		//   with no npc.CapabilityVendor. Not NotFound: the target exists
 		//   and Interact would happily describe it, it just cannot be
 		//   traded with.
 		//
-		//   ErrOutOfStock -- the vendor is real and reachable, and does not
-		//   carry the item or not enough of it. World state, not a
+		//   ErrOutOfStock -- buying: the vendor is real and reachable, and
+		//   does not carry the item or not enough of it. World state, not a
 		//   malformed request.
 		errors.Is(err, sdk.ErrInvalidTradeOffer),
 		errors.Is(err, sdk.ErrNotAVendor),
 		errors.Is(err, sdk.ErrOutOfStock),
+		// Trade learns to charge (rpg-toolkit#1534) and learns to sell
+		// (rpg-toolkit#1537): three more join, all refusing a well-formed
+		// Trade call over payment or inventory state rather than the shape
+		// of the request:
+		//
+		//   ErrWrongPrice -- the offered currency (Give's on a buy,
+		//   Receive's on a sell) does not exactly equal the server-computed
+		//   price. The SDK's own doc is emphatic this is a caller offering
+		//   the WRONG AMOUNT, never a trusted client price -- the server
+		//   alone decides whether an offer is correct, symmetrically for
+		//   both directions. Same bucket as ErrCannotAfford above: a
+		//   well-formed call the world's own arithmetic refuses.
+		//
+		//   ErrInsufficientFunds -- the payer's wallet (the actor buying,
+		//   or the vendor's own optional Wallet selling) cannot cover the
+		//   (already price-verified) cost. Distinct from ErrWrongPrice on
+		//   purpose, the SDK's own doc says so: this is a caller who named
+		//   the right amount and simply cannot pay it, not a wrong amount.
+		//
+		//   ErrNotInInventory (selling, rpg-toolkit#1537) -- the actor does
+		//   not hold enough of what they're offering to sell. Same shape as
+		//   ErrOutOfStock above, one direction over: a real actor, a real
+		//   item, and the actor's own stored sheet is what refuses it.
+		errors.Is(err, sdk.ErrWrongPrice),
+		errors.Is(err, sdk.ErrInsufficientFunds),
+		errors.Is(err, sdk.ErrNotInInventory),
 		// ErrCannotActivate is ErrCannotAfford's shape one verb further out:
 		// an ability that could have run and said no. The SDK documents it as
 		// not currently reachable through Activate -- Afford consults the same
