@@ -105,7 +105,7 @@ func loadWorld(t *testing.T, d *Dungeon) *tkencounter.Encounter {
 	enc, err := tkencounter.LoadEncounter(&tkencounter.LoadEncounterInput{
 		Data:       *d.World,
 		Initiative: orderAsGiven{}, Standing: nobodyDown{}, Sight: nobodySees{},
-		TurnDriver: tkencounter.PassDriver{}, Striker: tkencounter.RefusingStriker{},
+		TurnDriver: tkencounter.PassDriver{}, Striker: tkencounter.RefusingStriker{}, Mover: tkencounter.RefusingMover{},
 		Announcer: tkencounter.RefusingAnnouncer{},
 	})
 	require.NoError(t, err, "the world this package produced must be one the composition accepts back")
