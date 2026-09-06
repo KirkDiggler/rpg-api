@@ -127,6 +127,13 @@ func memberTakingVerbs(member string) map[string]func(ctx context.Context, h *Ha
 			})
 			return err
 		},
+		"React": func(ctx context.Context, h *Handler) error {
+			_, err := h.React(ctx, &sessionpb.ReactRequest{
+				Session: "sess-1", Member: member, DeclarationId: "decl-react-1",
+				Choice: sessionpb.ReactChoice_REACT_CHOICE_STRIKE,
+			})
+			return err
+		},
 		"Dissolve": func(ctx context.Context, h *Handler) error {
 			_, err := h.Dissolve(ctx, &sessionpb.DissolveRequest{
 				Session: "sess-1", Member: member,
@@ -180,6 +187,16 @@ func TestEveryMemberTakingVerbRefusesAnEmptyMember(t *testing.T) {
 		"Activate": func(ctx context.Context, h *Handler) error {
 			_, err := h.Activate(ctx, &sessionpb.ActivateRequest{
 				Session: "sess-1", DeclarationId: "decl-activate-1",
+			})
+			return err
+		},
+		// A named choice on purpose: an unnamed member must be refused for
+		// being unnamed, not incidentally for an unset choice, or this row
+		// would pass without React ever reaching callerActingAs.
+		"React": func(ctx context.Context, h *Handler) error {
+			_, err := h.React(ctx, &sessionpb.ReactRequest{
+				Session: "sess-1", DeclarationId: "decl-react-1",
+				Choice: sessionpb.ReactChoice_REACT_CHOICE_HOLD,
 			})
 			return err
 		},

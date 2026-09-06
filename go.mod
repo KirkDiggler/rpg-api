@@ -3,15 +3,15 @@ module github.com/KirkDiggler/rpg-api
 go 1.25.14
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260906051412-bcec29bec4c6
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260906135917-8649c8fcd949
 	github.com/KirkDiggler/rpg-toolkit/core v0.12.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.3
 	github.com/KirkDiggler/rpg-toolkit/npc v0.2.0
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.143.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.62.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.64.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.143.1-0.20260906131819-e41a8bf68a6c
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.62.1-0.20260906132905-cb7210ec6f04
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.64.1-0.20260906135724-ee7477caf45e
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.11.0
 	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/google/uuid v1.6.0
@@ -34,9 +34,10 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1 // indirect
 	github.com/KirkDiggler/rpg-toolkit/play/clock v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/play/intel v0.1.0 // indirect
+	github.com/KirkDiggler/rpg-toolkit/play/interrupt v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/play/record v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/behavior v0.3.0 // indirect
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.33.1 // indirect
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.33.2-0.20260906132044-237d66173bac // indirect
 	github.com/KirkDiggler/rpg-toolkit/world v0.4.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
