@@ -64,15 +64,21 @@ func mapIdentity(cd *encounterv2pb.CharacterData, view *orchcharacter.View) {
 }
 
 // mapEquipment carries the equipment projection across, including each
-// inventory item's unit price (rpg-api-protos#298): a preview so a client
-// can pre-populate a Sell's Receive.Currency before confirming, the
+// inventory item's unit price (rpg-api-protos#298) and equipment_type
+// (rpg-api-protos#301): the price is a preview so a client can
+// pre-populate a Sell's Receive.Currency before confirming, the
 // inventory-side mirror of vendorStockEntryToProto's own Price field in the
 // session handler -- never the price authority, the server always
-// recomputes at trade time. Fallible for the same reason that converter is:
-// equipment.PriceOf can fail on a catalog Cost string that doesn't parse (an
-// ErrBadCost-class data defect), never on an unknown id, because every item
-// here already resolved a Name/StatLine from that same catalog when the
-// toolkit's own EquipmentView was built.
+// recomputes at trade time. equipment_type is the same open-vocabulary
+// mirror of vendorStockEntryToProto's EquipmentType -- a coarser family
+// than Kind (which collapses tool/pack/item/ammunition into one "gear"
+// bucket), for a Sell UI grouping by category or reading Unpack's own pack
+// contents. Fallible only for price's reason: equipment.PriceOf can fail
+// on a catalog Cost string that doesn't parse (an ErrBadCost-class data
+// defect), never on an unknown id, because every item here already
+// resolved a Name/StatLine from that same catalog when the toolkit's own
+// EquipmentView was built -- which is also why the second lookup for
+// equipment_type (ResolveEquipmentDetail) needs no error path of its own.
 func mapEquipment(cd *encounterv2pb.CharacterData, view *orchcharacter.View) error {
 	if view.Equipment == nil {
 		return nil
@@ -93,14 +99,18 @@ func mapEquipment(cd *encounterv2pb.CharacterData, view *orchcharacter.View) err
 		if err != nil {
 			return fmt.Errorf("inventory item %q: %w", item.ItemID, err)
 		}
+		// ResolveEquipmentDetail cannot return nil here: PriceOf just
+		// resolved the same id against the same catalog and succeeded.
+		detail := equipment.ResolveEquipmentDetail(item.ItemID)
 		inventory = append(inventory, &encounterv2pb.Item{
-			Ref:      &encounterv2pb.Ref{Module: refModuleDnd5e, Type: refTypeItem, Id: item.ItemID},
-			Name:     item.Name,
-			StatLine: item.StatLine,
-			Kind:     item.Kind,
-			SlotKeys: item.SlotKeys,
-			Quantity: int32(item.Quantity),
-			Price:    moneyToProto(price),
+			Ref:           &encounterv2pb.Ref{Module: refModuleDnd5e, Type: refTypeItem, Id: item.ItemID},
+			Name:          item.Name,
+			StatLine:      item.StatLine,
+			Kind:          item.Kind,
+			SlotKeys:      item.SlotKeys,
+			Quantity:      int32(item.Quantity),
+			Price:         moneyToProto(price),
+			EquipmentType: string(detail.Type),
 		})
 	}
 	cd.Equipped = equipped
