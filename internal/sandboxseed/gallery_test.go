@@ -458,7 +458,27 @@ func assertNormalHumanFighterCreationRequests(t *testing.T, client *galleryFakeC
 		},
 	}, client.updateClassRequests[0])
 	require.Len(t, client.updateBackgroundRequests, 1)
-	requireProtoEqual(t, &dnd5ev1alpha1.UpdateBackgroundRequest{DraftId: "draft-id", Background: dnd5ev1alpha1.Background_BACKGROUND_SOLDIER}, client.updateBackgroundRequests[0])
+	requireProtoEqual(t, &dnd5ev1alpha1.UpdateBackgroundRequest{
+		DraftId:    "draft-id",
+		Background: dnd5ev1alpha1.Background_BACKGROUND_SOLDIER,
+		BackgroundChoices: []*dnd5ev1alpha1.ChoiceData{
+			{
+				Category:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:    dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND,
+				ChoiceId:  "soldier-gaming-set-item",
+				OptionId:  "soldier-gaming-set-a",
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{}},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND,
+				ChoiceId: "soldier-gaming-set-proficiency",
+				Selection: &dnd5ev1alpha1.ChoiceData_Tools{Tools: &dnd5ev1alpha1.ToolSelection{
+					Tools: []dnd5ev1alpha1.Tool{dnd5ev1alpha1.Tool_TOOL_DICE_SET},
+				}},
+			},
+		},
+	}, client.updateBackgroundRequests[0])
 	require.Len(t, client.updateAbilityScoreRequests, 1)
 	requireProtoEqual(t, &dnd5ev1alpha1.UpdateAbilityScoresRequest{
 		DraftId: "draft-id",

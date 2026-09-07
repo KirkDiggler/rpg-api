@@ -25,6 +25,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/fightingstyles"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/languages"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/proficiencies"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/skills"
@@ -687,6 +688,13 @@ func (s *OrchestratorTestSuite) TestSetBackground_Success() {
 			BackgroundID: backgrounds.Soldier,
 			Choices: character.BackgroundChoices{
 				Languages: []languages.Language{languages.Orc, languages.Goblin},
+				// Soldier needs both, independently (rpg-toolkit#1554): an
+				// Equipment pick and an unrelated Tools proficiency pick.
+				Equipment: []character.EquipmentChoiceSelection{{
+					ChoiceID: choices.SoldierGamingSetItem,
+					OptionID: choices.SoldierGamingSetDice,
+				}},
+				Tools: []shared.SelectionID{shared.SelectionID(proficiencies.ToolDiceSet)},
 			},
 		},
 	}

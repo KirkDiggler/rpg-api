@@ -16,7 +16,9 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
@@ -88,6 +90,65 @@ func (s *HandlerTestSuite) TestUpdateRace_MapsDwarfToolChoice() {
 	s.Require().NotNil(resp.GetDraft())
 	s.Equal(draftID, resp.GetDraft().GetId())
 	s.Equal(dnd5ev1alpha1.Race_RACE_DWARF, resp.GetDraft().GetRace())
+}
+
+// TestUpdateBackground_MapsEquipmentAndToolChoices pins issue #931:
+// UpdateBackground's handler previously forwarded only
+// CHOICE_CATEGORY_LANGUAGES, silently dropping equipment/tool submissions
+// (rpg-toolkit#1554 gave BackgroundChoices real Equipment/Tools fields;
+// nothing here exercised them before this test existed, which is exactly
+// how the gap shipped unnoticed). Soldier is the richest case, needing
+// both independently.
+func (s *HandlerTestSuite) TestUpdateBackground_MapsEquipmentAndToolChoices() {
+	const draftID = "draft-soldier"
+	req := &dnd5ev1alpha1.UpdateBackgroundRequest{
+		DraftId:    draftID,
+		Background: dnd5ev1alpha1.Background_BACKGROUND_SOLDIER,
+		BackgroundChoices: []*dnd5ev1alpha1.ChoiceData{
+			{
+				Category:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:    dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND,
+				ChoiceId:  "soldier-gaming-set-item",
+				OptionId:  "soldier-gaming-set-a",
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{}},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND,
+				ChoiceId: "soldier-gaming-set-proficiency",
+				Selection: &dnd5ev1alpha1.ChoiceData_Tools{
+					Tools: &dnd5ev1alpha1.ToolSelection{
+						Tools: []dnd5ev1alpha1.Tool{dnd5ev1alpha1.Tool_TOOL_DICE_SET},
+					},
+				},
+			},
+		},
+	}
+
+	s.mockService.EXPECT().
+		SetBackground(s.ctx, &character.SetBackgroundInput{
+			DraftID: draftID,
+			Input: &toolkitchar.SetBackgroundInput{
+				BackgroundID: backgrounds.Soldier,
+				Choices: toolkitchar.BackgroundChoices{
+					Equipment: []toolkitchar.EquipmentChoiceSelection{{
+						ChoiceID: choices.SoldierGamingSetItem,
+						OptionID: choices.SoldierGamingSetDice,
+					}},
+					Tools: []shared.SelectionID{refs.Tools.DiceSet().ID},
+				},
+			},
+		}).
+		Return(&character.SetBackgroundOutput{
+			Draft: &toolkitchar.DraftData{ID: draftID, Background: backgrounds.Soldier},
+		}, nil)
+
+	resp, err := s.handler.UpdateBackground(s.ctx, req)
+
+	s.Require().NoError(err)
+	s.Require().NotNil(resp.GetDraft())
+	s.Equal(draftID, resp.GetDraft().GetId())
+	s.Equal(dnd5ev1alpha1.Background_BACKGROUND_SOLDIER, resp.GetDraft().GetBackground())
 }
 
 func (s *HandlerTestSuite) TestDeleteCharacter_Success() {

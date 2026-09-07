@@ -300,6 +300,26 @@ func createHumanFighter(ctx context.Context, input *createHumanFighterInput) err
 	if _, err := input.Client.UpdateBackground(ctx, &dnd5ev1alpha1.UpdateBackgroundRequest{
 		DraftId:    draftID,
 		Background: dnd5ev1alpha1.Background_BACKGROUND_SOLDIER,
+		// Soldier needs both, independently (rpg-toolkit#1554): an
+		// Equipment pick (bone dice or a deck of cards) and an unrelated
+		// Tools proficiency pick (one of four gaming-set types).
+		BackgroundChoices: []*dnd5ev1alpha1.ChoiceData{
+			{
+				Category:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:    dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND,
+				ChoiceId:  "soldier-gaming-set-item",
+				OptionId:  "soldier-gaming-set-a",
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{}},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND,
+				ChoiceId: "soldier-gaming-set-proficiency",
+				Selection: &dnd5ev1alpha1.ChoiceData_Tools{Tools: &dnd5ev1alpha1.ToolSelection{
+					Tools: []dnd5ev1alpha1.Tool{dnd5ev1alpha1.Tool_TOOL_DICE_SET},
+				}},
+			},
+		},
 	}); err != nil {
 		return rpcError(input.Identity, "UpdateBackground", err)
 	}

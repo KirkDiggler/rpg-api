@@ -197,6 +197,18 @@ func seedBarbarian(ctx context.Context, client CharacterRPC) error {
 	if _, err := client.UpdateBackground(identityCtx, &dnd5ev1alpha1.UpdateBackgroundRequest{
 		DraftId:    draftID,
 		Background: dnd5ev1alpha1.Background_BACKGROUND_OUTLANDER,
+		// Outlander's own real choice (rpg-toolkit#1554): one musical
+		// instrument proficiency, no physical item.
+		BackgroundChoices: []*dnd5ev1alpha1.ChoiceData{
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND,
+				ChoiceId: "outlander-instrument",
+				Selection: &dnd5ev1alpha1.ChoiceData_Tools{Tools: &dnd5ev1alpha1.ToolSelection{
+					Tools: []dnd5ev1alpha1.Tool{dnd5ev1alpha1.Tool_TOOL_LUTE},
+				}},
+			},
+		},
 	}); err != nil {
 		return rpcError(barbarianIdentity, "UpdateBackground", err)
 	}
