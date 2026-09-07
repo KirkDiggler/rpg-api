@@ -928,13 +928,51 @@ func convertBackgroundDataToProto(data *backgrounds.Data) *dnd5ev1alpha1.Backgro
 	// TODO: Convert languages when background data includes them
 	// TODO: Convert starting equipment when available
 
+	// REQUIREMENTS - Load ALL choices from toolkit
+	allChoices := loadAllBackgroundChoices(data.ID)
+
 	return &dnd5ev1alpha1.BackgroundInfo{
 		BackgroundId:        convertBackgroundToProtoEnum(data.ID),
 		Name:                data.Name(),
 		Description:         data.Description(),
 		SkillProficiencies:  skillList,
 		AdditionalLanguages: int32(data.LanguageCount),
+		// Requirements (choices) - ALL in one place
+		Choices: allChoices,
 	}
+}
+
+// loadAllBackgroundChoices mirrors loadAllClassChoices, sourced from
+// choices.GetBackgroundRequirements instead of GetClassRequirements
+// (rpg-toolkit#1554, rpg-api#931/#932's own accept-side handoff): eight
+// backgrounds have a real Equipment and/or Tools requirement, every other
+// background returns nil and this reports no choices, same as
+// loadAllClassChoices does for a class with no requirements. Backgrounds
+// never populate Skills/FightingStyle/Expertise (confirmed directly against
+// GetBackgroundRequirements' own switch), so only the two cases that can
+// ever be non-empty are handled -- unlike loadAllClassChoices, which must
+// cover every requirement kind a class can have.
+func loadAllBackgroundChoices(bg backgrounds.Background) []*dnd5ev1alpha1.Choice {
+	requirements := choices.GetBackgroundRequirements(bg)
+	if requirements == nil {
+		return nil
+	}
+
+	result := make([]*dnd5ev1alpha1.Choice, 0)
+
+	for _, req := range requirements.Equipment {
+		if equipChoice := createEquipmentChoice(req); equipChoice != nil {
+			result = append(result, equipChoice)
+		}
+	}
+
+	if requirements.Tools != nil && requirements.Tools.Count > 0 {
+		if toolChoice := createToolChoice(requirements.Tools); toolChoice != nil {
+			result = append(result, toolChoice)
+		}
+	}
+
+	return result
 }
 
 // convertValidationResultToProto converts toolkit validation to proto ValidationResult
