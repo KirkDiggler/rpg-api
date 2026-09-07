@@ -10,6 +10,7 @@ import (
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
@@ -517,6 +518,63 @@ func (s *ConvertersTestSuite) TestLoadAllClassChoices_NoRequirements() {
 	result := loadAllClassChoices(classes.Barbarian)
 	// Should return empty slice, not nil
 	assert.NotNil(s.T(), result, "Should return empty slice for class with no requirements")
+}
+
+// TestLoadAllBackgroundChoices_Soldier_HasEquipmentAndToolChoices pins
+// rpg-api#931's discovery-side gap: convertBackgroundDataToProto never set
+// BackgroundInfo.choices at all, so ListBackgrounds returned an empty list
+// for every background even after #932 taught UpdateBackground to accept
+// equipment/tool submissions -- there was nothing telling a client to make
+// one. Soldier is the richest case (rpg-toolkit#1554), needing both an
+// Equipment choice and an independent Tools choice at once.
+func (s *ConvertersTestSuite) TestLoadAllBackgroundChoices_Soldier_HasEquipmentAndToolChoices() {
+	result := loadAllBackgroundChoices(backgrounds.Soldier)
+	require.Len(s.T(), result, 2, "Soldier needs both an equipment choice and a tools choice")
+
+	var equipChoice, toolChoice *dnd5ev1alpha1.Choice
+	for _, c := range result {
+		switch c.GetChoiceType() {
+		case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT:
+			equipChoice = c
+		case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS:
+			toolChoice = c
+		}
+	}
+
+	require.NotNil(s.T(), equipChoice, "Soldier's dice-or-cards choice should be present")
+	assert.Equal(s.T(), "soldier-gaming-set-item", equipChoice.GetId())
+	require.NotNil(s.T(), equipChoice.GetEquipmentOptions())
+	assert.Len(s.T(), equipChoice.GetEquipmentOptions().GetBundles(), 2, "dice or cards, two fixed options")
+
+	require.NotNil(s.T(), toolChoice, "Soldier's gaming-set proficiency choice should be present")
+	assert.Equal(s.T(), "soldier-gaming-set-proficiency", toolChoice.GetId())
+	require.NotNil(s.T(), toolChoice.GetToolOptions())
+	assert.Contains(s.T(), toolChoice.GetToolOptions().GetAvailable(), dnd5ev1alpha1.Tool_TOOL_DICE_SET)
+}
+
+// TestLoadAllBackgroundChoices_NoRequirements mirrors
+// TestLoadAllClassChoices_NoRequirements: Acolyte has no equipment/tool
+// choice (rpg-toolkit#1554 wired only eight specific backgrounds), so this
+// must report no choices rather than nil or a spurious entry.
+func (s *ConvertersTestSuite) TestLoadAllBackgroundChoices_NoRequirements() {
+	result := loadAllBackgroundChoices(backgrounds.Acolyte)
+	assert.NotNil(s.T(), result, "Should return empty slice for a background with no requirements")
+	assert.Empty(s.T(), result)
+}
+
+// TestConvertBackgroundDataToProto_Soldier_PopulatesChoices is the
+// end-to-end proof through the actual conversion function ListBackgrounds
+// calls -- not just the helper in isolation -- since the whole bug was that
+// convertBackgroundDataToProto never wired the helper's result into the
+// returned BackgroundInfo at all.
+func (s *ConvertersTestSuite) TestConvertBackgroundDataToProto_Soldier_PopulatesChoices() {
+	soldierData := backgrounds.BackgroundData[backgrounds.Soldier]
+	require.NotNil(s.T(), soldierData, "Soldier background data should exist")
+
+	result := convertBackgroundDataToProto(soldierData)
+
+	require.NotNil(s.T(), result)
+	assert.Len(s.T(), result.GetChoices(), 2)
 }
 
 func (s *ConvertersTestSuite) TestConvertChoiceToProto_PreservesOptionID() {
