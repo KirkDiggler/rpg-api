@@ -3,7 +3,7 @@ module github.com/KirkDiggler/rpg-api
 go 1.25.14
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260906135917-8649c8fcd949
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260907005724-ead60129d67b
 	github.com/KirkDiggler/rpg-toolkit/core v0.12.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.3
@@ -13,6 +13,7 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.63.0
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.65.0
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.11.0
+	github.com/KirkDiggler/rpg-toolkit/world v0.4.1
 	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
@@ -38,7 +39,6 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/play/record v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/behavior v0.3.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.34.0 // indirect
-	github.com/KirkDiggler/rpg-toolkit/world v0.4.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
