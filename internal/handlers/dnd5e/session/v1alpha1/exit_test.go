@@ -17,7 +17,8 @@ import (
 )
 
 func TestExit_Unauthenticated_Errors(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	_, err := h.Exit(context.Background(), &sessionpb.ExitRequest{})
 	requireCode(t, err, codes.Unauthenticated)
 }

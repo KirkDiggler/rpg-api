@@ -18,7 +18,8 @@ import (
 )
 
 func TestJoin_Unauthenticated_Errors(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	_, err := h.Join(context.Background(), &sessionpb.JoinRequest{})
 	requireCode(t, err, codes.Unauthenticated)
 }

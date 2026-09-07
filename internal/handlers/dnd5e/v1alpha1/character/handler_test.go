@@ -12,10 +12,17 @@ import (
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
 type HandlerTestSuite struct {
@@ -42,6 +49,106 @@ func (s *HandlerTestSuite) SetupTest() {
 
 func (s *HandlerTestSuite) TearDownTest() {
 	s.ctrl.Finish()
+}
+
+func (s *HandlerTestSuite) TestUpdateRace_MapsDwarfToolChoice() {
+	const draftID = "draft-dwarf"
+	req := &dnd5ev1alpha1.UpdateRaceRequest{
+		DraftId: draftID,
+		Race:    dnd5ev1alpha1.Race_RACE_DWARF,
+		RaceChoices: []*dnd5ev1alpha1.ChoiceData{
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
+				ChoiceId: "dwarf-tools",
+				Selection: &dnd5ev1alpha1.ChoiceData_Tools{
+					Tools: &dnd5ev1alpha1.ToolSelection{
+						Tools: []dnd5ev1alpha1.Tool{dnd5ev1alpha1.Tool_TOOL_SMITH_TOOLS},
+					},
+				},
+			},
+		},
+	}
+
+	s.mockService.EXPECT().
+		SetRace(s.ctx, &character.SetRaceInput{
+			DraftID: draftID,
+			Input: &toolkitchar.SetRaceInput{
+				RaceID: races.Dwarf,
+				Choices: toolkitchar.RaceChoices{
+					Tools: []shared.SelectionID{refs.Tools.SmithTools().ID},
+				},
+			},
+		}).
+		Return(&character.SetRaceOutput{
+			Draft: &toolkitchar.DraftData{ID: draftID, Race: races.Dwarf},
+		}, nil)
+
+	resp, err := s.handler.UpdateRace(s.ctx, req)
+
+	s.Require().NoError(err)
+	s.Require().NotNil(resp.GetDraft())
+	s.Equal(draftID, resp.GetDraft().GetId())
+	s.Equal(dnd5ev1alpha1.Race_RACE_DWARF, resp.GetDraft().GetRace())
+}
+
+// TestUpdateBackground_MapsEquipmentAndToolChoices pins issue #931:
+// UpdateBackground's handler previously forwarded only
+// CHOICE_CATEGORY_LANGUAGES, silently dropping equipment/tool submissions
+// (rpg-toolkit#1554 gave BackgroundChoices real Equipment/Tools fields;
+// nothing here exercised them before this test existed, which is exactly
+// how the gap shipped unnoticed). Soldier is the richest case, needing
+// both independently.
+func (s *HandlerTestSuite) TestUpdateBackground_MapsEquipmentAndToolChoices() {
+	const draftID = "draft-soldier"
+	req := &dnd5ev1alpha1.UpdateBackgroundRequest{
+		DraftId:    draftID,
+		Background: dnd5ev1alpha1.Background_BACKGROUND_SOLDIER,
+		BackgroundChoices: []*dnd5ev1alpha1.ChoiceData{
+			{
+				Category:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:    dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND,
+				ChoiceId:  "soldier-gaming-set-item",
+				OptionId:  "soldier-gaming-set-a",
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{}},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND,
+				ChoiceId: "soldier-gaming-set-proficiency",
+				Selection: &dnd5ev1alpha1.ChoiceData_Tools{
+					Tools: &dnd5ev1alpha1.ToolSelection{
+						Tools: []dnd5ev1alpha1.Tool{dnd5ev1alpha1.Tool_TOOL_DICE_SET},
+					},
+				},
+			},
+		},
+	}
+
+	s.mockService.EXPECT().
+		SetBackground(s.ctx, &character.SetBackgroundInput{
+			DraftID: draftID,
+			Input: &toolkitchar.SetBackgroundInput{
+				BackgroundID: backgrounds.Soldier,
+				Choices: toolkitchar.BackgroundChoices{
+					Equipment: []toolkitchar.EquipmentChoiceSelection{{
+						ChoiceID: choices.SoldierGamingSetItem,
+						OptionID: choices.SoldierGamingSetDice,
+					}},
+					Tools: []shared.SelectionID{refs.Tools.DiceSet().ID},
+				},
+			},
+		}).
+		Return(&character.SetBackgroundOutput{
+			Draft: &toolkitchar.DraftData{ID: draftID, Background: backgrounds.Soldier},
+		}, nil)
+
+	resp, err := s.handler.UpdateBackground(s.ctx, req)
+
+	s.Require().NoError(err)
+	s.Require().NotNil(resp.GetDraft())
+	s.Equal(draftID, resp.GetDraft().GetId())
+	s.Equal(dnd5ev1alpha1.Background_BACKGROUND_SOLDIER, resp.GetDraft().GetBackground())
 }
 
 func (s *HandlerTestSuite) TestDeleteCharacter_Success() {
@@ -179,13 +286,10 @@ func (s *HandlerTestSuite) TestDeleteCharacter_InternalError() {
 	s.Equal("failed to delete character", st.Message())
 }
 
-func (s *HandlerTestSuite) TestGetCharacter_IncludesEquipmentSlots() {
+func (s *HandlerTestSuite) TestGetCharacter_IncludesEquipmentSlotsAndHairAppearance() {
 	characterID := "char-123"
-	req := &dnd5ev1alpha1.GetCharacterRequest{
-		CharacterId: characterID,
-	}
-
-	// Build character data with equipment slots populated
+	req := &dnd5ev1alpha1.GetCharacterRequest{CharacterId: characterID}
+	appearance := handlerHairAppearance()
 	charData := &toolkitchar.Data{
 		ID:    characterID,
 		Name:  "Test Fighter",
@@ -198,14 +302,13 @@ func (s *HandlerTestSuite) TestGetCharacter_IncludesEquipmentSlots() {
 	}
 
 	s.mockService.EXPECT().
-		GetCharacter(s.ctx, &character.GetCharacterInput{
-			CharacterID: characterID,
-		}).
-		Return(&character.GetCharacterOutput{
-			Character: &entities.Character{
-				Data: charData,
-			},
-		}, nil)
+		GetCharacter(s.ctx, &character.GetCharacterInput{CharacterID: characterID}).
+		Return(&character.GetCharacterOutput{Character: &entities.Character{
+			Data: func() *toolkitchar.Data {
+				charData.Appearance = appearance
+				return charData
+			}(),
+		}}, nil)
 
 	resp, err := s.handler.GetCharacter(s.ctx, req)
 
@@ -213,14 +316,68 @@ func (s *HandlerTestSuite) TestGetCharacter_IncludesEquipmentSlots() {
 	s.Require().NotNil(resp)
 	s.Require().NotNil(resp.Character)
 	s.Require().NotNil(resp.Character.EquipmentSlots, "EquipmentSlots must be present in GetCharacter response")
-
-	// Verify individual slots
 	s.Require().NotNil(resp.Character.EquipmentSlots.MainHand)
 	s.Equal("item-longsword", resp.Character.EquipmentSlots.MainHand.ItemId)
 	s.Require().NotNil(resp.Character.EquipmentSlots.Armor)
 	s.Equal("item-chainmail", resp.Character.EquipmentSlots.Armor.ItemId)
 	s.Require().NotNil(resp.Character.EquipmentSlots.OffHand)
 	s.Equal("item-shield", resp.Character.EquipmentSlots.OffHand.ItemId)
+	s.assertHairAppearance(resp.Character.GetAppearance())
+}
+
+func (s *HandlerTestSuite) TestListCharacters_IncludesHairAppearance() {
+	ctx := auth.WithPlayerID(s.ctx, "player-1")
+	appearance := handlerHairAppearance()
+	s.mockService.EXPECT().ListCharacters(ctx, &character.ListCharactersInput{
+		PlayerID: "player-1",
+	}).Return(&character.ListCharactersOutput{
+		Characters: []*entities.Character{{
+			Data: &toolkitchar.Data{ID: "char-123", Name: "Test Fighter", Appearance: appearance},
+		}},
+		TotalSize: 1,
+	}, nil)
+
+	resp, err := s.handler.ListCharacters(ctx, &dnd5ev1alpha1.ListCharactersRequest{})
+	s.Require().NoError(err)
+	s.Require().Len(resp.GetCharacters(), 1)
+	s.assertHairAppearance(resp.GetCharacters()[0].GetAppearance())
+}
+
+func handlerHairAppearance() *customization.Appearance {
+	color := uint32(0x123456)
+	roughness := float32(0.33)
+	primary := uint32(0)
+	secondary := uint32(0xFFFFFF)
+	return &customization.Appearance{
+		Hair: &customization.HairCustomization{
+			Scalp:      &customization.StyleSelection{Kind: customization.StyleSelectionStyle, StyleRef: "modular-fantasy-hero:hair:38"},
+			FacialHair: &customization.StyleSelection{Kind: customization.StyleSelectionNone},
+			ColorSRGB:  &color,
+			Roughness:  &roughness,
+		},
+		Outfit: &customization.OutfitCustomization{
+			PrimaryColorSRGB:   &primary,
+			SecondaryColorSRGB: &secondary,
+		},
+	}
+}
+
+func (s *HandlerTestSuite) assertHairAppearance(appearance *dnd5ev1alpha1.Appearance) {
+	s.Require().NotNil(appearance)
+	hair := appearance.GetHair()
+	s.Require().NotNil(hair)
+	s.Equal("modular-fantasy-hero:hair:38", hair.GetScalp().GetStyleRef())
+	s.NotNil(hair.GetFacialHair().GetNone())
+	s.Require().NotNil(hair.ColorSrgb)
+	s.Equal(uint32(0x123456), hair.GetColorSrgb())
+	s.Require().NotNil(hair.Roughness)
+	s.InDelta(0.33, hair.GetRoughness(), 0.000001)
+	outfit := appearance.GetOutfit()
+	s.Require().NotNil(outfit)
+	s.Require().NotNil(outfit.PrimaryColorSrgb)
+	s.Zero(outfit.GetPrimaryColorSrgb())
+	s.Require().NotNil(outfit.SecondaryColorSrgb)
+	s.Equal(uint32(0xFFFFFF), outfit.GetSecondaryColorSrgb())
 }
 
 func (s *HandlerTestSuite) TestGetCharacter_InvalidRequest() {
@@ -293,8 +450,10 @@ func (s *HandlerTestSuite) TestEquipItem_ReturnsPersistedPostStateWithoutRefetch
 			EquipmentSlots: toolkitchar.EquipmentSlots{
 				toolkitchar.SlotMainHand: "longsword",
 			},
+			Appearance: &customization.Appearance{Hair: &customization.HairCustomization{
+				Scalp: &customization.StyleSelection{Kind: customization.StyleSelectionStyle, StyleRef: "modular-fantasy-hero:hair:38"},
+			}},
 		},
-		Appearance: &entities.Appearance{SkinTone: "#123456"},
 	}
 
 	s.mockService.EXPECT().
@@ -320,7 +479,7 @@ func (s *HandlerTestSuite) TestEquipItem_ReturnsPersistedPostStateWithoutRefetch
 	s.Require().NoError(err)
 	s.Equal("char-equip", resp.GetCharacter().GetId())
 	s.Equal("longsword", resp.GetCharacter().GetEquipmentSlots().GetMainHand().GetItemId())
-	s.Equal("#123456", resp.GetCharacter().GetAppearance().GetSkinTone())
+	s.Equal("modular-fantasy-hero:hair:38", resp.GetCharacter().GetAppearance().GetHair().GetScalp().GetStyleRef())
 	s.Equal("handaxe", resp.GetPreviouslyEquippedItem().GetItemId())
 }
 

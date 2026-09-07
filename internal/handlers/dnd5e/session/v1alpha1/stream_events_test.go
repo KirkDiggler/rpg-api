@@ -91,14 +91,16 @@ func anyMemberOwnedBy(ctrl *gomock.Controller, playerID string) characterrepo.Re
 }
 
 func TestStreamEvents_Unauthenticated_Errors(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	stream := newCapturingStream(context.Background())
 	err := h.StreamEvents(&sessionpb.StreamEventsRequest{}, stream)
 	requireCode(t, err, codes.Unauthenticated)
 }
 
 func TestStreamEvents_EmptyMember_InvalidArgument(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	stream := newCapturingStream(ctx)
 	err := h.StreamEvents(&sessionpb.StreamEventsRequest{Session: "sess-1"}, stream)

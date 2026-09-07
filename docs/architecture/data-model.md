@@ -1,8 +1,8 @@
 ---
 name: rpg-api data model
 description: Entities, relationships, storage schemas, and known gaps in the data layer
-updated: 2026-07-13
-confidence: medium — Character/CharacterDraft/DiceSession/Position sections verified by reading current entity files; the v1 encounter/dungeon entity model this doc used to describe is deleted (rpg-api#642) and not yet replaced with a v2 description here (follow-up)
+updated: 2026-09-06
+confidence: medium-high — #921 toolkit composition storage and Character/CharacterDraft Appearance storage are verified by focused Redis tests; the historical v1 encounter/dungeon model remains deleted
 ---
 
 # rpg-api data model
@@ -41,6 +41,8 @@ EncounterEvent ─────────────── DELETED (rpg-api#64
 CharacterDraft ─────────────── owned by character_draft repo (Redis)
 
 DiceSession ────────────────── owned by dice_session repo (Redis)
+
+composition.Data ───────────── toolkit-owned opaque JSON snapshot, scoped by WorldID (Redis)
 ```
 
 The v2 encounter path's data model (encounter state owned by
@@ -60,7 +62,11 @@ Key fields of `character.Data` (toolkit-owned):
 - `DeathSaveState` — successes/failures/stabilized/dead
 - `Features` — class features (rage uses, second wind, etc.)
 
-**Appearance** (`entities/appearance.go`) is stored separately alongside character data in the character repo. It holds cosmetic fields (skin tone, primary/secondary color, eye color) that are not part of the toolkit type.
+**Appearance** is `customization.Appearance` nested in toolkit `character.Data` and
+`character.DraftData`. The API has no separate Appearance/Hair/Style entity; Redis
+stores it as part of the thin `entities.Character`/`CharacterDraft` wrapper's nested
+`Data` value. The shared converter preserves optional and malformed wire shape while
+toolkit owns semantic validation.
 
 **Storage:** Redis key `character:{id}` (verified via `repositories/character/redis.go`). No TTL observed — characters persist indefinitely.
 
@@ -240,6 +246,17 @@ type ActionEconomyState struct {
 
 `ActionEconomyState` has methods (`HasAction`, `UseAction`, `HasBonusAction`, etc.) — this is intentional behavior on entities (not game rules, just state tracking).
 
+## Composition (`rpg-toolkit/world/composition.Data`)
+
+The toolkit type is canonical: `ID` and `WorldID` identify a composition, and `JSON`
+holds its opaque authoring payload. rpg-api does not duplicate or interpret that payload.
+For the local-dev RPC, the orchestrator mints `ID` and the handler supplies its configured
+WorldID after player/world checks; the repository remains a typed caller-supplied storage
+contract. It stores a serialized `composition.Data` snapshot directly, with no API-owned
+definition/revision/head model. Permanent deletion removes only the addressed hash
+field and does not interpret the payload or mutate placements/references elsewhere.
+Production guild-to-world mapping and rendering integration do not exist here.
+
 ## DiceSession (repositories/dice_session)
 
 Tracks in-progress ability score rolls for character creation. Redis-backed. Narrow scope; stores the rolls until assigned to a draft.
@@ -261,14 +278,19 @@ The old `entities.Position` (float64) and `dungeon.Position` (int) types — and
 ## Redis key schema (character repos)
 
 Character repository (`repositories/character/redis.go`):
-- `character:{id}` — JSON-serialized `character.Data` + `Appearance`
+- `character:{id}` — JSON-serialized `entities.Character` wrapping toolkit `character.Data`
 
 Character draft repository (`repositories/character_draft/redis.go`):
-- `character_draft:{playerID}:{draftID}` — JSON-serialized draft state
+- `draft:{draftID}` — JSON-serialized `entities.CharacterDraft` wrapping toolkit `character.DraftData`
 - `character_drafts:{playerID}` — set of draft IDs per player
 
 Dice session repository (`repositories/dice_session/redis.go`):
 - `dice_session:{playerID}:{sessionID}` — JSON-serialized session state
+
+Composition repository (`repositories/composition/redis.go`):
+- `composition:<WorldID>` — hash with composition ID fields and serialized toolkit
+  `composition.Data` values; no TTL; permanent deletion is one idempotent HDEL of the
+  addressed composition ID field
 
 ~~Encounter events (publisher, `publishers/encounter/redis.go`):~~ DELETED
 (rpg-api#642, 2026-07-13) — the v1 pub/sub publisher and the `EncounterEvent`

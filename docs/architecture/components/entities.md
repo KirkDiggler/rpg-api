@@ -1,43 +1,39 @@
 ---
 name: entities
-description: Domain data structures — plain Go structs, but with a known proto contamination problem
-updated: 2026-07-13
-confidence: high — verified by reading all remaining entity files
+description: Proto-free API domain envelopes and customization data
+updated: 2026-09-04
+confidence: high — #897 complete toolkit-owned Appearance shape, JSON presence, finalization, clone isolation, and Docker-backed integration verified
 ---
 
 # entities
 
-`internal/entities/` holds the domain data structures for rpg-api. Entities are the types that flow between layers: from handlers (after proto conversion) through orchestrators to repositories. In the ideal architecture, entities are plain Go structs with no external dependencies.
-
-**Updated 2026-07-13 (rpg-api#642):** every proto-contaminated file this doc
-used to describe — `encounter_events.go`, `entity_state.go`,
-`encounter_state_builder.go` — plus the v1-only `dungeon.go`, `room.go`, and
-`merged_grid.go` are deleted. They were the last consumers of `entities.Dungeon`,
-`entities.CombatState`, `entities.EncounterEvent`, and the proto-construction
-functions (`ToEntityStateProto`, `BuildEncounterStateData`, `CombatStateToProto`)
-this doc previously flagged as the entities package's core boundary violation.
-That violation no longer exists — the surviving files below are proto-free.
+`internal/entities/` holds the proto-free data structures that flow between
+handlers, orchestrators, and repositories. Entities are data only; game rules
+remain in rpg-toolkit.
 
 ## Files
 
 | File | Purpose | Proto contamination? |
 |---|---|---|
-| `character.go` | Thin wrapper — mostly uses toolkit types | No |
-| `character_draft.go` | In-progress character creation state | No |
-| `appearance.go` | Cosmetic character appearance | No |
+| `character.go` | Storage wrapper around toolkit `character.Data` | No |
+| `character_draft.go` | Storage wrapper around toolkit draft data | No |
 
-`entities.Character` is the one type the surviving v1alpha2 encounter handler
-imports from this package (for `hydrate_players.go` and its tests) — confirmed
-via grep before the #642 deletion that no v2 file used any of the deleted
-types.
+## Toolkit-owned character data
 
-## Clean entities
+`entities.Character` and `entities.CharacterDraft` are storage wrappers only;
+their sole field is respectively `*character.Data` or `*character.DraftData`.
+Appearance is nested in those toolkit data types and Redis serializes that shape
+directly. The session SDK therefore saves complete `Data`, including Appearance,
+without an API-side preservation envelope.
 
-- `character.go`, `character_draft.go`, `appearance.go` — clean, unaffected by #642.
+Character handlers use the shared `internal/converters/customization` mapping for
+proto↔toolkit Appearance. The Session handler separately maps the Session SDK's flat
+public roster customization values to its wire types, preserving nil/empty nested
+messages, selection oneofs, optional scalar presence, and present zero values.
+Validation and provider interpretation remain in rpg-toolkit.
 
-## Recommended path
+## Boundary status
 
-None outstanding for this package — the proto-contamination items this doc
-used to track were resolved by deletion rather than refactor. If the entities
-package grows new proto-typed fields in the future, treat that as a fresh
-regression, not a continuation of the pre-#642 debt.
+The package has no proto imports. The pre-#642 proto-contaminated encounter
+entities were deleted; new proto-typed fields would be a fresh boundary
+regression.

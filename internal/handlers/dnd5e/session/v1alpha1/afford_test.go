@@ -16,7 +16,8 @@ import (
 )
 
 func TestAfford_Unauthenticated_Errors(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	_, err := h.Afford(context.Background(), &sessionpb.AffordRequest{})
 	requireCode(t, err, codes.Unauthenticated)
 }

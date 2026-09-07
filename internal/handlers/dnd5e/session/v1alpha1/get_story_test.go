@@ -16,7 +16,8 @@ import (
 )
 
 func TestGetStory_Unauthenticated_Errors(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	_, err := h.GetStory(context.Background(), &sessionpb.GetStoryRequest{})
 	requireCode(t, err, codes.Unauthenticated)
 }

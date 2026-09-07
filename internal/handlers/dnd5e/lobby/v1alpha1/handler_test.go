@@ -22,7 +22,6 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
-	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 
 	lobbyv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
@@ -61,6 +60,7 @@ func (s *HandlerSuite) SetupTest() {
 	s.T().Cleanup(func() { _ = redisClient.Close() })
 	sessOrch, err := sessionorch.New(sessionorch.Config{
 		Redis: redisClient, Characters: s.charRepo, TTL: 24 * time.Hour,
+		PresentationIDs: idgen.NewSequential("presentation"),
 	})
 	s.Require().NoError(err)
 
@@ -74,7 +74,6 @@ func (s *HandlerSuite) SetupTest() {
 		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
 		SessionManager:       sessOrch.Manager,
 		Dungeons:             dungeonstest.Shipped(s.T()),
-		RosterRepo:           rosterrepo.NewInMemory(),
 	})
 	s.Require().NoError(err)
 
@@ -84,6 +83,14 @@ func (s *HandlerSuite) SetupTest() {
 	})
 	s.Require().NoError(err)
 	s.handler = h
+
+	// StartEncounter's Phase 1 demo-vendor placement (rpg-api#903) seats a
+	// KindWorld member the SDK's own announcer treats like any other
+	// non-monster participant when building narrative-beat casts: it looks
+	// the ID up as a character, tolerates ErrNoCharacter, and moves on. Armed
+	// suite-wide, the same defensive way expectCharacter's own Update call
+	// is, so no test that reaches StartEncounter has to know this detail.
+	s.expectCharacterNotFound("demo-merchant-1")
 }
 
 func (s *HandlerSuite) TearDownTest() {
@@ -117,6 +124,14 @@ func (s *HandlerSuite) expectCharacter(characterID, playerID, name string, hp, m
 				},
 			},
 		}, nil).AnyTimes()
+	// Session Join persists each character's provider-owned first-admission
+	// recovery before seating. The handler suite uses the real Manager over
+	// this mock adapter, so arm Update the same AnyTimes way as Get whether or
+	// not a given test reaches StartEncounter.
+	s.charRepo.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(&characterrepo.UpdateOutput{Character: &entities.Character{Data: &toolkitchar.Data{ID: characterID}}}, nil).
+		AnyTimes()
 }
 
 func (s *HandlerSuite) expectCharacterNotFound(characterID string) {

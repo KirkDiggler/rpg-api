@@ -22,6 +22,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/proficiencies"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
@@ -36,8 +37,8 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	sessionhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
-	rosterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/roster"
 )
 
 // requireGRPCCode asserts the gRPC status code of a handler error.
@@ -75,7 +76,28 @@ type allStanding struct{}
 // name is `down`, and reading it the other way round would report a healthy
 // party as a wiped one.
 func (allStanding) Standing(_ []tkencounter.MemberID) ([]tkencounter.MemberID, error) {
-	return nil, nil
+	return []tkencounter.MemberID{}, nil // nobody is down, said as an empty list, never nil with a nil error
+}
+
+// Assess says the same thing in the fuller vocabulary encounter/v0.51.0 asks
+// of a Standing capability (toolkit#1453): nobody is down, so everybody is up,
+// conscious, in contact, and waiting. Contact is what makes a member count as
+// a side of a fight, so the false zero value would dissolve every fight this
+// suite forms -- see sessionworld.nobodyDown.Assess, which is the same stand-in
+// for the same reason.
+func (allStanding) Assess(members []tkencounter.MemberID) (*tkencounter.ParticipationAssessment, error) {
+	out := &tkencounter.ParticipationAssessment{
+		Members: make([]tkencounter.MemberParticipation, 0, len(members)),
+	}
+	for _, id := range members {
+		out.Members = append(out.Members, tkencounter.MemberParticipation{
+			Member:    id,
+			Contact:   true,
+			Conscious: true,
+			Turn:      tkencounter.TurnParticipationWait,
+		})
+	}
+	return out, nil
 }
 
 type allSeeing struct{}
@@ -237,6 +259,7 @@ func buildTomb(t *testing.T, mutate func(*tkencounter.SetupInput)) *tkencounter.
 		// turn does here never matters.
 		TurnDriver: tkencounter.PassDriver{},
 		Striker:    tkencounter.RefusingStriker{},
+		Mover:      tkencounter.RefusingMover{},
 		// This builds the scene; the session Manager loads it and supplies the
 		// real announcer when the fight actually runs.
 		Announcer: tkencounter.RefusingAnnouncer{},
@@ -314,18 +337,55 @@ func armedFighter(id, playerID string) *tkcharacter.Data {
 	}
 }
 
+func acceptanceHairAppearance() *customization.Appearance {
+	color := uint32(0x123456)
+	zero := uint32(0)
+	roughness := float32(0.33)
+	return &customization.Appearance{
+		Hair: &customization.HairCustomization{
+			Scalp:      &customization.StyleSelection{Kind: customization.StyleSelectionStyle, StyleRef: "modular-fantasy-hero:hair:38"},
+			FacialHair: &customization.StyleSelection{Kind: customization.StyleSelectionNone},
+			ColorSRGB:  &color,
+			Roughness:  &roughness,
+		},
+		Outfit: &customization.OutfitCustomization{
+			PrimaryColorSRGB:   &zero,
+			SecondaryColorSRGB: &zero,
+		},
+	}
+}
+
 // acceptanceHarness is the design §6.1 acceptance criterion made executable:
 // a party can, entirely through SessionService against the local stack,
 // walk a multi-room world, meet a monster by sight, fight it, disengage,
 // and recover its own position and the full story after the fact.
 type acceptanceHarness struct {
-	handler    *sessionhandler.Handler
-	charRepo   characterrepo.Repository
-	manager    *sessionorch.Orchestrator
-	rosterRepo rosterrepo.Repository
+	handler  *sessionhandler.Handler
+	charRepo characterrepo.Repository
+	manager  *sessionorch.Orchestrator
+
+	// redis is the same client the orchestrator's repositories run on, kept
+	// so a scene can seed a stored record the SDK owns but no rpg-api verb
+	// writes -- a spawned monster's sheet, for one. See
+	// holdings_acceptance_test.go, which explains why one scene needs it.
+	redis *goredis.Client
 }
 
 func newAcceptanceHarness(t *testing.T) *acceptanceHarness {
+	t.Helper()
+	return newAcceptanceHarnessWithDice(t, testDice{})
+}
+
+func newAcceptanceHarnessWithDice(t *testing.T, roller sdk.Roller) *acceptanceHarness {
+	t.Helper()
+	return newAcceptanceHarnessWith(t, roller, nil)
+}
+
+// newAcceptanceHarnessWith is the same harness over a scripted turn driver.
+// A nil driver keeps the production one (sdk.Behavior()), so every existing
+// scene is unchanged; interrupt_acceptance_test.go is the one caller that
+// passes something, and its own doc says why it has to.
+func newAcceptanceHarnessWith(t *testing.T, roller sdk.Roller, driver sdk.TurnDriver) *acceptanceHarness {
 	t.Helper()
 
 	mr := miniredis.RunT(t)
@@ -341,17 +401,17 @@ func newAcceptanceHarness(t *testing.T) *acceptanceHarness {
 	// flaky "miss" run with real randomness (session.Roller's own doc:
 	// "a test wires a fixed one and gets a reproducible fight").
 	orch, err := sessionorch.New(sessionorch.Config{
-		Redis: client, Characters: charRepo, TTL: 24 * time.Hour, Dice: testDice{},
+		Redis: client, Characters: charRepo, TTL: 24 * time.Hour, Dice: roller,
+		PresentationIDs: idgen.NewSequential("presentation"), TurnDriver: driver,
 	})
 	require.NoError(t, err)
 
-	rosterRepo := rosterrepo.NewInMemory()
 	h, err := sessionhandler.New(&sessionhandler.HandlerConfig{
-		Manager: orch.Manager, Broker: orch.Broker, Characters: charRepo, Roster: rosterRepo,
+		Manager: orch.Manager, Broker: orch.Broker, Characters: charRepo,
 	})
 	require.NoError(t, err)
 
-	return &acceptanceHarness{handler: h, charRepo: charRepo, manager: orch, rosterRepo: rosterRepo}
+	return &acceptanceHarness{handler: h, charRepo: charRepo, manager: orch, redis: client}
 }
 
 func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
@@ -583,22 +643,31 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 // party's public identity — her own class/race refs read FRESH from the
 // character record, the skeleton's authored ref and name from the row — and
 // nothing else.
-func TestGetRoster_ServesTheLaunchWrittenRow(t *testing.T) {
+func TestGetRoster_UsesSessionRoster(t *testing.T) {
 	h := newAcceptanceHarness(t)
 	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+	appearance := acceptanceHairAppearance()
 
+	data := armedFighter("alice", "player-alice")
+	data.Appearance = appearance
 	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+		Character: &entities.Character{Data: data},
 	})
 	require.NoError(t, err)
 
-	require.NoError(t, h.rosterRepo.Save(context.Background(), &rosterrepo.Data{
-		EncounterID: "roster-run",
-		Members: []rosterrepo.Member{
-			{ID: "alice", Kind: rosterrepo.KindPlayer},
-			{ID: "skeleton-1", Kind: rosterrepo.KindMonster, Ref: "dnd5e:monsters:skeleton", Name: "Skeleton"},
-		},
-	}))
+	world := buildThreeRoomTomb(t)
+	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+		Session: "roster-run", Encounter: "tomb-encounter", World: world,
+	})
+	require.NoError(t, err)
+	_, err = h.manager.Manager.Join(context.Background(), &sdk.JoinInput{
+		Session: "roster-run", Member: "alice", Position: at(1, 1),
+	})
+	require.NoError(t, err)
+	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+		Session: "roster-run", ID: "skeleton-1", Ref: refs.Monsters.Skeleton().String(), Position: at(19, 3),
+	})
+	require.NoError(t, err)
 
 	resp, err := h.handler.GetRoster(ctx, &sessionpb.GetRosterRequest{Session: "roster-run"})
 	require.NoError(t, err)
@@ -606,18 +675,30 @@ func TestGetRoster_ServesTheLaunchWrittenRow(t *testing.T) {
 
 	alice := resp.GetMembers()[0]
 	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_PLAYER, alice.GetKind())
-	require.Equal(t, string(classes.Fighter), alice.GetClassRef(),
-		"class ref must be the character record's own word — the one the local-player render path already maps")
+	require.Equal(t, classes.Fighter, alice.GetClassRef())
 	require.Equal(t, string(races.Human), alice.GetRaceRef())
-	require.NotNil(t, alice.GetCustomization(), "the shelf is always set")
+	hair := alice.GetCustomization().GetHair()
+	require.NotNil(t, hair)
+	require.Equal(t, "modular-fantasy-hero:hair:38", hair.GetScalp().GetStyleRef())
+	require.NotNil(t, hair.GetFacialHair().GetNone())
+	require.NotNil(t, hair.ColorSrgb)
+	require.Equal(t, uint32(0x123456), hair.GetColorSrgb())
+	require.NotNil(t, hair.Roughness)
+	require.InDelta(t, 0.33, hair.GetRoughness(), 0.000001)
+	outfit := alice.GetCustomization().GetOutfit()
+	require.NotNil(t, outfit)
+	require.NotNil(t, outfit.PrimaryColorSrgb)
+	require.Zero(t, outfit.GetPrimaryColorSrgb())
+	require.NotNil(t, outfit.SecondaryColorSrgb)
+	require.Zero(t, outfit.GetSecondaryColorSrgb())
 
 	skel := resp.GetMembers()[1]
 	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_MONSTER, skel.GetKind())
 	require.Equal(t, "dnd5e:monsters:skeleton", skel.GetMonsterRef())
 	require.Equal(t, "Skeleton", skel.GetName())
+	require.NotNil(t, skel.GetCustomization())
+	require.Nil(t, skel.GetCustomization().GetHair())
 
-	// The seated gate, through the real stack: a player with no seat in this
-	// roster is refused the read.
 	strangerCtx := auth.WithPlayerID(context.Background(), "player-nobody")
 	_, err = h.handler.GetRoster(strangerCtx, &sessionpb.GetRosterRequest{Session: "roster-run"})
 	requireGRPCCode(t, err, codes.PermissionDenied)
@@ -863,7 +944,7 @@ func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
 	// and the doom declared over the monster the launch is about to spawn —
 	// an ending may name a member that joins later.
 	world := buildTomb(t, func(in *tkencounter.SetupInput) {
-		in.Field.Doors[1].State = tkencounter.DoorIsLocked(tkencounter.Lock{DC: 12, Ability: "dex"})
+		in.Field.Doors[1].State = tkencounter.DoorIsLocked(tkencounter.Lock{Approaches: []tkencounter.CheckApproach{{Ability: "dex", DC: 12}}})
 		in.Endings = []tkencounter.EndingInput{
 			{Key: "withdrawn", Trigger: tkencounter.TriggerExternal{}},
 			{Key: "boss-down", Trigger: tkencounter.TriggerMemberDown{Member: "skel-1"}},
@@ -879,12 +960,6 @@ func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// The launch also writes the roster row GetDoors's seated gate reads.
-	require.NoError(t, h.rosterRepo.Save(context.Background(), &rosterrepo.Data{
-		EncounterID: "doom-run",
-		Members:     []rosterrepo.Member{{ID: "alice", Kind: rosterrepo.KindPlayer}},
-	}))
-
 	// Join in the hall, on the locked door's row, with the door shut between
 	// alice and the skeleton: no fight forms — the lock blocks sight.
 	joinResp, err := h.handler.Join(ctx, &sessionpb.JoinRequest{
@@ -894,7 +969,7 @@ func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
 	require.Nil(t, joinResp.GetFormed(), "the locked door is dark: nothing on the far side is in sight")
 
 	// -- GetDoors: the live half of the atlas's doorways --
-	doorsResp, err := h.handler.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: "doom-run"})
+	doorsResp, err := h.handler.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: "doom-run", Member: "alice"})
 	require.NoError(t, err)
 	require.Len(t, doorsResp.GetDoors(), 2)
 	byID := map[string]*sessionpb.DoorInfo{}
@@ -904,7 +979,8 @@ func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
 	require.Equal(t, sessionpb.DoorState_DOOR_STATE_OPEN, byID["entrance-hall"].GetState())
 	require.Nil(t, byID["entrance-hall"].GetLock(), "an open door carries no lock")
 	require.Equal(t, sessionpb.DoorState_DOOR_STATE_LOCKED, byID["hall-tomb"].GetState())
-	require.Equal(t, int32(12), byID["hall-tomb"].GetLock().GetDc(), "the DC is public — full data until v1.0")
+	require.Len(t, byID["hall-tomb"].GetLock().GetApproaches(), 1)
+	require.Equal(t, int32(12), byID["hall-tomb"].GetLock().GetApproaches()[0].GetDc(), "the DC is public — full data until v1.0")
 
 	// -- the walk is refused as FICTION, not as a bad cell (rpg-toolkit#1135) --
 	_, err = h.handler.Move(ctx, &sessionpb.MoveRequest{

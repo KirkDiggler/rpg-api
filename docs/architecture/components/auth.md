@@ -30,6 +30,13 @@ Two schemes are supported (checked via `Authorization` header prefix):
 
 Dev mode is used by the integration test harness (`harness.go`) and local development. It is explicitly never production-safe (documented in `InterceptorConfig.DevMode`).
 
+`CompositionService` adds a second use of this same deployment boundary: the entire
+service is registered only when `AUTH_DEV_MODE=true`. Its local WorldID defaults to
+`test-world` and can be overridden with `RPG_DEV_WORLD_ID`; that selector is accepted
+only after `auth.GetPlayerID` succeeds and is not treated as authorization proof.
+Non-dev servers do not register the service even if `RPG_DEV_WORLD_ID` is set. A future
+production handler must replace the stub with verified Discord guild-to-world context.
+
 ## Skip-auth methods
 
 Health check and gRPC reflection endpoints bypass auth:

@@ -1,8 +1,8 @@
 ---
 name: repositories
 description: All data access components — interface definitions, implementations, and storage schemas
-updated: 2026-07-13
-confidence: high — verified by reading all remaining repository interface and implementation files
+updated: 2026-09-06
+confidence: high — #921 simple composition persistence is verified through focused Redis repository tests; older repository notes retain stated caveats
 ---
 
 # repositories
@@ -10,7 +10,7 @@ confidence: high — verified by reading all remaining repository interface and 
 **Updated 2026-07-13 (rpg-api#642):** the three in-memory-only, D-graded
 repositories this doc used to describe (`encounters` v1 root, `dungeons`,
 `encounterlog`) are deleted along with the v1alpha1 encounter stack they
-served. See "Encounter repository (v2)" below for the replacement.
+served. The later v2 encounter repository is also deleted with rpg-project#227.
 
 ## Overview
 
@@ -18,9 +18,11 @@ served. See "Encounter repository (v2)" below for the replacement.
 |---|---|---|---|---|
 | `character` | `repository.go` | `redis.go` | Redis | B |
 | `character_draft` | `repository.go` | `redis.go` | Redis | B- |
+| `composition` | `repository.go` | `redis.go` | Redis | B |
 | `dice_session` | `repository.go` | `redis.go` | Redis | B- |
-| `encounters/v2` | `repository.go` | `redis.go` + `in_memory.go` | Redis + in-memory | B |
+| ~~`encounters/v2`~~ | DELETED | DELETED | DELETED | n/a |
 | `lobby` | `repository.go` | `redis.go` + `in_memory.go` | Redis + in-memory | B |
+| `sessionpresentation` | `repository.go` | `redis.go` | Redis | B+ |
 
 ~~`encounters` (v1 root)~~ / ~~`dungeons`~~ / ~~`encounterlog`~~ — all DELETED
 (rpg-api#642).
@@ -34,8 +36,9 @@ Interface methods use value Input and pointer Output types: `Create`, `Get`, `Up
 an opaque version derived from the stored bytes. `PatchEquipmentInput` carries the
 expected version/equipment plus only the proposed EquipmentSlots and cached ArmorClass.
 
-**Storage:** `character:{id}` — JSON-serialized `character.Data` + `Appearance` (stored
-together), with player/session index keys.
+**Storage:** `character:{id}` — JSON-serialized `entities.Character`, whose only
+field is toolkit `character.Data` (including nested `Data.Appearance`), with
+player/session index keys.
 
 `PatchEquipment` uses Redis WATCH/MULTI. A stale equipment map returns ABORTED. A changed
 version with unchanged equipment returns the latest entity without writing so the
@@ -51,7 +54,27 @@ Used by: character, lobby, and session orchestration plus owner/public projectio
 
 Interface methods: `Create`, `Get`, `List`, `Update`, `Delete`.
 
-**Storage:** Redis keys per draft. Handles in-progress character creation state. Less tested than character repo — no integration tests that specifically exercise draft lifecycle.
+**Storage:** Redis keys per draft. JSON stores the thin `entities.CharacterDraft`
+wrapper around toolkit `character.DraftData`, including nested Appearance. Focused
+Redis tests cover complete Appearance and present-zero optional values.
+
+## Composition repository
+
+**Path:** `repositories/composition/`
+
+World-scoped Redis storage for toolkit `world/composition.Data`. The typed contract
+creates a caller-identified composition without overwrite, gets one composition by
+WorldID and ID, and lists a world's compositions in deterministic ID order.
+
+Each world has one `composition:<WorldID>` Redis hash. Fields are composition IDs and
+values are serialized `composition.Data`; HSETNX, HGET, and HGETALL are the only storage
+operations and the hash has no TTL. The repository validates required identifiers and
+stored envelope identity but leaves the opaque JSON schema to its owner.
+
+The local-dev `CompositionService` now calls this repository through a thin service and
+orchestrator. The orchestrator supplies newly generated IDs; the handler supplies the
+configured dev WorldID only after existing player-auth and requested-world checks. The
+repository itself remains authorization-agnostic and unchanged.
 
 ## Dice session repository
 
@@ -59,18 +82,28 @@ Interface methods: `Create`, `Get`, `List`, `Update`, `Delete`.
 
 Narrow scope: tracks ability score dice rolls during character creation before they are assigned to a draft. Redis-backed, simple interface.
 
-## Encounter repository (v2)
+## ~~Encounter repository (v2)~~ DELETED
 
-**Path:** `repositories/encounters/v2/`
+`repositories/encounters/v2/` is deleted with the old v1alpha2 encounter stack.
+Toolkit session state is now owned by `rulebooks/dnd5e/session.Manager`, wired by
+`internal/orchestrators/session` over Redis-backed toolkit repositories.
 
-Interface: `Get(ctx, *GetInput) (*GetOutput, error)`, `Save(ctx, *SaveInput) (*SaveOutput, error)` — operating on the rpg-toolkit encounter SDK's own `*encounter.Data` type directly (the repository does not define its own storage struct the way the deleted v1 repo did).
+## Session roster
 
-Two implementations: `in_memory.go` (JSON round-trip, used by tests and the
-integration harness) and `redis.go` (24h TTL, wired into `cmd/server/server.go`
-production wiring and the lobby orchestrator's `StartEncounter`). Unlike the
-deleted v1 encounter repo, this one has a persistent backend from day one.
+The Session SDK owns roster state and public identity projection inside
+`rulebooks/dnd5e/session.Manager`. `SessionService.GetRoster` and the shared
+`sessionaccess.Access` gates call the manager's `Roster` method; rpg-api has no roster
+repository or launch-time duplicate.
 
-See [`encounter.md`](./encounter.md) for the v1alpha2 vertical this repo serves.
+## Session presentation repository
+
+**Path:** `repositories/sessionpresentation/`
+
+Stores accepted presentation payloads under hashed session keys and fans them out over
+Redis Pub/Sub. A Redis script makes `(session, presentation_id, attempt)` acceptance
+atomic: first write publishes, identical duplicate returns the accepted payload, and a
+different duplicate returns `ErrConflict`. Accepted keys have a two-minute TTL;
+subscriptions are live-only and close on context/subscription shutdown.
 
 ## Common patterns
 

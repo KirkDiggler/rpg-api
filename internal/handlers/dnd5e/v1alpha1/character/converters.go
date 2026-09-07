@@ -8,7 +8,7 @@ import (
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
-	"github.com/KirkDiggler/rpg-api/internal/entities"
+	customizationconverter "github.com/KirkDiggler/rpg-api/internal/converters/customization"
 	"github.com/KirkDiggler/rpg-toolkit/core/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/ammunition"
@@ -60,6 +60,7 @@ func convertDraftDataToProto(draft *toolkitchar.DraftData) *dnd5ev1alpha1.Charac
 		BaseAbilityScores: convertAbilityScoresToProto(draft.BaseAbilityScores),
 		Choices:           convertChoicesToProto(draft.Choices),
 		Progress:          convertProgressToProto(draft.Progress),
+		Appearance:        customizationconverter.ToolkitToProto(draft.Appearance),
 		// Validation will be populated by the orchestrator if needed
 		// Info fields (race_info, class_info, etc.) can be populated later if needed for UI
 	}
@@ -927,13 +928,51 @@ func convertBackgroundDataToProto(data *backgrounds.Data) *dnd5ev1alpha1.Backgro
 	// TODO: Convert languages when background data includes them
 	// TODO: Convert starting equipment when available
 
+	// REQUIREMENTS - Load ALL choices from toolkit
+	allChoices := loadAllBackgroundChoices(data.ID)
+
 	return &dnd5ev1alpha1.BackgroundInfo{
 		BackgroundId:        convertBackgroundToProtoEnum(data.ID),
 		Name:                data.Name(),
 		Description:         data.Description(),
 		SkillProficiencies:  skillList,
 		AdditionalLanguages: int32(data.LanguageCount),
+		// Requirements (choices) - ALL in one place
+		Choices: allChoices,
 	}
+}
+
+// loadAllBackgroundChoices mirrors loadAllClassChoices, sourced from
+// choices.GetBackgroundRequirements instead of GetClassRequirements
+// (rpg-toolkit#1554, rpg-api#931/#932's own accept-side handoff): eight
+// backgrounds have a real Equipment and/or Tools requirement, every other
+// background returns nil and this reports no choices, same as
+// loadAllClassChoices does for a class with no requirements. Backgrounds
+// never populate Skills/FightingStyle/Expertise (confirmed directly against
+// GetBackgroundRequirements' own switch), so only the two cases that can
+// ever be non-empty are handled -- unlike loadAllClassChoices, which must
+// cover every requirement kind a class can have.
+func loadAllBackgroundChoices(bg backgrounds.Background) []*dnd5ev1alpha1.Choice {
+	requirements := choices.GetBackgroundRequirements(bg)
+	if requirements == nil {
+		return nil
+	}
+
+	result := make([]*dnd5ev1alpha1.Choice, 0)
+
+	for _, req := range requirements.Equipment {
+		if equipChoice := createEquipmentChoice(req); equipChoice != nil {
+			result = append(result, equipChoice)
+		}
+	}
+
+	if requirements.Tools != nil && requirements.Tools.Count > 0 {
+		if toolChoice := createToolChoice(requirements.Tools); toolChoice != nil {
+			result = append(result, toolChoice)
+		}
+	}
+
+	return result
 }
 
 // convertValidationResultToProto converts toolkit validation to proto ValidationResult
@@ -1082,9 +1121,10 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 	}
 
 	char := &dnd5ev1alpha1.Character{
-		Id:    data.ID,
-		Name:  data.Name,
-		Level: int32(data.Level),
+		Id:         data.ID,
+		Name:       data.Name,
+		Level:      int32(data.Level),
+		Appearance: customizationconverter.ToolkitToProto(data.Appearance),
 	}
 
 	// Convert race and subrace
@@ -1944,9 +1984,9 @@ func convertProtoWeaponToToolkit(weapon dnd5ev1alpha1.Weapon) shared.SelectionID
 	// to this switch's default ("").
 	// Ammunition
 	case dnd5ev1alpha1.Weapon_WEAPON_ARROWS_20:
-		return shared.SelectionID(ammunition.Arrows20)
+		return ammunition.Arrows20
 	case dnd5ev1alpha1.Weapon_WEAPON_BOLTS_20:
-		return shared.SelectionID(ammunition.Bolts20)
+		return ammunition.Bolts20
 	// Category placeholders
 	case dnd5ev1alpha1.Weapon_WEAPON_ANY_SIMPLE:
 		return refs.Weapons.AnySimpleWeapon().ID
@@ -3213,13 +3253,26 @@ func convertActionTypeToProto(actionType combat.ActionType) dnd5ev1alpha1.Action
 	}
 }
 
-// extractIDFromRef extracts the ID part from a ref string (e.g., "dnd5e:conditions:raging" -> "raging")
+// extractIDFromRef returns a ref's id: EVERYTHING after the second colon
+// ("dnd5e:conditions:raging" -> "raging").
+//
+// The whole id, not its last part. An id may carry colon-separated parts
+// (rpg-toolkit#1536), and "dnd5e:props:plushie:skeleton-dog" names one thing
+// called "plushie:skeleton-dog" rather than a thing called "skeleton-dog" in
+// some outer family. Both callers hand the result to an enum mapping, so
+// keeping the last part alone would let a multi-part id COLLIDE with an
+// unrelated ref that happens to end the same way. Keeping the whole id makes
+// an id nothing knows yet map to UNSPECIFIED, which is the honest answer.
+//
+// A string with fewer than two colons is not a ref, and it answers "" the way
+// it always has: the callers skip on empty, so an unreadable ref contributes
+// nothing rather than half of something.
 func extractIDFromRef(ref string) string {
-	parts := strings.Split(ref, ":")
+	parts := strings.SplitN(ref, ":", 3)
 	if len(parts) < 3 {
 		return ""
 	}
-	return parts[len(parts)-1]
+	return parts[2]
 }
 
 // toTitleCase converts snake_case to Title Case (e.g., "sneak_attack" -> "Sneak Attack")
@@ -3402,31 +3455,5 @@ func featureIDToDisplayName(id string) string {
 	default:
 		// Convert snake_case to Title Case as fallback
 		return toTitleCase(id)
-	}
-}
-
-// convertProtoAppearanceToEntity converts proto Appearance to entity Appearance
-func convertProtoAppearanceToEntity(proto *dnd5ev1alpha1.Appearance) *entities.Appearance {
-	if proto == nil {
-		return nil
-	}
-	return &entities.Appearance{
-		SkinTone:       proto.SkinTone,
-		PrimaryColor:   proto.PrimaryColor,
-		SecondaryColor: proto.SecondaryColor,
-		EyeColor:       proto.EyeColor,
-	}
-}
-
-// convertEntityAppearanceToProto converts entity Appearance to proto Appearance
-func convertEntityAppearanceToProto(entity *entities.Appearance) *dnd5ev1alpha1.Appearance {
-	if entity == nil {
-		return nil
-	}
-	return &dnd5ev1alpha1.Appearance{
-		SkinTone:       entity.SkinTone,
-		PrimaryColor:   entity.PrimaryColor,
-		SecondaryColor: entity.SecondaryColor,
-		EyeColor:       entity.EyeColor,
 	}
 }

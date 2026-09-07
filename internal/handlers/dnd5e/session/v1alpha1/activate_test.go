@@ -17,7 +17,8 @@ import (
 )
 
 func TestActivate_Unauthenticated_Errors(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	_, err := h.Activate(context.Background(), &sessionpb.ActivateRequest{})
 	requireCode(t, err, codes.Unauthenticated)
 }

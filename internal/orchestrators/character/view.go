@@ -10,6 +10,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/currency"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 )
 
@@ -39,6 +40,13 @@ type View struct {
 	Identity  IdentityView
 	Equipment *tkcharacter.EquipmentView
 	Status    *tkcharacter.StatusView
+
+	// Wallet is the character's persistent coin purse (rpg-toolkit#1533),
+	// carried straight off Data.Wallet rather than through StatusView -- the
+	// toolkit's own StatusView does not project it (same shape as
+	// npcs.StockEntryView not carrying a vendor price), so this is the raw
+	// persisted field, not a toolkit computation.
+	Wallet currency.Money
 }
 
 // ProjectViewInput contains persisted character data to project strictly.
@@ -160,7 +168,15 @@ func projectLoadedCharacter(
 		return nil, errors.New(errViewRaceIDMissing)
 	}
 
-	equipment := input.Character.EquipmentView(ctx)
+	// EquipmentView carries a FOLDED armour class rather than the scalar on the
+	// sheet, so it can refuse (rpg-toolkit#1276). A refusal must surface: the
+	// alternative is a projection reporting base armour as though it were the
+	// whole answer, which is the bug this chain exists to close.
+	equipment, err := input.Character.EquipmentView(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("project character equipment: %w", err)
+	}
+
 	status, err := input.Character.StatusView(&tkcharacter.StatusViewInput{})
 	if err != nil {
 		return nil, fmt.Errorf("project character status: %w", err)
@@ -177,5 +193,6 @@ func projectLoadedCharacter(
 		},
 		Equipment: equipment,
 		Status:    status.View,
+		Wallet:    data.Wallet,
 	}}, nil
 }

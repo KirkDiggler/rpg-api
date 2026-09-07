@@ -1,8 +1,8 @@
 ---
 name: lobby service
 description: LobbyService v1alpha1 — party assembly (join refs, membership, ready flags, lifecycle) and the sole session-construction path
-updated: 2026-08-23
-confidence: medium — rewritten 2026-08-21 for the post-rip-out shape (rpg-api#801); dungeon_key routing + ListDungeons added 2026-08-23 (rpg-api#806), verified against the passing unit + integration suites; the lobby has no browser-verified walkthrough on the new stack yet
+updated: 2026-09-02
+confidence: medium-high — first-admission recovery ownership verified through real miniredis-backed Lobby StartEncounter and failure-order acceptance (rpg-api#882); dungeon_key routing + ListDungeons verified against unit + integration suites; the lobby has no browser-verified walkthrough on the new stack yet
 ---
 
 # lobby service
@@ -31,7 +31,10 @@ lobby's `Data`/`Member` types are rpg-api-owned entities (`internal/repositories
 not a toolkit mirror. `StartEncounter`'s session construction (`sdk.Manager.StartSession`
 + `Join` per member + `Spawn` per monster, all against a world the registry
 compiled through `internal/sessionworld`) is data movement — building the
-toolkit's own session by reference, authoring no game rules.
+toolkit's own session by reference, authoring no game rules. Session `Join`
+owns first-admission recovery from its persisted `EverMembers` record and
+persists the provider-authored result through the character repository adapter;
+the lobby neither loads runtime D&D characters nor creates event buses.
 
 ## Layers
 
@@ -104,8 +107,11 @@ combat/movement resolver builder, and no dungeon registry in this package any mo
   `Spawn` the authored monsters; flip the lobby to STARTED and `Save`; only then
   `Publish` `EncounterStarted`. **Persist-then-emit ordering is load-bearing**: a
   client reacting to the event must find the session already started. Every verb
-  is a separate load-act-save through `sdk.Manager`; there is no rollback on
-  partial failure — that contract is rpg-api#800's to rule on.
+  is a separate load-act-save through `sdk.Manager`. StartSession failure precedes
+  every Join and therefore every character write. During Join, first-admission
+  recovery is saved before projection and placement; a later failure intentionally
+  leaves that valid between-runs transition durable and the SDK error carries its
+  `SaveReport`. The lobby adds no all-member preflight, rollback, or rule branch.
 - **`abandon_encounter.go`** (rpg-api#663) — load lobby, host check, `ErrLobbyNotStarted`
   guard, then `sdk.Manager.End(Session: EncounterID, Ending: sessionworld.EndingWithdrawn)`
   — the one external ending the tomb declares. It never writes the lobby record:
@@ -154,14 +160,19 @@ needs to.
 - **No starting-in-combat path.** The old `--inject-combat` dev tooling (`devcombat`)
   is gone with the old stack. On the new stack a fight forms when a member sights a
   monster (session W4), so "start in TURN_BASED" is not a concept to port.
-- **~~Arcade recovery is not ported~~ — closed by rpg-api#828.** `StartEncounter`
-  now calls the toolkit's `RestoreForLaunch` on every member before seating
-  (full HP, death saves cleared, Unconscious stripped, pools refilled — ungated
-  since rpg-toolkit#1225); the SDK's `Join` stays restoration-free by contract.
-  The stale action-economy sibling is narrower too: since session v0.24.1 the SDK
-  clears a member's economy when their fight dissolves (rpg-toolkit#1222); the
-  remaining leak is a session ended mid-fight via `End`/`Exit` (rpg-toolkit#1223).
-- **Partial-failure orphans** — rpg-api#800.
+- **~~Arcade recovery is not ported~~ — closed by rpg-api#882.** The API-owned
+  reset loop from rpg-api#828 is retired. Session v0.45.0 `Join` now owns a
+  character's first-admission normal rest, persists it through the host adapter
+  before projection/placement, and uses persisted `EverMembers` to prevent a
+  reconnect or exit/rejoin from resting again. The stale action-economy sibling
+  is narrower too: since session v0.24.1 the SDK clears a member's economy when
+  their fight dissolves (rpg-toolkit#1222); the remaining leak is a session ended
+  mid-fight via `End`/`Exit` (rpg-toolkit#1223).
+- **Partial-failure orphans** — rpg-api#800. StartSession can still leave its
+  documented encounter orphan if its later session save fails; later member
+  Join/Spawn failures can still leave a partial session. A first-admission
+  character save is separately intentional durable progress and is named in
+  the Session SDK's `SaveError`/`SaveReport`, not rolled back by the lobby.
 - **Authorization on the session verbs themselves** — rpg-api#803; the lobby's
   host check on `AbandonEncounter` is not mirrored by `SessionService.End`.
 

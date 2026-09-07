@@ -37,5 +37,10 @@ func (h *Handler) Attack(ctx context.Context, req *sessionpb.AttackRequest) (*se
 		Saved:    saveReportToProto(out.Saved),
 		Delivery: deliveryReportToProto(out.Delivery),
 		Attack:   attackRefToProto(out.Attack),
+		// The opaque token this swing was minted with. The same value reaches
+		// every other member on the Struck/Missed beat, and it is the only
+		// thing the attacker and a witness can both name this roll by: seq is
+		// per recipient, so no number here means anything in another's stream.
+		PresentationId: out.PresentationID,
 	}, nil
 }

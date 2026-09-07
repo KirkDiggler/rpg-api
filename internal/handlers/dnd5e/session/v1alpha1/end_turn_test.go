@@ -16,7 +16,8 @@ import (
 )
 
 func TestEndTurn_Unauthenticated_Errors(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	_, err := h.EndTurn(context.Background(), &sessionpb.EndTurnRequest{})
 	requireCode(t, err, codes.Unauthenticated)
 }

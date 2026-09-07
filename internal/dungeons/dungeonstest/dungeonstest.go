@@ -19,6 +19,7 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
 
@@ -37,7 +38,10 @@ func Projector(t testing.TB) dungeons.AtlasProjector {
 	if err != nil {
 		t.Fatalf("dungeonstest: character repo: %v", err)
 	}
-	orch, err := sessionorch.New(sessionorch.Config{Redis: client, Characters: chars, TTL: time.Hour})
+	orch, err := sessionorch.New(sessionorch.Config{
+		Redis: client, Characters: chars, TTL: time.Hour,
+		PresentationIDs: idgen.NewSequential("presentation"),
+	})
 	if err != nil {
 		t.Fatalf("dungeonstest: session orchestrator: %v", err)
 	}
@@ -121,4 +125,31 @@ func copyFile(t testing.TB, src, dst string) {
 	if err := os.WriteFile(dst, raw, 0o600); err != nil { //nolint:gosec // dst is t.TempDir() + a content filename
 		t.Fatalf("dungeonstest: write %s: %v", dst, err)
 	}
+}
+
+// ShippedCount is how many dungeons the content/ directory holds — what a
+// picker over the shipped registry must list.
+//
+// COUNTED, never asserted as a literal: the content tree grows (it gained
+// the heirloom fixture with rpg-project#368), and a hard-coded 1 turns every
+// piece of new content into a test failure that says nothing about the
+// content. A test that wants to know a SPECIFIC dungeon is there names it.
+func ShippedCount(t testing.TB) int {
+	t.Helper()
+
+	entries, err := os.ReadDir(ContentDir(t))
+	if err != nil {
+		t.Fatalf("dungeonstest: read content dir: %v", err)
+	}
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() && filepath.Ext(e.Name()) == ".yaml" {
+			n++
+		}
+	}
+	if n == 0 {
+		t.Fatal("dungeonstest: the content directory holds no dungeons at all")
+	}
+
+	return n
 }

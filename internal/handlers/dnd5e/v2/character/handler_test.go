@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	characterpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
@@ -22,12 +23,16 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/currency"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 )
 
 // HandlerTestSuite proves the v1alpha2 character handler is a thin proto<->
@@ -89,6 +94,7 @@ func (s *HandlerTestSuite) fighterCharacterEntity() *entities.Character {
 			HitPoints:        20,
 			MaxHitPoints:     30,
 			ArmorClass:       10,
+			Wallet:           currency.FromGold(15),
 			AbilityScores: shared.AbilityScores{
 				abilities.STR: 16,
 				abilities.DEX: 12,
@@ -117,7 +123,7 @@ func (s *HandlerTestSuite) fighterCharacterEntity() *entities.Character {
 			},
 			Conditions: []json.RawMessage{
 				s.mustJSON(conditions.FightingStyleDefenseData{
-					Ref: refs.Conditions.FightingStyleDefense(), CharacterID: s.testCharacterID,
+					Ref: refs.Conditions.FightingStyleDefense(), MemberID: s.testCharacterID,
 				}),
 			},
 			Resources: map[coreResources.ResourceKey]character.RecoverableResourceData{
@@ -415,6 +421,12 @@ func (s *HandlerTestSuite) TestGetCharacterData_Success() {
 	s.Assert().Zero(cd.GetHitPoints().GetTemp())
 	s.Assert().Equal(int32(30), cd.GetBaseSpeedFeet())
 
+	// Wallet visibility (rpg-toolkit#1533): the owner's persistent purse
+	// reaches this owner-private response, gated by the same
+	// verifyCallerOwnsCharacter check every field here already runs through.
+	s.Require().NotNil(cd.GetWallet())
+	s.Assert().Equal(int32(1500), cd.GetWallet().GetCopper(), "15 gp")
+
 	s.Require().Len(cd.GetFeatures(), 2)
 	s.Assert().Equal("dnd5e", cd.GetFeatures()[0].GetRef().GetModule())
 	s.Assert().Equal("features", cd.GetFeatures()[0].GetRef().GetType())
@@ -433,6 +445,45 @@ func (s *HandlerTestSuite) TestGetCharacterData_Success() {
 		s.Assert().NotEqual("spell_slots", resource.GetKey())
 		s.Assert().NotEqual("legacy-resource", resource.GetKey())
 	}
+}
+
+func (s *HandlerTestSuite) TestBuildCharacterData_MapsQuantityAndAuthoritativeEquipmentSlots() {
+	cd, err := BuildCharacterData(&orchcharacter.View{
+		Equipment: &character.EquipmentView{
+			Items: []character.EquippedItemView{{
+				ItemID:   weapons.Handaxe,
+				Name:     "Handaxe",
+				Kind:     "weapon",
+				SlotKeys: []string{string(character.SlotMainHand), string(character.SlotOffHand)},
+				StatLine: "1d6 slashing",
+				Quantity: 2,
+			}},
+			Equipped: character.EquipmentSlots{
+				character.SlotMainHand: weapons.Handaxe,
+				character.SlotOffHand:  weapons.Handaxe,
+			},
+		},
+	})
+	s.Require().NoError(err)
+
+	s.Require().Len(cd.GetInventory(), 1)
+	s.Equal(int32(2), cd.GetInventory()[0].GetQuantity())
+	s.Equal(weapons.Handaxe, cd.GetEquipped()[string(character.SlotMainHand)].GetId())
+	s.Equal(weapons.Handaxe, cd.GetEquipped()[string(character.SlotOffHand)].GetId())
+
+	// Item.price (rpg-api-protos#298) is server-computed via
+	// equipment.PriceOf, the inventory-side mirror of
+	// VendorStockEntry.price -- computed here from the real catalog rather
+	// than hardcoded, so this pins the wiring, not a number.
+	wantPrice, err := equipment.PriceOf(weapons.Handaxe)
+	s.Require().NoError(err)
+	s.Equal(int32(wantPrice.Copper), cd.GetInventory()[0].GetPrice().GetCopper())
+
+	// Item.equipment_type (rpg-api-protos#301) mirrors the toolkit's real
+	// shared.EquipmentType, distinct from the narrower Kind above -- also
+	// computed from the real catalog, not hardcoded.
+	wantType := equipment.ResolveEquipmentDetail(weapons.Handaxe).Type
+	s.Equal(string(wantType), cd.GetInventory()[0].GetEquipmentType())
 }
 
 func (s *HandlerTestSuite) TestBuildCharacterData_FourBuildStatusMapping() {
@@ -502,10 +553,11 @@ func (s *HandlerTestSuite) TestBuildCharacterData_FourBuildStatusMapping() {
 
 	for _, tc := range tests {
 		s.Run(tc.name, func() {
-			cd := BuildCharacterData(&orchcharacter.View{
+			cd, err := BuildCharacterData(&orchcharacter.View{
 				Identity: orchcharacter.IdentityView{PlayerID: s.testPlayerID, ClassID: tc.classID, RaceID: tc.raceID},
 				Status:   tc.status,
 			})
+			s.Require().NoError(err)
 			s.assertOwnerIdentity(cd, tc.classID, tc.raceID)
 			s.Require().Len(cd.GetFeatures(), 1)
 			s.Equal(tc.featureRef, protoRefString(cd.GetFeatures()[0].GetRef()))
@@ -698,6 +750,26 @@ func (s *HandlerTestSuite) TestVerifyCallerOwnsCharacter_MissingAndForeign_Ident
 		"a missing character and a foreign one must be indistinguishable by message text")
 	s.Assert().NotContains(missingSt.Message(), "repository",
 		"the repository's own wording must never reach the caller")
+}
+
+func (s *HandlerTestSuite) TestBuildCharacterData_MapsExplicitDeadLifeStateAndProviderProgress() {
+	cd, err := BuildCharacterData(&orchcharacter.View{Status: &character.StatusView{
+		LifeState: combat.LifeStateDead,
+		DeathSaves: &character.DeathSaveProgress{
+			Successes: 1, Failures: 3, SuccessesNeeded: 2, FailuresRemaining: 0,
+			Dead: true,
+		},
+	}})
+	s.Require().NoError(err)
+
+	s.Require().NotNil(cd)
+	s.Equal(sessionpb.LifeState_LIFE_STATE_DEAD, cd.GetLifeState())
+	s.Require().NotNil(cd.GetDeathSaves(), "owner projection retains Dead progress from the provider view")
+	s.Equal(int32(1), cd.GetDeathSaves().GetSuccesses())
+	s.Equal(int32(3), cd.GetDeathSaves().GetFailures())
+	s.Equal(int32(2), cd.GetDeathSaves().GetSuccessesNeeded())
+	s.Zero(cd.GetDeathSaves().GetFailuresRemaining())
+	s.True(cd.GetDeathSaves().GetDead())
 }
 
 func (s *HandlerTestSuite) assertOwnerIdentity(

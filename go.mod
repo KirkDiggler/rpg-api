@@ -1,17 +1,19 @@
 module github.com/KirkDiggler/rpg-api
 
-go 1.25.13
+go 1.25.14
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260827071631-bdb318890470
-	github.com/KirkDiggler/rpg-toolkit/core v0.11.0
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260907091255-00fecfc23d9e
+	github.com/KirkDiggler/rpg-toolkit/core v0.12.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.3
+	github.com/KirkDiggler/rpg-toolkit/npc v0.2.0
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.105.2
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.37.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.35.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.146.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.64.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.66.0
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.11.0
+	github.com/KirkDiggler/rpg-toolkit/world v0.4.1
 	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
@@ -33,9 +35,10 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1 // indirect
 	github.com/KirkDiggler/rpg-toolkit/play/clock v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/play/intel v0.1.0 // indirect
+	github.com/KirkDiggler/rpg-toolkit/play/interrupt v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/play/record v0.1.0 // indirect
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/behavior v0.1.0 // indirect
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.17.0 // indirect
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/behavior v0.3.0 // indirect
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.34.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

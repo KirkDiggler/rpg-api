@@ -11,6 +11,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 )
 
@@ -39,9 +40,10 @@ func (s *OrchestratorTestSuite) TestNew_WithEveryCapabilitySupplied_Succeeds() {
 	defer func() { _ = client.Close() }()
 
 	orch, err := sessionorch.New(sessionorch.Config{
-		Redis:      client,
-		Characters: charactermock.NewMockRepository(ctrl),
-		TTL:        24 * time.Hour,
+		Redis:           client,
+		Characters:      charactermock.NewMockRepository(ctrl),
+		TTL:             24 * time.Hour,
+		PresentationIDs: idgen.NewSequential("presentation"),
 	})
 	s.Require().NoError(err)
 	s.Require().NotNil(orch)
@@ -72,6 +74,7 @@ func (s *OrchestratorTestSuite) TestNew_DiceOverride_IsHonored() {
 	orch, err := sessionorch.New(sessionorch.Config{
 		Redis: client, Characters: charactermock.NewMockRepository(ctrl),
 		TTL: 24 * time.Hour, Dice: fixedRoller{value: 20},
+		PresentationIDs: idgen.NewSequential("presentation"),
 	})
 	s.Require().NoError(err)
 	s.Require().NotNil(orch)

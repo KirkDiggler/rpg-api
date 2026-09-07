@@ -3,7 +3,11 @@ package sessionv1alpha1
 import (
 	"fmt"
 
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/currency"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
@@ -29,15 +33,117 @@ func positionFromProto(p *sessionpb.Position) spatial.Position {
 	return spatial.Position{X: p.GetX(), Y: p.GetY()}
 }
 
+// moneyToProto mirrors currency.Money onto the wire Money.
+func moneyToProto(m currency.Money) *sessionpb.Money {
+	return &sessionpb.Money{Copper: int32(m.Copper)}
+}
+
+// moneyFromProto mirrors the wire Money onto currency.Money. A nil proto
+// Money (unset field) becomes the zero Money -- the same nil-safety
+// convention positionFromProto keeps for its own zero value.
+func moneyFromProto(m *sessionpb.Money) currency.Money {
+	return currency.Money{Copper: int(m.GetCopper())}
+}
+
 func memberKindToProto(k sdk.MemberKind) sessionpb.MemberKind {
 	switch k {
 	case sdk.KindPlayer:
 		return sessionpb.MemberKind_MEMBER_KIND_PLAYER
 	case sdk.KindMonster:
 		return sessionpb.MemberKind_MEMBER_KIND_MONSTER
+	case sdk.KindWorld:
+		return sessionpb.MemberKind_MEMBER_KIND_WORLD
 	default:
 		return sessionpb.MemberKind_MEMBER_KIND_UNSPECIFIED
 	}
+}
+
+// vendorStockModeToProto mirrors npcs.StockMode onto the wire enum. An
+// unrecognized value reaches UNSPECIFIED, a producer defect.
+func vendorStockModeToProto(m npcs.StockMode) sessionpb.VendorStockMode {
+	switch m {
+	case npcs.StockModeLimited:
+		return sessionpb.VendorStockMode_VENDOR_STOCK_MODE_LIMITED
+	case npcs.StockModeUnlimited:
+		return sessionpb.VendorStockMode_VENDOR_STOCK_MODE_UNLIMITED
+	default:
+		return sessionpb.VendorStockMode_VENDOR_STOCK_MODE_UNSPECIFIED
+	}
+}
+
+// vendorStockEntryToProto mirrors one resolved vendor stock row, and resolves
+// its unit price via equipment.PriceOf (rpg-toolkit#1534) -- a pure toolkit
+// lookup composed here, not a rule computed by this handler (design rule 8):
+// npcs.StockEntryView itself carries no price (the toolkit's own
+// TestVendorViewUsesResolvedEquipmentWithoutPrices pins that), and
+// VendorStockEntry.price's own wire doc says it is "server-computed
+// (equipment.PriceOf)" -- this is that computation. Quantity is meaningful
+// only when Mode is LIMITED (the wire message's own doc); an unlimited
+// entry's Quantity is the toolkit's own zero value and stays unset here
+// rather than carried as a meaningless zero.
+//
+// PriceOf can fail only for a catalog entry whose Cost string does not parse
+// (an ErrBadCost-class data defect, rpg-toolkit#1524's own doc) -- never for
+// an unknown id, because e already came from a stock entry the toolkit
+// itself resolved a Name for from that same catalog.
+func vendorStockEntryToProto(e npcs.StockEntryView) (*sessionpb.VendorStockEntry, error) {
+	price, err := equipment.PriceOf(e.ID)
+	if err != nil {
+		return nil, fmt.Errorf("vendor stock entry %q: %w", e.ID, err)
+	}
+	out := &sessionpb.VendorStockEntry{
+		EquipmentType: string(e.Type),
+		EquipmentId:   e.ID,
+		DisplayName:   e.Name,
+		StockMode:     vendorStockModeToProto(e.Mode),
+		Price:         moneyToProto(price),
+		// PlayerSold (rpg-toolkit#1537) is carried straight across, unlike
+		// Price -- a plain bool the toolkit already resolved, not a lookup
+		// this handler performs. Display treatment is the client's call
+		// (both the toolkit's and the wire message's own doc say so).
+		PlayerSold: e.PlayerSold,
+	}
+	if e.Mode == npcs.StockModeLimited {
+		quantity := int32(e.Quantity)
+		out.Quantity = &quantity
+	}
+	return out, nil
+}
+
+func vendorStockEntriesToProto(es []npcs.StockEntryView) ([]*sessionpb.VendorStockEntry, error) {
+	out := make([]*sessionpb.VendorStockEntry, len(es))
+	for i, e := range es {
+		converted, err := vendorStockEntryToProto(e)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = converted
+	}
+	return out, nil
+}
+
+// worldNPCDescriptorToProto mirrors session.WorldNPCDescriptor field-for-
+// field: capabilities and combat_policy cross as plain strings, the same
+// open-vocabulary convention the toolkit's own npc.Capability/CombatPolicy
+// types already use, so this seam invents no vocabulary of its own. Fallible
+// only because vendorStockEntriesToProto is (see its own doc).
+func worldNPCDescriptorToProto(d sdk.WorldNPCDescriptor) (*sessionpb.WorldNPCDescriptor, error) {
+	capabilities := make([]string, len(d.Capabilities))
+	for i, c := range d.Capabilities {
+		capabilities[i] = string(c)
+	}
+	inventory, err := vendorStockEntriesToProto(d.Inventory)
+	if err != nil {
+		return nil, err
+	}
+	return &sessionpb.WorldNPCDescriptor{
+		TargetId:     d.TargetID,
+		Ref:          d.Ref,
+		DisplayName:  d.DisplayName,
+		Capabilities: capabilities,
+		CombatPolicy: string(d.CombatPolicy),
+		Inventory:    inventory,
+	}, nil
 }
 
 // gridKindToProto mirrors session.GridKind. Hex is the only kind a map can
@@ -79,6 +185,21 @@ func clockKindToProto(k sdk.ClockKind) sessionpb.ClockKind {
 	}
 }
 
+// placementKindToProto maps the session's closed placement vocabulary onto
+// the wire's enum. An unrecognized kind maps to UNSPECIFIED, which the wire
+// defines as a producer defect: the session grew a kind of placement this
+// build's protos cannot name, and saying so beats calling it a monster.
+func placementKindToProto(k sdk.PlacementKind) sessionpb.PlacementKind {
+	switch k {
+	case sdk.PlacementMonster:
+		return sessionpb.PlacementKind_PLACEMENT_KIND_MONSTER
+	case sdk.PlacementProp:
+		return sessionpb.PlacementKind_PLACEMENT_KIND_PROP
+	default:
+		return sessionpb.PlacementKind_PLACEMENT_KIND_UNSPECIFIED
+	}
+}
+
 func dissolveKindToProto(k sdk.DissolveKind) sessionpb.DissolveKind {
 	switch k {
 	case sdk.DissolveByDecision:
@@ -90,6 +211,12 @@ func dissolveKindToProto(k sdk.DissolveKind) sessionpb.DissolveKind {
 		// that ended for no stated reason, which is a producer defect by this
 		// enum's own definition.
 		return sessionpb.DissolveKind_DISSOLVE_KIND_BY_DEFEAT
+	case sdk.DissolveByStance:
+		// The third cause (rpg-project#375, design §3.5/§6, R1): the two
+		// sides stopped being sides. Same trap as BY_DEFEAT above -- a
+		// missing case reports the camp turning as a fight that ended for
+		// no stated reason.
+		return sessionpb.DissolveKind_DISSOLVE_KIND_BY_STANCE
 	default:
 		return sessionpb.DissolveKind_DISSOLVE_KIND_UNSPECIFIED
 	}
@@ -108,12 +235,19 @@ func dissolveKindToProto(k sdk.DissolveKind) sessionpb.DissolveKind {
 // stricter contract than the package it transcribes, over a distinction the SDK
 // deliberately declined to enforce -- design rule 1's "no vocabulary of our
 // own" running in the subtractive direction.
+//
+// BY_STANCE is accepted by the same argument (rpg-project#375): the wire's
+// own doc calls it "like BY_DEFEAT, not honestly declarable by a caller",
+// and the SDK treats it the same way -- the verb's answer is causeOf(what
+// the composition actually did), whatever was handed in.
 func dissolveCauseFromProto(k sessionpb.DissolveKind) (sdk.DissolveCause, error) {
 	switch k {
 	case sessionpb.DissolveKind_DISSOLVE_KIND_BY_DECISION:
 		return sdk.ByDecision(), nil
 	case sessionpb.DissolveKind_DISSOLVE_KIND_BY_DEFEAT:
 		return sdk.ByDefeat(), nil
+	case sessionpb.DissolveKind_DISSOLVE_KIND_BY_STANCE:
+		return sdk.ByStance(), nil
 	default:
 		return nil, fmt.Errorf("dissolve: unrecognized cause %v: %w", k, sdk.ErrNoCause)
 	}
@@ -188,6 +322,69 @@ func standingToProto(s sdk.Standing) sessionpb.Standing {
 		return sessionpb.Standing_STANDING_DOWNED
 	default:
 		return sessionpb.Standing_STANDING_UNSPECIFIED
+	}
+}
+
+func lifeStateToProto(s sdk.LifeState) sessionpb.LifeState {
+	switch s {
+	case sdk.LifeStateConscious:
+		return sessionpb.LifeState_LIFE_STATE_CONSCIOUS
+	case sdk.LifeStateDying:
+		return sessionpb.LifeState_LIFE_STATE_DYING
+	case sdk.LifeStateStabilized:
+		return sessionpb.LifeState_LIFE_STATE_STABILIZED
+	case sdk.LifeStateDead:
+		return sessionpb.LifeState_LIFE_STATE_DEAD
+	case sdk.LifeStateDefeated:
+		return sessionpb.LifeState_LIFE_STATE_DEFEATED
+	default:
+		return sessionpb.LifeState_LIFE_STATE_UNSPECIFIED
+	}
+}
+
+func deathSaveProgressToProto(p *sdk.DeathSaveProgress) *sessionpb.DeathSaveProgress {
+	if p == nil {
+		return nil
+	}
+	return &sessionpb.DeathSaveProgress{
+		Successes:         int32(p.Successes),
+		Failures:          int32(p.Failures),
+		SuccessesNeeded:   int32(p.SuccessesNeeded),
+		FailuresRemaining: int32(p.FailuresRemaining),
+		Stabilized:        p.Stabilized,
+		Dead:              p.Dead,
+	}
+}
+
+func deathSaveOutcomeToProto(o sdk.DeathSaveOutcome) sessionpb.DeathSaveOutcome {
+	switch o {
+	case sdk.DeathSaveOutcomeSuccess:
+		return sessionpb.DeathSaveOutcome_DEATH_SAVE_OUTCOME_SUCCESS
+	case sdk.DeathSaveOutcomeFailure:
+		return sessionpb.DeathSaveOutcome_DEATH_SAVE_OUTCOME_FAILURE
+	case sdk.DeathSaveOutcomeCriticalFail:
+		return sessionpb.DeathSaveOutcome_DEATH_SAVE_OUTCOME_CRITICAL_FAILURE
+	case sdk.DeathSaveOutcomeStabilized:
+		return sessionpb.DeathSaveOutcome_DEATH_SAVE_OUTCOME_STABILIZED
+	case sdk.DeathSaveOutcomeDead:
+		return sessionpb.DeathSaveOutcome_DEATH_SAVE_OUTCOME_DEAD
+	case sdk.DeathSaveOutcomeRecovered:
+		return sessionpb.DeathSaveOutcome_DEATH_SAVE_OUTCOME_RECOVERED
+	default:
+		return sessionpb.DeathSaveOutcome_DEATH_SAVE_OUTCOME_UNSPECIFIED
+	}
+}
+
+func deathSaveContinuationToProto(c sdk.DeathSaveContinuation) sessionpb.DeathSaveContinuation {
+	switch c {
+	case sdk.DeathSaveContinuationEndTurn:
+		return sessionpb.DeathSaveContinuation_DEATH_SAVE_CONTINUATION_END_TURN
+	case sdk.DeathSaveContinuationKeepTurn:
+		return sessionpb.DeathSaveContinuation_DEATH_SAVE_CONTINUATION_KEEP_TURN
+	case sdk.DeathSaveContinuationAlreadyAdvanced:
+		return sessionpb.DeathSaveContinuation_DEATH_SAVE_CONTINUATION_ALREADY_ADVANCED
+	default:
+		return sessionpb.DeathSaveContinuation_DEATH_SAVE_CONTINUATION_UNSPECIFIED
 	}
 }
 
@@ -330,6 +527,36 @@ func atlasDoorwaysToProto(ds []sdk.AtlasDoorway) []*sessionpb.AtlasDoorway {
 	return out
 }
 
+// atlasSegmentToProto mirrors one authored wall AS THE LINE IT IS. Both ends
+// are already fractional axial in the atlas's own frame -- the same frame every
+// cell on the wire lives in -- so nothing here converts anything, for the
+// reason AtlasToProto's own doc gives: a hex is embedded in the plane in
+// exactly one place, and it is not this one.
+//
+// PRESENTATION, BESIDE THE MECHANICAL TRUTH, NOT INSTEAD OF IT. Boundaries and
+// doorways are unchanged and remain what a member may and may not do; this is
+// the line those crossings came from, which a client draws instead of chaining
+// them back into runs under a straightness tolerance. A door's gap is the
+// client's own arithmetic from the doorway it already has.
+func atlasSegmentToProto(s sdk.AtlasSegment) *sessionpb.AtlasSegment {
+	return &sessionpb.AtlasSegment{
+		From: &sessionpb.AxialPoint{Q: s.From.Q, R: s.From.R},
+		To:   &sessionpb.AxialPoint{Q: s.To.Q, R: s.To.R},
+		// Narrowed to the SAME width AtlasBoundary.height crosses on, so a
+		// client never compares a float32 0.7 against a float64 0.7. 0 = not
+		// authored = standard height, the same contract as the boundary's.
+		Height: float32(s.Height),
+	}
+}
+
+func atlasSegmentsToProto(ss []sdk.AtlasSegment) []*sessionpb.AtlasSegment {
+	out := make([]*sessionpb.AtlasSegment, len(ss))
+	for i, s := range ss {
+		out[i] = atlasSegmentToProto(s)
+	}
+	return out
+}
+
 // eventKindToProto mirrors sdk.EventKind onto the wire enum. A kind this
 // build does not recognize -- either the SDK's own EventUnknown (a beat the
 // TOOLKIT did not recognize, delivered on purpose) or, in principle, some
@@ -372,6 +599,32 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_DOOR
 	case sdk.EventMissed:
 		return sessionpb.EventKind_EVENT_KIND_MISSED
+	case sdk.EventActivated:
+		return sessionpb.EventKind_EVENT_KIND_ACTIVATED
+	case sdk.EventActivationResult:
+		return sessionpb.EventKind_EVENT_KIND_ACTIVATION_RESULT
+	case sdk.EventDeathSave:
+		return sessionpb.EventKind_EVENT_KIND_DEATH_SAVE_ROLLED
+	case sdk.EventDoorRevealed:
+		return sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED
+	case sdk.EventRegionRevealed:
+		return sessionpb.EventKind_EVENT_KIND_REGION_REVEALED
+	// Holdings (rpg-project#368). Each kind is a STATEMENT -- looted, held,
+	// dropped -- because a verb and a beat are named by what the record will
+	// say. Nothing here says "took": Take is reserved for the act that lands
+	// a thing in inventory (design R10).
+	case sdk.EventLooted:
+		return sessionpb.EventKind_EVENT_KIND_LOOTED
+	case sdk.EventHeld:
+		return sessionpb.EventKind_EVENT_KIND_HELD
+	case sdk.EventDropped:
+		return sessionpb.EventKind_EVENT_KIND_DROPPED
+	case sdk.EventStanceChanged:
+		return sessionpb.EventKind_EVENT_KIND_STANCE_CHANGED
+	case sdk.EventArrived:
+		return sessionpb.EventKind_EVENT_KIND_ARRIVED
+	case sdk.EventWindowOpened:
+		return sessionpb.EventKind_EVENT_KIND_WINDOW_OPENED
 	default:
 		return sessionpb.EventKind_EVENT_KIND_UNKNOWN
 	}
@@ -439,6 +692,16 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		evt.Body = &sessionpb.Event_TurnEnded{TurnEnded: &sessionpb.TurnEnded{Member: b.Member, Next: b.Next}}
 	case sdk.DownedBody:
 		evt.Body = &sessionpb.Event_Downed{Downed: &sessionpb.Downed{Member: b.Member}}
+	case sdk.DeathSaveBody:
+		evt.Body = &sessionpb.Event_DeathSaveRolled{DeathSaveRolled: &sessionpb.DeathSaveRolled{
+			Actor: b.Actor, Roll: int32(b.Roll), Outcome: deathSaveOutcomeToProto(b.Outcome),
+			SuccessesAdded: int32(b.SuccessesAdded), FailuresAdded: int32(b.FailuresAdded),
+			Successes: int32(b.Successes), Failures: int32(b.Failures),
+			SuccessesNeeded: int32(b.SuccessesNeeded), FailuresRemaining: int32(b.FailuresRemaining),
+			Stabilized: b.Stabilized, Dead: b.Dead, Recovered: b.Recovered,
+			HpRestored: int32(b.HPRestored), Continuation: deathSaveContinuationToProto(b.Continuation),
+			PresentationId: b.PresentationID,
+		}}
 	case sdk.StruckBody:
 		evt.Body = &sessionpb.Event_Struck{Struck: &sessionpb.Struck{
 			Attacker:            b.Attacker,
@@ -452,6 +715,15 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			DamageComponents:    damageComponentsToProto(b.DamageComponents),
 			AdvantageSources:    attackModifierSourcesToProto(b.AdvantageSources),
 			DisadvantageSources: attackModifierSourcesToProto(b.DisadvantageSources),
+			// Why this swing happened out of turn, when it did
+			// (rpg-project#316). The field has been on the wire since
+			// protos#258 and had nothing to copy until session's body
+			// carried the identity; absent on every ordinary swing, which
+			// is the truth rather than a gap.
+			Reaction: reactionRefToProto(b.Reaction),
+			// Same token the attacker got back on AttackResponse, so this
+			// recipient can name the same roll the attacker is presenting.
+			PresentationId: b.PresentationID,
 		}}
 	case sdk.MissedBody:
 		evt.Body = &sessionpb.Event_Missed{Missed: &sessionpb.Missed{
@@ -461,7 +733,16 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			Total:    int32(b.Total),
 			Against:  int32(b.Against),
 			Attack:   attackRefToProto(b.Attack),
+			Reaction: reactionRefToProto(b.Reaction),
+			// See the struck case: one shared token per swing.
+			PresentationId: b.PresentationID,
 		}}
+	case sdk.ActivatedBody:
+		evt.Body = &sessionpb.Event_Activated{Activated: activatedBodyToProto(b)}
+	case sdk.ActivationResultBody:
+		if result := activationResultBodyToProto(b); result != nil {
+			evt.Body = &sessionpb.Event_ActivationResult{ActivationResult: result}
+		}
 	case sdk.FightStartedBody:
 		evt.Body = &sessionpb.Event_FightStarted{FightStarted: &sessionpb.FightStarted{Members: b.Members}}
 	case sdk.FightEndedBody:
@@ -471,7 +752,67 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 	case sdk.JoinedBody:
 		evt.Body = &sessionpb.Event_Joined{Joined: &sessionpb.Joined{Member: b.Member}}
 	case sdk.ExitedBody:
-		evt.Body = &sessionpb.Event_Exited{Exited: &sessionpb.Exited{Member: b.Member}}
+		// Holding and Exit (rpg-project#368) carry what left with them and
+		// the authored way out they left through. Both are ordinarily
+		// empty and empty is the TRUTH rather than "unknown": most
+		// departures carry nothing, and a departure from a cell nobody
+		// authored as an exit used no exit. A carrier who leaves from
+		// anywhere else DROPS what they hold, so this list is never the
+		// silent deletion of a holding -- the DROPPED beat says where it
+		// landed.
+		//
+		// PROPS ONLY, and this is the wire's half of design P3: intel is a
+		// holding too, and it never appears here or anywhere else, so a
+		// departure carrying nothing but knowledge is indistinguishable
+		// from one carrying nothing at all.
+		evt.Body = &sessionpb.Event_Exited{Exited: &sessionpb.Exited{
+			Member: b.Member, Holding: b.Holding, Exit: b.Exit,
+		}}
+	case sdk.LootedBody:
+		// Looter and body, and deliberately nothing about what moved: the
+		// beat is identical for a body that carried the run's only secret
+		// and one that carried nothing (design P3). What actually moved
+		// reaches the looter alone, as their own DOOR_REVEALED.
+		evt.Body = &sessionpb.Event_Looted{Looted: &sessionpb.Looted{
+			Looter: b.Looter, Body: b.Body,
+		}}
+	case sdk.StanceChangedBody:
+		// Verbatim (rpg-project#375, design §6): the pair as the session
+		// sorted it, and the stance as the author's own word -- a client
+		// maps the word to a color the way it maps Ended.ending to a
+		// sentence. Reaches every recipient the session addressed it to,
+		// monsters included; nothing on this side narrows the audience.
+		evt.Body = &sessionpb.Event_StanceChanged{StanceChanged: &sessionpb.StanceChanged{
+			Between: b.Between, Stance: b.Stance,
+		}}
+	case sdk.ArrivedBody:
+		// A reserved placement entered the run (rpg-project#375 step B,
+		// design §6): which one, what it is, and where it stands now.
+		// Physical state like HELD/DROPPED, so every recipient hears it
+		// and patches its map additively. The kind is a CLOSED enum on
+		// the wire because a client branches on it -- a prop is not a
+		// member -- and it maps by name, never by position.
+		evt.Body = &sessionpb.Event_Arrived{Arrived: &sessionpb.Arrived{
+			Id: b.ID, Kind: placementKindToProto(b.Kind), Cell: positionToProto(b.Cell),
+		}}
+	case sdk.HeldBody:
+		// To everyone present: an object leaving the floor folds on the
+		// TRUTH GRAIN, so every recipient's atlas loses the prop and a
+		// client patches its cached map by removing this id -- the
+		// load-once, beat-refreshed law running subtractively, where
+		// DOOR_REVEALED runs it additively.
+		evt.Body = &sessionpb.Event_Held{Held: &sessionpb.Held{
+			Holder: b.Holder, Prop: b.Prop,
+		}}
+	case sdk.DroppedBody:
+		// The inverse patch: the prop reappears at `at` for everyone
+		// present. Not a player verb -- a drop is what happens when a
+		// carrier leaves from anywhere but the scenario's bound exit
+		// (design R9), which is what stops a carrier walking off with the
+		// only win in the run.
+		evt.Body = &sessionpb.Event_Dropped{Dropped: &sessionpb.Dropped{
+			Member: b.Member, Prop: b.Prop, At: positionToProto(b.At),
+		}}
 	case sdk.EndedBody:
 		evt.Body = &sessionpb.Event_Ended{Ended: &sessionpb.Ended{Ending: b.Ending}}
 	case sdk.DoorBody:
@@ -483,11 +824,178 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			Total:  int32(b.Total),
 			Beaten: b.Beaten,
 		}}
+	case sdk.DoorRevealedBody:
+		// No Boundaries here: DoorRevealedBody carries none (the masquerade-
+		// wall replacement the wire's own field is for is not yet a field
+		// this SDK version produces), so the wire field is left unset rather
+		// than populated from something this body does not have -- verbatim
+		// translation of what the SDK actually sends, not an invented value.
+		evt.Body = &sessionpb.Event_DoorRevealed{DoorRevealed: &sessionpb.DoorRevealed{
+			Door:     doorRevealedInfoToProto(b),
+			Doorways: atlasDoorwaysToProto(b.Doorways),
+		}}
+	case sdk.RegionRevealedBody:
+		// Segments and Sealed do NOT mean the same shape of thing here, and a
+		// client that treats them alike will draw the wrong room. Both are
+		// carried verbatim; neither is recomputed here.
+		//
+		// SEGMENTS IS A DIFFERENCE, and adds: the walls this recipient did not
+		// have and now does. A wall already presented to them for any reason --
+		// the seam their own concealed door hides in, or one footing on floor
+		// they can already see -- is deliberately absent, because it is not news
+		// and they are already drawing it. So this is append-to-cache, never
+		// replace-for-region. It HAS to be a difference: a segment carries no
+		// footprint on purpose, so there is no way to ask which cells a wall
+		// stands on without leaking what the doorway list withholds. No wall
+		// ever leaves, so the atlas after a reveal is the atlas before it union
+		// this.
+		//
+		// SEALED IS SCOPED, AND REPLACES, and the scoping is load-bearing rather
+		// than a style choice: a client swaps out the revealed region's cells
+		// and keeps every other sealed cell it had. Cells LEAVE this list. A
+		// non-knower's sealed list already holds some of the hidden room's own
+		// cells -- the footing of the walls presented to them (design C18),
+		// which reaches them as ownerless floor, and ownerless floor is floor
+		// nobody stands on -- and the moment the room is theirs those same cells
+		// are ordinary standable floor. A client that appended would leave a
+		// room it can see permanently unwalkable at its edges. So the atlas
+		// after a reveal is (the atlas before it, less the revealed region's
+		// cells) union this, which is why the beat carries the region's cells
+		// beside it. A difference could only ever add, and this field has to be
+		// able to take away.
+		sealed := make([]*sessionpb.Position, len(b.Sealed))
+		for i, c := range b.Sealed {
+			sealed[i] = positionToProto(c)
+		}
+		evt.Body = &sessionpb.Event_RegionRevealed{RegionRevealed: &sessionpb.RegionRevealed{
+			Region:     atlasRegionToProto(b.Region),
+			Props:      atlasPropsToProto(b.Props),
+			Boundaries: atlasBoundariesToProto(b.Boundaries),
+			Segments:   atlasSegmentsToProto(b.Segments),
+			Sealed:     sealed,
+		}}
+	case sdk.WindowOpenedBody:
+		// The fight stopped to ask somebody something (rpg-project#316 rung
+		// 3). Everything a client needs to draw the pause: whose step it
+		// was, the two cells it stopped between -- the mover is standing on
+		// From, because the step is announced and NOT taken -- who is being
+		// asked, and what they are being asked to react with.
+		//
+		// AUDIENCE IS A LIST AND REACTION IS NOT, verbatim from the SDK.
+		// One step asks every player reactor at once (ruling R3) and today
+		// exactly one reaction can reach a movement fold, so the asymmetry
+		// is the SDK's own and this converter neither flattens nor fans it
+		// out. Nothing here says which OPTIONS were posed: strike and hold
+		// are implied by the verb, and the answer travels as ReactChoice.
+		//
+		// Reaction is a value on this body, not a pointer as it is on
+		// Struck/Missed -- a window that named no reaction could not have
+		// been posed -- so it always converts to a non-nil message.
+		evt.Body = &sessionpb.Event_WindowOpened{WindowOpened: &sessionpb.WindowOpened{
+			Audience: b.Audience,
+			Mover:    b.Mover,
+			From:     positionToProto(b.From),
+			To:       positionToProto(b.To),
+			Reaction: reactionRefToProto(&b.Reaction),
+		}}
 	default:
 		// nil (no typed body for this kind) or a body type this build does
 		// not recognize: leave evt.Body nil. payload stays the passthrough
 		// carrier.
 	}
+}
+
+// activatedBodyToProto trusts Session's bodyFor validation of the required
+// actor and ability identity because the API only converts SDK-authored bodies;
+// ActivationResult retains extra defensive oneof counting for its result arms.
+func activatedBodyToProto(body sdk.ActivatedBody) *sessionpb.Activated {
+	return &sessionpb.Activated{
+		Actor: body.Actor, Ability: abilityRefToProto(body.Ability), Target: body.Target,
+	}
+}
+
+// activationResultBodyToProto preserves the SDK's one-result invariant. A
+// nil or malformed decoded SDK body has no wire body rather than an arbitrary
+// first arm; payload remains untouched on the enclosing Event.
+func activationResultBodyToProto(body sdk.ActivationResultBody) *sessionpb.ActivationResult {
+	result := &sessionpb.ActivationResult{Actor: body.Actor}
+	populated := 0
+	if body.HealingApplied != nil {
+		populated++
+		result.Result = &sessionpb.ActivationResult_HealingApplied{
+			HealingApplied: healingAppliedBodyToProto(body.HealingApplied),
+		}
+	}
+	if body.ConditionApplied != nil {
+		populated++
+		result.Result = &sessionpb.ActivationResult_ConditionApplied{
+			ConditionApplied: conditionAppliedBodyToProto(body.ConditionApplied),
+		}
+	}
+	if body.ConditionRemoved != nil {
+		populated++
+		result.Result = &sessionpb.ActivationResult_ConditionRemoved{
+			ConditionRemoved: conditionRemovedBodyToProto(body.ConditionRemoved),
+		}
+	}
+	if body.CapacityGranted != nil {
+		populated++
+		result.Result = &sessionpb.ActivationResult_CapacityGranted{
+			CapacityGranted: capacityGrantedBodyToProto(body.CapacityGranted),
+		}
+	}
+	if populated != 1 {
+		return nil
+	}
+	return result
+}
+
+// healingAppliedBodyToProto mirrors a heal onto the wire without deriving one
+// representation from the other. New bodies carry Calculation only; legacy
+// Story records retain their deprecated Roll and Modifier scalars.
+func healingAppliedBodyToProto(body *sdk.HealingAppliedBody) *sessionpb.HealingApplied {
+	if body == nil {
+		return nil
+	}
+	out := &sessionpb.HealingApplied{
+		Target: body.Target, Amount: int32(body.Amount), Requested: int32(body.Requested),
+		SourceRef: body.SourceRef, SourceName: body.SourceName,
+		HpBefore: int32(body.HPBefore), HpAfter: int32(body.HPAfter),
+	}
+	if body.Calculation != nil {
+		// New bodies populate only Calculation. Its total is authoritative;
+		// neither Requested nor the deprecated scalars are derived from it.
+		out.Calculation = rollCalculationToProto(body.Calculation)
+	} else {
+		// Legacy bodies retain exactly the two deprecated scalar fields and do
+		// not gain a fabricated calculation.
+		out.Roll = int32(body.Roll)         //nolint:staticcheck // Required read compatibility for pre-trace Story records.
+		out.Modifier = int32(body.Modifier) //nolint:staticcheck // Required read compatibility for pre-trace Story records.
+	}
+	return out
+}
+
+func conditionAppliedBodyToProto(body *sdk.ConditionAppliedBody) *sessionpb.ConditionApplied {
+	if body == nil {
+		return nil
+	}
+	return &sessionpb.ConditionApplied{Target: body.Target, Ref: body.Ref, Name: body.Name}
+}
+
+func conditionRemovedBodyToProto(body *sdk.ConditionRemovedBody) *sessionpb.ConditionRemoved {
+	if body == nil {
+		return nil
+	}
+	return &sessionpb.ConditionRemoved{
+		Target: body.Target, Ref: body.Ref, Name: body.Name, Reason: body.Reason,
+	}
+}
+
+func capacityGrantedBodyToProto(body *sdk.CapacityGrantedBody) *sessionpb.CapacityGranted {
+	if body == nil {
+		return nil
+	}
+	return &sessionpb.CapacityGranted{Member: body.Member, Description: body.Description}
 }
 
 // AtlasToProto mirrors the ONE-MAP Atlas (design §0, live as of session
@@ -519,18 +1027,14 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 	for i, c := range a.Cells {
 		cells[i] = positionToProto(c)
 	}
-	props := make([]*sessionpb.AtlasProp, len(a.Props))
-	for i, prop := range a.Props {
-		props[i] = &sessionpb.AtlasProp{
-			Ref:               prop.Ref,
-			At:                positionToProto(prop.At),
-			BlocksMovement:    prop.BlocksMovement,
-			BlocksLineOfSight: prop.BlocksLineOfSight,
-			Facing:            prop.Facing,
-			OffsetX:           float32(prop.Offset[0]),
-			OffsetY:           float32(prop.Offset[1]),
-			OffsetZ:           float32(prop.Offset[2]),
-		}
+	props := atlasPropsToProto(a.Props)
+	// Sealed cells are cells: same absolute frame, same converter, and every
+	// one of them is in Cells above as well. Sealed floor is still floor --
+	// drawn and lit like the floor beside it -- and this list only says whose
+	// feet may not go there.
+	sealed := make([]*sessionpb.Position, len(a.Sealed))
+	for i, c := range a.Sealed {
+		sealed[i] = positionToProto(c)
 	}
 	return &sessionpb.GetAtlasResponse{
 		Grid:       gridKindToProto(a.Grid),
@@ -540,7 +1044,100 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 		Boundaries: atlasBoundariesToProto(a.Boundaries),
 		Doorways:   atlasDoorwaysToProto(a.Doorways),
 		Regions:    atlasRegionsToProto(a.Regions),
+		Segments:   atlasSegmentsToProto(a.Segments),
+		Sealed:     sealed,
+		Exits:      atlasExitsToProto(a.Exits),
+		Start:      atlasStartToProto(a.Start),
 	}
+}
+
+// atlasStartToProto mirrors where the party came in and which way they were
+// looking (rpg-project#374), or NOTHING when the dungeon declares none.
+//
+// # Absence is a third answer, not a zero value
+//
+// A nil start is not "the party arrives at [0,0] facing nowhere" -- that is a
+// real dungeon somebody could author, and a zero-valued message here would be
+// indistinguishable from it. Both sides of this conversion spell absence with
+// a pointer for exactly that reason, so the honest translation of nil is an
+// omitted field.
+//
+// It is reachable, and not only from authoring: dungeonspec REFUSES a file
+// with no `start:` ("the dungeon does not say where the party starts"), so no
+// authored dungeon lands here nil. What does is a STORED ENCOUNTER written
+// before starts were carried -- the toolkit made its own StartData a pointer
+// with omitempty precisely so such a blob loads with none. Every session
+// already in Redis is one, which makes this the first thing to break on the
+// next deploy if it were translated as a zero.
+//
+// # The facing is a word, carried verbatim
+//
+// One of eight true-compass names, or empty when the author stated none.
+// Empty is a FACT here rather than a gap -- it means open the camera however
+// it opened before -- and nothing in this function invents, defaults or
+// validates the word. The vocabulary is the authoring dialect's to check and
+// the client's to turn into an angle; a second check here would be a second
+// place it could drift from the first.
+func atlasStartToProto(start *sdk.AtlasStart) *sessionpb.AtlasStart {
+	if start == nil {
+		return nil
+	}
+
+	return &sessionpb.AtlasStart{
+		At:     positionToProto(start.At),
+		Facing: start.Facing,
+	}
+}
+
+// atlasExitsToProto mirrors the authored ways out (rpg-project#368, design
+// §5's wire paragraph): an id and a cell, the same for every member the way
+// `start` is, so a map can DRAW the way out.
+//
+// EXITS DO NOT GATE ANYTHING HERE. Leave is offered everywhere and the server
+// decides what a departure means -- a departure from the vault has to remain
+// possible, because dropping what you carry when you leave from the wrong
+// place (design R9) is the rule that stops a carrier walking off with the
+// run. This list is for drawing, never for deciding.
+func atlasExitsToProto(es []sdk.AtlasExit) []*sessionpb.AtlasExit {
+	out := make([]*sessionpb.AtlasExit, len(es))
+	for i, e := range es {
+		out[i] = &sessionpb.AtlasExit{Id: e.ID, At: positionToProto(e.At)}
+	}
+
+	return out
+}
+
+// atlasPropToProto mirrors one session.AtlasProp -- shared by AtlasToProto and
+// RegionRevealed's props, which the SDK's own doc promises carries them
+// "exactly as GetAtlasResponse.props would" (rpg-project#350/#351).
+func atlasPropToProto(prop sdk.AtlasProp) *sessionpb.AtlasProp {
+	return &sessionpb.AtlasProp{
+		// ID and Holdable (rpg-project#368, design §5). The id is the
+		// author's `place[].id` and is the ONLY name a Hold request can
+		// use, so a prop carrying none is one no verb can name -- which is
+		// the author's decision, not this converter's, and the empty string
+		// carries it forward honestly. Holdable is structure on the truth
+		// grain: a holdable thing looks holdable, so a client offers Hold
+		// where it is true and never guesses from a ref or an id.
+		Id:                prop.ID,
+		Holdable:          prop.Holdable,
+		Ref:               prop.Ref,
+		At:                positionToProto(prop.At),
+		BlocksMovement:    prop.BlocksMovement,
+		BlocksLineOfSight: prop.BlocksLineOfSight,
+		Facing:            prop.Facing,
+		OffsetX:           float32(prop.Offset[0]),
+		OffsetY:           float32(prop.Offset[1]),
+		OffsetZ:           float32(prop.Offset[2]),
+	}
+}
+
+func atlasPropsToProto(ps []sdk.AtlasProp) []*sessionpb.AtlasProp {
+	out := make([]*sessionpb.AtlasProp, len(ps))
+	for i, p := range ps {
+		out[i] = atlasPropToProto(p)
+	}
+	return out
 }
 
 // atlasRegionToProto mirrors session.AtlasRegion: a named set of absolute
@@ -602,6 +1199,10 @@ func verbToProto(v sdk.Verb) sessionpb.Verb {
 		return sessionpb.Verb_VERB_END_TURN
 	case sdk.VerbActivate:
 		return sessionpb.Verb_VERB_ACTIVATE
+	case sdk.VerbDeathSave:
+		return sessionpb.Verb_VERB_DEATH_SAVE
+	case sdk.VerbReact:
+		return sessionpb.Verb_VERB_REACT
 	default:
 		return sessionpb.Verb_VERB_UNSPECIFIED
 	}
@@ -694,6 +1295,12 @@ func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
 	if d.Ability != nil {
 		out.Ability = abilityRefToProto(*d.Ability)
 	}
+	if d.DeathSave != nil {
+		out.DeathSave = deathSaveRefToProto(*d.DeathSave)
+	}
+	if d.Reaction != nil {
+		out.Reaction = reactionRefToProto(d.Reaction)
+	}
 	return out
 }
 
@@ -719,6 +1326,14 @@ func shortfallReasonToProto(r sdk.ShortfallReason) sessionpb.ShortfallReason {
 		// collapsing it into NO_BUDGET would tell a raging barbarian to come
 		// back next turn.
 		return sessionpb.ShortfallReason_SHORTFALL_REASON_UNAVAILABLE
+	case sdk.ShortfallWindowOpen:
+		// The freeze (rpg-project#316 rung 3). Somebody at this table is
+		// being asked whether they react, and until that answer arrives
+		// nothing else may move -- so every other verb comes back
+		// unavailable for this one reason, on this member's own turn as
+		// much as on anybody else's. NOT NOT_YOUR_TURN, which would tell a
+		// player to wait for a clock that is not what is holding them.
+		return sessionpb.ShortfallReason_SHORTFALL_REASON_WINDOW_OPEN
 	default:
 		return sessionpb.ShortfallReason_SHORTFALL_REASON_UNSPECIFIED
 	}
@@ -804,23 +1419,125 @@ func damageTypeToProto(d sdk.DamageType) sessionpb.DamageType {
 	}
 }
 
+// rollSourceToProto copies the provider-authored identity without parsing its
+// ref or deriving a display label.
+func rollSourceToProto(source *sdk.RollSource) *sessionpb.RollSource {
+	if source == nil {
+		return nil
+	}
+	return &sessionpb.RollSource{Ref: source.Ref, Name: source.Name, Label: source.Label}
+}
+
+// diceRerollToProto copies one sourced replacement. Ordering is owned by the
+// caller's DiceTrace and is preserved by diceTraceToProto.
+func diceRerollToProto(reroll *sdk.DiceReroll) *sessionpb.DiceReroll {
+	if reroll == nil {
+		return nil
+	}
+	return &sessionpb.DiceReroll{
+		DieIndex: int32(reroll.DieIndex),
+		Before:   int32(reroll.Before),
+		After:    int32(reroll.After),
+		Source:   rollSourceToProto(&reroll.Source),
+	}
+}
+
+func intsToInt32s(values []int) []int32 {
+	out := make([]int32, len(values))
+	for i, value := range values {
+		out[i] = int32(value)
+	}
+	return out
+}
+
+// diceTraceToProto copies the complete physical dice history field-for-field.
+// Subtotal is authoritative and is never recomputed from the face lists.
+func diceTraceToProto(trace *sdk.DiceTrace) *sessionpb.DiceTrace {
+	if trace == nil {
+		return nil
+	}
+	rerolls := make([]*sessionpb.DiceReroll, len(trace.Rerolls))
+	for i := range trace.Rerolls {
+		rerolls[i] = diceRerollToProto(&trace.Rerolls[i])
+	}
+	return &sessionpb.DiceTrace{
+		Notation:      trace.Notation,
+		DieSize:       int32(trace.DieSize),
+		OriginalRolls: intsToInt32s(trace.OriginalRolls),
+		Rerolls:       rerolls,
+		FinalRolls:    intsToInt32s(trace.FinalRolls),
+		KeptIndices:   intsToInt32s(trace.KeptIndices),
+		Subtotal:      int32(trace.Subtotal),
+	}
+}
+
+// rollComponentToProto preserves optional modifier presence, including a
+// present zero. Dice and source are independently copied and never aliased.
+func rollComponentToProto(component *sdk.RollComponent) *sessionpb.RollComponent {
+	if component == nil {
+		return nil
+	}
+	out := &sessionpb.RollComponent{
+		Source: rollSourceToProto(&component.Source),
+		Dice:   diceTraceToProto(component.Dice),
+	}
+	if component.Modifier != nil {
+		modifier := int32(*component.Modifier)
+		out.Modifier = &modifier
+	}
+	return out
+}
+
+// rollCalculationToProto preserves component production order and copies the
+// producer's authoritative total without validation or arithmetic.
+func rollCalculationToProto(calculation *sdk.RollCalculation) *sessionpb.RollCalculation {
+	if calculation == nil {
+		return nil
+	}
+	components := make([]*sessionpb.RollComponent, len(calculation.Components))
+	for i := range calculation.Components {
+		components[i] = rollComponentToProto(&calculation.Components[i])
+	}
+	return &sessionpb.RollCalculation{Components: components, Total: int32(calculation.Total)}
+}
+
+// hasRollComponent reports which of DamageComponent's two SDK read shapes is
+// populated. Session's strict decoder guarantees exactly one representation;
+// this converter only selects its carrier and neither validates nor merges it.
+func hasRollComponent(component *sdk.RollComponent) bool {
+	if component == nil {
+		return false
+	}
+	return component.Source.Ref != "" || component.Source.Name != "" || component.Source.Label != "" ||
+		component.Dice != nil || component.Modifier != nil
+}
+
 func damageComponentsToProto(in []sdk.DamageComponent) []*sessionpb.DamageComponent {
 	out := make([]*sessionpb.DamageComponent, len(in))
-	for i, component := range in {
-		rolls := make([]int32, len(component.FinalRolls))
-		for j, roll := range component.FinalRolls {
-			rolls[j] = int32(roll)
-		}
+	for i := range in {
+		component := &in[i]
 		var multiplier *float64
 		if component.Multiplier != nil {
 			value := *component.Multiplier
 			multiplier = &value
 		}
-		out[i] = &sessionpb.DamageComponent{
-			Source: component.Source, SourceRef: component.SourceRef, Dice: component.Dice,
-			FinalRolls: rolls, FlatBonus: int32(component.FlatBonus),
-			DamageType: damageTypeToProto(component.DamageType), Multiplier: multiplier,
+		converted := &sessionpb.DamageComponent{
+			Source: component.Source, DamageType: damageTypeToProto(component.DamageType),
+			Multiplier: multiplier,
 		}
+		if hasRollComponent(&component.Roll) {
+			// New bodies populate only Roll. Deprecated scalar fields stay empty,
+			// even if a malformed in-memory value also happens to carry them.
+			converted.Roll = rollComponentToProto(&component.Roll)
+		} else {
+			// Legacy bodies populate only their deprecated scalars. In
+			// particular, no roll trace is fabricated from final faces.
+			converted.SourceRef = component.SourceRef                 //nolint:staticcheck // Required pre-trace Story read compatibility.
+			converted.Dice = component.Dice                           //nolint:staticcheck // Required pre-trace Story read compatibility.
+			converted.FinalRolls = intsToInt32s(component.FinalRolls) //nolint:staticcheck // Required pre-trace Story read compatibility.
+			converted.FlatBonus = int32(component.FlatBonus)          //nolint:staticcheck // Required pre-trace Story read compatibility.
+		}
+		out[i] = converted
 	}
 	return out
 }
@@ -845,6 +1562,23 @@ func abilityRefToProto(a sdk.AbilityRef) *sessionpb.AbilityRef {
 	return &sessionpb.AbilityRef{Ref: a.Ref, Name: a.Name}
 }
 
+func deathSaveRefToProto(d sdk.DeathSaveRef) *sessionpb.DeathSaveRef {
+	return &sessionpb.DeathSaveRef{Name: d.Name}
+}
+
+// reactionRefToProto mirrors what a beat or an offer was taken AS: the
+// opportunity attack that let a fighter swing on somebody else's turn
+// (rpg-project#316). Pointer in and pointer out, because absence is the
+// common case and it MEANS something -- an ordinary swing on the actor's own
+// turn was taken as nothing, and a zeroed ReactionRef on the wire would read
+// as a reaction with no name rather than as no reaction.
+func reactionRefToProto(r *sdk.ReactionRef) *sessionpb.ReactionRef {
+	if r == nil {
+		return nil
+	}
+	return &sessionpb.ReactionRef{Ref: r.Ref, Name: r.Name}
+}
+
 // attackRefToProto mirrors session.AttackRef field-for-field (rpg-toolkit#866):
 // what was swung, always populated -- AttackOutput.Attack and the Struck/
 // Missed event bodies carry it as a value, never a pointer, so this always
@@ -863,11 +1597,13 @@ func attackRefToProto(a sdk.AttackRef) *sessionpb.AttackRef {
 // member's turn.
 func participantToProto(p sdk.Participant) *sessionpb.Participant {
 	return &sessionpb.Participant{
-		Member:   p.Member,
-		Name:     p.Name,
-		Kind:     memberKindToProto(p.Kind),
-		Standing: standingToProto(p.Standing),
-		Active:   p.Active,
+		Member:     p.Member,
+		Name:       p.Name,
+		Kind:       memberKindToProto(p.Kind),
+		Standing:   standingToProto(p.Standing),
+		Active:     p.Active,
+		LifeState:  lifeStateToProto(p.LifeState),
+		DeathSaves: deathSaveProgressToProto(p.DeathSaves),
 	}
 }
 
@@ -912,12 +1648,74 @@ func doorStateToProto(s string) sessionpb.DoorState {
 	}
 }
 
+// doorApproachToProto mirrors one accepted route through a lock (the
+// multi-approach ruling, rpg-project#350): an ability/skill ref, an optional
+// tool, and this route's own DC -- forcing a door and picking its lock need
+// not cost the same, so the DC lives per approach, not per lock.
+func doorApproachToProto(a sdk.DoorApproach) *sessionpb.CheckApproach {
+	return &sessionpb.CheckApproach{Ability: a.Ability, Tool: a.Tool, Dc: int32(a.DC)}
+}
+
+func doorApproachesToProto(as []sdk.DoorApproach) []*sessionpb.CheckApproach {
+	out := make([]*sessionpb.CheckApproach, len(as))
+	for i, a := range as {
+		out[i] = doorApproachToProto(a)
+	}
+	return out
+}
+
+// doorRevealedInfoToProto groups DoorRevealedBody's flat door/state/
+// approaches into the wire's nested DoorInfo -- the same shape GetDoors
+// already returns for this door, per DoorRevealed.door's own doc ("exactly
+// as this recipient's GetDoors would now list it"). Approaches is present
+// only while the door is locked (DoorRevealedBody's own field law), so a
+// non-empty list is the presence signal for Lock, matching doorToProto's
+// "Lock unset is not locked" convention field-for-field rather than
+// re-deriving it from State.
+func doorRevealedInfoToProto(b sdk.DoorRevealedBody) *sessionpb.DoorInfo {
+	out := &sessionpb.DoorInfo{Door: b.Door, State: doorStateToProto(b.State)}
+	if len(b.Approaches) > 0 {
+		out.Lock = &sessionpb.DoorLock{Approaches: doorApproachesToProto(b.Approaches)}
+	}
+	return out
+}
+
 // doorToProto mirrors one live door. The lock rides only while it is real —
-// DoorInfo.lock unset is "not locked", never "lock with DC zero".
+// DoorInfo.lock unset is "not locked", never a lock with zero approaches --
+// and its approaches list is copied verbatim (rpg-project#350's dialect: a
+// lock is a set of accepted routes, not one ability and one DC).
 func doorToProto(d sdk.Door) *sessionpb.DoorInfo {
 	out := &sessionpb.DoorInfo{Door: d.ID, State: doorStateToProto(d.State)}
 	if d.Lock != nil {
-		out.Lock = &sessionpb.DoorLock{Dc: int32(d.Lock.DC), Ability: d.Lock.Ability, Tool: d.Lock.Tool}
+		out.Lock = &sessionpb.DoorLock{Approaches: doorApproachesToProto(d.Lock.Approaches)}
 	}
 	return out
+}
+
+// tradeItemFromProto mirrors one wire TradeItem onto the SDK's shape. The
+// equipment type crosses as the same plain string vendorStockEntryToProto
+// already carries the other direction -- no second equipment-type mapping.
+func tradeItemFromProto(i *sessionpb.TradeItem) sdk.TradeItem {
+	return sdk.TradeItem{
+		Type:     shared.EquipmentType(i.GetEquipmentType()),
+		ID:       i.GetEquipmentId(),
+		Quantity: int(i.GetQuantity()),
+	}
+}
+
+// tradeOfferFromProto mirrors one wire TradeOffer. A nil proto offer (the
+// field unset) becomes the zero TradeOffer -- an empty Items slice and zero
+// Currency, which is exactly what an omitted `give`/`receive` on the wire
+// means (session.TradeInput's own doc: Give must be empty this wave; the
+// SDK's own ErrGiveNotSupported refusal is what tells a caller who sent one
+// anyway, not a nil check here). On `give`, Currency is the payment
+// (rpg-toolkit#1534) -- carried untouched, never adjusted or defaulted here:
+// session.Trade alone decides whether it matches the required price
+// (ErrWrongPrice).
+func tradeOfferFromProto(o *sessionpb.TradeOffer) sdk.TradeOffer {
+	items := make([]sdk.TradeItem, len(o.GetItems()))
+	for i, it := range o.GetItems() {
+		items[i] = tradeItemFromProto(it)
+	}
+	return sdk.TradeOffer{Items: items, Currency: moneyFromProto(o.GetCurrency())}
 }

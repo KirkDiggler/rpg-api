@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -60,7 +61,16 @@ func inAFightWith(
 	t *testing.T, sheet *tkcharacter.Data,
 ) (*acceptanceHarness, context.Context) {
 	t.Helper()
-	h := newAcceptanceHarness(t)
+	return inAFightWithDice(t, sheet, testDice{})
+}
+
+// inAFightWithDice is the scoped-randomness variant used by roll acceptance:
+// the same Session roller forms the fight and resolves the later ability.
+func inAFightWithDice(
+	t *testing.T, sheet *tkcharacter.Data, roller sdk.Roller,
+) (*acceptanceHarness, context.Context) {
+	t.Helper()
+	h := newAcceptanceHarnessWithDice(t, roller)
 	ctx := auth.WithPlayerID(context.Background(), sheet.PlayerID)
 
 	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
@@ -92,7 +102,7 @@ func inAFightWith(
 }
 
 func activationsFor(
-	t *testing.T, h *acceptanceHarness, ctx context.Context, member string,
+	ctx context.Context, t *testing.T, h *acceptanceHarness, member string,
 ) map[string]*sessionpb.Declaration {
 	t.Helper()
 	out, err := h.handler.Afford(ctx, &sessionpb.AffordRequest{
@@ -128,8 +138,9 @@ func storedSheetOf(
 
 func conditionRefsOf(t *testing.T, repo characterrepo.Repository, id string) []string {
 	t.Helper()
-	out := make([]string, 0)
-	for _, raw := range storedSheetOf(t, repo, id).Conditions {
+	sheet := storedSheetOf(t, repo, id)
+	out := make([]string, 0, len(sheet.Conditions))
+	for _, raw := range sheet.Conditions {
 		var envelope struct {
 			Ref string `json:"ref"`
 		}
@@ -148,7 +159,7 @@ func conditionRefsOf(t *testing.T, repo characterrepo.Repository, id string) []s
 func TestAcceptance_TheWholeActivatableSurfaceCrossesTheWire(t *testing.T) {
 	h, ctx := inAFightWith(t, ragingBarbarian("alice", "player-alice"))
 
-	offers := activationsFor(t, h, ctx, "alice")
+	offers := activationsFor(ctx, t, h, "alice")
 
 	want := map[string]sessionpb.Slot{
 		"dnd5e:combat_abilities:dash":      sessionpb.Slot_SLOT_ACTION,
@@ -195,7 +206,7 @@ func TestAcceptance_TheWholeActivatableSurfaceCrossesTheWire(t *testing.T) {
 func TestAcceptance_RageAndDodgeAreLiveTogetherOnDifferentShapes(t *testing.T) {
 	h, ctx := inAFightWith(t, ragingBarbarian("alice", "player-alice"))
 
-	offers := activationsFor(t, h, ctx, "alice")
+	offers := activationsFor(ctx, t, h, "alice")
 	rage := offers["dnd5e:features:rage"]
 	dodge := offers["dnd5e:combat_abilities:dodge"]
 
@@ -211,7 +222,7 @@ func TestAcceptance_RageAndDodgeAreLiveTogetherOnDifferentShapes(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	after := activationsFor(t, h, ctx, "alice")
+	after := activationsFor(ctx, t, h, "alice")
 	require.False(t, after["dnd5e:features:rage"].GetAvailable(), "the bonus action is spent")
 	require.True(t, after["dnd5e:combat_abilities:dodge"].GetAvailable(), "the action is not")
 }
@@ -227,7 +238,7 @@ func TestAcceptance_RageAndDodgeAreLiveTogetherOnDifferentShapes(t *testing.T) {
 func TestAcceptance_RageSpendsACharge(t *testing.T) {
 	h, ctx := inAFightWith(t, ragingBarbarian("alice", "player-alice"))
 
-	rage := activationsFor(t, h, ctx, "alice")["dnd5e:features:rage"]
+	rage := activationsFor(ctx, t, h, "alice")["dnd5e:features:rage"]
 	_, err := h.handler.Activate(ctx, &sessionpb.ActivateRequest{
 		Session: "acceptance-run", Member: "alice", DeclarationId: rage.GetId(),
 	})
@@ -241,7 +252,7 @@ func TestAcceptance_RageSpendsACharge(t *testing.T) {
 
 	// And the second rage this turn is refused, with the panel told which
 	// ledger ran out. One charge is left, so this is the bonus action talking.
-	again := activationsFor(t, h, ctx, "alice")["dnd5e:features:rage"]
+	again := activationsFor(ctx, t, h, "alice")["dnd5e:features:rage"]
 	require.False(t, again.GetAvailable())
 	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_BUDGET,
 		again.GetWhy().GetReason())
@@ -267,7 +278,7 @@ func TestAcceptance_EachSelfAffectingAbilityLandsItsCondition(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.ref, func(t *testing.T) {
 			h, ctx := inAFightWith(t, ragingBarbarian("alice", "player-alice"))
-			offer := activationsFor(t, h, ctx, "alice")[tc.ref]
+			offer := activationsFor(ctx, t, h, "alice")[tc.ref]
 			require.NotNil(t, offer)
 
 			_, err := h.handler.Activate(ctx, &sessionpb.ActivateRequest{
@@ -290,7 +301,7 @@ func TestAcceptance_DashBanksMovementRatherThanACondition(t *testing.T) {
 		beforeFeet = before.ActionEconomy.MovementRemaining
 	}
 
-	dash := activationsFor(t, h, ctx, "alice")["dnd5e:combat_abilities:dash"]
+	dash := activationsFor(ctx, t, h, "alice")["dnd5e:combat_abilities:dash"]
 	_, err := h.handler.Activate(ctx, &sessionpb.ActivateRequest{
 		Session: "acceptance-run", Member: "alice", DeclarationId: dash.GetId(),
 	})
@@ -307,7 +318,7 @@ func TestAcceptance_DashBanksMovementRatherThanACondition(t *testing.T) {
 func TestAcceptance_ASpentSelectorIsRefusedWithFailedPrecondition(t *testing.T) {
 	h, ctx := inAFightWith(t, ragingBarbarian("alice", "player-alice"))
 
-	dodge := activationsFor(t, h, ctx, "alice")["dnd5e:combat_abilities:dodge"]
+	dodge := activationsFor(ctx, t, h, "alice")["dnd5e:combat_abilities:dodge"]
 	_, err := h.handler.Activate(ctx, &sessionpb.ActivateRequest{
 		Session: "acceptance-run", Member: "alice", DeclarationId: dodge.GetId(),
 	})
@@ -322,42 +333,141 @@ func TestAcceptance_ASpentSelectorIsRefusedWithFailedPrecondition(t *testing.T) 
 	require.Equal(t, codes.FailedPrecondition, st.Code())
 
 	// And the panel is told why, in a currency it can name.
-	after := activationsFor(t, h, ctx, "alice")["dnd5e:combat_abilities:dodge"]
+	after := activationsFor(ctx, t, h, "alice")["dnd5e:combat_abilities:dodge"]
 	require.False(t, after.GetAvailable())
 	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_BUDGET,
 		after.GetWhy().GetReason())
 	require.Equal(t, sessionpb.Currency_CURRENCY_ACTION, after.GetWhy().GetCurrency())
 }
 
-// Second Wind heals its own fighter, which is the one activation whose effect
-// is neither a condition nor the ledger.
-func TestAcceptance_SecondWindHealsTheFighter(t *testing.T) {
+func requireSecondWindActivationEvents(t *testing.T, events []*sessionpb.Event) {
+	t.Helper()
+	require.Len(t, events, 2, "exactly one Activated and one ActivationResult beat; no duplicate")
+
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_ACTIVATED, events[0].GetKind())
+	require.Equal(t, "alice", events[0].GetActivated().GetActor())
+	require.Equal(t, "dnd5e:features:second_wind", events[0].GetActivated().GetAbility().GetRef())
+	require.Equal(t, "Second Wind", events[0].GetActivated().GetAbility().GetName())
+	require.Empty(t, events[0].GetActivated().GetTarget())
+
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_ACTIVATION_RESULT, events[1].GetKind())
+	require.Equal(t, events[0].GetSeq()+1, events[1].GetSeq(), "canonical beat order is gapless")
+	result := events[1].GetActivationResult()
+	require.Equal(t, "alice", result.GetActor())
+	healing := result.GetHealingApplied()
+	require.NotNil(t, healing)
+	require.Equal(t, "alice", healing.GetTarget())
+	require.Equal(t, int32(2), healing.GetAmount())
+	require.Equal(t, int32(7), healing.GetRequested())
+	require.Zero(t, healing.GetRoll(), "new healing does not duplicate the roll in deprecated scalars")
+	require.Zero(t, healing.GetModifier(), "new healing does not duplicate the modifier in deprecated scalars")
+	require.Equal(t, "dnd5e:features:second_wind", healing.GetSourceRef())
+	require.Equal(t, "Second Wind", healing.GetSourceName())
+	require.Equal(t, int32(8), healing.GetHpBefore())
+	require.Equal(t, int32(10), healing.GetHpAfter())
+
+	calculation := healing.GetCalculation()
+	require.NotNil(t, calculation)
+	require.Equal(t, int32(7), calculation.GetTotal(), "the provider's authoritative requested total crosses unchanged")
+	require.Len(t, calculation.GetComponents(), 2)
+	dice := calculation.GetComponents()[0]
+	require.Equal(t, "dnd5e:features:second_wind", dice.GetSource().GetRef())
+	require.Equal(t, "Second Wind", dice.GetSource().GetName())
+	require.NotNil(t, dice.GetDice())
+	require.Equal(t, "1d10", dice.GetDice().GetNotation())
+	require.Equal(t, int32(10), dice.GetDice().GetDieSize())
+	require.Equal(t, []int32{6}, dice.GetDice().GetOriginalRolls())
+	require.Empty(t, dice.GetDice().GetRerolls())
+	require.Equal(t, []int32{6}, dice.GetDice().GetFinalRolls())
+	require.Empty(t, dice.GetDice().GetKeptIndices())
+	require.Equal(t, int32(6), dice.GetDice().GetSubtotal())
+	require.Nil(t, dice.Modifier)
+
+	level := calculation.GetComponents()[1]
+	require.Equal(t, "dnd5e:classes:fighter", level.GetSource().GetRef())
+	require.Equal(t, "Fighter", level.GetSource().GetName())
+	require.Equal(t, "Fighter level", level.GetSource().GetLabel())
+	require.Nil(t, level.GetDice())
+	require.NotNil(t, level.Modifier)
+	require.Equal(t, int32(1), level.GetModifier())
+
+	require.Nil(t, result.GetConditionApplied())
+	require.Nil(t, result.GetConditionRemoved())
+	require.Nil(t, result.GetCapacityGranted())
+}
+
+// Second Wind heals its own fighter and emits the ordered acknowledgement and
+// applied result through both the live SessionService stream and GetStory.
+func TestAcceptance_SecondWindActivationEventsAndHealingCrossTheWire(t *testing.T) {
 	// armedFighter carries no features, so this one gets its own sheet rather
-	// than mutating a fixture five other acceptance tests read.
+	// than mutating a fixture five other acceptance tests read. Level one makes
+	// the provider's modifier 1; the Session-scoped script forms the fight with
+	// two d20s and then returns face 6 for Second Wind's d10.
 	fighter := armedFighter("alice", "player-alice")
-	fighter.HitPoints = 10
+	fighter.Level = 1
+	fighter.HitPoints = 8
+	fighter.MaxHitPoints = 10
 	fighter.Features = []json.RawMessage{json.RawMessage(
 		`{"ref":{"module":"dnd5e","type":"features","id":"second_wind"},` +
-			`"id":"second-wind-1","name":"Second Wind","level":3,` +
+			`"id":"second-wind-1","name":"Second Wind","level":1,` +
 			`"character_id":"alice","uses":1,"max_uses":1}`)}
 
-	h, ctx := inAFightWith(t, fighter)
+	dice := newAcceptanceSequenceDice(
+		acceptanceDie{size: 20, value: 10},
+		acceptanceDie{size: 20, value: 10},
+		acceptanceDie{size: 10, value: 6},
+	)
+	h, ctx := inAFightWithDice(t, fighter, dice)
 
-	offers := activationsFor(t, h, ctx, "alice")
+	// Join owns first-admission normal-rest recovery, so establish the damaged
+	// precondition after that admission and before Afford/Activate. This is a
+	// persistence fixture setup, not API-side healing arithmetic.
+	stored, err := h.charRepo.Get(context.Background(), characterrepo.GetInput{ID: "alice"})
+	require.NoError(t, err)
+	stored.Character.Data.HitPoints = 8
+	stored.Character.Data.MaxHitPoints = 10
+	_, err = h.charRepo.Update(context.Background(), characterrepo.UpdateInput{Character: stored.Character})
+	require.NoError(t, err)
+
+	offers := activationsFor(ctx, t, h, "alice")
 	secondWind, ok := offers["dnd5e:features:second_wind"]
 	require.True(t, ok, "a fighter carrying Second Wind must be offered it")
 	require.Equal(t, sessionpb.Slot_SLOT_BONUS, secondWind.GetSlot())
 
-	_, err := h.handler.Activate(ctx, &sessionpb.ActivateRequest{
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stream := newRecordingStream(streamCtx)
+	done := make(chan error, 1)
+	go func() {
+		done <- h.handler.StreamEvents(&sessionpb.StreamEventsRequest{
+			Session: "acceptance-run", Member: "alice",
+		}, stream)
+	}()
+	waitForLive(t, h.manager.Broker, "acceptance-run", "alice", stream)
+	baseline := len(stream.snapshot())
+
+	_, err = h.handler.Activate(ctx, &sessionpb.ActivateRequest{
 		Session: "acceptance-run", Member: "alice", DeclarationId: secondWind.GetId(),
 	})
 	require.NoError(t, err)
+	dice.requireExhausted(t)
 
-	// The one activation of the seven whose effect is neither a condition nor
-	// the ledger — it heals, and the healing has to reach the stored sheet the
-	// same way everything else does.
-	require.Greater(t, storedSheetOf(t, h.charRepo, "alice").HitPoints, 10,
-		"Second Wind heals its own fighter")
+	live := waitForQuiescence(t, stream, 2*time.Second)[baseline:]
+	requireSecondWindActivationEvents(t, live)
+
+	story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{
+		Session: "acceptance-run", Member: "alice", FromSeq: live[0].GetSeq(),
+	})
+	require.NoError(t, err)
+	requireSecondWindActivationEvents(t, story.GetEntries())
+	requireStoryContainsLiveEvents(t, story.GetEntries(), live)
+
+	cancel()
+	require.NoError(t, <-done)
+
+	// The same authoritative result reached persistence; no response-side
+	// optimism or converter arithmetic is involved.
+	require.Equal(t, 10, storedSheetOf(t, h.charRepo, "alice").HitPoints)
 }
 
 // HIDE REACHES THE SHEET AND ITS CHECK IS VACUOUS, which are two different
@@ -376,7 +486,7 @@ func TestAcceptance_SecondWindHealsTheFighter(t *testing.T) {
 func TestAcceptance_HideLandsButItsCheckHasNothingToBeat(t *testing.T) {
 	h, ctx := inAFightWith(t, ragingBarbarian("alice", "player-alice"))
 
-	hide := activationsFor(t, h, ctx, "alice")["dnd5e:combat_abilities:hide"]
+	hide := activationsFor(ctx, t, h, "alice")["dnd5e:combat_abilities:hide"]
 	require.NotNil(t, hide)
 	require.True(t, hide.GetAvailable())
 
@@ -427,7 +537,7 @@ func TestAcceptance_HelpOffersTheAdjacentAlly(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	help := activationsFor(t, h, ctx, "alice")["dnd5e:combat_abilities:help"]
+	help := activationsFor(ctx, t, h, "alice")["dnd5e:combat_abilities:help"]
 	require.NotNil(t, help)
 	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_MEMBER, help.GetTargetKind())
 
@@ -449,7 +559,7 @@ func TestAcceptance_HelpOffersTheAdjacentAlly(t *testing.T) {
 func TestAcceptance_HelpNeverOffersAMonster(t *testing.T) {
 	h, ctx := inAFightWith(t, ragingBarbarian("alice", "player-alice"))
 
-	help := activationsFor(t, h, ctx, "alice")["dnd5e:combat_abilities:help"]
+	help := activationsFor(ctx, t, h, "alice")["dnd5e:combat_abilities:help"]
 	require.NotNil(t, help)
 
 	for _, c := range help.GetCandidates() {

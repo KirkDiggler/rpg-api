@@ -69,6 +69,12 @@ func TestVerbToProto(t *testing.T) {
 	// VERB_UNSPECIFIED — not one mislabelled row but six, on the panel
 	// rpg-project#300 exists to fill.
 	require.Equal(t, sessionpb.Verb_VERB_ACTIVATE, verbToProto(sdk.VerbActivate))
+	require.Equal(t, sessionpb.Verb_VERB_DEATH_SAVE, verbToProto(sdk.VerbDeathSave))
+	// The first verb offered off the member's own turn (rpg-project#316 rung
+	// 3). Unmapped, the one row a frozen Afford returns -- the ONLY row a
+	// client can act on while the fight waits -- would arrive UNSPECIFIED,
+	// and the panel would have nothing to draw but a dead table.
+	require.Equal(t, sessionpb.Verb_VERB_REACT, verbToProto(sdk.VerbReact))
 	require.Equal(t, sessionpb.Verb_VERB_UNSPECIFIED, verbToProto(sdk.Verb("bogus")))
 }
 
@@ -182,7 +188,33 @@ func TestDissolveCauseFromProto_Unspecified_ReturnsErrNoCause(t *testing.T) {
 
 func TestDissolveKindToProto(t *testing.T) {
 	require.Equal(t, sessionpb.DissolveKind_DISSOLVE_KIND_BY_DECISION, dissolveKindToProto(sdk.DissolveByDecision))
+	require.Equal(t, sessionpb.DissolveKind_DISSOLVE_KIND_BY_DEFEAT, dissolveKindToProto(sdk.DissolveByDefeat))
+	// The camp turning (rpg-project#375): a missing case here would reach a
+	// client as a fight that ended for no stated reason.
+	require.Equal(t, sessionpb.DissolveKind_DISSOLVE_KIND_BY_STANCE, dissolveKindToProto(sdk.DissolveByStance))
 	require.Equal(t, sessionpb.DissolveKind_DISSOLVE_KIND_UNSPECIFIED, dissolveKindToProto(sdk.DissolveKind("bogus")))
+}
+
+// TestPlacementKindToProto: the session's closed placement vocabulary onto
+// the wire's enum, by name; a kind this build's protos cannot name is
+// UNSPECIFIED, the wire's word for a producer defect, never a guess.
+func TestPlacementKindToProto(t *testing.T) {
+	require.Equal(t, sessionpb.PlacementKind_PLACEMENT_KIND_MONSTER, placementKindToProto(sdk.PlacementMonster))
+	require.Equal(t, sessionpb.PlacementKind_PLACEMENT_KIND_PROP, placementKindToProto(sdk.PlacementProp))
+	require.Equal(t, sessionpb.PlacementKind_PLACEMENT_KIND_UNSPECIFIED, placementKindToProto(sdk.PlacementKind("bogus")))
+}
+
+// TestDissolveCauseFromProto_ByStanceIsAcceptedLikeByDefeat pins the inbound
+// half of the third cause: not a caller's to declare honestly, and accepted
+// anyway for BY_DEFEAT's reason -- the SDK answers with what the composition
+// actually did, whatever was handed in.
+func TestDissolveCauseFromProto_ByStanceIsAcceptedLikeByDefeat(t *testing.T) {
+	cause, err := dissolveCauseFromProto(sessionpb.DissolveKind_DISSOLVE_KIND_BY_STANCE)
+	require.NoError(t, err)
+	require.Equal(t, sdk.DissolveByStance, cause.Kind())
+
+	_, err = dissolveCauseFromProto(sessionpb.DissolveKind_DISSOLVE_KIND_UNSPECIFIED)
+	require.ErrorIs(t, err, sdk.ErrNoCause, "and nothing is guessed at")
 }
 
 func TestMemberToProto(t *testing.T) {
@@ -407,6 +439,192 @@ func TestStrikeDetailToProto_EmptyStaysNonNil(t *testing.T) {
 	require.Empty(t, attackModifierSourcesToProto(nil))
 }
 
+func TestRollTraceConverters_NilSafe(t *testing.T) {
+	require.Nil(t, rollSourceToProto(nil))
+	require.Nil(t, diceRerollToProto(nil))
+	require.Nil(t, diceTraceToProto(nil))
+	require.Nil(t, rollComponentToProto(nil))
+	require.Nil(t, rollCalculationToProto(nil))
+}
+
+func TestRollCalculationToProto_FieldForFieldOrderPresenceAndIsolation(t *testing.T) {
+	zero := 0
+	negative := -3
+	in := &sdk.RollCalculation{
+		Components: []sdk.RollComponent{
+			{
+				Source: sdk.RollSource{
+					Ref: "dnd5e:weapons:greatsword", Name: "Greatsword", Label: "primary",
+				},
+				Dice: &sdk.DiceTrace{
+					Notation: "2d6", DieSize: 6,
+					OriginalRolls: []int{1, 5},
+					Rerolls: []sdk.DiceReroll{
+						{
+							DieIndex: 0, Before: 1, After: 4,
+							Source: sdk.RollSource{
+								Ref:  "dnd5e:conditions:fighting_style_great_weapon_fighting",
+								Name: "Great Weapon Fighting", Label: "first reroll",
+							},
+						},
+						{
+							DieIndex: 1, Before: 5, After: 6,
+							Source: sdk.RollSource{Ref: "test:conditions:second", Name: "Second", Label: "second reroll"},
+						},
+					},
+					FinalRolls: []int{4, 6}, KeptIndices: []int{1, 0},
+					Subtotal: 91,
+				},
+				Modifier: &zero,
+			},
+			{
+				Source:   sdk.RollSource{Ref: "dnd5e:abilities:str", Name: "Strength", Label: "ability modifier"},
+				Modifier: &negative,
+			},
+		},
+		Total: 777,
+	}
+
+	wantZero := int32(0)
+	wantNegative := int32(-3)
+	want := &sessionpb.RollCalculation{
+		Components: []*sessionpb.RollComponent{
+			{
+				Source: &sessionpb.RollSource{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword", Label: "primary"},
+				Dice: &sessionpb.DiceTrace{
+					Notation: "2d6", DieSize: 6,
+					OriginalRolls: []int32{1, 5},
+					Rerolls: []*sessionpb.DiceReroll{
+						{
+							DieIndex: 0, Before: 1, After: 4,
+							Source: &sessionpb.RollSource{
+								Ref:  "dnd5e:conditions:fighting_style_great_weapon_fighting",
+								Name: "Great Weapon Fighting", Label: "first reroll",
+							},
+						},
+						{
+							DieIndex: 1, Before: 5, After: 6,
+							Source: &sessionpb.RollSource{Ref: "test:conditions:second", Name: "Second", Label: "second reroll"},
+						},
+					},
+					FinalRolls: []int32{4, 6}, KeptIndices: []int32{1, 0},
+					Subtotal: 91,
+				},
+				Modifier: &wantZero,
+			},
+			{
+				Source:   &sessionpb.RollSource{Ref: "dnd5e:abilities:str", Name: "Strength", Label: "ability modifier"},
+				Modifier: &wantNegative,
+			},
+		},
+		Total: 777,
+	}
+
+	got := rollCalculationToProto(in)
+	require.True(t, proto.Equal(want, got), "the converter copies every authored field without recomputing totals")
+	require.NotNil(t, got.GetComponents()[0].Modifier, "a present zero modifier stays present")
+	require.Equal(t, []int32{1, 0}, got.GetComponents()[0].GetDice().GetKeptIndices(), "producer order is preserved")
+	require.Equal(t, int32(91), got.GetComponents()[0].GetDice().GetSubtotal(), "the authoritative subtotal is not resummed")
+	require.Equal(t, int32(777), got.GetTotal(), "the authoritative total is not recalculated")
+
+	got.Components[0].Source.Name = "mutated"
+	got.Components[0].Dice.OriginalRolls[0] = 99
+	got.Components[0].Dice.Rerolls[0].Source.Label = "mutated"
+	*got.Components[0].Modifier = 9
+	require.Equal(t, "Greatsword", in.Components[0].Source.Name)
+	require.Equal(t, []int{1, 5}, in.Components[0].Dice.OriginalRolls)
+	require.Equal(t, "first reroll", in.Components[0].Dice.Rerolls[0].Source.Label)
+	require.Zero(t, *in.Components[0].Modifier, "the proto owns its optional scalar")
+}
+
+func TestRollDamageComponentToProto_NewAndLegacyRepresentationsNeverMix(t *testing.T) {
+	zeroModifier := 0
+	zeroMultiplier := 0.0
+
+	newComponent := damageComponentsToProto([]sdk.DamageComponent{{
+		Source: "weapon",
+		Roll: sdk.RollComponent{
+			Source: sdk.RollSource{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword"},
+			Dice: &sdk.DiceTrace{
+				Notation: "2d6", DieSize: 6, OriginalRolls: []int{1, 5},
+				Rerolls: []sdk.DiceReroll{{
+					DieIndex: 0, Before: 1, After: 4,
+					Source: sdk.RollSource{
+						Ref: "dnd5e:conditions:fighting_style_great_weapon_fighting", Name: "Great Weapon Fighting",
+					},
+				}},
+				FinalRolls: []int{4, 5}, Subtotal: 9,
+			},
+			Modifier: &zeroModifier,
+		},
+		DamageType: sdk.DamageSlashing, Multiplier: &zeroMultiplier,
+		// A malformed in-memory body can carry both representations even though
+		// Session's decoder never creates one. The API still emits only the new
+		// representation when Roll is present; it does not merge or validate.
+		SourceRef: "legacy-ref", Dice: "legacy-dice", FinalRolls: []int{6}, FlatBonus: 6,
+	}})[0]
+
+	require.NotNil(t, newComponent.GetRoll())
+	require.Equal(t, []int32{1, 5}, newComponent.GetRoll().GetDice().GetOriginalRolls())
+	require.Equal(t, []int32{4, 5}, newComponent.GetRoll().GetDice().GetFinalRolls())
+	require.NotNil(t, newComponent.GetRoll().Modifier)
+	require.Zero(t, newComponent.GetRoll().GetModifier())
+	require.NotNil(t, newComponent.Multiplier)
+	require.Zero(t, newComponent.GetMultiplier())
+	require.Empty(t, newComponent.GetSourceRef())
+	require.Empty(t, newComponent.GetDice())
+	require.Nil(t, newComponent.GetFinalRolls())
+	require.Zero(t, newComponent.GetFlatBonus())
+
+	legacyComponent := damageComponentsToProto([]sdk.DamageComponent{{
+		Source: "weapon", SourceRef: "dnd5e:weapons:longsword", Dice: "1d8",
+		FinalRolls: []int{7, 2}, FlatBonus: 3, DamageType: sdk.DamageSlashing,
+	}})[0]
+	require.Nil(t, legacyComponent.GetRoll())
+	require.Equal(t, "dnd5e:weapons:longsword", legacyComponent.GetSourceRef())
+	require.Equal(t, "1d8", legacyComponent.GetDice())
+	require.Equal(t, []int32{7, 2}, legacyComponent.GetFinalRolls())
+	require.Equal(t, int32(3), legacyComponent.GetFlatBonus())
+}
+
+func TestRollHealingAppliedToProto_NewAndLegacyRepresentationsNeverMix(t *testing.T) {
+	level := 1
+	newBody := healingAppliedBodyToProto(&sdk.HealingAppliedBody{
+		Target: "alice", Amount: 2, Requested: 7, Roll: 99, Modifier: 98,
+		SourceRef: "dnd5e:features:second_wind", SourceName: "Second Wind",
+		HPBefore: 8, HPAfter: 10,
+		Calculation: &sdk.RollCalculation{
+			Components: []sdk.RollComponent{
+				{
+					Source: sdk.RollSource{Ref: "dnd5e:features:second_wind", Name: "Second Wind"},
+					Dice: &sdk.DiceTrace{
+						Notation: "1d10", DieSize: 10, OriginalRolls: []int{6}, FinalRolls: []int{6}, Subtotal: 6,
+					},
+				},
+				{
+					Source:   sdk.RollSource{Ref: "dnd5e:classes:fighter", Name: "Fighter", Label: "Fighter level"},
+					Modifier: &level,
+				},
+			},
+			Total: 7,
+		},
+	})
+	require.NotNil(t, newBody.GetCalculation())
+	require.Equal(t, int32(7), newBody.GetCalculation().GetTotal())
+	require.Equal(t, "Fighter level", newBody.GetCalculation().GetComponents()[1].GetSource().GetLabel())
+	require.Zero(t, newBody.GetRoll(), "new events do not also populate deprecated roll")
+	require.Zero(t, newBody.GetModifier(), "new events do not also populate deprecated modifier")
+
+	legacyBody := healingAppliedBodyToProto(&sdk.HealingAppliedBody{
+		Target: "alice", Amount: 2, Requested: 7, Roll: 6, Modifier: 1,
+		SourceRef: "dnd5e:features:second_wind", SourceName: "Second Wind",
+		HPBefore: 8, HPAfter: 10,
+	})
+	require.Nil(t, legacyBody.GetCalculation())
+	require.Equal(t, int32(6), legacyBody.GetRoll())
+	require.Equal(t, int32(1), legacyBody.GetModifier())
+}
+
 func richStruckEvent() sdk.Event {
 	immunity := 0.0
 	return sdk.Event{
@@ -415,13 +633,28 @@ func richStruckEvent() sdk.Event {
 			Attacker: "char-1", Target: "goblin-1", Roll: 18, Total: 21, Against: 13, Damage: 6,
 			Attack:   sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
 			Critical: true,
+			// Roll-shaped facts live in Roll since session/v0.50.0
+			// (toolkit#1470); the scalars beside it are a legacy READ path a
+			// newly produced body never fills, so a fixture that used them
+			// would be testing a decode of old storage rather than the
+			// conversion this file is about.
 			DamageComponents: []sdk.DamageComponent{
 				{
-					Source: "weapon", SourceRef: "dnd5e:weapons:longsword", Dice: "1d8",
-					FinalRolls: []int{4}, DamageType: sdk.DamageSlashing,
+					Source: "weapon",
+					Roll: sdk.RollComponent{
+						Source: sdk.RollSource{Ref: "dnd5e:weapons:longsword", Name: "Longsword"},
+						Dice: &sdk.DiceTrace{
+							Notation: "1d8", DieSize: 8,
+							OriginalRolls: []int{4}, FinalRolls: []int{4}, Subtotal: 4,
+						},
+					},
+					DamageType: sdk.DamageSlashing,
 				},
 				{
-					Source: "monster_trait", SourceRef: "dnd5e:monster_traits:immunity",
+					Source: "monster_trait",
+					Roll: sdk.RollComponent{
+						Source: sdk.RollSource{Ref: "dnd5e:monster_traits:immunity", Name: "Immunity"},
+					},
 					DamageType: sdk.DamageSlashing, Multiplier: &immunity,
 				},
 			},
@@ -470,6 +703,206 @@ func TestEventsToProto_RichStruckMatchesDirectConversion(t *testing.T) {
 	require.Len(t, caughtUp, 1)
 	require.True(t, proto.Equal(eventToProto(in), caughtUp[0]),
 		"GetStory's slice conversion and StreamEvents' direct conversion share one mapping")
+}
+
+func TestActivationEventKindsToProto(t *testing.T) {
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_ACTIVATED, eventKindToProto(sdk.EventActivated))
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_ACTIVATION_RESULT, eventKindToProto(sdk.EventActivationResult))
+}
+
+// TestActivationEventBodiesToProto pins the thin event boundary: every SDK
+// activation body crosses into its matching proto oneof arm without deriving
+// identity, arithmetic, or prose from any other field.
+func TestActivationEventBodiesToProto(t *testing.T) {
+	t.Run("Activated", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventActivated, Payload: []byte("activated-payload"),
+			Body: sdk.ActivatedBody{
+				Actor: "alice",
+				Ability: sdk.AbilityRef{
+					Ref: "dnd5e:features:second_wind", Name: "Second Wind",
+				},
+				Target: "alice",
+			},
+		})
+
+		require.Equal(t, []byte("activated-payload"), got.GetPayload())
+		activated := got.GetActivated()
+		require.NotNil(t, activated)
+		require.Equal(t, "alice", activated.GetActor())
+		require.Equal(t, "dnd5e:features:second_wind", activated.GetAbility().GetRef())
+		require.Equal(t, "Second Wind", activated.GetAbility().GetName())
+		require.Equal(t, "alice", activated.GetTarget())
+	})
+
+	t.Run("HealingApplied", func(t *testing.T) {
+		fighterLevel := 1
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventActivationResult,
+			Body: sdk.ActivationResultBody{
+				Actor: "alice",
+				// Roll and Modifier come off Calculation, for the same reason
+				// the struck fixture above builds a Roll: a body this SDK
+				// produces carries the trace and leaves the two scalars zero.
+				HealingApplied: &sdk.HealingAppliedBody{
+					Target: "alice", Amount: 2, Requested: 7,
+					SourceRef: "dnd5e:features:second_wind", SourceName: "Second Wind",
+					HPBefore: 8, HPAfter: 10,
+					Calculation: &sdk.RollCalculation{
+						Components: []sdk.RollComponent{
+							{
+								Source: sdk.RollSource{
+									Ref: "dnd5e:features:second_wind", Name: "Second Wind",
+								},
+								Dice: &sdk.DiceTrace{
+									Notation: "d10", DieSize: 10,
+									OriginalRolls: []int{6}, FinalRolls: []int{6}, Subtotal: 6,
+								},
+							},
+							{
+								Source: sdk.RollSource{
+									Ref: "dnd5e:classes:fighter", Name: "Fighter", Label: "Fighter level",
+								},
+								Modifier: &fighterLevel,
+							},
+						},
+						Total: 7,
+					},
+				},
+			},
+		})
+
+		result := got.GetActivationResult()
+		require.NotNil(t, result)
+		require.Equal(t, "alice", result.GetActor())
+		healing := result.GetHealingApplied()
+		require.NotNil(t, healing)
+		require.Equal(t, "alice", healing.GetTarget())
+		require.Equal(t, int32(2), healing.GetAmount())
+		require.Equal(t, int32(7), healing.GetRequested())
+		require.Zero(t, healing.GetRoll())
+		require.Zero(t, healing.GetModifier())
+		require.NotNil(t, healing.GetCalculation())
+		require.Equal(t, int32(7), healing.GetCalculation().GetTotal())
+		require.Len(t, healing.GetCalculation().GetComponents(), 2)
+		require.Equal(t, "d10", healing.GetCalculation().GetComponents()[0].GetDice().GetNotation())
+		require.Equal(t, int32(1), healing.GetCalculation().GetComponents()[1].GetModifier())
+		require.Equal(t, "dnd5e:features:second_wind", healing.GetSourceRef())
+		require.Equal(t, "Second Wind", healing.GetSourceName())
+		require.Equal(t, int32(8), healing.GetHpBefore())
+		require.Equal(t, int32(10), healing.GetHpAfter())
+		require.Nil(t, result.GetConditionApplied())
+		require.Nil(t, result.GetConditionRemoved())
+		require.Nil(t, result.GetCapacityGranted())
+	})
+
+	t.Run("ConditionApplied", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventActivationResult,
+			Body: sdk.ActivationResultBody{
+				Actor: "alice",
+				ConditionApplied: &sdk.ConditionAppliedBody{
+					Target: "bob", Ref: "dnd5e:conditions:raging", Name: "Raging",
+				},
+			},
+		})
+
+		result := got.GetActivationResult()
+		require.NotNil(t, result)
+		require.Equal(t, "alice", result.GetActor())
+		condition := result.GetConditionApplied()
+		require.NotNil(t, condition)
+		require.Equal(t, "bob", condition.GetTarget())
+		require.Equal(t, "dnd5e:conditions:raging", condition.GetRef())
+		require.Equal(t, "Raging", condition.GetName())
+		require.Nil(t, result.GetHealingApplied())
+		require.Nil(t, result.GetConditionRemoved())
+		require.Nil(t, result.GetCapacityGranted())
+	})
+
+	t.Run("ConditionRemoved", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventActivationResult,
+			Body: sdk.ActivationResultBody{
+				Actor: "alice",
+				ConditionRemoved: &sdk.ConditionRemovedBody{
+					Target: "bob", Ref: "dnd5e:conditions:hidden", Name: "Hidden", Reason: "revealed",
+				},
+			},
+		})
+
+		result := got.GetActivationResult()
+		require.NotNil(t, result)
+		require.Equal(t, "alice", result.GetActor())
+		condition := result.GetConditionRemoved()
+		require.NotNil(t, condition)
+		require.Equal(t, "bob", condition.GetTarget())
+		require.Equal(t, "dnd5e:conditions:hidden", condition.GetRef())
+		require.Equal(t, "Hidden", condition.GetName())
+		require.Equal(t, "revealed", condition.GetReason())
+		require.Nil(t, result.GetHealingApplied())
+		require.Nil(t, result.GetConditionApplied())
+		require.Nil(t, result.GetCapacityGranted())
+	})
+
+	t.Run("CapacityGranted", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventActivationResult,
+			Body: sdk.ActivationResultBody{
+				Actor: "alice",
+				CapacityGranted: &sdk.CapacityGrantedBody{
+					Member: "alice", Description: "30ft movement",
+				},
+			},
+		})
+
+		result := got.GetActivationResult()
+		require.NotNil(t, result)
+		require.Equal(t, "alice", result.GetActor())
+		capacity := result.GetCapacityGranted()
+		require.NotNil(t, capacity)
+		require.Equal(t, "alice", capacity.GetMember())
+		require.Equal(t, "30ft movement", capacity.GetDescription())
+		require.Nil(t, result.GetHealingApplied())
+		require.Nil(t, result.GetConditionApplied())
+		require.Nil(t, result.GetConditionRemoved())
+	})
+}
+
+func TestActivationResultVariantConverters_NilSafe(t *testing.T) {
+	require.Nil(t, healingAppliedBodyToProto(nil))
+	require.Nil(t, conditionAppliedBodyToProto(nil))
+	require.Nil(t, conditionRemovedBodyToProto(nil))
+	require.Nil(t, capacityGrantedBodyToProto(nil))
+}
+
+func TestActivationEventBody_NilOrMalformedStaysNil(t *testing.T) {
+	tests := []struct {
+		name string
+		body sdk.EventBody
+	}{
+		{name: "nil", body: nil},
+		{name: "no result", body: sdk.ActivationResultBody{Actor: "alice"}},
+		{
+			name: "multiple results",
+			body: sdk.ActivationResultBody{
+				Actor:            "alice",
+				ConditionApplied: &sdk.ConditionAppliedBody{Target: "alice"},
+				CapacityGranted:  &sdk.CapacityGrantedBody{Member: "alice"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := eventToProto(sdk.Event{
+				Kind: sdk.EventActivationResult, Payload: []byte("passthrough"), Body: tt.body,
+			})
+			require.Equal(t, sessionpb.EventKind_EVENT_KIND_ACTIVATION_RESULT, got.GetKind())
+			require.Equal(t, []byte("passthrough"), got.GetPayload())
+			require.Nil(t, got.GetBody())
+		})
+	}
 }
 
 func TestStepsToProto(t *testing.T) {
@@ -622,6 +1055,11 @@ func TestShortfallReasonToProto(t *testing.T) {
 		// from NO_BUDGET on purpose: nothing ran out, and telling a raging
 		// barbarian to come back next turn is the wrong sentence.
 		{sdk.ShortfallUnavailable, sessionpb.ShortfallReason_SHORTFALL_REASON_UNAVAILABLE},
+		// The freeze (rpg-project#316 rung 3). It is what EVERY other verb
+		// says while somebody is being asked whether they react, so leaving
+		// it unmapped would blank the reason on the whole panel at the one
+		// moment a player most needs to be told why nothing works.
+		{sdk.ShortfallWindowOpen, sessionpb.ShortfallReason_SHORTFALL_REASON_WINDOW_OPEN},
 		{sdk.ShortfallReason("bogus"), sessionpb.ShortfallReason_SHORTFALL_REASON_UNSPECIFIED},
 	}
 	for _, tt := range tests {
@@ -674,13 +1112,34 @@ func TestShortfallToProto_Populated(t *testing.T) {
 
 func TestParticipantToProto(t *testing.T) {
 	got := participantToProto(sdk.Participant{
-		Member: "char-1", Name: "Aldric", Kind: sdk.KindPlayer, Standing: sdk.StandingUp, Active: true,
+		Member: "char-1", Name: "Aldric", Kind: sdk.KindPlayer, Standing: sdk.StandingDowned, Active: true,
+		LifeState:  sdk.LifeStateDying,
+		DeathSaves: &sdk.DeathSaveProgress{Successes: 1, Failures: 2, SuccessesNeeded: 2, FailuresRemaining: 1},
 	})
 	require.Equal(t, "char-1", got.GetMember())
 	require.Equal(t, "Aldric", got.GetName())
 	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_PLAYER, got.GetKind())
-	require.Equal(t, sessionpb.Standing_STANDING_UP, got.GetStanding())
+	require.Equal(t, sessionpb.Standing_STANDING_DOWNED, got.GetStanding())
 	require.True(t, got.GetActive())
+	require.Equal(t, sessionpb.LifeState_LIFE_STATE_DYING, got.GetLifeState())
+	require.Equal(t, int32(1), got.GetDeathSaves().GetSuccesses())
+	require.Equal(t, int32(2), got.GetDeathSaves().GetFailures())
+	require.Equal(t, int32(2), got.GetDeathSaves().GetSuccessesNeeded())
+	require.Equal(t, int32(1), got.GetDeathSaves().GetFailuresRemaining())
+}
+
+func TestDeclarationToProto_CarriesDeathSaveIdentity(t *testing.T) {
+	got := declarationToProto(sdk.Declaration{
+		Verb: sdk.VerbDeathSave, Slot: sdk.SlotNone, Available: true,
+		ID: "save-selector", TargetKind: sdk.TargetNone,
+		DeathSave: &sdk.DeathSaveRef{Name: "Death Saving Throw"},
+	})
+	require.Equal(t, sessionpb.Verb_VERB_DEATH_SAVE, got.GetVerb())
+	require.Equal(t, sessionpb.Slot_SLOT_NONE, got.GetSlot())
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_NONE, got.GetTargetKind())
+	require.Equal(t, "Death Saving Throw", got.GetDeathSave().GetName())
+	require.Nil(t, got.GetAttack())
+	require.Nil(t, got.GetAbility())
 }
 
 // TestParticipantsToProto_NilOrEmpty_StaysNonNilEmpty mirrors
@@ -745,14 +1204,24 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 		require.Len(t, s.GetDamageComponents(), 2)
 		weapon := s.GetDamageComponents()[0]
 		require.Equal(t, "weapon", weapon.GetSource())
-		require.Equal(t, "dnd5e:weapons:longsword", weapon.GetSourceRef())
-		require.Equal(t, "1d8", weapon.GetDice())
-		require.Equal(t, []int32{4}, weapon.GetFinalRolls())
+		require.NotNil(t, weapon.GetRoll())
+		require.Equal(t, "dnd5e:weapons:longsword", weapon.GetRoll().GetSource().GetRef())
+		require.Equal(t, "Longsword", weapon.GetRoll().GetSource().GetName())
+		require.Equal(t, "1d8", weapon.GetRoll().GetDice().GetNotation())
+		require.Equal(t, []int32{4}, weapon.GetRoll().GetDice().GetFinalRolls())
+		require.Empty(t, weapon.GetSourceRef())
+		require.Empty(t, weapon.GetDice())
+		require.Nil(t, weapon.GetFinalRolls())
 		require.Equal(t, sessionpb.DamageType_DAMAGE_TYPE_SLASHING, weapon.GetDamageType())
 		require.Nil(t, weapon.Multiplier)
 
 		immunity := s.GetDamageComponents()[1]
 		require.Equal(t, "monster_trait", immunity.GetSource())
+		require.NotNil(t, immunity.GetRoll())
+		require.Equal(t, "dnd5e:monster_traits:immunity", immunity.GetRoll().GetSource().GetRef())
+		require.Nil(t, immunity.GetRoll().GetDice())
+		require.Nil(t, immunity.GetRoll().Modifier)
+		require.Empty(t, immunity.GetSourceRef())
 		require.NotNil(t, immunity.Multiplier)
 		require.Zero(t, immunity.GetMultiplier())
 
@@ -794,6 +1263,48 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 		require.Equal(t, sessionpb.DissolveKind_DISSOLVE_KIND_BY_DEFEAT, got.GetFightEnded().GetCause())
 	})
 
+	t.Run("FightEnded by stance", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventFightEnded,
+			Body: sdk.FightEndedBody{Cause: sdk.DissolveByStance},
+		})
+		require.Equal(t, sessionpb.DissolveKind_DISSOLVE_KIND_BY_STANCE, got.GetFightEnded().GetCause())
+	})
+
+	// The arrival beat (rpg-project#375 step B, design §6): which placement
+	// entered the run, what it is -- a closed enum, mapped by name -- and
+	// the cell it stands on now.
+	t.Run("Arrived", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventArrived,
+			Body: sdk.ArrivedBody{ID: "reinforcement-1", Kind: sdk.PlacementMonster, Cell: spatial.Position{X: 1, Y: 4}},
+		})
+		require.Equal(t, sessionpb.EventKind_EVENT_KIND_ARRIVED, got.GetKind())
+		require.Equal(t, "reinforcement-1", got.GetArrived().GetId())
+		require.Equal(t, sessionpb.PlacementKind_PLACEMENT_KIND_MONSTER, got.GetArrived().GetKind())
+		require.Equal(t, 1.0, got.GetArrived().GetCell().GetX())
+		require.Equal(t, 4.0, got.GetArrived().GetCell().GetY())
+
+		prop := eventToProto(sdk.Event{
+			Kind: sdk.EventArrived,
+			Body: sdk.ArrivedBody{ID: "letter", Kind: sdk.PlacementProp, Cell: spatial.Position{X: 0, Y: 3}},
+		})
+		require.Equal(t, sessionpb.PlacementKind_PLACEMENT_KIND_PROP, prop.GetArrived().GetKind(),
+			"a prop is not a member, and the client branches on it")
+	})
+
+	// The stance beat (rpg-project#375, design §6): kind and body, verbatim
+	// -- the pair as the session sorted it, the stance as the author's word.
+	t.Run("StanceChanged", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventStanceChanged,
+			Body: sdk.StanceChangedBody{Between: []string{"party", "raiders"}, Stance: "neutral"},
+		})
+		require.Equal(t, sessionpb.EventKind_EVENT_KIND_STANCE_CHANGED, got.GetKind())
+		require.Equal(t, []string{"party", "raiders"}, got.GetStanceChanged().GetBetween())
+		require.Equal(t, "neutral", got.GetStanceChanged().GetStance())
+	})
+
 	t.Run("Moved", func(t *testing.T) {
 		got := eventToProto(sdk.Event{
 			Kind: sdk.EventMoved,
@@ -818,6 +1329,78 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 			Body: sdk.ExitedBody{Member: "char-1"},
 		})
 		require.Equal(t, "char-1", got.GetExited().GetMember())
+	})
+
+	// DoorRevealed (rpg-project#350/#351): the flat door/state/approaches
+	// DoorRevealedBody carries grouped into the same nested DoorInfo shape
+	// GetDoors returns, plus the doorways that patch the recipient's cached
+	// atlas. A locked door's approaches list rides through; an unlocked one
+	// (see the RegionRevealed case below) carries no lock at all.
+	t.Run("DoorRevealed", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventDoorRevealed,
+			Body: sdk.DoorRevealedBody{
+				Door:  "hall-tomb",
+				State: "locked",
+				Doorways: []sdk.AtlasDoorway{
+					{Door: "hall-tomb", From: spatial.Position{X: 15, Y: 4}, To: spatial.Position{X: 16, Y: 4}},
+				},
+				Approaches: []sdk.DoorApproach{{Ability: "dex", DC: 12}},
+			},
+		})
+		d := got.GetDoorRevealed()
+		require.NotNil(t, d)
+		require.Equal(t, "hall-tomb", d.GetDoor().GetDoor())
+		require.Equal(t, sessionpb.DoorState_DOOR_STATE_LOCKED, d.GetDoor().GetState())
+		require.Len(t, d.GetDoor().GetLock().GetApproaches(), 1)
+		require.Equal(t, "dex", d.GetDoor().GetLock().GetApproaches()[0].GetAbility())
+		require.Equal(t, int32(12), d.GetDoor().GetLock().GetApproaches()[0].GetDc())
+		require.Len(t, d.GetDoorways(), 1)
+		require.Equal(t, "hall-tomb", d.GetDoorways()[0].GetConnection())
+	})
+
+	// An unlocked reveal carries no lock -- doorRevealedInfoToProto's
+	// presence law (Approaches empty means Lock unset), matching
+	// doorToProto's own convention field-for-field.
+	t.Run("DoorRevealed_Unlocked_CarriesNoLock", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventDoorRevealed,
+			Body: sdk.DoorRevealedBody{Door: "entrance-hall", State: "open"},
+		})
+		require.Nil(t, got.GetDoorRevealed().GetDoor().GetLock())
+	})
+
+	// RegionRevealed (rpg-project#350/#351): the region's whole atlas slice
+	// -- region entry, props, and every boundary touching its cells -- reuses
+	// atlasRegionToProto and the shared atlasPropsToProto AtlasToProto itself
+	// uses, verbatim.
+	t.Run("RegionRevealed", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventRegionRevealed,
+			Body: sdk.RegionRevealedBody{
+				Region: sdk.AtlasRegion{
+					ID: "tomb", Name: "Tomb", Archetype: "crypt",
+					Cells:    []spatial.Position{{X: 16, Y: 0}},
+					Lighting: sdk.Lighting{Intensity: 0.15},
+				},
+				Props: []sdk.AtlasProp{
+					{Ref: "dnd5e:props:coffin", At: spatial.Position{X: 22, Y: 3}, BlocksMovement: true},
+				},
+				Boundaries: []sdk.AtlasBoundary{
+					{From: spatial.Position{X: 15, Y: 0}, To: spatial.Position{X: 16, Y: 0}, BlocksMovement: true, BlocksLineOfSight: true},
+				},
+			},
+		})
+		r := got.GetRegionRevealed()
+		require.NotNil(t, r)
+		require.Equal(t, "tomb", r.GetRegion().GetId())
+		require.Equal(t, "crypt", r.GetRegion().GetArchetype())
+		require.Equal(t, 0.15, r.GetRegion().GetLighting().GetIntensity())
+		require.Len(t, r.GetProps(), 1)
+		require.Equal(t, "dnd5e:props:coffin", r.GetProps()[0].GetRef())
+		require.True(t, r.GetProps()[0].GetBlocksMovement())
+		require.Len(t, r.GetBoundaries(), 1)
+		require.True(t, r.GetBoundaries()[0].GetBlocksLineOfSight())
 	})
 }
 
@@ -897,4 +1480,129 @@ func TestShortfallToProto_ChargesCrossWhole(t *testing.T) {
 	require.Equal(t, int32(1), out.GetNeeded())
 	require.Equal(t, int32(0), out.GetLeft())
 	require.Equal(t, "no rage uses remaining", out.GetText())
+}
+
+// TestReactionRefToProto pins the presence law: a reaction identity is a
+// POINTER on Struck, Missed and a Declaration, and absent means "not taken as
+// a reaction" rather than "taken as one whose name we lost". A zeroed message
+// on the wire would read as the second, and a client drawing "reacted with
+// ..." would label an ordinary swing.
+func TestReactionRefToProto(t *testing.T) {
+	got := reactionRefToProto(&sdk.ReactionRef{
+		Ref: "dnd5e:conditions:opportunity_attack", Name: "Opportunity Attack",
+	})
+	require.Equal(t, "dnd5e:conditions:opportunity_attack", got.GetRef())
+	require.Equal(t, "Opportunity Attack", got.GetName())
+
+	require.Nil(t, reactionRefToProto(nil), "absent must stay absent, never a zeroed message")
+}
+
+// TestDeclarationToProto_CarriesTheReaction covers the REACT row Afford
+// returns while a window is open (rpg-project#316 rung 3): what the member is
+// being asked to react with, and the mover as the sole candidate. The two
+// choices are NOT here -- strike and hold are implied by the verb and travel
+// as ReactChoice on the request.
+func TestDeclarationToProto_CarriesTheReaction(t *testing.T) {
+	out := declarationToProto(sdk.Declaration{
+		Verb:       sdk.VerbReact,
+		Slot:       sdk.SlotReaction,
+		Available:  true,
+		ID:         "decl-react-1",
+		TargetKind: sdk.TargetMember,
+		Candidates: []sdk.TargetCandidate{{Member: "skel-1", Available: true}},
+		Reaction: &sdk.ReactionRef{
+			Ref: "dnd5e:conditions:opportunity_attack", Name: "Opportunity Attack",
+		},
+	})
+
+	require.Equal(t, sessionpb.Verb_VERB_REACT, out.GetVerb())
+	require.Equal(t, sessionpb.Slot_SLOT_REACTION, out.GetSlot())
+	require.Equal(t, "Opportunity Attack", out.GetReaction().GetName())
+	require.Len(t, out.GetCandidates(), 1)
+	require.Equal(t, "skel-1", out.GetCandidates()[0].GetMember())
+}
+
+// A row that is not a reaction carries no reaction, and this is the half that
+// makes the field mean something: every OTHER declaration Afford compiles is
+// on the same wire message.
+func TestDeclarationToProto_OmitsTheReactionOnAnOrdinaryRow(t *testing.T) {
+	out := declarationToProto(sdk.Declaration{Verb: sdk.VerbMove, ID: "decl-move-1"})
+	require.Nil(t, out.GetReaction())
+}
+
+// TestEventWindowOpened_ReachesTheWireTyped is the beat half of the done-when:
+// the fight paused, and the log says whose step, between which cells, who is
+// being asked, and with what.
+func TestEventWindowOpened_ReachesTheWireTyped(t *testing.T) {
+	got := eventToProto(sdk.Event{
+		Session: "sess-1",
+		Kind:    sdk.EventWindowOpened,
+		Body: sdk.WindowOpenedBody{
+			Mover:    "skel-1",
+			From:     spatial.Position{X: 3, Y: 4},
+			To:       spatial.Position{X: 4, Y: 4},
+			Audience: []string{"char-1", "char-2"},
+			Reaction: sdk.ReactionRef{
+				Ref: "dnd5e:conditions:opportunity_attack", Name: "Opportunity Attack",
+			},
+		},
+	})
+
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_WINDOW_OPENED, got.GetKind())
+	w := got.GetWindowOpened()
+	require.NotNil(t, w, "the kind and the body arm are one-to-one")
+	require.Equal(t, "skel-1", w.GetMover())
+	// The mover is STANDING ON From: the step is announced and not taken,
+	// which is the whole reason reach can still be checked against them.
+	require.Equal(t, float64(3), w.GetFrom().GetX())
+	require.Equal(t, float64(4), w.GetTo().GetX())
+	require.Equal(t, []string{"char-1", "char-2"}, w.GetAudience())
+	require.Equal(t, "Opportunity Attack", w.GetReaction().GetName())
+}
+
+// TestStruckAndMissedCarryTheReaction closes the gap protos#258 opened and
+// nothing filled: the wire field existed, the encounter recorded the identity,
+// and the beat arrived saying nothing about why a fighter swung on a
+// skeleton's turn.
+func TestStruckAndMissedCarryThePresentationToken(t *testing.T) {
+	const token = "presentation_2f1c8b4a-0d6e-4a1b-9c3f-5e7a1b2c3d4e"
+
+	struck := eventToProto(sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
+		Attacker: "char-1", Target: "skel-1", PresentationID: token,
+	}}).GetStruck()
+	require.Equal(t, token, struck.GetPresentationId())
+
+	missed := eventToProto(sdk.Event{Kind: sdk.EventMissed, Body: sdk.MissedBody{
+		Attacker: "char-1", Target: "skel-1", PresentationID: token,
+	}}).GetMissed()
+	require.Equal(t, token, missed.GetPresentationId())
+
+	// A beat recorded before the field existed carries nothing, and empty is
+	// the truth: the client reads it as "this roll has no shared presentation"
+	// and narrates the swing alone rather than treating it as an error.
+	old := eventToProto(sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
+		Attacker: "char-1", Target: "skel-1",
+	}}).GetStruck()
+	require.Empty(t, old.GetPresentationId())
+}
+
+func TestStruckAndMissedCarryTheReaction(t *testing.T) {
+	oa := &sdk.ReactionRef{Ref: "dnd5e:conditions:opportunity_attack", Name: "Opportunity Attack"}
+
+	struck := eventToProto(sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
+		Attacker: "char-1", Target: "skel-1", Reaction: oa,
+	}}).GetStruck()
+	require.Equal(t, "Opportunity Attack", struck.GetReaction().GetName())
+
+	missed := eventToProto(sdk.Event{Kind: sdk.EventMissed, Body: sdk.MissedBody{
+		Attacker: "char-1", Target: "skel-1", Reaction: oa,
+	}}).GetMissed()
+	require.Equal(t, "Opportunity Attack", missed.GetReaction().GetName())
+
+	// An ordinary swing on the actor's own turn was taken as nothing, and
+	// absent is the truth. False-vs-absent is the whole point of the field.
+	plain := eventToProto(sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
+		Attacker: "char-1", Target: "skel-1",
+	}}).GetStruck()
+	require.Nil(t, plain.GetReaction())
 }

@@ -24,6 +24,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
@@ -118,7 +119,7 @@ func (s *EquipItemTestSuite) appliedPatch(
 	patchedData.EquipmentSlots = maps.Clone(input.EquipmentSlots)
 	patchedData.ArmorClass = input.ArmorClass
 	return &characterrepo.PatchEquipmentOutput{
-		Character: &entities.Character{Data: &patchedData, Appearance: entity.Appearance},
+		Character: &entities.Character{Data: &patchedData},
 		Version:   "patched-version",
 		Applied:   true,
 	}
@@ -351,9 +352,14 @@ func (s *EquipItemTestSuite) TestEquipItem_PreservesNonEquipmentFields() {
 	charEntity.Data.ClassResources = map[shared.ClassResourceType]character.ResourceData{
 		shared.ClassResourceType(99): {Name: "legacy", Current: 1, Max: 2},
 	}
-	charEntity.Appearance = &entities.Appearance{
-		SkinTone: "#D5A88C", PrimaryColor: "#8B0000", SecondaryColor: "#FFD700", EyeColor: "#4A2511",
-	}
+	color := uint32(0x123456)
+	roughness := float32(0.33)
+	charEntity.Data.Appearance = &customization.Appearance{Hair: &customization.HairCustomization{
+		Scalp:      &customization.StyleSelection{Kind: customization.StyleSelectionStyle, StyleRef: "modular-fantasy-hero:hair:38"},
+		FacialHair: &customization.StyleSelection{Kind: customization.StyleSelectionNone},
+		ColorSRGB:  &color,
+		Roughness:  &roughness,
+	}}
 
 	s.mockCharacterRepo.EXPECT().
 		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
@@ -381,7 +387,7 @@ func (s *EquipItemTestSuite) TestEquipItem_PreservesNonEquipmentFields() {
 	s.Assert().Equal(charEntity.Data.Inventory, persisted.Data.Inventory)
 	s.Assert().Equal(charEntity.Data.SpellSlots, persisted.Data.SpellSlots)
 	s.Assert().Equal(charEntity.Data.ClassResources, persisted.Data.ClassResources)
-	s.Assert().Equal(charEntity.Appearance, persisted.Appearance)
+	s.Assert().Equal(charEntity.Data.Appearance, persisted.Data.Appearance)
 
 	// The actual equip must still have applied — this isn't a no-op merge.
 	s.Assert().Equal("longsword", persisted.Data.EquipmentSlots.Get(character.SlotMainHand))
@@ -443,7 +449,7 @@ func (s *EquipItemTestSuite) TestEquipItem_RejectsUnprojectableDataWithoutWritin
 			name: "unknown status descriptor",
 			mutate: func(entity *entities.Character) {
 				entity.Data.Conditions = []json.RawMessage{mustJSON(s.T(), conditions.ShieldSpellConditionData{
-					Ref: refs.Spells.Shield(), CharacterID: entity.Data.ID,
+					Ref: refs.Spells.Shield(), MemberID: entity.Data.ID,
 				})}
 			},
 		},
@@ -665,7 +671,7 @@ func (s *EquipItemTestSuite) TestEquipItem_RetriesConcurrentNonEquipmentRevision
 	latestData := *entity.Data
 	latestData.HitPoints = 7
 	latestData.EquipmentSlots = maps.Clone(entity.Data.EquipmentSlots)
-	latest := &entities.Character{Data: &latestData, Appearance: entity.Appearance}
+	latest := &entities.Character{Data: &latestData}
 
 	gomock.InOrder(
 		s.mockCharacterRepo.EXPECT().
@@ -692,7 +698,7 @@ func (s *EquipItemTestSuite) TestEquipItem_RetriesConcurrentNonEquipmentRevision
 				patchedData.EquipmentSlots = maps.Clone(input.EquipmentSlots)
 				patchedData.ArmorClass = input.ArmorClass
 				return &characterrepo.PatchEquipmentOutput{
-					Character: &entities.Character{Data: &patchedData, Appearance: latest.Appearance},
+					Character: &entities.Character{Data: &patchedData},
 					Version:   "version-patched",
 					Applied:   true,
 				}, nil

@@ -1,9 +1,11 @@
 package sessionv1alpha1
 
 // doors_handlers_test.go covers the three door RPCs (rpg-project#268):
-// GetDoors behind the seated gate GetRoster set, OpenDoor and Unlock behind
-// callerActingAs, and the projection of the SDK's door shapes onto the wire
-// — the lock rides only while it is real.
+// GetDoors, OpenDoor and Unlock all behind callerActingAs -- GetDoors joined
+// the other two once concealment made its answer member-scoped
+// (rpg-api-protos#266) -- and the projection of the SDK's door shapes onto
+// the wire: the lock rides only while it is real, and its approaches list
+// (rpg-project#350) is copied verbatim.
 
 import (
 	"context"
@@ -22,13 +24,15 @@ import (
 )
 
 func TestGetDoors_Unauthenticated_Errors(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	_, err := h.GetDoors(context.Background(), &sessionpb.GetDoorsRequest{Session: "sess-1"})
 	requireCode(t, err, codes.Unauthenticated)
 }
 
 func TestGetDoors_MissingSession_Errors(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.GetDoors(ctx, &sessionpb.GetDoorsRequest{})
 	requireCode(t, err, codes.InvalidArgument)
@@ -37,14 +41,13 @@ func TestGetDoors_MissingSession_Errors(t *testing.T) {
 func TestGetDoors_NotSeated_PermissionDenied(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	h := &Handler{
-		roster: tombRoster(t),
-		characters: charactersOf(ctrl, map[string][4]string{
-			"char-alice": {"alice", "Alice", "fighter", "human"},
-			"char-bob":   {"bob", "Bob", "rogue", "elf"},
+		characters: charactersOf(ctrl, map[string]rosterCharacter{
+			"char-alice": {owner: "alice", name: "Alice", class: "fighter", race: "human"},
+			"char-bob":   {owner: "bob", name: "Bob", class: "rogue", race: "elf"},
 		}),
 	}
 	ctx := auth.WithPlayerID(context.Background(), "mallory")
-	_, err := h.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: "sess-1"})
+	_, err := h.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: "sess-1", Member: "char-alice"})
 	requireCode(t, err, codes.PermissionDenied)
 }
 
@@ -57,23 +60,23 @@ func TestGetDoors_ProjectsTheLiveState(t *testing.T) {
 	mgr.EXPECT().Doors(gomock.Any(), gomock.Any()).DoAndReturn(
 		func(_ context.Context, in *sdk.DoorsInput) (*sdk.DoorsOutput, error) {
 			require.Equal(t, "sess-1", in.Session)
+			require.Equal(t, "char-alice", in.Member, "the caller's own member, bound by the host, not trusted from the request")
 			return &sdk.DoorsOutput{Doors: []sdk.Door{
 				{ID: "entrance-hall", State: "open"},
-				{ID: "hall-tomb", State: "locked", Lock: &sdk.DoorLock{DC: 12, Ability: "dex"}},
+				{ID: "hall-tomb", State: "locked", Lock: &sdk.DoorLock{Approaches: []sdk.DoorApproach{{Ability: "dex", DC: 12}}}},
 			}}, nil
 		},
 	)
 
 	h := &Handler{
 		manager: mgr,
-		roster:  tombRoster(t),
-		characters: charactersOf(ctrl, map[string][4]string{
-			"char-alice": {"alice", "Alice", "fighter", "human"},
-			"char-bob":   {"bob", "Bob", "rogue", "elf"},
+		characters: charactersOf(ctrl, map[string]rosterCharacter{
+			"char-alice": {owner: "alice", name: "Alice", class: "fighter", race: "human"},
+			"char-bob":   {owner: "bob", name: "Bob", class: "rogue", race: "elf"},
 		}),
 	}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
-	resp, err := h.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: "sess-1"})
+	resp, err := h.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: "sess-1", Member: "char-alice"})
 	require.NoError(t, err)
 	require.Len(t, resp.GetDoors(), 2)
 
@@ -85,12 +88,14 @@ func TestGetDoors_ProjectsTheLiveState(t *testing.T) {
 	locked := resp.GetDoors()[1]
 	require.Equal(t, "hall-tomb", locked.GetDoor())
 	require.Equal(t, sessionpb.DoorState_DOOR_STATE_LOCKED, locked.GetState())
-	require.Equal(t, int32(12), locked.GetLock().GetDc())
-	require.Equal(t, "dex", locked.GetLock().GetAbility())
+	require.Len(t, locked.GetLock().GetApproaches(), 1)
+	require.Equal(t, int32(12), locked.GetLock().GetApproaches()[0].GetDc())
+	require.Equal(t, "dex", locked.GetLock().GetApproaches()[0].GetAbility())
 }
 
 func TestOpenDoor_Unauthenticated_Errors(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	_, err := h.OpenDoor(context.Background(), &sessionpb.OpenDoorRequest{Session: "sess-1", Member: "char-1", Door: "gate"})
 	requireCode(t, err, codes.Unauthenticated)
 }
@@ -98,7 +103,7 @@ func TestOpenDoor_Unauthenticated_Errors(t *testing.T) {
 func TestOpenDoor_MissingMember_Errors_NeverCallsManager(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl) // no EXPECT()
-	h := &Handler{manager: mgr}
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.OpenDoor(ctx, &sessionpb.OpenDoorRequest{Session: "sess-1", Door: "gate"})
 	requireCode(t, err, codes.InvalidArgument)
@@ -148,7 +153,7 @@ func TestUnlock_HappyPath_CarriesTheAttempt(t *testing.T) {
 			require.Equal(t, "hall-tomb", in.Door)
 			return &sdk.UnlockOutput{
 				Beaten: false, Total: 9, DC: 12,
-				Door: sdk.Door{ID: "hall-tomb", State: "locked", Lock: &sdk.DoorLock{DC: 12, Ability: "dex"}},
+				Door: sdk.Door{ID: "hall-tomb", State: "locked", Lock: &sdk.DoorLock{Approaches: []sdk.DoorApproach{{Ability: "dex", DC: 12}}}},
 			}, nil
 		},
 	)
@@ -164,7 +169,8 @@ func TestUnlock_HappyPath_CarriesTheAttempt(t *testing.T) {
 }
 
 func TestUnlock_MissingMember_Errors(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.Unlock(ctx, &sessionpb.UnlockRequest{Session: "sess-1", Door: "hall-tomb"})
 	requireCode(t, err, codes.InvalidArgument)

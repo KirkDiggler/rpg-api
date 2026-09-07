@@ -16,7 +16,8 @@ import (
 )
 
 func TestDissolve_Unauthenticated_Errors(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	_, err := h.Dissolve(context.Background(), &sessionpb.DissolveRequest{})
 	requireCode(t, err, codes.Unauthenticated)
 }

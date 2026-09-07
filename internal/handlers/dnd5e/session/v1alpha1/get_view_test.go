@@ -16,7 +16,8 @@ import (
 )
 
 func TestGetView_Unauthenticated_Errors(t *testing.T) {
-	h := &Handler{}
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
 	_, err := h.GetView(context.Background(), &sessionpb.GetViewRequest{})
 	requireCode(t, err, codes.Unauthenticated)
 }

@@ -31,7 +31,10 @@ func newTestSessionManager(t *testing.T, charRepo characterrepo.Repository) *ses
 	mr := miniredis.RunT(t)
 	client := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = client.Close() })
-	sessOrch, err := sessionorch.New(sessionorch.Config{Redis: client, Characters: charRepo, TTL: 24 * time.Hour})
+	sessOrch, err := sessionorch.New(sessionorch.Config{
+		Redis: client, Characters: charRepo, TTL: 24 * time.Hour,
+		PresentationIDs: idgen.NewSequential("presentation"),
+	})
 	require.NoError(t, err)
 	return sessOrch
 }

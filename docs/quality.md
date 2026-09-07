@@ -1,8 +1,8 @@
 ---
 name: rpg-api quality scorecard
 description: Per-component grade with rationale — a graded scorecard to update as the codebase evolves
-updated: 2026-08-25
-confidence: medium-high — #844 owner identity, sanitized strict projection, and atomic equipment patch verified against focused handler/orchestrator/repository/lint gates; older entries retain their stated evidence
+updated: 2026-09-06
+confidence: medium-high — #921 local-dev composition RPC integration is verified by focused handler/orchestrator, registration, and miniredis tests; #897 Appearance conversion/delegation remains verified by focused and Docker-backed integration tests
 ---
 
 # Quality Scorecard
@@ -33,7 +33,7 @@ encounter` module it was built on. Replaced by the `rulebooks/dnd5e/session`
 SDK, integrated directly into `LobbyService` — see `docs/architecture/
 components/lobby-service.md`. There is no proto-level encounter handler grade
 to give any more; gameplay verbs ride `SessionService`
-(`internal/handlers/dnd5e/session/v1alpha1/`), not yet scored in this doc.
+(`internal/handlers/dnd5e/session/v1alpha1/`), scored below.
 See `docs/status.md` "Active work" for the full deletion tally.
 
 ### Lobby handler — B+ (new, 2026-07-07)
@@ -49,16 +49,33 @@ matrix (party cap, host migration on disconnect-vs-leave, idempotent rebind)
 is unit-tested at the orchestrator layer but not yet re-proven at the wire
 level.
 
-### Session service handler — B+ (updated 2026-08-25)
+### Session service handler — B+ (updated 2026-08-28)
 
 `internal/handlers/dnd5e/session/v1alpha1/` is rpg-api's one gameplay interface
 to the toolkit session SDK. Every member-naming verb applies the shared caller/member
-gate before Manager dispatch. Conversion remains field-for-field with no rules or
-invented vocabulary, including nested declarations/candidates and selectors.
-`StreamEvents` is audience-filtered best-effort live delivery; `GetStory` is persisted
-catch-up, and both use the same typed-event converter. Unit and
-`internal/integration/session` suites cover ownership, selectors, live fan-out, replay,
-and production declaration shapes. Held below A pending production traffic.
+gate before Manager dispatch; production and the harness now pass the same
+`sessionaccess.Access` instance to SessionService and SessionPresentationService.
+Conversion remains field-for-field with no rules or invented vocabulary, including
+nested declarations/candidates and selectors. `GetRoster` delegates once to the Session
+SDK and mechanically maps its public members and flat customization values, preserving
+optional presence and explicit zero while keeping the shelf present-and-empty for
+nil/default players and monsters; it projects no private sheet fields. `StreamEvents` is audience-filtered
+best-effort live delivery; `GetStory` is persisted catch-up, and both use the same
+typed-event converter. Unit and `internal/integration/session` suites cover ownership,
+selectors, live fan-out, replay, and production declaration shapes. Held below A pending
+production traffic.
+
+### Session presentation handler — B+ (new, 2026-08-28)
+
+`internal/handlers/dnd5e/sessionpresentation/v1alpha1/` adapts the presentation-only
+`SessionPresentationService`. Both RPCs run the shared `CallerMemberSeated` gate before
+service access, so caller ownership and Session SDK seating are identical to
+SessionService. Mapping is proto ↔ proto-free domain structs plus a small status switch:
+invalid plans become `InvalidArgument`, duplicate conflicting attempts become
+`AlreadyExists`, and storage/subscription failures are sanitized as `Internal`. It does
+not call toolkit/session APIs or inspect Story. Held at B+ rather than A because browser
+consumption has not happened yet, even though unit tests and the cross-instance Redis
+integration cover the contract.
 
 ### Character handler — C
 
@@ -76,6 +93,12 @@ but not yet addressed. Test coverage exists via `list_equipment_test.go` and
 its size. Its `EquipItem`/`UnequipItem` RPCs now delegate to the rules-correct
 orchestrator method (rpg-api#680, see "Character orchestrator" below) — that
 specific gap is closed even though the surrounding stub/TODO debt isn't.
+
+**Update (rpg-api#897, 2026-09-03):** complete Appearance now converts field-for-field
+to toolkit customization data. `UpdateAppearance` delegates once and returns the
+service's complete DraftData without a second Get; malformed semantics reach
+`Draft.SetAppearance`. Finalization/Get/List/equipment map nested `Data.Appearance`
+naturally. Grade remains C because the older converter/TODO debt above is unchanged.
 
 ### Character v2 handler — B+ (updated 2026-08-25)
 
@@ -115,6 +138,12 @@ Verified remaining TODOs concern draft mutation access, background validation, e
 logging, and pagination/class-filter placeholders; they are outside the owner-private
 equipment path.
 
+**Update (rpg-api#897, 2026-09-03):** Appearance now lives in toolkit
+`character.Data`/`DraftData`; `SetAppearance` loads, calls `Draft.SetAppearance` once,
+updates with `draft.ToData()`, and returns stored DraftData. Redis and session-save
+paths use nested toolkit state without a sibling envelope. The grade remains B- because
+older draft/catalog TODO debt below is unchanged.
+
 **Update (rpg-api#680/#844, 2026-08-25):** `EquipItem`/`UnequipItem` strictly
 load/attach, call the toolkit's rules-aware verbs, precompose complete post-views, and
 persist only EquipmentSlots plus cached ArmorClass through the repository's atomic
@@ -145,6 +174,16 @@ rpg-api's Redis-backed key-value repositories and the host's character
 repository; owns no rules. Covered by its own suite and by
 `internal/integration/session`. Held at B while rpg-api#800 (partial-failure
 orphans) is unruled.
+
+### Session presentation orchestrator — B+ (new, 2026-08-28)
+
+`internal/orchestrators/sessionpresentation/` validates bounded dice throw drafts,
+binds server-owned session/roller fields, encodes deterministic JSON payloads, and
+delegates acceptance/fan-out to the repository. It is proto-free and toolkit-free:
+`authority_seq` is only a carried reference and no Story/session Manager method is
+called. Unit tests cover normalization, conflict mapping, malformed payload dropping,
+close propagation, and validation limits. Held below A until live web traffic exercises
+Pub/Sub behavior outside tests.
 
 ### sessionworld — B+ (new, 2026-08-21)
 
@@ -242,6 +281,36 @@ every Save/Get like the v2 encounter repo. Grade held at B rather than higher
 because it's brand new with no production traffic yet — the pattern is proven
 but unexercised at scale.
 
+### Session presentation repository — B+ (new, 2026-08-28)
+
+`internal/repositories/sessionpresentation/` accepts deterministic presentation payloads
+with a Redis script: first writer stores and publishes, identical duplicate returns the
+accepted payload, conflicting duplicate returns `ErrConflict`. Accepted keys live for two
+minutes; Redis Pub/Sub streams are live-only and close with context/subscription shutdown.
+Unit tests cover key hashing, TTL, duplicate/conflict behavior, fan-out, and close paths;
+`internal/integration/sessionpresentation` proves two server instances over one Redis.
+Held below A until web traffic exercises the live channel.
+
+### Composition repository — B (new, 2026-09-06)
+
+`internal/repositories/composition/` provides typed Create, Get, List, and Delete
+operations over toolkit `world/composition.Data`. One Redis hash per world stores each
+composition under its caller-supplied ID; HSETNX prevents overwrite, HGET/HGETALL serve
+reads, one HDEL performs idempotent permanent deletion without decoding the payload,
+records do not expire, and lists are sorted by ID. Miniredis tests cover round trips,
+same-ID world isolation, duplicate refusal, absent/empty results, malformed-content
+deletion, storage/decode errors, and snapshot independence.
+
+The published Create/Get/List/Delete wire contract has a thin handler and orchestrator:
+the handler requires the existing player context, matches the configured dev-only world,
+and maps JSON strings to `json.RawMessage`; the orchestrator mints IDs before repository
+Create. Registration is limited to `AUTH_DEV_MODE=true`, Create retains the separate
+`RPG_AUTHORING_ENABLED=1` mutation gate for Create and Delete, and reads remain
+available within dev mode.
+Focused tests exercise the wire boundary through miniredis and prove non-dev absence.
+Held at B because this local stub intentionally has no production guild-to-world mapping
+or production traffic.
+
 ### Character repository — B+
 
 `internal/repositories/character/redis.go` remains the durable character store. In
@@ -257,9 +326,11 @@ not been redesigned and TTL/stale-character lifecycle remains unchanged.
 
 `internal/repositories/character_draft/redis.go`
 
-Redis-backed. Handles in-progress character creation state. Less tested than
-the character repo (no integration tests that specifically exercise draft
-lifecycle). No known correctness gaps.
+Redis-backed. Handles in-progress character creation state. #897 adds complete
+nested toolkit Appearance JSON round trips, detached nested pointer assertions, and
+present-zero optional scalar coverage. Broad repository lifecycle coverage remains
+thinner than the character repository, so the grade does not change. No known
+correctness gaps.
 
 ### Dice session repository — B-
 
@@ -269,25 +340,19 @@ Redis-backed. Narrow scope. No observed gaps. Low risk.
 
 ## Testing
 
-### Integration test harness — B-
+### Integration test harness — B+ (updated 2026-08-28)
 
 `internal/integration/harness/harness.go`
 
-**Updated 2026-08-21 (rpg-project#227):** the harness no longer registers a
-v1alpha2 EncounterService — that service is deleted along with the old
-encounter stack (see "Encounter v2 handler" above). `TestServer` drops
-`EncounterClientV2`/`BrokerV2`/`EncRepoV2`; `TestServer.SessionOrch` (a
-miniredis-backed session orchestrator) is wired into the lobby orchestrator
-instead, mirroring production. The six top-level `internal/integration/
-*_test.go` suites that drove `LobbyService` through a real gRPC round-trip
-via `EncounterClientV2`-backed assertions are deleted with it — see
-`docs/architecture/components/integration-test-harness.md`. Grade dropped
-from B+ to B-: the harness itself (container lifecycle, bufconn wiring,
-CharacterService/DiceService/LobbyService registration) is intact and still
-the most valuable test-infra piece in the repo, but it currently proves NO
-full-stack, real-gRPC coverage of `LobbyService` or the session SDK — only
-`internal/integration/character` and `internal/integration/session` (a
-separate harness) exercise anything end-to-end today.
+The harness still omits the deleted v1alpha2 EncounterService, but #852 restores the
+new-stack full-gRPC value and #869 uses its real `redis:7-alpine` character path to prove
+hair update/reload/refusal/finalization/Get: `TestServer` exposes `SessionClient`,
+`SessionPresentationClient`, and `HealthClient`; registers SessionService and
+SessionPresentationService; and shares the real Session Manager with lobby launch and
+both access gates. The new `internal/integration/sessionpresentation` package starts two
+TestServers over one Redis container and proves real cross-instance seating plus Redis
+Pub/Sub. Grade returns to B+ from B-; held below A pending wider lobby/session full-stack
+suites and browser evidence.
 
 ### Unit tests — B-
 

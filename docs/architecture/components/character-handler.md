@@ -1,13 +1,32 @@
 ---
 name: character handler
 description: gRPC handler for CharacterService — character creation, management, and data loading
-updated: 2026-08-25
-confidence: medium-high — legacy surface verified by read; #844 shared strict equipment path and v1alpha2 flattened owner-private mapping verified by focused tests
+updated: 2026-09-04
+confidence: medium-high — #897 complete Appearance conversion/delegation and Data-owned persistence are verified by focused handler/converter tests and Docker-backed character integration
 ---
 
 # character handler
 
 The character handler is the gRPC adapter for `CharacterService`. It covers the full character creation lifecycle (draft → finalize), character management (equip/unequip), and data loading for the character creation UI (list races, classes, backgrounds, equipment, spells).
+
+## Dwarf race tool choices (#728)
+
+`UpdateRace` translates `CHOICE_CATEGORY_TOOLS` through the same canonical proto-to-toolkit tool converter used by class choices and passes the resulting selection IDs into `RaceChoices.Tools`. The toolkit remains responsible for validating Dwarf choice eligibility and completeness. Handler coverage pins Smith's Tools translation, while the character integration suite drives Dwarf race selection through `FinalizeDraft` to prevent a successful-but-discarded choice regression.
+
+## Complete Appearance delegation (#897)
+
+`UpdateAppearance` is creation-only: its request names a draft, never a finalized
+character. The handler checks only the request envelope, converts the complete wire
+Appearance through `internal/converters/customization`, delegates once, translates
+toolkit errors, and converts the returned authoritative `DraftData`. It does not
+validate provider refs, colors, roughness, defaults, or oneof semantics.
+
+Appearance is nested in toolkit `character.Data`/`DraftData`. Draft reads,
+`UpdateAppearance`, `FinalizeDraft`, `GetCharacter`, `ListCharacters`, and equipment
+responses all project `Data.Appearance` directly. The converter preserves nil/empty
+messages, style/none/malformed oneofs, optional scalar presence including zero, and
+both outfit channels; deprecated string fields remain inert. Toolkit `Draft.SetAppearance`
+owns refusal before the repository update.
 
 ## Shared strict character application (#844)
 
@@ -21,8 +40,8 @@ latest record. This handler does not inspect feature/condition JSON, derive stat
 duplicate toolkit rules.
 
 The orchestrator output carries both the actual persisted post-state entity and its
-matching detached View. Legacy Equip/Unequip convert the entity directly with Appearance;
-they no longer call `GetCharacter` after a successful write. Internal strict projection
+matching detached View. Legacy Equip/Unequip convert the persisted entity's nested
+`Data.Appearance`; they no longer call `GetCharacter` after a successful write. Internal strict projection
 failures become generic INTERNAL `character data unavailable` at this boundary.
 
 The owner-private `CharacterData` contract is translated only by
@@ -31,19 +50,17 @@ class/race refs, equipment, level, HP, speed, structured feature/condition refs,
 optional resource/source presence, and non-magical resources are copied from detached
 values. The v1alpha1 handler does not grow a parallel converter for those fields.
 
-This production slice pins proto generated v0.1.143 (`a7db07a`) and final toolkit
-`rulebooks/dnd5e` v0.100.0, `rulebooks/dnd5e/session` v0.30.0, and
-`rulebooks/dnd5e/resolution` v0.13.0. The session module is consumed directly by the
+The current branch pins proto generated commit `883dd221a6cdf724df8d5d993d897e0c8a3358ab`,
+`rulebooks/dnd5e` v0.137.0, `rulebooks/dnd5e/session` v0.53.1, and
+`rulebooks/dnd5e/resolution` v0.32.1. The session module is consumed directly by the
 separate `SessionService` handler.
 
 ## Files
 
-| File | Lines | Purpose |
-|---|---|---|
-| `handlers/dnd5e/v1alpha1/character/handler.go` | 1,070 | gRPC handler |
-| `handlers/dnd5e/v1alpha1/character/converters.go` | 3,132 | Proto ↔ domain entity conversion |
-
-`converters.go` is the largest file in the codebase by line count.
+| File | Purpose |
+|---|---|
+| `handlers/dnd5e/v1alpha1/character/handler.go` | gRPC handler |
+| `handlers/dnd5e/v1alpha1/character/converters.go` | Proto ↔ domain entity conversion |
 
 ## gRPC methods handled
 
@@ -52,7 +69,7 @@ separate `SessionService` handler.
 - `GetRequirements` — returns pending choices for a draft
 - `SetName` / `SetRace` / `SetClass` / `SetBackground` / `SetAbilityScores` — draft updates
 - `SetAbilityScoresFromRolls` — assigns pre-rolled ability scores to draft
-- `SetAppearance` — sets cosmetic character appearance
+- `UpdateAppearance` — delegates complete creation-draft Appearance to the toolkit
 - `ValidateDraft` / `FinalizeDraft` — validation and finalization
 - `GetCharacter` / `ListCharacters` / `DeleteCharacter` — character CRUD
 - `EquipItem` / `UnequipItem` — equipment slot management
@@ -63,18 +80,17 @@ separate `SessionService` handler.
 
 ## Converter surface
 
-`converters.go` at 3,132 lines is the conversion layer for the character domain. This size is expected given the breadth of the D&D 5e character model (races, classes, backgrounds, spells, equipment, traits, features, skills, proficiencies). However, the file has **27 TODO comments** indicating incomplete conversions.
+`converters.go` is the conversion layer for the broad D&D 5e character domain (races, classes, backgrounds, spells, equipment, traits, features, skills, and proficiencies). Several conversions remain explicitly incomplete.
 
 ### Known stub returns
 
-- `SPELL_UNSPECIFIED` returned for all spell mappings (lines 344, 378) — spell enum not yet mapped
-- `TRAIT_UNSPECIFIED` returned for all trait conversions (line 378)
-- No language enum conversions — language fields return empty (line 1169)
-- No subrace conversions — subrace data not mapped (line 782)
-- Tool proficiency proto enums not mapped (line 899)
-- Spell slot conversion not implemented (line 1182)
-- Class resource conversion not implemented (line 1186)
-- Equipment data incomplete for armor and tools (line 798)
+- `SPELL_UNSPECIFIED` returned for spell mappings — spell enum not yet mapped
+- `TRAIT_UNSPECIFIED` returned for trait conversions
+- No language enum conversions — language fields return empty
+- No subrace conversions — subrace data not mapped
+- Spell slot conversion not implemented
+- Class resource conversion not implemented
+- Equipment data incomplete for armor and tools
 
 These stubs silently return zero/unspecified values without errors, meaning the character API returns structurally valid but semantically incomplete data for these fields.
 
@@ -82,7 +98,7 @@ These stubs silently return zero/unspecified values without errors, meaning the 
 
 ### Toolkit type assertion in handler
 
-`handler.go:765` has a TODO acknowledging the smell:
+`handler.go` has a TODO acknowledging the smell:
 ```go
 //TODO: handler should not interact with toolkit, this belongs in the orchestrator
 if charData, ok := member.CharacterData.(*toolkitchar.Data); ok {
@@ -92,8 +108,8 @@ The character orchestrator returns `interface{}` for `CharacterData` in some out
 
 ### Test coverage gap
 
-`converters.go` (3,132 lines) has limited dedicated unit tests relative to its size. `list_equipment_test.go` and `list_spells_test.go` cover some paths. The 27 TODO stubs are a signal that the converter surface grew faster than its test coverage. A comprehensive converter test suite would catch stub regressions.
+`converters.go` has limited dedicated unit tests relative to its breadth. `list_equipment_test.go` and `list_spells_test.go` cover some paths, but the explicitly incomplete conversions show that coverage has not kept pace with the surface. A comprehensive converter test suite would catch stub regressions.
 
 ### Handler test files
 
-`handler.go` has 8 TODO comments (lines 236, 294, 350, 765, 798, 836, 858) covering spell enum conversion, tool expertise, and pagination. These are handler-level gaps beyond the converter stubs.
+Remaining handler TODOs cover spell enum conversion, tool expertise, and pagination. These are handler-level gaps beyond the converter stubs.

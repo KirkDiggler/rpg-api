@@ -101,6 +101,21 @@ func (mr *MockManagerMockRecorder) Attack(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Attack", reflect.TypeOf((*MockManager)(nil).Attack), ctx, in)
 }
 
+// DeathSave mocks base method.
+func (m *MockManager) DeathSave(ctx context.Context, in *session.DeathSaveInput) (*session.DeathSaveOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeathSave", ctx, in)
+	ret0, _ := ret[0].(*session.DeathSaveOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DeathSave indicates an expected call of DeathSave.
+func (mr *MockManagerMockRecorder) DeathSave(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeathSave", reflect.TypeOf((*MockManager)(nil).DeathSave), ctx, in)
+}
+
 // Dissolve mocks base method.
 func (m *MockManager) Dissolve(ctx context.Context, in *session.DissolveInput) (*session.DissolveOutput, error) {
 	m.ctrl.T.Helper()
@@ -176,6 +191,36 @@ func (mr *MockManagerMockRecorder) Exit(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Exit", reflect.TypeOf((*MockManager)(nil).Exit), ctx, in)
 }
 
+// Hold mocks base method.
+func (m *MockManager) Hold(ctx context.Context, in *session.HoldInput) (*session.HoldOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Hold", ctx, in)
+	ret0, _ := ret[0].(*session.HoldOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Hold indicates an expected call of Hold.
+func (mr *MockManagerMockRecorder) Hold(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Hold", reflect.TypeOf((*MockManager)(nil).Hold), ctx, in)
+}
+
+// Interact mocks base method.
+func (m *MockManager) Interact(ctx context.Context, in *session.InteractInput) (*session.InteractOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Interact", ctx, in)
+	ret0, _ := ret[0].(*session.InteractOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Interact indicates an expected call of Interact.
+func (mr *MockManagerMockRecorder) Interact(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Interact", reflect.TypeOf((*MockManager)(nil).Interact), ctx, in)
+}
+
 // Join mocks base method.
 func (m *MockManager) Join(ctx context.Context, in *session.JoinInput) (*session.JoinOutput, error) {
 	m.ctrl.T.Helper()
@@ -189,6 +234,21 @@ func (m *MockManager) Join(ctx context.Context, in *session.JoinInput) (*session
 func (mr *MockManagerMockRecorder) Join(ctx, in any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Join", reflect.TypeOf((*MockManager)(nil).Join), ctx, in)
+}
+
+// Loot mocks base method.
+func (m *MockManager) Loot(ctx context.Context, in *session.LootInput) (*session.LootOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Loot", ctx, in)
+	ret0, _ := ret[0].(*session.LootOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Loot indicates an expected call of Loot.
+func (mr *MockManagerMockRecorder) Loot(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Loot", reflect.TypeOf((*MockManager)(nil).Loot), ctx, in)
 }
 
 // Move mocks base method.
@@ -221,6 +281,51 @@ func (mr *MockManagerMockRecorder) OpenDoor(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OpenDoor", reflect.TypeOf((*MockManager)(nil).OpenDoor), ctx, in)
 }
 
+// React mocks base method.
+func (m *MockManager) React(ctx context.Context, in *session.ReactInput) (*session.ReactOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "React", ctx, in)
+	ret0, _ := ret[0].(*session.ReactOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// React indicates an expected call of React.
+func (mr *MockManagerMockRecorder) React(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "React", reflect.TypeOf((*MockManager)(nil).React), ctx, in)
+}
+
+// Roster mocks base method.
+func (m *MockManager) Roster(ctx context.Context, in *session.RosterInput) (*session.RosterOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Roster", ctx, in)
+	ret0, _ := ret[0].(*session.RosterOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Roster indicates an expected call of Roster.
+func (mr *MockManagerMockRecorder) Roster(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Roster", reflect.TypeOf((*MockManager)(nil).Roster), ctx, in)
+}
+
+// Search mocks base method.
+func (m *MockManager) Search(ctx context.Context, in *session.SearchInput) (*session.SearchOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Search", ctx, in)
+	ret0, _ := ret[0].(*session.SearchOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Search indicates an expected call of Search.
+func (mr *MockManagerMockRecorder) Search(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Search", reflect.TypeOf((*MockManager)(nil).Search), ctx, in)
+}
+
 // Status mocks base method.
 func (m *MockManager) Status(ctx context.Context, in *session.StatusInput) (*session.Status, error) {
 	m.ctrl.T.Helper()
@@ -251,6 +356,21 @@ func (mr *MockManagerMockRecorder) Story(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Story", reflect.TypeOf((*MockManager)(nil).Story), ctx, in)
 }
 
+// Trade mocks base method.
+func (m *MockManager) Trade(ctx context.Context, in *session.TradeInput) (*session.TradeOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Trade", ctx, in)
+	ret0, _ := ret[0].(*session.TradeOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Trade indicates an expected call of Trade.
+func (mr *MockManagerMockRecorder) Trade(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Trade", reflect.TypeOf((*MockManager)(nil).Trade), ctx, in)
+}
+
 // Turn mocks base method.
 func (m *MockManager) Turn(ctx context.Context, in *session.TurnInput) (*session.TurnOutput, error) {
 	m.ctrl.T.Helper()
@@ -279,6 +399,21 @@ func (m *MockManager) Unlock(ctx context.Context, in *session.UnlockInput) (*ses
 func (mr *MockManagerMockRecorder) Unlock(ctx, in any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Unlock", reflect.TypeOf((*MockManager)(nil).Unlock), ctx, in)
+}
+
+// Unpack mocks base method.
+func (m *MockManager) Unpack(ctx context.Context, in *session.UnpackInput) (*session.UnpackOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Unpack", ctx, in)
+	ret0, _ := ret[0].(*session.UnpackOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Unpack indicates an expected call of Unpack.
+func (mr *MockManagerMockRecorder) Unpack(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Unpack", reflect.TypeOf((*MockManager)(nil).Unpack), ctx, in)
 }
 
 // View mocks base method.
