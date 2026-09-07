@@ -29,7 +29,8 @@ func TestAttack_HappyPath(t *testing.T) {
 		Session: "sess-1", Attacker: "char-1", Target: "goblin-1", DeclarationID: "decl-attack-1",
 	}).Return(&sdk.AttackOutput{
 		Roll: 18, Total: 21, Against: 13, Hit: true, Damage: 7, Seq: 9,
-		Attack: sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
+		Attack:         sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
+		PresentationID: "presentation_2f1c8b4a-0d6e-4a1b-9c3f-5e7a1b2c3d4e",
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
@@ -46,6 +47,11 @@ func TestAttack_HappyPath(t *testing.T) {
 	require.Equal(t, "dnd5e:weapons:longsword", resp.GetAttack().GetRef())
 	require.Equal(t, "Longsword", resp.GetAttack().GetName())
 	require.Equal(t, sessionpb.DamageType_DAMAGE_TYPE_SLASHING, resp.GetAttack().GetDamageType())
+
+	// The attacker's half of the shared roll identity. Seq is per recipient, so
+	// this token is the only thing the attacker and a witness can both name
+	// this swing by -- the witness reads the same value off Struck/Missed.
+	require.Equal(t, "presentation_2f1c8b4a-0d6e-4a1b-9c3f-5e7a1b2c3d4e", resp.GetPresentationId())
 }
 
 func TestAttack_ManagerError_TranslatesViaErrorTable(t *testing.T) {
