@@ -101,6 +101,33 @@ func (h *Handler) GetComposition(ctx context.Context, req *compositionpb.GetComp
 	return &compositionpb.GetCompositionResponse{Composition: compositionToProto(output.Composition)}, nil
 }
 
+// DeleteComposition permanently deletes one composition snapshot.
+func (h *Handler) DeleteComposition(ctx context.Context, req *compositionpb.DeleteCompositionRequest) (*compositionpb.DeleteCompositionResponse, error) {
+	playerID, err := h.authorizeWorld(ctx, req.GetWorldId())
+	if err != nil {
+		return nil, apierr.ToGRPCError(err)
+	}
+	if !h.authoringEnabled {
+		return nil, apierr.ToGRPCError(apierr.FailedPrecondition("composition authoring is disabled"))
+	}
+	if req.GetId() == "" {
+		return nil, apierr.ToGRPCError(apierr.InvalidArgument("composition ID is required"))
+	}
+
+	output, err := h.service.Delete(ctx, &compositionservice.DeleteInput{
+		PlayerID:      playerID,
+		WorldID:       h.worldID,
+		CompositionID: req.GetId(),
+	})
+	if err != nil {
+		return nil, apierr.ToGRPCError(err)
+	}
+	if output == nil {
+		return nil, apierr.ToGRPCError(apierr.Internal("composition service returned no delete output"))
+	}
+	return &compositionpb.DeleteCompositionResponse{}, nil
+}
+
 // ListCompositions returns all immutable composition snapshots in the configured world.
 func (h *Handler) ListCompositions(ctx context.Context, req *compositionpb.ListCompositionsRequest) (*compositionpb.ListCompositionsResponse, error) {
 	playerID, err := h.authorizeWorld(ctx, req.GetWorldId())

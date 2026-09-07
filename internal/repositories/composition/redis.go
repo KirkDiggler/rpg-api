@@ -106,6 +106,23 @@ func (r *redisRepository) Get(ctx context.Context, input *GetInput) (*GetOutput,
 	return &GetOutput{Composition: composition}, nil
 }
 
+func (r *redisRepository) Delete(ctx context.Context, input *DeleteInput) (*DeleteOutput, error) {
+	if input == nil {
+		return nil, apierr.InvalidArgument("delete input is required")
+	}
+	if input.WorldID == "" {
+		return nil, apierr.InvalidArgument("world ID is required")
+	}
+	if input.ID == "" {
+		return nil, apierr.InvalidArgument("composition ID is required")
+	}
+
+	if err := r.client.HDel(ctx, compositionKey(input.WorldID), input.ID).Err(); err != nil {
+		return nil, apierr.Wrapf(err, "delete composition %q", input.ID)
+	}
+	return &DeleteOutput{}, nil
+}
+
 func (r *redisRepository) List(ctx context.Context, input *ListInput) (*ListOutput, error) {
 	if input == nil {
 		return nil, apierr.InvalidArgument("list input is required")

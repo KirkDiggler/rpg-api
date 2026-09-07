@@ -253,8 +253,9 @@ holds its opaque authoring payload. rpg-api does not duplicate or interpret that
 For the local-dev RPC, the orchestrator mints `ID` and the handler supplies its configured
 WorldID after player/world checks; the repository remains a typed caller-supplied storage
 contract. It stores a serialized `composition.Data` snapshot directly, with no API-owned
-definition/revision/head model. Production guild-to-world mapping and rendering
-integration do not exist here.
+definition/revision/head model. Permanent deletion removes only the addressed hash
+field and does not interpret the payload or mutate placements/references elsewhere.
+Production guild-to-world mapping and rendering integration do not exist here.
 
 ## DiceSession (repositories/dice_session)
 
@@ -288,7 +289,8 @@ Dice session repository (`repositories/dice_session/redis.go`):
 
 Composition repository (`repositories/composition/redis.go`):
 - `composition:<WorldID>` — hash with composition ID fields and serialized toolkit
-  `composition.Data` values; no TTL
+  `composition.Data` values; no TTL; permanent deletion is one idempotent HDEL of the
+  addressed composition ID field
 
 ~~Encounter events (publisher, `publishers/encounter/redis.go`):~~ DELETED
 (rpg-api#642, 2026-07-13) — the v1 pub/sub publisher and the `EncounterEvent`

@@ -92,6 +92,50 @@ func (s *RedisSuite) TestWorldIsolationAllowsTheSameCompositionID() {
 	s.Len(s.server.Keys(), 2)
 }
 
+func (s *RedisSuite) TestDeleteRemovesOnlyRequestedWorldAndIsIdempotent() {
+	ctx := context.Background()
+	worldA := data("world-a", "shared-id", `{"world":"a"}`)
+	worldB := data("world-b", "shared-id", `{"world":"b"}`)
+	retainedA := data("world-a", "retained-id", `{"retained":true}`)
+
+	for _, composition := range []*worldcomposition.Data{worldA, worldB, retainedA} {
+		_, err := s.repo.Create(ctx, &CreateInput{Composition: composition})
+		s.Require().NoError(err)
+	}
+
+	deleted, err := s.repo.Delete(ctx, &DeleteInput{WorldID: worldA.WorldID, ID: worldA.ID})
+	s.Require().NoError(err)
+	s.NotNil(deleted)
+
+	gotA, err := s.repo.Get(ctx, &GetInput{WorldID: worldA.WorldID, ID: worldA.ID})
+	s.Nil(gotA)
+	s.Require().Error(err)
+	s.True(apierr.IsNotFound(err), "got %v", err)
+
+	listedA, err := s.repo.List(ctx, &ListInput{WorldID: worldA.WorldID})
+	s.Require().NoError(err)
+	s.Equal([]*worldcomposition.Data{retainedA}, listedA.Compositions)
+
+	gotB, err := s.repo.Get(ctx, &GetInput{WorldID: worldB.WorldID, ID: worldB.ID})
+	s.Require().NoError(err)
+	s.Equal(worldB, gotB.Composition)
+
+	deletedAgain, err := s.repo.Delete(ctx, &DeleteInput{WorldID: worldA.WorldID, ID: worldA.ID})
+	s.Require().NoError(err)
+	s.NotNil(deletedAgain)
+}
+
+func (s *RedisSuite) TestDeleteMalformedStoredContentWithoutDecoding() {
+	ctx := context.Background()
+	key := compositionKey("world-a")
+	s.server.HSet(key, "malformed-id", `{not-json`)
+
+	deleted, err := s.repo.Delete(ctx, &DeleteInput{WorldID: "world-a", ID: "malformed-id"})
+	s.Require().NoError(err)
+	s.NotNil(deleted)
+	s.False(s.server.Exists(key))
+}
+
 func (s *RedisSuite) TestDuplicateCreateDoesNotOverwrite() {
 	ctx := context.Background()
 	original := data("world-a", "composition-a", `{"value":"original"}`)
@@ -226,6 +270,18 @@ func TestOperationInputValidationAndMarshalError(t *testing.T) {
 			_, callErr := repo.List(context.Background(), &ListInput{})
 			return callErr
 		},
+		"delete input nil": func() error {
+			_, callErr := repo.Delete(context.Background(), nil)
+			return callErr
+		},
+		"delete world missing": func() error {
+			_, callErr := repo.Delete(context.Background(), &DeleteInput{ID: "id"})
+			return callErr
+		},
+		"delete id missing": func() error {
+			_, callErr := repo.Delete(context.Background(), &DeleteInput{WorldID: "world"})
+			return callErr
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -276,6 +332,15 @@ func TestRedisCommandErrors(t *testing.T) {
 			},
 			call: func(repo Repository) error {
 				_, err := repo.List(ctx, &ListInput{WorldID: "world"})
+				return err
+			},
+		},
+		"delete": {
+			expect: func(client *redismocks.MockClient) {
+				client.EXPECT().HDel(gomock.Any(), gomock.Any(), "id").Return(goredis.NewIntResult(0, redisErr))
+			},
+			call: func(repo Repository) error {
+				_, err := repo.Delete(ctx, &DeleteInput{WorldID: "world", ID: "id"})
 				return err
 			},
 		},

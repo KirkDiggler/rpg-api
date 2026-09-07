@@ -7,6 +7,8 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	compositionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/api/composition/v1alpha1"
 
@@ -76,4 +78,40 @@ func TestHandlerRedisCreateGetListImmutableSnapshots(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.JSONEq(t, `{"name":"API 8090 composition proof","items":[{"ref":"chair"}]}`, gotAgain.GetComposition().GetJson())
+
+	server.HSet("composition:test-world", "malformed-proof", `{not-json`)
+	deletedMalformed, err := handler.DeleteComposition(ctx, &compositionpb.DeleteCompositionRequest{
+		WorldId: "test-world",
+		Id:      "malformed-proof",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, deletedMalformed)
+	fields, err := server.HKeys("composition:test-world")
+	require.NoError(t, err)
+	require.NotContains(t, fields, "malformed-proof")
+
+	deleted, err := handler.DeleteComposition(ctx, &compositionpb.DeleteCompositionRequest{
+		WorldId: "test-world",
+		Id:      "proof_1",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, deleted)
+
+	_, err = handler.GetComposition(ctx, &compositionpb.GetCompositionRequest{
+		WorldId: "test-world",
+		Id:      "proof_1",
+	})
+	require.Equal(t, codes.NotFound, status.Code(err))
+
+	listed, err = handler.ListCompositions(ctx, &compositionpb.ListCompositionsRequest{WorldId: "test-world"})
+	require.NoError(t, err)
+	require.Len(t, listed.GetCompositions(), 1)
+	require.Equal(t, "proof_2", listed.GetCompositions()[0].GetId())
+
+	deletedAgain, err := handler.DeleteComposition(ctx, &compositionpb.DeleteCompositionRequest{
+		WorldId: "test-world",
+		Id:      "proof_1",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, deletedAgain)
 }

@@ -293,18 +293,20 @@ Held below A until web traffic exercises the live channel.
 
 ### Composition repository — B (new, 2026-09-06)
 
-`internal/repositories/composition/` provides typed Create, Get, and List operations over
-toolkit `world/composition.Data`. One Redis hash per world stores each composition under
-its caller-supplied ID; HSETNX prevents overwrite, HGET/HGETALL serve reads, records do
-not expire, and lists are sorted by ID. Miniredis tests cover round trips, same-ID world
-isolation, duplicate refusal, absent/empty results, storage/decode errors, and snapshot
-independence.
+`internal/repositories/composition/` provides typed Create, Get, List, and Delete
+operations over toolkit `world/composition.Data`. One Redis hash per world stores each
+composition under its caller-supplied ID; HSETNX prevents overwrite, HGET/HGETALL serve
+reads, one HDEL performs idempotent permanent deletion without decoding the payload,
+records do not expire, and lists are sorted by ID. Miniredis tests cover round trips,
+same-ID world isolation, duplicate refusal, absent/empty results, malformed-content
+deletion, storage/decode errors, and snapshot independence.
 
-The published Create/Get/List wire contract now has a thin handler and orchestrator:
+The published Create/Get/List/Delete wire contract has a thin handler and orchestrator:
 the handler requires the existing player context, matches the configured dev-only world,
 and maps JSON strings to `json.RawMessage`; the orchestrator mints IDs before repository
 Create. Registration is limited to `AUTH_DEV_MODE=true`, Create retains the separate
-`RPG_AUTHORING_ENABLED=1` mutation gate, and reads remain available within dev mode.
+`RPG_AUTHORING_ENABLED=1` mutation gate for Create and Delete, and reads remain
+available within dev mode.
 Focused tests exercise the wire boundary through miniredis and prove non-dev absence.
 Held at B because this local stub intentionally has no production guild-to-world mapping
 or production traffic.

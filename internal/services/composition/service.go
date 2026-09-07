@@ -10,11 +10,12 @@ import (
 
 //go:generate mockgen -destination=mock/mock_service.go -package=compositionmock github.com/KirkDiggler/rpg-api/internal/services/composition Service
 
-// Service creates and reads immutable world composition snapshots.
+// Service creates, reads, and deletes immutable world composition snapshots.
 type Service interface {
 	Create(context.Context, *CreateInput) (*CreateOutput, error)
 	Get(context.Context, *GetInput) (*GetOutput, error)
 	List(context.Context, *ListInput) (*ListOutput, error)
+	Delete(context.Context, *DeleteInput) (*DeleteOutput, error)
 }
 
 // CreateInput contains one authenticated composition creation request.
@@ -51,3 +52,13 @@ type ListInput struct {
 type ListOutput struct {
 	Compositions []*worldcomposition.Data
 }
+
+// DeleteInput identifies one composition to permanently delete for an authenticated caller.
+type DeleteInput struct {
+	PlayerID      string
+	WorldID       string
+	CompositionID string
+}
+
+// DeleteOutput confirms completion. Deleting an absent composition is successful.
+type DeleteOutput struct{}

@@ -61,6 +61,21 @@ func (s *OrchestratorSuite) TestCreateMintsIDAndPersistsSnapshot() {
 	s.Equal(expected, output.Composition)
 }
 
+func (s *OrchestratorSuite) TestDeleteUsesTypedRepositoryInput() {
+	s.repository.EXPECT().Delete(gomock.Any(), &compositionrepo.DeleteInput{
+		WorldID: "world-1",
+		ID:      "composition-1",
+	}).Return(&compositionrepo.DeleteOutput{}, nil)
+
+	output, err := s.service.Delete(context.Background(), &compositionservice.DeleteInput{
+		PlayerID:      "player-1",
+		WorldID:       "world-1",
+		CompositionID: "composition-1",
+	})
+	s.Require().NoError(err)
+	s.NotNil(output)
+}
+
 func (s *OrchestratorSuite) TestGetAndListUseTypedRepositoryInputs() {
 	composition := &worldcomposition.Data{ID: "composition-1", WorldID: "world-1", JSON: json.RawMessage(`{}`)}
 	s.repository.EXPECT().Get(gomock.Any(), &compositionrepo.GetInput{
@@ -112,6 +127,13 @@ func (s *OrchestratorSuite) TestRepositoryErrorsKeepTheirAPIClassification() {
 	_, err = s.service.List(context.Background(), &compositionservice.ListInput{PlayerID: "player-1", WorldID: "world-1"})
 	s.Require().Error(err)
 	s.True(apierr.IsInternal(err), "got %v", err)
+
+	s.repository.EXPECT().Delete(gomock.Any(), gomock.Any()).Return(nil, errors.New("redis unavailable"))
+	_, err = s.service.Delete(context.Background(), &compositionservice.DeleteInput{
+		PlayerID: "player-1", WorldID: "world-1", CompositionID: "composition-1",
+	})
+	s.Require().Error(err)
+	s.True(apierr.IsInternal(err), "got %v", err)
 }
 
 func (s *OrchestratorSuite) TestRejectsInvalidInputsBeforeRepositoryAccess() {
@@ -147,6 +169,17 @@ func (s *OrchestratorSuite) TestRejectsInvalidInputsBeforeRepositoryAccess() {
 		_, err := s.service.List(context.Background(), input)
 		s.Require().Error(err)
 	}
+
+	deleteInputs := []*compositionservice.DeleteInput{
+		nil,
+		{WorldID: "world-1", CompositionID: "composition-1"},
+		{PlayerID: "player-1", CompositionID: "composition-1"},
+		{PlayerID: "player-1", WorldID: "world-1"},
+	}
+	for _, input := range deleteInputs {
+		_, err := s.service.Delete(context.Background(), input)
+		s.Require().Error(err)
+	}
 }
 
 func (s *OrchestratorSuite) TestRejectsEmptyGeneratedIDAndMissingRepositoryOutputs() {
@@ -166,6 +199,13 @@ func (s *OrchestratorSuite) TestRejectsEmptyGeneratedIDAndMissingRepositoryOutpu
 
 	s.repository.EXPECT().List(gomock.Any(), gomock.Any()).Return(nil, nil)
 	_, err = s.service.List(context.Background(), &compositionservice.ListInput{PlayerID: "player-1", WorldID: "world-1"})
+	s.Require().Error(err)
+	s.True(apierr.IsInternal(err), "got %v", err)
+
+	s.repository.EXPECT().Delete(gomock.Any(), gomock.Any()).Return(nil, nil)
+	_, err = s.service.Delete(context.Background(), &compositionservice.DeleteInput{
+		PlayerID: "player-1", WorldID: "world-1", CompositionID: "composition-1",
+	})
 	s.Require().Error(err)
 	s.True(apierr.IsInternal(err), "got %v", err)
 }

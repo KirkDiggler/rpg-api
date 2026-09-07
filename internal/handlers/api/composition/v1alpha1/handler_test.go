@@ -64,6 +64,21 @@ func (s *HandlerSuite) TestCreateMapsRequestAndResponse() {
 	s.JSONEq(`{"name":"proof composition"}`, response.GetComposition().GetJson())
 }
 
+func (s *HandlerSuite) TestDeleteMapsRequestAndResponse() {
+	s.service.EXPECT().Delete(gomock.Any(), &compositionservice.DeleteInput{
+		PlayerID:      "player-1",
+		WorldID:       "test-world",
+		CompositionID: "composition-1",
+	}).Return(&compositionservice.DeleteOutput{}, nil)
+
+	response, err := s.handler.DeleteComposition(s.ctx, &compositionpb.DeleteCompositionRequest{
+		WorldId: "test-world",
+		Id:      "composition-1",
+	})
+	s.Require().NoError(err)
+	s.NotNil(response)
+}
+
 func (s *HandlerSuite) TestGetAndListMapRequestsAndResponses() {
 	first := &worldcomposition.Data{ID: "composition-1", WorldID: "test-world", JSON: json.RawMessage(`{"name":"first"}`)}
 	second := &worldcomposition.Data{ID: "composition-2", WorldID: "test-world", JSON: json.RawMessage(`{"name":"second"}`)}
@@ -106,6 +121,10 @@ func (s *HandlerSuite) TestMissingPlayerAndWorldMismatchRefuseBeforeService() {
 			_, err := s.handler.ListCompositions(ctx, &compositionpb.ListCompositionsRequest{WorldId: worldID})
 			return err
 		},
+		func(ctx context.Context, worldID string) error {
+			_, err := s.handler.DeleteComposition(ctx, &compositionpb.DeleteCompositionRequest{WorldId: worldID, Id: "composition-1"})
+			return err
+		},
 	}
 
 	for _, call := range calls {
@@ -125,10 +144,16 @@ func (s *HandlerSuite) TestCreateHonorsAuthoringGateAndValidatesJSON() {
 	s.Equal(codes.InvalidArgument, status.Code(err))
 	_, err = s.handler.CreateComposition(s.ctx, &compositionpb.CreateCompositionRequest{WorldId: "test-world", Json: `{`})
 	s.Equal(codes.InvalidArgument, status.Code(err))
+
+	_, err = disabled.DeleteComposition(s.ctx, &compositionpb.DeleteCompositionRequest{WorldId: "test-world", Id: "composition-1"})
+	s.Equal(codes.FailedPrecondition, status.Code(err))
 }
 
-func (s *HandlerSuite) TestValidatesGetID() {
+func (s *HandlerSuite) TestValidatesCompositionIDs() {
 	_, err := s.handler.GetComposition(s.ctx, &compositionpb.GetCompositionRequest{WorldId: "test-world"})
+	s.Equal(codes.InvalidArgument, status.Code(err))
+
+	_, err = s.handler.DeleteComposition(s.ctx, &compositionpb.DeleteCompositionRequest{WorldId: "test-world"})
 	s.Equal(codes.InvalidArgument, status.Code(err))
 }
 
@@ -144,6 +169,10 @@ func (s *HandlerSuite) TestMapsServiceErrorsToGRPC() {
 	s.service.EXPECT().List(gomock.Any(), gomock.Any()).Return(nil, errors.New("storage failed"))
 	_, err = s.handler.ListCompositions(s.ctx, &compositionpb.ListCompositionsRequest{WorldId: "test-world"})
 	s.Equal(codes.Internal, status.Code(err))
+
+	s.service.EXPECT().Delete(gomock.Any(), gomock.Any()).Return(nil, errors.New("storage failed"))
+	_, err = s.handler.DeleteComposition(s.ctx, &compositionpb.DeleteCompositionRequest{WorldId: "test-world", Id: "composition-1"})
+	s.Equal(codes.Internal, status.Code(err))
 }
 
 func (s *HandlerSuite) TestMissingServiceOutputsReturnInternal() {
@@ -157,6 +186,10 @@ func (s *HandlerSuite) TestMissingServiceOutputsReturnInternal() {
 
 	s.service.EXPECT().List(gomock.Any(), gomock.Any()).Return(nil, nil)
 	_, err = s.handler.ListCompositions(s.ctx, &compositionpb.ListCompositionsRequest{WorldId: "test-world"})
+	s.Equal(codes.Internal, status.Code(err))
+
+	s.service.EXPECT().Delete(gomock.Any(), gomock.Any()).Return(nil, nil)
+	_, err = s.handler.DeleteComposition(s.ctx, &compositionpb.DeleteCompositionRequest{WorldId: "test-world", Id: "composition-1"})
 	s.Equal(codes.Internal, status.Code(err))
 }
 

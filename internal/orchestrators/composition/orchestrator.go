@@ -80,6 +80,24 @@ func (o *orchestrator) Get(ctx context.Context, input *compositionservice.GetInp
 	return &compositionservice.GetOutput{Composition: got.Composition}, nil
 }
 
+func (o *orchestrator) Delete(ctx context.Context, input *compositionservice.DeleteInput) (*compositionservice.DeleteOutput, error) {
+	if err := validateDeleteInput(input); err != nil {
+		return nil, err
+	}
+
+	deleted, err := o.repository.Delete(ctx, &compositionrepo.DeleteInput{
+		WorldID: input.WorldID,
+		ID:      input.CompositionID,
+	})
+	if err != nil {
+		return nil, apierr.Wrap(err, "delete composition")
+	}
+	if deleted == nil {
+		return nil, apierr.Internal("composition repository returned no delete output")
+	}
+	return &compositionservice.DeleteOutput{}, nil
+}
+
 func (o *orchestrator) List(ctx context.Context, input *compositionservice.ListInput) (*compositionservice.ListOutput, error) {
 	if err := validateListInput(input); err != nil {
 		return nil, err
@@ -114,6 +132,19 @@ func validateCreateInput(input *compositionservice.CreateInput) error {
 func validateGetInput(input *compositionservice.GetInput) error {
 	if input == nil {
 		return apierr.InvalidArgument("get composition input is required")
+	}
+	if err := validateCallerAndWorld(input.PlayerID, input.WorldID); err != nil {
+		return err
+	}
+	if input.CompositionID == "" {
+		return apierr.InvalidArgument("composition ID is required")
+	}
+	return nil
+}
+
+func validateDeleteInput(input *compositionservice.DeleteInput) error {
+	if input == nil {
+		return apierr.InvalidArgument("delete composition input is required")
 	}
 	if err := validateCallerAndWorld(input.PlayerID, input.WorldID); err != nil {
 		return err

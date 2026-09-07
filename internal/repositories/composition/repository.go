@@ -14,6 +14,7 @@ type Repository interface {
 	Create(context.Context, *CreateInput) (*CreateOutput, error)
 	Get(context.Context, *GetInput) (*GetOutput, error)
 	List(context.Context, *ListInput) (*ListOutput, error)
+	Delete(context.Context, *DeleteInput) (*DeleteOutput, error)
 }
 
 // CreateInput contains the composition to create.
@@ -46,3 +47,12 @@ type ListInput struct {
 type ListOutput struct {
 	Compositions []*worldcomposition.Data
 }
+
+// DeleteInput addresses one composition to permanently delete within a world.
+type DeleteInput struct {
+	WorldID string
+	ID      string
+}
+
+// DeleteOutput confirms completion. Deleting an absent composition is successful.
+type DeleteOutput struct{}
