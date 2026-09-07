@@ -158,6 +158,31 @@ func TestWorldResolverProviderStatusMappingAndNoDenialCache(t *testing.T) {
 	}
 }
 
+func TestWorldResolverExpiredMembershipDoesNotFallBackOnProviderFailure(t *testing.T) {
+	now := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	membershipCache, err := auth.NewMembershipCache(&auth.MembershipCacheConfig{
+		TTL:        30 * time.Second,
+		MaxEntries: 1024,
+		Now:        func() time.Time { return now },
+	})
+	require.NoError(t, err)
+	membershipCache.Set("expiring-credential", canonicalGuildID, auth.MembershipDecision{PlayerID: "player-1", WorldID: canonicalGuildID})
+	identityCache := auth.NewTokenCache(5 * time.Minute)
+	identityCache.Set("expiring-credential", "player-1")
+	verifier := &verifierStub{err: auth.ErrDiscordUnavailable}
+	resolver, err := auth.NewWorldResolver(&auth.WorldResolverConfig{
+		MembershipVerifier: verifier,
+		IdentityCache:      identityCache,
+		MembershipCache:    membershipCache,
+	})
+	require.NoError(t, err)
+
+	now = now.Add(30 * time.Second)
+	_, err = invokeWorldChain(t, &validatorStub{}, identityCache, resolver, false, "Discord expiring-credential", []string{canonicalGuildID}, compositionGetMethod)
+	require.Equal(t, codes.Unavailable, status.Code(err))
+	require.Equal(t, 1, verifier.callCount())
+}
+
 func TestWorldResolverUnauthorizedInvalidatesIdentityAndEveryTokenMembership(t *testing.T) {
 	identityCache := auth.NewTokenCache(5 * time.Minute)
 	identityCache.Set("revoked-credential", "player-1")

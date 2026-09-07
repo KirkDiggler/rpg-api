@@ -16,6 +16,7 @@ import (
 	compositionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/composition"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	compositionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/composition"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 )
 
 func TestHandlerRedisCreateGetListImmutableSnapshots(t *testing.T) {
@@ -32,9 +33,10 @@ func TestHandlerRedisCreateGetListImmutableSnapshots(t *testing.T) {
 		IDGenerator: idgen.NewSequential("proof"),
 	})
 	require.NoError(t, err)
-	handler, err := New(&HandlerConfig{Service: service, WorldID: "test-world", AuthoringEnabled: true})
+	handler, err := New(&HandlerConfig{Service: service, AuthoringEnabled: true})
 	require.NoError(t, err)
 	ctx := auth.WithPlayerID(context.Background(), "dev-player")
+	ctx = worldcontext.With(ctx, worldcontext.Value{WorldID: "test-world"})
 
 	firstRequest := &compositionpb.CreateCompositionRequest{
 		WorldId: "test-world",

@@ -365,7 +365,6 @@ func runServer(_ *cobra.Command, _ []string) error {
 	healthServer.SetServingStatus("dnd5e.api.lobby.v1alpha1.LobbyService", grpc_health_v1.HealthCheckResponse_SERVING)
 
 	compositionRegistered, err := registerCompositionService(srv, &compositionRegistrationConfig{
-		DevMode:          authConfig.DevMode,
 		AuthoringEnabled: authoringEnabled,
 		Redis:            redisClient,
 	})

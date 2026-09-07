@@ -24,21 +24,15 @@ const (
 )
 
 type compositionRegistrationConfig struct {
-	DevMode          bool
 	AuthoringEnabled bool
 	Redis            redis.Client
 }
 
-// registerCompositionService installs the local world library only in auth dev mode.
+// registerCompositionService installs the world-scoped composition library.
 func registerCompositionService(registrar grpc.ServiceRegistrar, cfg *compositionRegistrationConfig) (bool, error) {
 	if cfg == nil {
 		return false, fmt.Errorf("composition registration config is required")
 	}
-	if !cfg.DevMode {
-		return false, nil
-	}
-
-	worldID := configuredDevWorldID(cfg.DevMode)
 	repository, err := compositionrepo.NewRedis(&compositionrepo.RedisConfig{Client: cfg.Redis})
 	if err != nil {
 		return false, fmt.Errorf("create composition repository: %w", err)
@@ -52,7 +46,6 @@ func registerCompositionService(registrar grpc.ServiceRegistrar, cfg *compositio
 	}
 	handler, err := compositionhandler.New(&compositionhandler.HandlerConfig{
 		Service:          service,
-		WorldID:          worldID,
 		AuthoringEnabled: cfg.AuthoringEnabled,
 	})
 	if err != nil {
@@ -60,13 +53,7 @@ func registerCompositionService(registrar grpc.ServiceRegistrar, cfg *compositio
 	}
 
 	compositionpb.RegisterCompositionServiceServer(registrar, handler)
-	// The world ID is operator-supplied and logged only on an explicitly local-dev service.
-	log.Printf( //nolint:gosec
-		"CompositionService registered for local world %q (%s=%t)",
-		worldID,
-		envAuthoringEnabled,
-		cfg.AuthoringEnabled,
-	)
+	log.Printf("CompositionService registered (%s=%t)", envAuthoringEnabled, cfg.AuthoringEnabled)
 	return true, nil
 }
 

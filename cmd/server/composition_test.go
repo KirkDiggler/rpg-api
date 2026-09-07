@@ -21,30 +21,24 @@ func TestConfiguredDevWorldID(t *testing.T) {
 	require.Equal(t, "configured-world", configuredDevWorldID(true))
 }
 
-func TestCompositionServiceRegistrationIsDevOnly(t *testing.T) {
+func TestCompositionServiceRegistrationInProductionAndDev(t *testing.T) {
 	t.Setenv(envDevWorldID, "production-must-ignore-this-stub")
-	productionServer := grpc.NewServer()
-	registered, err := registerCompositionService(productionServer, &compositionRegistrationConfig{
-		DevMode: false,
-		Redis:   nil,
-	})
-	require.NoError(t, err)
-	require.False(t, registered)
-	_, present := productionServer.GetServiceInfo()[compositionpb.CompositionService_ServiceDesc.ServiceName]
-	require.False(t, present)
-
 	redisServer := miniredis.RunT(t)
 	client := goredis.NewClient(&goredis.Options{Addr: redisServer.Addr()})
 	t.Cleanup(func() { require.NoError(t, client.Close()) })
-	devServer := grpc.NewServer()
-	registered, err = registerCompositionService(devServer, &compositionRegistrationConfig{
-		DevMode:          true,
-		AuthoringEnabled: true,
-		Redis:            client,
-	})
-	require.NoError(t, err)
-	require.True(t, registered)
-	_, present = devServer.GetServiceInfo()[compositionpb.CompositionService_ServiceDesc.ServiceName]
-	require.True(t, present)
+
+	for _, authMode := range []string{"production", "development"} {
+		t.Run(authMode, func(t *testing.T) {
+			server := grpc.NewServer()
+			registered, err := registerCompositionService(server, &compositionRegistrationConfig{
+				AuthoringEnabled: true,
+				Redis:            client,
+			})
+			require.NoError(t, err)
+			require.True(t, registered)
+			_, present := server.GetServiceInfo()[compositionpb.CompositionService_ServiceDesc.ServiceName]
+			require.True(t, present)
+		})
+	}
 	require.Equal(t, compositionpb.CompositionService_ServiceDesc.ServiceName, compositionv1alpha1ServiceName)
 }

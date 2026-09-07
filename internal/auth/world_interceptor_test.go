@@ -1,7 +1,6 @@
 package auth_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -90,12 +89,4 @@ func TestWorldInterceptorAppliesOnlyToCompositionUnaryMethods(t *testing.T) {
 	require.Equal(t, "player-1", auth.GetPlayerID(ctx))
 	_, ok := worldcontext.Get(ctx)
 	require.False(t, ok, "non-composition methods must not acquire world context")
-}
-
-func TestWorldContextDoesNotExposeCredentialToHandlerPackages(t *testing.T) {
-	valueType := worldcontext.Value{WorldID: canonicalGuildID}
-	require.Equal(t, canonicalGuildID, valueType.WorldID)
-	// The handler-facing type intentionally has only the trusted domain WorldID.
-	require.NotContains(t, []string{"WorldID"}, "Token")
-	_ = context.Background()
 }

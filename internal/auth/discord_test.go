@@ -155,3 +155,21 @@ func TestDiscordClient_GetCurrentUserGuildMember_InvalidInput(t *testing.T) {
 	assert.Nil(t, member)
 	assert.ErrorIs(t, err, auth.ErrDiscordUnavailable)
 }
+
+func TestDiscordClient_GetCurrentUserGuildMember_Timeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(50 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	client := auth.NewDiscordClient(
+		auth.WithBaseURL(server.URL),
+		auth.WithHTTPClient(&http.Client{Timeout: time.Millisecond}),
+	)
+
+	member, err := client.GetCurrentUserGuildMember(context.Background(), &auth.GetCurrentUserGuildMemberInput{
+		Token: "membership-credential", GuildID: "123456789012345678",
+	})
+	assert.Nil(t, member)
+	assert.ErrorIs(t, err, auth.ErrDiscordUnavailable)
+}
