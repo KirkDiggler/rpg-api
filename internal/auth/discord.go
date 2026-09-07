@@ -19,11 +19,27 @@ type DiscordUser struct {
 	Username string `json:"username"`
 }
 
-//go:generate mockgen -destination=mock/mock_discord.go -package=authmock github.com/KirkDiggler/rpg-api/internal/auth TokenValidator
+//go:generate mockgen -destination=mock/mock_discord.go -package=authmock github.com/KirkDiggler/rpg-api/internal/auth TokenValidator,MembershipVerifier
 
 // TokenValidator validates Discord tokens.
 type TokenValidator interface {
 	GetCurrentUser(ctx context.Context, token string) (*DiscordUser, error)
+}
+
+// GetCurrentUserGuildMemberInput identifies one same-token guild membership lookup.
+type GetCurrentUserGuildMemberInput struct {
+	Token   string
+	GuildID string
+}
+
+// DiscordGuildMember is the current user's guild member response.
+type DiscordGuildMember struct {
+	User *DiscordUser `json:"user"`
+}
+
+// MembershipVerifier verifies current-user membership with the same credential.
+type MembershipVerifier interface {
+	GetCurrentUserGuildMember(context.Context, *GetCurrentUserGuildMemberInput) (*DiscordGuildMember, error)
 }
 
 // DiscordClient validates Discord access tokens.
@@ -95,4 +111,42 @@ func (c *DiscordClient) GetCurrentUser(ctx context.Context, token string) (*Disc
 	}
 
 	return &user, nil
+}
+
+// GetCurrentUserGuildMember verifies membership using Discord's user-token endpoint.
+func (c *DiscordClient) GetCurrentUserGuildMember(ctx context.Context, input *GetCurrentUserGuildMemberInput) (*DiscordGuildMember, error) {
+	if input == nil || input.Token == "" || input.GuildID == "" {
+		return nil, fmt.Errorf("%w: membership input is required", ErrDiscordUnavailable)
+	}
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		c.baseURL+"/api/users/@me/guilds/"+input.GuildID+"/member",
+		http.NoBody,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrDiscordUnavailable, err)
+	}
+	req.Header.Set("Authorization", "Bearer "+input.Token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrDiscordUnavailable, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	switch {
+	case resp.StatusCode == http.StatusUnauthorized:
+		return nil, ErrInvalidToken
+	case resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusNotFound:
+		return nil, ErrGuildMembershipDenied
+	case resp.StatusCode != http.StatusOK:
+		return nil, fmt.Errorf("%w: unexpected status %d", ErrDiscordUnavailable, resp.StatusCode)
+	}
+
+	var member DiscordGuildMember
+	if err := json.NewDecoder(resp.Body).Decode(&member); err != nil {
+		return nil, fmt.Errorf("%w: failed to decode membership response: %v", ErrDiscordUnavailable, err)
+	}
+	return &member, nil
 }

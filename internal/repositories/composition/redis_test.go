@@ -207,6 +207,14 @@ func (s *RedisSuite) TestCorruptStoredDataReturnsInternal() {
 	_, err = s.repo.List(ctx, &ListInput{WorldID: "world-a"})
 	s.Require().Error(err)
 	s.True(apierr.IsInternal(err), "got %v", err)
+
+	s.server.HSet(key, "composition-a", `{"id":"composition-a","world_id":"world-b","json":{}}`)
+	_, err = s.repo.Get(ctx, &GetInput{WorldID: "world-a", ID: "composition-a"})
+	s.Require().Error(err)
+	s.True(apierr.IsInternal(err), "got %v", err)
+	_, err = s.repo.List(ctx, &ListInput{WorldID: "world-a"})
+	s.Require().Error(err)
+	s.True(apierr.IsInternal(err), "got %v", err)
 }
 
 func TestRedisSuite(t *testing.T) {

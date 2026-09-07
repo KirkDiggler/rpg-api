@@ -1,4 +1,4 @@
-// Package compositionv1alpha1 implements the local-dev CompositionService wire boundary.
+// Package compositionv1alpha1 implements the world-scoped CompositionService wire boundary.
 package compositionv1alpha1
 
 import (
@@ -11,12 +11,12 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	compositionservice "github.com/KirkDiggler/rpg-api/internal/services/composition"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 )
 
 // HandlerConfig configures a CompositionService handler.
 type HandlerConfig struct {
 	Service          compositionservice.Service
-	WorldID          string
 	AuthoringEnabled bool
 }
 
@@ -25,7 +25,6 @@ type Handler struct {
 	compositionpb.UnimplementedCompositionServiceServer
 
 	service          compositionservice.Service
-	worldID          string
 	authoringEnabled bool
 }
 
@@ -37,19 +36,15 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 	if cfg.Service == nil {
 		return nil, apierr.InvalidArgument("composition service is required")
 	}
-	if cfg.WorldID == "" {
-		return nil, apierr.InvalidArgument("composition world ID is required")
-	}
 	return &Handler{
 		service:          cfg.Service,
-		worldID:          cfg.WorldID,
 		authoringEnabled: cfg.AuthoringEnabled,
 	}, nil
 }
 
 // CreateComposition saves one new immutable composition snapshot.
 func (h *Handler) CreateComposition(ctx context.Context, req *compositionpb.CreateCompositionRequest) (*compositionpb.CreateCompositionResponse, error) {
-	playerID, err := h.authorizeWorld(ctx, req.GetWorldId())
+	playerID, worldID, err := h.authorizeWorld(ctx, req.GetWorldId())
 	if err != nil {
 		return nil, apierr.ToGRPCError(err)
 	}
@@ -65,21 +60,21 @@ func (h *Handler) CreateComposition(ctx context.Context, req *compositionpb.Crea
 
 	output, err := h.service.Create(ctx, &compositionservice.CreateInput{
 		PlayerID: playerID,
-		WorldID:  h.worldID,
+		WorldID:  worldID,
 		JSON:     json.RawMessage(req.GetJson()),
 	})
 	if err != nil {
 		return nil, apierr.ToGRPCError(err)
 	}
-	if output == nil || output.Composition == nil {
-		return nil, apierr.ToGRPCError(apierr.Internal("composition service returned no created composition"))
+	if output == nil || validateComposition(output.Composition, worldID, "") != nil {
+		return nil, apierr.ToGRPCError(apierr.Internal("composition service returned an invalid created composition"))
 	}
 	return &compositionpb.CreateCompositionResponse{Composition: compositionToProto(output.Composition)}, nil
 }
 
 // GetComposition returns one immutable composition snapshot.
 func (h *Handler) GetComposition(ctx context.Context, req *compositionpb.GetCompositionRequest) (*compositionpb.GetCompositionResponse, error) {
-	playerID, err := h.authorizeWorld(ctx, req.GetWorldId())
+	playerID, worldID, err := h.authorizeWorld(ctx, req.GetWorldId())
 	if err != nil {
 		return nil, apierr.ToGRPCError(err)
 	}
@@ -89,21 +84,21 @@ func (h *Handler) GetComposition(ctx context.Context, req *compositionpb.GetComp
 
 	output, err := h.service.Get(ctx, &compositionservice.GetInput{
 		PlayerID:      playerID,
-		WorldID:       h.worldID,
+		WorldID:       worldID,
 		CompositionID: req.GetId(),
 	})
 	if err != nil {
 		return nil, apierr.ToGRPCError(err)
 	}
-	if output == nil || output.Composition == nil {
-		return nil, apierr.ToGRPCError(apierr.Internal("composition service returned no composition"))
+	if output == nil || validateComposition(output.Composition, worldID, req.GetId()) != nil {
+		return nil, apierr.ToGRPCError(apierr.Internal("composition service returned an invalid composition"))
 	}
 	return &compositionpb.GetCompositionResponse{Composition: compositionToProto(output.Composition)}, nil
 }
 
 // DeleteComposition permanently deletes one composition snapshot.
 func (h *Handler) DeleteComposition(ctx context.Context, req *compositionpb.DeleteCompositionRequest) (*compositionpb.DeleteCompositionResponse, error) {
-	playerID, err := h.authorizeWorld(ctx, req.GetWorldId())
+	playerID, worldID, err := h.authorizeWorld(ctx, req.GetWorldId())
 	if err != nil {
 		return nil, apierr.ToGRPCError(err)
 	}
@@ -116,7 +111,7 @@ func (h *Handler) DeleteComposition(ctx context.Context, req *compositionpb.Dele
 
 	output, err := h.service.Delete(ctx, &compositionservice.DeleteInput{
 		PlayerID:      playerID,
-		WorldID:       h.worldID,
+		WorldID:       worldID,
 		CompositionID: req.GetId(),
 	})
 	if err != nil {
@@ -128,16 +123,16 @@ func (h *Handler) DeleteComposition(ctx context.Context, req *compositionpb.Dele
 	return &compositionpb.DeleteCompositionResponse{}, nil
 }
 
-// ListCompositions returns all immutable composition snapshots in the configured world.
+// ListCompositions returns all immutable composition snapshots in the trusted world.
 func (h *Handler) ListCompositions(ctx context.Context, req *compositionpb.ListCompositionsRequest) (*compositionpb.ListCompositionsResponse, error) {
-	playerID, err := h.authorizeWorld(ctx, req.GetWorldId())
+	playerID, worldID, err := h.authorizeWorld(ctx, req.GetWorldId())
 	if err != nil {
 		return nil, apierr.ToGRPCError(err)
 	}
 
 	output, err := h.service.List(ctx, &compositionservice.ListInput{
 		PlayerID: playerID,
-		WorldID:  h.worldID,
+		WorldID:  worldID,
 	})
 	if err != nil {
 		return nil, apierr.ToGRPCError(err)
@@ -150,23 +145,40 @@ func (h *Handler) ListCompositions(ctx context.Context, req *compositionpb.ListC
 		Compositions: make([]*compositionpb.Composition, 0, len(output.Compositions)),
 	}
 	for _, composition := range output.Compositions {
+		if validateComposition(composition, worldID, "") != nil {
+			return nil, apierr.ToGRPCError(apierr.Internal("composition service returned an invalid list composition"))
+		}
 		response.Compositions = append(response.Compositions, compositionToProto(composition))
 	}
 	return response, nil
 }
 
-func (h *Handler) authorizeWorld(ctx context.Context, requestedWorldID string) (string, error) {
+func (h *Handler) authorizeWorld(ctx context.Context, requestedWorldID string) (string, string, error) {
 	playerID := auth.GetPlayerID(ctx)
 	if playerID == "" {
-		return "", apierr.Unauthenticated("player is not authenticated")
+		return "", "", apierr.Unauthenticated("player is not authenticated")
+	}
+	trustedWorld, ok := worldcontext.Get(ctx)
+	if !ok || trustedWorld.WorldID == "" {
+		return "", "", apierr.FailedPrecondition("trusted world context is required")
 	}
 	if requestedWorldID == "" {
-		return "", apierr.InvalidArgument("world ID is required")
+		return "", "", apierr.InvalidArgument("world ID is required")
 	}
-	if requestedWorldID != h.worldID {
-		return "", apierr.PermissionDenied("requested world is not available")
+	if requestedWorldID != trustedWorld.WorldID {
+		return "", "", apierr.PermissionDenied("requested world is not available")
 	}
-	return playerID, nil
+	return playerID, trustedWorld.WorldID, nil
+}
+
+func validateComposition(composition *worldcomposition.Data, worldID, expectedID string) error {
+	if composition == nil || composition.ID == "" || composition.WorldID != worldID {
+		return apierr.Internal("composition does not match trusted world")
+	}
+	if expectedID != "" && composition.ID != expectedID {
+		return apierr.Internal("composition does not match requested ID")
+	}
+	return nil
 }
 
 func compositionToProto(composition *worldcomposition.Data) *compositionpb.Composition {

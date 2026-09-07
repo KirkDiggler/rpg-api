@@ -12,6 +12,9 @@ var (
 	// ErrInvalidToken is returned when Discord rejects the token (401).
 	ErrInvalidToken = errors.New("invalid Discord token")
 
-	// ErrDiscordUnavailable is returned when Discord API is unreachable or returns 5xx.
+	// ErrDiscordUnavailable is returned when Discord cannot provide a usable response.
 	ErrDiscordUnavailable = errors.New("discord API unavailable")
+
+	// ErrGuildMembershipDenied is returned when Discord reports no access to the selected guild.
+	ErrGuildMembershipDenied = errors.New("discord guild membership denied")
 )
