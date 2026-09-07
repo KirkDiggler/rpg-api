@@ -128,6 +128,23 @@ func runServer(_ *cobra.Command, _ []string) error {
 		DevMode: os.Getenv(envAuthDevMode) == "true",
 	}
 	authoringEnabled := os.Getenv(envAuthoringEnabled) == "1"
+	membershipCache, err := auth.NewMembershipCache(&auth.MembershipCacheConfig{
+		TTL:        30 * time.Second,
+		MaxEntries: 1024,
+		Now:        time.Now,
+	})
+	if err != nil {
+		return fmt.Errorf("create membership cache: %w", err)
+	}
+	worldResolver, err := auth.NewWorldResolver(&auth.WorldResolverConfig{
+		MembershipVerifier: discordClient,
+		IdentityCache:      tokenCache,
+		MembershipCache:    membershipCache,
+		DevWorldID:         configuredDevWorldID(authConfig.DevMode),
+	})
+	if err != nil {
+		return fmt.Errorf("create world resolver: %w", err)
+	}
 	if authConfig.DevMode {
 		// The StreamEvents send trace (rpg-api#819, session/v1alpha1/stream_events.go)
 		// and other per-call debug logging are cheap but silent under
@@ -142,6 +159,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 	srv := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
 			auth.UnaryAuthInterceptor(discordClient, tokenCache, authConfig),
+			auth.UnaryWorldContextInterceptor(worldResolver),
 			grpc_logging.UnaryServerInterceptor(grpc_logging.LoggerFunc(logFunc)),
 			grpc_recovery.UnaryServerInterceptor(),
 		),

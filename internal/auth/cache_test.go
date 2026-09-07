@@ -53,6 +53,17 @@ func TestTokenCache_Set_OverwritesExisting(t *testing.T) {
 	assert.Equal(t, "user-new", userID)
 }
 
+func TestTokenCache_Delete(t *testing.T) {
+	cache := auth.NewTokenCache(5 * time.Minute)
+	cache.Set("token-123", "user-456")
+
+	cache.Delete("token-123")
+
+	userID, ok := cache.Get("token-123")
+	assert.False(t, ok)
+	assert.Empty(t, userID)
+}
+
 func TestTokenCache_ConcurrentAccess(t *testing.T) {
 	cache := auth.NewTokenCache(5 * time.Minute)
 	var wg sync.WaitGroup

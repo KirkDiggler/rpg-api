@@ -15,6 +15,8 @@ const (
 	authorizationHeader = "authorization"
 	discordScheme       = "Discord "
 	devScheme           = "Dev "
+	authSchemeDiscord   = "discord"
+	authSchemeDev       = "dev"
 )
 
 // InterceptorConfig configures the auth interceptors.
@@ -68,7 +70,7 @@ func StreamAuthInterceptor(validator TokenValidator, cache *TokenCache, cfg *Int
 		}
 		wrapped := &wrappedServerStream{
 			ServerStream: ss,
-			ctx:          newCtx,
+			ctx:          withoutRequestAuth(newCtx),
 		}
 		return handler(srv, wrapped)
 	}
@@ -106,12 +108,12 @@ func authenticate(ctx context.Context, validator TokenValidator, cache *TokenCac
 	}
 
 	// Handle Dev scheme (development only)
-	if info.scheme == "dev" {
+	if info.scheme == authSchemeDev {
 		if !devMode {
 			return nil, status.Error(codes.Unauthenticated, "Dev authentication not allowed")
 		}
-		// In dev mode, use the player ID directly without Discord validation
-		return WithPlayerID(ctx, info.value), nil
+		// In dev mode, use the player ID directly without Discord validation.
+		return withAuthenticatedRequest(ctx, info.value, info), nil
 	}
 
 	// Handle Discord scheme - validate token
@@ -119,7 +121,7 @@ func authenticate(ctx context.Context, validator TokenValidator, cache *TokenCac
 
 	// Check cache first
 	if userID, ok := cache.Get(token); ok {
-		return WithPlayerID(ctx, userID), nil
+		return withAuthenticatedRequest(ctx, userID, info), nil
 	}
 
 	// Cache miss - validate with Discord
@@ -142,20 +144,18 @@ func authenticate(ctx context.Context, validator TokenValidator, cache *TokenCac
 	// Cache the result
 	cache.Set(token, user.ID)
 
-	return WithPlayerID(ctx, user.ID), nil
+	return withAuthenticatedRequest(ctx, user.ID, info), nil
 }
 
-// authInfo contains extracted authentication information.
-type authInfo struct {
-	scheme string
-	value  string // Token for Discord scheme, player ID for Dev scheme
+func withAuthenticatedRequest(ctx context.Context, playerID string, info *requestAuth) context.Context {
+	return withRequestAuth(WithPlayerID(ctx, playerID), info)
 }
 
 // extractAuthInfo extracts authentication info from the authorization header.
 // Supports two schemes:
 //   - "Discord <token>" - Real Discord auth, token validated with Discord API
 //   - "Dev <player_id>" - Development mode, player ID used directly (requires devMode)
-func extractAuthInfo(ctx context.Context) (*authInfo, error) {
+func extractAuthInfo(ctx context.Context) (*requestAuth, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return nil, ErrMissingToken
@@ -174,7 +174,7 @@ func extractAuthInfo(ctx context.Context) (*authInfo, error) {
 		if token == "" {
 			return nil, ErrMissingToken
 		}
-		return &authInfo{scheme: "discord", value: token}, nil
+		return &requestAuth{scheme: authSchemeDiscord, value: token}, nil
 	}
 
 	// Check for Dev scheme
@@ -183,7 +183,7 @@ func extractAuthInfo(ctx context.Context) (*authInfo, error) {
 		if playerID == "" {
 			return nil, ErrMissingToken
 		}
-		return &authInfo{scheme: "dev", value: playerID}, nil
+		return &requestAuth{scheme: authSchemeDev, value: playerID}, nil
 	}
 
 	return nil, ErrInvalidTokenFormat

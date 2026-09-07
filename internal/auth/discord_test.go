@@ -95,3 +95,63 @@ func TestDiscordClient_GetCurrentUser_ContextCanceled(t *testing.T) {
 	assert.Nil(t, user)
 	assert.Error(t, err)
 }
+
+func TestDiscordClient_GetCurrentUserGuildMember_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/users/@me/guilds/123456789012345678/member", r.URL.Path)
+		assert.Equal(t, "Bearer membership-credential", r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusOK)
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"user": map[string]string{"id": "player-1", "username": "member"},
+		}))
+	}))
+	defer server.Close()
+
+	client := auth.NewDiscordClient(auth.WithBaseURL(server.URL))
+	member, err := client.GetCurrentUserGuildMember(context.Background(), &auth.GetCurrentUserGuildMemberInput{
+		Token: "membership-credential", GuildID: "123456789012345678",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, member.User)
+	require.Equal(t, "player-1", member.User.ID)
+}
+
+func TestDiscordClient_GetCurrentUserGuildMember_StatusMapping(t *testing.T) {
+	tests := []struct {
+		name     string
+		status   int
+		body     string
+		expected error
+	}{
+		{name: "unauthorized", status: http.StatusUnauthorized, expected: auth.ErrInvalidToken},
+		{name: "forbidden", status: http.StatusForbidden, expected: auth.ErrGuildMembershipDenied},
+		{name: "not found", status: http.StatusNotFound, expected: auth.ErrGuildMembershipDenied},
+		{name: "rate limited", status: http.StatusTooManyRequests, expected: auth.ErrDiscordUnavailable},
+		{name: "server error", status: http.StatusInternalServerError, expected: auth.ErrDiscordUnavailable},
+		{name: "unexpected", status: http.StatusBadRequest, expected: auth.ErrDiscordUnavailable},
+		{name: "bad JSON", status: http.StatusOK, body: `{`, expected: auth.ErrDiscordUnavailable},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+
+			client := auth.NewDiscordClient(auth.WithBaseURL(server.URL))
+			member, err := client.GetCurrentUserGuildMember(context.Background(), &auth.GetCurrentUserGuildMemberInput{
+				Token: "membership-credential", GuildID: "123456789012345678",
+			})
+			assert.Nil(t, member)
+			assert.ErrorIs(t, err, tt.expected)
+		})
+	}
+}
+
+func TestDiscordClient_GetCurrentUserGuildMember_InvalidInput(t *testing.T) {
+	client := auth.NewDiscordClient()
+	member, err := client.GetCurrentUserGuildMember(context.Background(), nil)
+	assert.Nil(t, member)
+	assert.ErrorIs(t, err, auth.ErrDiscordUnavailable)
+}
