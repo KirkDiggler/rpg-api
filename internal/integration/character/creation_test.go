@@ -1741,6 +1741,43 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesWithoutSpellChoices() {
 	s.Require().NoError(err)
 	s.Equal(dnd5ev1alpha1.Class_CLASS_BARD, persisted.GetCharacter().GetClass())
 
+	// -- and the bard PROJECTS. This is the walk's second finding and the one
+	// a creation test alone would never have caught: the bard finalized fine
+	// and then could not be looked at. In the dungeon her status read
+	// "unavailable" and no equipment showed, because GetCharacterData is one
+	// call and a refused status view takes the equipment down with it.
+	//
+	// The cause was three closed catalogs where the design named one: the
+	// resource display name had its bard arm and the status view's feature
+	// and owner catalogs did not, so the strict projection refused the
+	// inspiration pool it had just been told to carry. Recorded on
+	// rpg-project#397; fixed in rpg-toolkit's character/status_view.go.
+	//
+	// Asserted through the same v2 RPC the dungeon calls, not through the
+	// orchestrator, because the whole failure was that this response never
+	// arrived. --
+	viewResp, err := s.server.CharacterClientV2.GetCharacterData(ctx, &characterv2pb.GetCharacterDataRequest{
+		CharacterId: finalizeResp.GetCharacter().GetId(),
+	})
+	s.Require().NoError(err, "a finalized bard must be viewable in a dungeon")
+
+	pools := map[string]*encounterv2pb.ResourceView{}
+	for _, resource := range viewResp.GetCharacter().GetResources() {
+		pools[resource.GetKey()] = resource
+	}
+
+	inspiration, ok := pools["inspiration"]
+	s.Require().True(ok, "the bard's own die must reach the view she is looked at through")
+	s.Equal("Bardic Inspiration", inspiration.GetName(), "the server authors the label")
+	s.Equal(int32(3), inspiration.GetCurrent())
+	s.Equal(int32(3), inspiration.GetMaximum(), "the pool is max(1, CHA mod), and CHA 16 is +3")
+
+	// Hit dice ride the same owner catalog and were refused by the same
+	// missing arm, so they are the half that says the fix was not
+	// inspiration-shaped special-casing.
+	_, hasHitDice := pools["hit_dice"]
+	s.True(hasHitDice, "a bard's hit dice come through the same owner catalog")
+
 	// -- and the bard finalized with the thing slice one is about: a pool of
 	// inspiration dice sized to their Charisma modifier, and no spell slots.
 	//
