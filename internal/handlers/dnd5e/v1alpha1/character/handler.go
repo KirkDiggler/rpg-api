@@ -396,10 +396,55 @@ func (h *Handler) UpdateBackground(
 	var bgChoices toolkitchar.BackgroundChoices
 	if len(req.BackgroundChoices) > 0 {
 		for _, choice := range req.BackgroundChoices {
-			if choice.Category == dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES {
+			switch choice.Category {
+			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES:
 				if langs := choice.GetLanguages(); langs != nil {
 					for _, lang := range langs.Languages {
 						bgChoices.Languages = append(bgChoices.Languages, convertProtoLanguageToToolkit(lang))
+					}
+				}
+			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT:
+				if equipment := choice.GetEquipment(); equipment != nil {
+					// Build equipment choice selection with ChoiceID, OptionID, and CategorySelections
+					selection := toolkitchar.EquipmentChoiceSelection{
+						ChoiceID: choices.ChoiceID(choice.ChoiceId),
+						OptionID: choice.OptionId,
+					}
+
+					// If there are equipment items, these are the category selections
+					// (specific items chosen from "any simple weapon" style choices)
+					if len(equipment.Items) > 0 {
+						categorySelections := make([]shared.EquipmentID, 0, len(equipment.Items))
+						for _, item := range equipment.Items {
+							var itemID string
+
+							// Extract the ID based on the equipment type
+							switch eq := item.Equipment.(type) {
+							case *dnd5ev1alpha1.EquipmentSelectionItem_Weapon:
+								itemID = convertProtoWeaponToToolkit(eq.Weapon)
+							case *dnd5ev1alpha1.EquipmentSelectionItem_Armor:
+								itemID = convertProtoArmorToToolkit(eq.Armor)
+							case *dnd5ev1alpha1.EquipmentSelectionItem_Tool:
+								itemID = convertProtoToolToToolkit(eq.Tool)
+							case *dnd5ev1alpha1.EquipmentSelectionItem_OtherEquipmentId:
+								itemID = eq.OtherEquipmentId
+							}
+
+							if itemID != "" {
+								categorySelections = append(categorySelections, itemID)
+							}
+						}
+						selection.CategorySelections = categorySelections
+					}
+
+					bgChoices.Equipment = append(bgChoices.Equipment, selection)
+				}
+			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS:
+				if tools := choice.GetTools(); tools != nil {
+					for _, tool := range tools.Tools {
+						if toolID := convertProtoToolToToolkit(tool); toolID != "" {
+							bgChoices.Tools = append(bgChoices.Tools, toolID)
+						}
 					}
 				}
 			}

@@ -325,8 +325,9 @@ func (s *CharacterCreationSuite) completeDwarfFighterDraft(ctx context.Context) 
 	s.Require().NoError(err)
 
 	_, err = s.server.CharacterClient.UpdateBackground(ctx, &dnd5ev1alpha1.UpdateBackgroundRequest{
-		DraftId:    draftID,
-		Background: dnd5ev1alpha1.Background_BACKGROUND_SOLDIER,
+		DraftId:           draftID,
+		Background:        dnd5ev1alpha1.Background_BACKGROUND_SOLDIER,
+		BackgroundChoices: soldierBackgroundChoices(),
 	})
 	s.Require().NoError(err)
 
@@ -603,8 +604,9 @@ func (s *CharacterCreationSuite) createFighterWithPrimaryWeapons(
 
 	// Set background
 	_, err = s.server.CharacterClient.UpdateBackground(ctx, &dnd5ev1alpha1.UpdateBackgroundRequest{
-		DraftId:    draftID,
-		Background: dnd5ev1alpha1.Background_BACKGROUND_SOLDIER,
+		DraftId:           draftID,
+		Background:        dnd5ev1alpha1.Background_BACKGROUND_SOLDIER,
+		BackgroundChoices: soldierBackgroundChoices(),
 	})
 	s.Require().NoError(err)
 
@@ -784,8 +786,9 @@ func (s *CharacterCreationSuite) TestCreateRogue() {
 
 	// Set background
 	_, err = s.server.CharacterClient.UpdateBackground(ctx, &dnd5ev1alpha1.UpdateBackgroundRequest{
-		DraftId:    draftID,
-		Background: dnd5ev1alpha1.Background_BACKGROUND_CRIMINAL,
+		DraftId:           draftID,
+		Background:        dnd5ev1alpha1.Background_BACKGROUND_CRIMINAL,
+		BackgroundChoices: criminalBackgroundChoices(),
 	})
 	s.Require().NoError(err)
 
@@ -890,6 +893,7 @@ func (s *CharacterCreationSuite) TestCreateDwarfBarbarianWithToolChoice() {
 
 	_, err = s.server.CharacterClient.UpdateBackground(ctx, &dnd5ev1alpha1.UpdateBackgroundRequest{
 		DraftId: draftID, Background: dnd5ev1alpha1.Background_BACKGROUND_OUTLANDER,
+		BackgroundChoices: outlanderBackgroundChoices(),
 	})
 	s.Require().NoError(err)
 
@@ -945,7 +949,10 @@ func (s *CharacterCreationSuite) TestCreateBarbarian() {
 	})
 	s.Require().NoError(err)
 
-	_, err = s.server.CharacterClient.UpdateBackground(ctx, &dnd5ev1alpha1.UpdateBackgroundRequest{DraftId: draftID, Background: dnd5ev1alpha1.Background_BACKGROUND_OUTLANDER})
+	_, err = s.server.CharacterClient.UpdateBackground(ctx, &dnd5ev1alpha1.UpdateBackgroundRequest{
+		DraftId: draftID, Background: dnd5ev1alpha1.Background_BACKGROUND_OUTLANDER,
+		BackgroundChoices: outlanderBackgroundChoices(),
+	})
 	s.Require().NoError(err)
 
 	_, err = s.server.CharacterClient.UpdateAbilityScores(ctx, &dnd5ev1alpha1.UpdateAbilityScoresRequest{
@@ -1504,6 +1511,62 @@ func (s *CharacterCreationSuite) createMonkDraftWithPrimaryWeapon(
 	s.Require().NoError(err)
 
 	return draftID
+}
+
+// soldierBackgroundChoices is Soldier's own real choices (rpg-toolkit#1554):
+// unlike the other seven backgrounds with a choice, Soldier needs both an
+// Equipment pick (bone dice or a deck of cards, two fixed options) and an
+// independent Tools proficiency pick (one of four gaming-set types) --
+// picking dice for both here, but they are unrelated selection spaces by
+// RAW, not a matched pair.
+func soldierBackgroundChoices() []*dnd5ev1alpha1.ChoiceData {
+	return []*dnd5ev1alpha1.ChoiceData{
+		{
+			Category:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+			Source:    dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND,
+			ChoiceId:  "soldier-gaming-set-item",
+			OptionId:  "soldier-gaming-set-a",
+			Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{}},
+		},
+		{
+			Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+			Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND,
+			ChoiceId: "soldier-gaming-set-proficiency",
+			Selection: &dnd5ev1alpha1.ChoiceData_Tools{Tools: &dnd5ev1alpha1.ToolSelection{
+				Tools: []dnd5ev1alpha1.Tool{dnd5ev1alpha1.Tool_TOOL_DICE_SET},
+			}},
+		},
+	}
+}
+
+// outlanderBackgroundChoices is Outlander's own real choice (rpg-toolkit#1554):
+// one musical instrument proficiency, no physical item.
+func outlanderBackgroundChoices() []*dnd5ev1alpha1.ChoiceData {
+	return []*dnd5ev1alpha1.ChoiceData{
+		{
+			Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+			Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND,
+			ChoiceId: "outlander-instrument",
+			Selection: &dnd5ev1alpha1.ChoiceData_Tools{Tools: &dnd5ev1alpha1.ToolSelection{
+				Tools: []dnd5ev1alpha1.Tool{dnd5ev1alpha1.Tool_TOOL_LUTE},
+			}},
+		},
+	}
+}
+
+// criminalBackgroundChoices is Criminal/Spy's own real choice
+// (rpg-toolkit#1554): one gaming-set proficiency, no physical item.
+func criminalBackgroundChoices() []*dnd5ev1alpha1.ChoiceData {
+	return []*dnd5ev1alpha1.ChoiceData{
+		{
+			Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+			Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND,
+			ChoiceId: "criminal-gaming-set",
+			Selection: &dnd5ev1alpha1.ChoiceData_Tools{Tools: &dnd5ev1alpha1.ToolSelection{
+				Tools: []dnd5ev1alpha1.Tool{dnd5ev1alpha1.Tool_TOOL_DICE_SET},
+			}},
+		},
+	}
 }
 
 func monkClassChoices(optionID string, weapon dnd5ev1alpha1.Weapon) []*dnd5ev1alpha1.ChoiceData {
