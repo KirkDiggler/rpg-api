@@ -625,6 +625,13 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_ARRIVED
 	case sdk.EventWindowOpened:
 		return sessionpb.EventKind_EVENT_KIND_WINDOW_OPENED
+	// The post-roll window (rpg-project#398). A SECOND KIND rather than a
+	// second shape of the first: WindowOpened is movement-shaped -- mover,
+	// from, to, all load-bearing -- and a window opened on a d20 has no
+	// mover and no cells, so widening it would put three zero values that
+	// lie on every post-roll beat.
+	case sdk.EventRollWindowOpened:
+		return sessionpb.EventKind_EVENT_KIND_ROLL_WINDOW_OPENED
 	default:
 		return sessionpb.EventKind_EVENT_KIND_UNKNOWN
 	}
@@ -897,6 +904,31 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			From:     positionToProto(b.From),
 			To:       positionToProto(b.To),
 			Reaction: reactionRefToProto(&b.Reaction),
+		}}
+	case sdk.RollWindowOpenedBody:
+		// A roll stopped to ask (rpg-project#398). The d20 is already on the
+		// table and the fight is waiting on the one member who rolled it.
+		//
+		// AUDIENCE IS A SINGLE MEMBER HERE, not a list as it is above, and
+		// the asymmetry is the SDK's own: a movement fold asks every player
+		// reactor at once, while this slice poses one window to the roller
+		// and to nobody else. An offer whose audience is not the roller is
+		// refused below the seam rather than posed to somebody no freeze was
+		// designed for, so this converter never sees a second name.
+		//
+		// THE TARGET'S AC IS NOT ON THIS BEAT and there is no field for it.
+		// Roll and total are what the player decides with; whether the swing
+		// lands is what they are deciding about, and the struck or missed
+		// beat says it AFTER the answer.
+		//
+		// Offer is a value on this body, not a pointer -- a window that
+		// named nothing to spend could not have been posed -- so it always
+		// converts to a non-nil message.
+		evt.Body = &sessionpb.Event_RollWindowOpened{RollWindowOpened: &sessionpb.RollWindowOpened{
+			Audience: b.Audience,
+			Offer:    reactionRefToProto(&b.Offer),
+			Roll:     int32(b.Roll),
+			Total:    int32(b.Total),
 		}}
 	default:
 		// nil (no typed body for this kind) or a body type this build does

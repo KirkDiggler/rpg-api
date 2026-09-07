@@ -1232,3 +1232,32 @@ func (s *ConvertersTestSuite) TestExtractIDFromRef_KeepsTheWholeID() {
 		})
 	}
 }
+
+// TestLoadAllClassChoices_Bard_OffersTheEighteenSkills closes the sentinel
+// nobody implemented (rpg-project#397, shape §1). The bard's skill
+// requirement used to carry an EMPTY option list meaning "any three", and
+// this side of the seam reads an empty list as "nothing to offer" and builds
+// no choice at all -- so a bard was offered no skills to pick and could not
+// be finished. The toolkit now enumerates all eighteen, and both readings
+// agree; this is the rpg-api half of that agreement, and it fails the moment
+// the list goes back to empty.
+func (s *ConvertersTestSuite) TestLoadAllClassChoices_Bard_OffersTheEighteenSkills() {
+	var skillChoice *dnd5ev1alpha1.Choice
+	for _, c := range loadAllClassChoices(classes.Bard) {
+		if c.GetChoiceType() == dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS {
+			skillChoice = c
+		}
+	}
+
+	require.NotNil(s.T(), skillChoice, "a bard with no skill choice cannot be created")
+	assert.Equal(s.T(), int32(3), skillChoice.GetChooseCount())
+
+	available := skillChoice.GetSkillOptions().GetAvailable()
+	assert.Len(s.T(), available, 18, "any three skills, written out rather than implied")
+	// The two the class is named for, and one nothing else on the list would
+	// have caught: an empty option list produces no choice, so a spot check
+	// here is a check that the enumeration crossed the seam at all.
+	assert.Contains(s.T(), available, dnd5ev1alpha1.Skill_SKILL_PERFORMANCE)
+	assert.Contains(s.T(), available, dnd5ev1alpha1.Skill_SKILL_PERSUASION)
+	assert.Contains(s.T(), available, dnd5ev1alpha1.Skill_SKILL_SURVIVAL)
+}
