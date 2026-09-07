@@ -26,9 +26,11 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/tools"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
@@ -1607,4 +1609,158 @@ func monkClassChoices(optionID string, weapon dnd5ev1alpha1.Weapon) []*dnd5ev1al
 			}},
 		},
 	}
+}
+
+// TestCreateBard_FinalizesWithoutSpellChoices is the walk's first step, and
+// the blocker it closes was a hard stop: finalizing a level-1 bard answered
+//
+//	draft is incomplete - missing: [class selection or class choices].
+//	Class validation: Choose 2 cantrips required
+//
+// so a bard could not be created at all, and nothing further in slice one
+// could be walked.
+//
+// Kirk's ruling is that slice one is Bardic Inspiration and nothing else: a
+// level-1 bard requires no cantrips and no spells, and the cast door, the
+// slots and the known-spell list all arrive together at rung 2. The fix is
+// the toolkit's -- the two requirements left the level-1 set -- and this
+// asserts the consequence at the seam a player actually comes through.
+//
+// WHAT MAKES IT FAIL. Put either requirement back and finalize refuses,
+// because this draft submits skills, three instruments and the three
+// equipment rows and deliberately submits NO spell choice of any kind.
+func (s *CharacterCreationSuite) TestCreateBard_FinalizesWithoutSpellChoices() {
+	ctx := s.authCtx("test-player-bard")
+
+	createResp, err := s.server.CharacterClient.CreateDraft(ctx, &dnd5ev1alpha1.CreateDraftRequest{})
+	s.Require().NoError(err)
+	draftID := createResp.GetDraft().GetId()
+
+	_, err = s.server.CharacterClient.UpdateName(ctx, &dnd5ev1alpha1.UpdateNameRequest{
+		DraftId: draftID, Name: "Bella",
+	})
+	s.Require().NoError(err)
+
+	_, err = s.server.CharacterClient.UpdateRace(ctx, &dnd5ev1alpha1.UpdateRaceRequest{
+		DraftId: draftID,
+		Race:    dnd5ev1alpha1.Race_RACE_HUMAN,
+		RaceChoices: []*dnd5ev1alpha1.ChoiceData{
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
+				Selection: &dnd5ev1alpha1.ChoiceData_Languages{
+					Languages: &dnd5ev1alpha1.LanguageSelection{
+						Languages: []dnd5ev1alpha1.Language{dnd5ev1alpha1.Language_LANGUAGE_ELVISH},
+					},
+				},
+			},
+		},
+	})
+	s.Require().NoError(err)
+
+	// Three skills from the eighteen the toolkit now enumerates, three
+	// instruments, and one option from each of the bard's three equipment
+	// rows. No spell choice: that is the point.
+	_, err = s.server.CharacterClient.UpdateClass(ctx, &dnd5ev1alpha1.UpdateClassRequest{
+		DraftId: draftID,
+		Class:   dnd5ev1alpha1.Class_CLASS_BARD,
+		ClassChoices: []*dnd5ev1alpha1.ChoiceData{
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "bard-skills",
+				Selection: &dnd5ev1alpha1.ChoiceData_Skills{Skills: &dnd5ev1alpha1.SkillSelection{
+					Skills: []dnd5ev1alpha1.Skill{
+						dnd5ev1alpha1.Skill_SKILL_PERFORMANCE,
+						dnd5ev1alpha1.Skill_SKILL_PERSUASION,
+						dnd5ev1alpha1.Skill_SKILL_DECEPTION,
+					},
+				}},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "bard-instruments",
+				Selection: &dnd5ev1alpha1.ChoiceData_Tools{Tools: &dnd5ev1alpha1.ToolSelection{
+					Tools: []dnd5ev1alpha1.Tool{
+						dnd5ev1alpha1.Tool_TOOL_LUTE,
+						dnd5ev1alpha1.Tool_TOOL_FLUTE,
+						dnd5ev1alpha1.Tool_TOOL_DRUM,
+					},
+				}},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "bard-weapons-primary", OptionId: "bard-weapon-a",
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{}},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "bard-pack", OptionId: "bard-pack-b",
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{}},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "bard-instrument", OptionId: "bard-instrument-a",
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{}},
+			},
+		},
+	})
+	s.Require().NoError(err)
+
+	_, err = s.server.CharacterClient.UpdateBackground(ctx, &dnd5ev1alpha1.UpdateBackgroundRequest{
+		DraftId: draftID, Background: dnd5ev1alpha1.Background_BACKGROUND_OUTLANDER,
+		BackgroundChoices: outlanderBackgroundChoices(),
+	})
+	s.Require().NoError(err)
+
+	_, err = s.server.CharacterClient.UpdateAbilityScores(ctx, &dnd5ev1alpha1.UpdateAbilityScoresRequest{
+		DraftId: draftID,
+		ScoresInput: &dnd5ev1alpha1.UpdateAbilityScoresRequest_AbilityScores{
+			AbilityScores: &dnd5ev1alpha1.AbilityScores{
+				Strength: 8, Dexterity: 14, Constitution: 12,
+				Intelligence: 10, Wisdom: 12, Charisma: 16,
+			},
+		},
+	})
+	s.Require().NoError(err)
+
+	finalizeResp, err := s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{
+		DraftId: draftID,
+	})
+	s.Require().NoError(err, "a level-1 bard must finalize with no spell choice submitted")
+	s.Require().NotNil(finalizeResp.GetCharacter())
+	s.Equal(dnd5ev1alpha1.Class_CLASS_BARD, finalizeResp.GetCharacter().GetClass())
+
+	persisted, err := s.server.CharacterClient.GetCharacter(ctx, &dnd5ev1alpha1.GetCharacterRequest{
+		CharacterId: finalizeResp.GetCharacter().GetId(),
+	})
+	s.Require().NoError(err)
+	s.Equal(dnd5ev1alpha1.Class_CLASS_BARD, persisted.GetCharacter().GetClass())
+
+	// -- and the bard finalized with the thing slice one is about: a pool of
+	// inspiration dice sized to their Charisma modifier, and no spell slots.
+	//
+	// READ OFF THE STORED SHEET, not the response. convertCharacterDataToProto
+	// drops class resources and spell slots entirely -- both are TODOs that
+	// predate this work and affect every class, Rage included -- so asserting
+	// either through the wire would be asserting against an empty list and
+	// could not fail. --
+	stored, err := s.server.CharacterRepo.Get(s.ctx, characterrepo.GetInput{
+		ID: finalizeResp.GetCharacter().GetId(),
+	})
+	s.Require().NoError(err)
+
+	pool, ok := stored.Character.Data.Resources[resources.Inspiration]
+	s.Require().True(ok, "a level-1 bard carries an inspiration pool")
+	s.Equal(3, pool.Maximum, "the pool is max(1, CHA mod), and CHA 16 is +3")
+	s.Equal(3, pool.Current, "a freshly made bard has spent none of it")
+
+	// NO SPELL SLOTS, which is a deletion and not an absence (#397 R6):
+	// compileSpellSlots used to hand every bard two first-level slots that
+	// nothing in the stack could reach, let alone spend.
+	s.Empty(stored.Character.Data.SpellSlots, "slice one gives the bard no slots, because nothing casts")
 }
