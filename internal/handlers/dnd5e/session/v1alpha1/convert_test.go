@@ -1564,6 +1564,28 @@ func TestEventWindowOpened_ReachesTheWireTyped(t *testing.T) {
 // nothing filled: the wire field existed, the encounter recorded the identity,
 // and the beat arrived saying nothing about why a fighter swung on a
 // skeleton's turn.
+func TestStruckAndMissedCarryThePresentationToken(t *testing.T) {
+	const token = "presentation_2f1c8b4a-0d6e-4a1b-9c3f-5e7a1b2c3d4e"
+
+	struck := eventToProto(sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
+		Attacker: "char-1", Target: "skel-1", PresentationID: token,
+	}}).GetStruck()
+	require.Equal(t, token, struck.GetPresentationId())
+
+	missed := eventToProto(sdk.Event{Kind: sdk.EventMissed, Body: sdk.MissedBody{
+		Attacker: "char-1", Target: "skel-1", PresentationID: token,
+	}}).GetMissed()
+	require.Equal(t, token, missed.GetPresentationId())
+
+	// A beat recorded before the field existed carries nothing, and empty is
+	// the truth: the client reads it as "this roll has no shared presentation"
+	// and narrates the swing alone rather than treating it as an error.
+	old := eventToProto(sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
+		Attacker: "char-1", Target: "skel-1",
+	}}).GetStruck()
+	require.Empty(t, old.GetPresentationId())
+}
+
 func TestStruckAndMissedCarryTheReaction(t *testing.T) {
 	oa := &sdk.ReactionRef{Ref: "dnd5e:conditions:opportunity_attack", Name: "Opportunity Attack"}
 

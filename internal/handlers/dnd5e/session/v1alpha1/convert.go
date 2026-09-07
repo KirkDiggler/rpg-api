@@ -721,6 +721,9 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			// carried the identity; absent on every ordinary swing, which
 			// is the truth rather than a gap.
 			Reaction: reactionRefToProto(b.Reaction),
+			// Same token the attacker got back on AttackResponse, so this
+			// recipient can name the same roll the attacker is presenting.
+			PresentationId: b.PresentationID,
 		}}
 	case sdk.MissedBody:
 		evt.Body = &sessionpb.Event_Missed{Missed: &sessionpb.Missed{
@@ -731,6 +734,8 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			Against:  int32(b.Against),
 			Attack:   attackRefToProto(b.Attack),
 			Reaction: reactionRefToProto(b.Reaction),
+			// See the struck case: one shared token per swing.
+			PresentationId: b.PresentationID,
 		}}
 	case sdk.ActivatedBody:
 		evt.Body = &sessionpb.Event_Activated{Activated: activatedBodyToProto(b)}
