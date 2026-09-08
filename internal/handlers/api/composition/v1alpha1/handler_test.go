@@ -20,6 +20,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	compositionservice "github.com/KirkDiggler/rpg-api/internal/services/composition"
 	compositionmock "github.com/KirkDiggler/rpg-api/internal/services/composition/mock"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 )
 
 type HandlerSuite struct {
@@ -34,12 +35,12 @@ func (s *HandlerSuite) SetupTest() {
 	s.service = compositionmock.NewMockService(ctrl)
 	handler, err := New(&HandlerConfig{
 		Service:          s.service,
-		WorldID:          "test-world",
 		AuthoringEnabled: true,
 	})
 	s.Require().NoError(err)
 	s.handler = handler
 	s.ctx = auth.WithPlayerID(context.Background(), "player-1")
+	s.ctx = worldcontext.With(s.ctx, worldcontext.Value{WorldID: "test-world"})
 }
 
 func (s *HandlerSuite) TestCreateMapsRequestAndResponse() {
@@ -107,7 +108,7 @@ func (s *HandlerSuite) TestGetAndListMapRequestsAndResponses() {
 	s.Equal("composition-2", listed.GetCompositions()[1].GetId())
 }
 
-func (s *HandlerSuite) TestMissingPlayerAndWorldMismatchRefuseBeforeService() {
+func (s *HandlerSuite) TestMissingPlayerContextAndWorldMismatchRefuseBeforeService() {
 	calls := []func(context.Context, string) error{
 		func(ctx context.Context, worldID string) error {
 			_, err := s.handler.CreateComposition(ctx, &compositionpb.CreateCompositionRequest{WorldId: worldID, Json: `{}`})
@@ -127,15 +128,17 @@ func (s *HandlerSuite) TestMissingPlayerAndWorldMismatchRefuseBeforeService() {
 		},
 	}
 
+	playerOnly := auth.WithPlayerID(context.Background(), "player-1")
 	for _, call := range calls {
 		s.Equal(codes.Unauthenticated, status.Code(call(context.Background(), "test-world")))
+		s.Equal(codes.FailedPrecondition, status.Code(call(playerOnly, "test-world")))
 		s.Equal(codes.PermissionDenied, status.Code(call(s.ctx, "another-world")))
 		s.Equal(codes.InvalidArgument, status.Code(call(s.ctx, "")))
 	}
 }
 
 func (s *HandlerSuite) TestCreateHonorsAuthoringGateAndValidatesJSON() {
-	disabled, err := New(&HandlerConfig{Service: s.service, WorldID: "test-world"})
+	disabled, err := New(&HandlerConfig{Service: s.service})
 	s.Require().NoError(err)
 	_, err = disabled.CreateComposition(s.ctx, &compositionpb.CreateCompositionRequest{WorldId: "test-world", Json: `{}`})
 	s.Equal(codes.FailedPrecondition, status.Code(err))
@@ -147,6 +150,20 @@ func (s *HandlerSuite) TestCreateHonorsAuthoringGateAndValidatesJSON() {
 
 	_, err = disabled.DeleteComposition(s.ctx, &compositionpb.DeleteCompositionRequest{WorldId: "test-world", Id: "composition-1"})
 	s.Equal(codes.FailedPrecondition, status.Code(err))
+
+	s.service.EXPECT().Get(gomock.Any(), &compositionservice.GetInput{
+		PlayerID: "player-1", WorldID: "test-world", CompositionID: "composition-1",
+	}).Return(&compositionservice.GetOutput{Composition: &worldcomposition.Data{
+		ID: "composition-1", WorldID: "test-world", JSON: json.RawMessage(`{}`),
+	}}, nil)
+	_, err = disabled.GetComposition(s.ctx, &compositionpb.GetCompositionRequest{WorldId: "test-world", Id: "composition-1"})
+	s.NoError(err)
+
+	s.service.EXPECT().List(gomock.Any(), &compositionservice.ListInput{
+		PlayerID: "player-1", WorldID: "test-world",
+	}).Return(&compositionservice.ListOutput{}, nil)
+	_, err = disabled.ListCompositions(s.ctx, &compositionpb.ListCompositionsRequest{WorldId: "test-world"})
+	s.NoError(err)
 }
 
 func (s *HandlerSuite) TestValidatesCompositionIDs() {
@@ -193,6 +210,39 @@ func (s *HandlerSuite) TestMissingServiceOutputsReturnInternal() {
 	s.Equal(codes.Internal, status.Code(err))
 }
 
+func (s *HandlerSuite) TestWrongWorldOrIDServiceOutputsReturnInternal() {
+	s.service.EXPECT().Create(gomock.Any(), gomock.Any()).Return(&compositionservice.CreateOutput{Composition: &worldcomposition.Data{
+		ID: "composition-1", WorldID: "another-world", JSON: json.RawMessage(`{}`),
+	}}, nil)
+	_, err := s.handler.CreateComposition(s.ctx, &compositionpb.CreateCompositionRequest{WorldId: "test-world", Json: `{}`})
+	s.Equal(codes.Internal, status.Code(err))
+
+	s.service.EXPECT().Get(gomock.Any(), gomock.Any()).Return(&compositionservice.GetOutput{Composition: &worldcomposition.Data{
+		ID: "another-composition", WorldID: "test-world", JSON: json.RawMessage(`{}`),
+	}}, nil)
+	_, err = s.handler.GetComposition(s.ctx, &compositionpb.GetCompositionRequest{WorldId: "test-world", Id: "composition-1"})
+	s.Equal(codes.Internal, status.Code(err))
+
+	s.service.EXPECT().Get(gomock.Any(), gomock.Any()).Return(&compositionservice.GetOutput{Composition: &worldcomposition.Data{
+		ID: "composition-1", WorldID: "another-world", JSON: json.RawMessage(`{}`),
+	}}, nil)
+	_, err = s.handler.GetComposition(s.ctx, &compositionpb.GetCompositionRequest{WorldId: "test-world", Id: "composition-1"})
+	s.Equal(codes.Internal, status.Code(err))
+
+	s.service.EXPECT().List(gomock.Any(), gomock.Any()).Return(&compositionservice.ListOutput{Compositions: []*worldcomposition.Data{
+		{ID: "composition-1", WorldID: "test-world", JSON: json.RawMessage(`{}`)},
+		nil,
+	}}, nil)
+	_, err = s.handler.ListCompositions(s.ctx, &compositionpb.ListCompositionsRequest{WorldId: "test-world"})
+	s.Equal(codes.Internal, status.Code(err))
+
+	s.service.EXPECT().List(gomock.Any(), gomock.Any()).Return(&compositionservice.ListOutput{Compositions: []*worldcomposition.Data{
+		{ID: "composition-1", WorldID: "another-world", JSON: json.RawMessage(`{}`)},
+	}}, nil)
+	_, err = s.handler.ListCompositions(s.ctx, &compositionpb.ListCompositionsRequest{WorldId: "test-world"})
+	s.Equal(codes.Internal, status.Code(err))
+}
+
 func TestHandlerSuite(t *testing.T) {
 	suite.Run(t, new(HandlerSuite))
 }
@@ -208,5 +258,5 @@ func TestNewValidation(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	_, err = New(&HandlerConfig{Service: compositionmock.NewMockService(ctrl)})
-	require.Error(t, err)
+	require.NoError(t, err)
 }
