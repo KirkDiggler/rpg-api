@@ -107,7 +107,19 @@ func statusError(err error) error {
 		// below): a caller defect in the request's own shape, the same
 		// family ErrNoMemberID/ErrBadPosition above already sit in, not a
 		// well-formed call the world refuses.
-		errors.Is(err, sdk.ErrInvalidUnpackRequest):
+		errors.Is(err, sdk.ErrInvalidUnpackRequest),
+		// ErrBadCast (rpg-project#405) is ErrBadActivation's shape one verb
+		// over, and it belongs in the same bucket for the same reason: a
+		// CALLER produces it, by naming a target for a self-cast or omitting
+		// one for a cast that lands on somebody. The SDK refuses both rather
+		// than ignoring the extra value, precisely so a client that believes
+		// it aimed True Strike at a skeleton is told.
+		//
+		// A target that merely drifted out of range is NOT this: the offer
+		// that named it went stale, so it arrives as ErrStaleDeclaration in
+		// FAILED_PRECONDITION below. The split is what lets a client tell a
+		// request it built wrong from a world that moved.
+		errors.Is(err, sdk.ErrBadCast):
 		return status.Error(codes.InvalidArgument, err.Error())
 
 	// FAILED_PRECONDITION -- the request is well-formed but the world's

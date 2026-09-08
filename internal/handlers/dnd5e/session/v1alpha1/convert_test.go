@@ -1530,6 +1530,39 @@ func TestDeclarationToProto_OmitsTheReactionOnAnOrdinaryRow(t *testing.T) {
 	require.Nil(t, out.GetReaction())
 }
 
+// TestDeclarationToProto_CarriesTheSpell covers the CAST row (rpg-project#405).
+// The verb alone cannot say which cantrip a row casts -- one verb compiles one
+// row per castable cantrip -- so this field is what lets a dock label the
+// button "Vicious Mockery" instead of "Cast".
+func TestDeclarationToProto_CarriesTheSpell(t *testing.T) {
+	out := declarationToProto(sdk.Declaration{
+		Verb:       sdk.VerbCast,
+		Slot:       sdk.SlotAction,
+		Available:  true,
+		ID:         "decl-cast-1",
+		TargetKind: sdk.TargetMember,
+		Candidates: []sdk.TargetCandidate{{Member: "skel-1", Available: true}},
+		Spell: &sdk.SpellRef{
+			Ref: "dnd5e:spells:vicious-mockery", Name: "Vicious Mockery",
+		},
+	})
+
+	require.Equal(t, sessionpb.Verb_VERB_CAST, out.GetVerb())
+	require.Equal(t, sessionpb.Slot_SLOT_ACTION, out.GetSlot(),
+		"a cantrip costs one action, and the row shows the price the door charges")
+	require.Equal(t, "dnd5e:spells:vicious-mockery", out.GetSpell().GetRef())
+	require.Equal(t, "Vicious Mockery", out.GetSpell().GetName(),
+		"the content authors the label; a client never derives it from the ref")
+}
+
+// The other half, and the one that makes the field mean anything: a row that
+// is not a cast carries NO spell. A zeroed SpellRef here would read as a
+// spell nobody named, on every Move and Attack row on the same panel.
+func TestDeclarationToProto_OmitsTheSpellOnAnOrdinaryRow(t *testing.T) {
+	out := declarationToProto(sdk.Declaration{Verb: sdk.VerbMove, ID: "decl-move-2"})
+	require.Nil(t, out.GetSpell())
+}
+
 // TestEventWindowOpened_ReachesTheWireTyped is the beat half of the done-when:
 // the fight paused, and the log says whose step, between which cells, who is
 // being asked, and with what.

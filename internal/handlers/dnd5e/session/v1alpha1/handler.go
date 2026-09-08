@@ -34,6 +34,7 @@ type Manager interface {
 	Turn(ctx context.Context, in *sdk.TurnInput) (*sdk.TurnOutput, error)
 	EndTurn(ctx context.Context, in *sdk.EndTurnInput) (*sdk.EndTurnOutput, error)
 	Activate(ctx context.Context, in *sdk.ActivateInput) (*sdk.ActivateOutput, error)
+	Cast(ctx context.Context, in *sdk.CastInput) (*sdk.CastOutput, error)
 	React(ctx context.Context, in *sdk.ReactInput) (*sdk.ReactOutput, error)
 	Dissolve(ctx context.Context, in *sdk.DissolveInput) (*sdk.DissolveOutput, error)
 	End(ctx context.Context, in *sdk.EndInput) (*sdk.EndOutput, error)

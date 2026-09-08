@@ -632,6 +632,19 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 	// lie on every post-roll beat.
 	case sdk.EventRollWindowOpened:
 		return sessionpb.EventKind_EVENT_KIND_ROLL_WINDOW_OPENED
+	// The cast door (rpg-project#405). TWO KINDS rather than one, and neither
+	// reuses an existing body: DeathSaveRolled is death-shaped -- stabilized,
+	// dead, hp_restored, a continuation -- whose zero values would lie on
+	// every ordinary save, and Door carries total/dc/beaten but is a door.
+	//
+	// Both arms land HERE, in the same change as the bodies below. An
+	// unmapped kind does not fail, it demotes to EVENT_KIND_UNKNOWN at the
+	// default arm and its body stays nil, so a cast would reach the client as
+	// a beat that happened and could not be read.
+	case sdk.EventCast:
+		return sessionpb.EventKind_EVENT_KIND_CAST
+	case sdk.EventSaved:
+		return sessionpb.EventKind_EVENT_KIND_SAVED
 	default:
 		return sessionpb.EventKind_EVENT_KIND_UNKNOWN
 	}
@@ -905,6 +918,28 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			To:       positionToProto(b.To),
 			Reaction: reactionRefToProto(&b.Reaction),
 		}}
+	case sdk.CastBody:
+		// What was cast, and at whom. Target is empty for a self-cast and
+		// that absence is the truth rather than a gap.
+		evt.Body = &sessionpb.Event_Cast{Cast: &sessionpb.Cast{
+			Actor:  b.Actor,
+			Spell:  spellRefToProto(b.Spell),
+			Target: b.Target,
+		}}
+	case sdk.SavedBody:
+		// The whole of one saving throw. SUCCEEDED IS COPIED, never derived
+		// here from total against dc -- the rulebook classifies its own roll,
+		// the law DeathSaveRolled.outcome already keeps, so the day beating a
+		// DC means something new every reader is not wrong at once.
+		evt.Body = &sessionpb.Event_Saved{Saved: &sessionpb.Saved{
+			Saver:     b.Saver,
+			Ability:   b.Ability,
+			Roll:      int32(b.Roll),
+			Total:     int32(b.Total),
+			Dc:        int32(b.DC),
+			Succeeded: b.Succeeded,
+			Source:    spellRefToProto(b.Source),
+		}}
 	case sdk.RollWindowOpenedBody:
 		// A roll stopped to ask (rpg-project#398). The d20 is already on the
 		// table and the fight is waiting on the one member who rolled it.
@@ -976,6 +1011,17 @@ func activationResultBodyToProto(body sdk.ActivationResultBody) *sessionpb.Activ
 			CapacityGranted: capacityGrantedBodyToProto(body.CapacityGranted),
 		}
 	}
+	// Damage is a RESULT ARM rather than a beat of its own (rpg-project#405
+	// R7): Vicious Mockery's 1d4 is a thing an effect delivered, exactly like
+	// the condition beside it, and ActivationResult already carries delivered
+	// effects. It counts toward the one-arm invariant like every other arm,
+	// so a malformed body with two results still produces no wire body at all.
+	if body.DamageApplied != nil {
+		populated++
+		result.Result = &sessionpb.ActivationResult_DamageApplied{
+			DamageApplied: damageAppliedBodyToProto(body.DamageApplied),
+		}
+	}
 	if populated != 1 {
 		return nil
 	}
@@ -1005,6 +1051,44 @@ func healingAppliedBodyToProto(body *sdk.HealingAppliedBody) *sessionpb.HealingA
 		out.Modifier = int32(body.Modifier) //nolint:staticcheck // Required read compatibility for pre-trace Story records.
 	}
 	return out
+}
+
+// damageAppliedBodyToProto mirrors damage HealingApplied's way, and the
+// asymmetry between them is deliberate: a heal carries deprecated Roll and
+// Modifier scalars for Story records written before roll traces existed, and
+// NOTHING EVER WROTE A DAMAGE RESULT before them, so there is no legacy shape
+// to read and Calculation is the only representation of the dice.
+func damageAppliedBodyToProto(body *sdk.DamageAppliedBody) *sessionpb.DamageApplied {
+	if body == nil {
+		return nil
+	}
+
+	return &sessionpb.DamageApplied{
+		Target:     body.Target,
+		Amount:     int32(body.Amount),
+		Requested:  int32(body.Requested),
+		DamageType: damageTypeToProto(body.DamageType),
+		SourceRef:  body.SourceRef,
+		SourceName: body.SourceName,
+		HpBefore:   int32(body.HPBefore),
+		HpAfter:    int32(body.HPAfter),
+		// The 1d4's own face, so a client can show the roll rather than only
+		// what it totalled.
+		Calculation: rollCalculationToProto(body.Calculation),
+		// COPIED FROM THE BODY, never derived from SourceRef. The rulebook
+		// authors what kind of damage a spell deals -- psychic, for Vicious
+		// Mockery -- and a client that read the spell's ref to decide would
+		// be deriving 5e, which is the whole thing content refs prevent. The
+		// same converter the strike path's components already run through.
+	}
+}
+
+// spellRefToProto mirrors AbilityRef's shape one content type over: the full
+// ref for correlation and an icon table, and a name the content authored.
+// A reader never derives the name from the ref, and never branches on the ref
+// to decide what a spell does.
+func spellRefToProto(s sdk.SpellRef) *sessionpb.SpellRef {
+	return &sessionpb.SpellRef{Ref: s.Ref, Name: s.Name}
 }
 
 func conditionAppliedBodyToProto(body *sdk.ConditionAppliedBody) *sessionpb.ConditionApplied {
@@ -1235,6 +1319,13 @@ func verbToProto(v sdk.Verb) sessionpb.Verb {
 		return sessionpb.Verb_VERB_DEATH_SAVE
 	case sdk.VerbReact:
 		return sessionpb.Verb_VERB_REACT
+	// VerbCast (rpg-project#405). Afford compiles ONE ROW PER CASTABLE
+	// CANTRIP -- many per member, the way VerbActivate arrives -- so leaving
+	// it unmapped would label every Cast row a bard can reach
+	// VERB_UNSPECIFIED, and the dock drops a verb it cannot name rather than
+	// showing it wrong. That is the whole panel this slice exists to fill.
+	case sdk.VerbCast:
+		return sessionpb.Verb_VERB_CAST
 	default:
 		return sessionpb.Verb_VERB_UNSPECIFIED
 	}
@@ -1332,6 +1423,17 @@ func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
 	}
 	if d.Reaction != nil {
 		out.Reaction = reactionRefToProto(d.Reaction)
+	}
+	// WHICH CANTRIP this row casts. Present on every VerbCast declaration and
+	// absent from every other, which is the same presence law Attack and
+	// Ability keep one field up: a dock says "Vicious Mockery" rather than
+	// "Cast" because one verb compiles one row per castable cantrip, and the
+	// verb alone cannot tell them apart.
+	//
+	// The SDK's own pointer decides, not the verb: a zeroed SpellRef on a
+	// non-cast row would read as a spell nobody named.
+	if d.Spell != nil {
+		out.Spell = spellRefToProto(*d.Spell)
 	}
 	return out
 }
