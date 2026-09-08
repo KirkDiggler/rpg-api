@@ -1705,3 +1705,17 @@ func TestEventToProto_CarriesTheConcentrationBreak(t *testing.T) {
 	require.Equal(t, "damage", body.GetReason(),
 		"the rulebook's own word, copied verbatim rather than classified here")
 }
+
+// TestParticipantToProto_CarriesConcentrating pins R11's one bool
+// (rpg-project#407). Unfilled, every roster row reads as nobody
+// concentrating, and the break beat above lands on a table that was never
+// shown the setup.
+func TestParticipantToProto_CarriesConcentrating(t *testing.T) {
+	holding := participantToProto(sdk.Participant{Member: "bard-1", Concentrating: true})
+	require.True(t, holding.GetConcentrating())
+
+	// The other half, and the one that makes the flag mean anything: a member
+	// holding nothing says so, rather than every row reading alike.
+	idle := participantToProto(sdk.Participant{Member: "fighter-1"})
+	require.False(t, idle.GetConcentrating())
+}

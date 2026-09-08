@@ -1769,6 +1769,20 @@ func participantToProto(p sdk.Participant) *sessionpb.Participant {
 		Active:     p.Active,
 		LifeState:  lifeStateToProto(p.LifeState),
 		DeathSaves: deathSaveProgressToProto(p.DeathSaves),
+		// Whether this member is holding a spell together right now
+		// (rpg-project#407, R11). FOR THE PEOPLE WHO CANNOT SEE THE SHEET:
+		// the caster reads its own concentrating condition off its own
+		// status, and a creature carrying a spell's effect learns the caster
+		// from that effect's own source. What the rest of the table cannot
+		// otherwise learn is that a member whose sheet they do not hold is
+		// concentrating at all -- and a concentration-ended beat about a
+		// member whose state was never visible is a beat with no setup.
+		//
+		// ONE BOOL AND NOTHING MORE, mirroring Active: no spell, no ref, no
+		// remaining duration. Which spell somebody is holding is a fact their
+		// own sheet answers, and a roster row that named it would publish the
+		// caster's hand to the room.
+		Concentrating: p.Concentrating,
 	}
 }
 
