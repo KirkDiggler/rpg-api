@@ -645,6 +645,19 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_CAST
 	case sdk.EventSaved:
 		return sessionpb.EventKind_EVENT_KIND_SAVED
+	// A concentration broke (rpg-project#407, R10). A DEDICATED KIND rather
+	// than something a reader infers from the condition-removed beats that
+	// follow it: three of the six reasons a concentration ends produce no
+	// check at all, and the removals land on OTHER members' sheets, where an
+	// unexplained drop reads as random. This beat is the sentence that makes
+	// those removals mean something.
+	//
+	// Both arms land HERE and in setEventBody below in the same change, for
+	// the reason the cast door's did: an unmapped kind demotes to
+	// EVENT_KIND_UNKNOWN with a nil body, so a break would arrive as a beat
+	// that happened and could not be read.
+	case sdk.EventConcentrationEnded:
+		return sessionpb.EventKind_EVENT_KIND_CONCENTRATION_ENDED
 	default:
 		return sessionpb.EventKind_EVENT_KIND_UNKNOWN
 	}
@@ -939,6 +952,24 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			Dc:        int32(b.DC),
 			Succeeded: b.Succeeded,
 			Source:    spellRefToProto(b.Source),
+		}}
+	case sdk.ConcentrationEndedBody:
+		// Who lost what, and why. THE REASON IS AN OPEN STRING and this
+		// converter copies it verbatim -- the vocabulary is the rulebook's
+		// ("damage", "recast", "duration", "combat_end", "spell_ended",
+		// "caster_down") and it grows with the rulebook, so a closed set here
+		// would have to be widened in three modules every time a spell learns
+		// a new way to end.
+		//
+		// NO SAVE AND NO REMOVALS ride this body, exactly as the SDK's own
+		// shape has none. The failed check travels beside it as EventSaved
+		// and each stripped condition as its own ActivationResult beat, in
+		// one train from one interaction; repeating them here would give a
+		// client two places to read one fact.
+		evt.Body = &sessionpb.Event_ConcentrationEnded{ConcentrationEnded: &sessionpb.ConcentrationEnded{
+			Caster: b.Caster,
+			Spell:  spellRefToProto(b.Spell),
+			Reason: b.Reason,
 		}}
 	case sdk.RollWindowOpenedBody:
 		// A roll stopped to ask (rpg-project#398). The d20 is already on the
