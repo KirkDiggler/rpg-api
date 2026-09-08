@@ -1424,6 +1424,17 @@ func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
 	if d.Reaction != nil {
 		out.Reaction = reactionRefToProto(d.Reaction)
 	}
+	// WHICH CANTRIP this row casts. Present on every VerbCast declaration and
+	// absent from every other, which is the same presence law Attack and
+	// Ability keep one field up: a dock says "Vicious Mockery" rather than
+	// "Cast" because one verb compiles one row per castable cantrip, and the
+	// verb alone cannot tell them apart.
+	//
+	// The SDK's own pointer decides, not the verb: a zeroed SpellRef on a
+	// non-cast row would read as a spell nobody named.
+	if d.Spell != nil {
+		out.Spell = spellRefToProto(*d.Spell)
+	}
 	return out
 }
 

@@ -44,12 +44,9 @@ const castSessionID = "cast-run"
 // question is whether the CAST DOOR reads what the sheet holds; the creation
 // test is where the literal spelling is pinned against drift.
 //
-// EACH SCENE NAMES ITS OWN CANTRIPS so that the scene under test has exactly
-// one Cast row wherever it casts one. The wire cannot yet say which spell a
-// row is for -- Declaration.spell arrives in the protos follow-up -- and a
-// test that picked a row by its position would be asserting an order nobody
-// promised. A bard who knows one cantrip has one row, and there is nothing
-// to pick.
+// EACH SCENE NAMES ITS OWN CANTRIPS, because what a bard knows is what the
+// door is compiled from and the scenes below vary it deliberately: two
+// castable, one, or two with no cast content at all.
 func castingBard(id, playerID string, known ...spells.Spell) *tkcharacter.Data {
 	sheet := levelOneBard(id, playerID, 2)
 	sheet.KnownCantrips = make([]string, 0, len(known))
@@ -194,16 +191,28 @@ func castRows(
 	return rows
 }
 
-// theCastRow returns the single Cast row a one-cantrip scene offers.
-func theCastRow(
-	ctx context.Context, t *testing.T, h *acceptanceHarness, member string,
+// castRowFor returns the Cast row for one named cantrip, found the way a dock
+// finds it: by the spell the SERVER put on the row.
+//
+// This is the field that makes a Cast row self-describing. Before it existed
+// a test could only take the row it was given and hope, because one verb
+// compiles many rows and nothing on the wire told them apart.
+func castRowFor(
+	ctx context.Context, t *testing.T, h *acceptanceHarness, member string, cantrip spells.Spell,
 ) *sessionpb.Declaration {
 	t.Helper()
 
-	rows := castRows(ctx, t, h, member)
-	require.Len(t, rows, 1, "this scene's bard knows exactly one castable cantrip")
+	want := refs.Spells.ByID(cantrip)
+	require.NotNil(t, want, "the catalog must carry %q", cantrip)
 
-	return rows[0]
+	for _, row := range castRows(ctx, t, h, member) {
+		if row.GetSpell().GetRef() == want.String() {
+			return row
+		}
+	}
+	require.FailNow(t, "no Cast row for "+cantrip)
+
+	return nil
 }
 
 // beatsOfKind returns every beat of one kind in a captured slice.
@@ -272,7 +281,14 @@ func TestAcceptance_TheCastDoorOffersOneRowPerCastableCantrip(t *testing.T) {
 		require.Equal(t, sessionpb.Slot_SLOT_ACTION, row.GetSlot(),
 			"a cantrip costs one action, and Afford shows the price the door charges")
 		require.NotEmpty(t, row.GetId(), "every row carries the opaque selector Cast echoes back")
+		require.NotEmpty(t, row.GetSpell().GetName(),
+			"every row says which cantrip it is, so a dock labels the button rather than saying Cast twice")
 	}
+
+	named := []string{rows[0].GetSpell().GetRef(), rows[1].GetSpell().GetRef()}
+	require.ElementsMatch(t,
+		[]string{refs.Spells.TrueStrike().String(), refs.Spells.ViciousMockery().String()},
+		named, "the two rows are the two cantrips, and each names its own")
 }
 
 // TestAcceptance_AFighterOnHerOwnTurnIsOfferedNoCastRow is the other half of
@@ -306,9 +322,9 @@ func TestAcceptance_AFighterOnHerOwnTurnIsOfferedNoCastRow(t *testing.T) {
 // the cast and what it delivered -- and NO SAVED BEAT AT ALL, which is the
 // assertion that would catch a save fabricated out of zero values.
 func TestAcceptance_TrueStrikeDeliversAConditionWithNoRoll(t *testing.T) {
-	h, bardCtx, _ := castScene(t, spells.TrueStrike)
+	h, bardCtx, _ := castScene(t, spells.TrueStrike, spells.ViciousMockery)
 
-	row := theCastRow(bardCtx, t, h, "bella")
+	row := castRowFor(bardCtx, t, h, "bella", spells.TrueStrike)
 
 	beats := watchCast(bardCtx, t, h, "bella", func() {
 		_, err := h.handler.Cast(bardCtx, &sessionpb.CastRequest{
@@ -344,9 +360,9 @@ func TestAcceptance_TrueStrikeDeliversAConditionWithNoRoll(t *testing.T) {
 //
 // THE SAVE FAILS BY CONSTRUCTION, not by luck: see failedSaveDice.
 func TestAcceptance_ViciousMockeryRollsASaveAndDeliversDamage(t *testing.T) {
-	h, bardCtx, _ := castScene(t, spells.ViciousMockery)
+	h, bardCtx, _ := castScene(t, spells.TrueStrike, spells.ViciousMockery)
 
-	row := theCastRow(bardCtx, t, h, "bella")
+	row := castRowFor(bardCtx, t, h, "bella", spells.ViciousMockery)
 
 	beats := watchCast(bardCtx, t, h, "bella", func() {
 		_, err := h.handler.Cast(bardCtx, &sessionpb.CastRequest{
@@ -436,9 +452,9 @@ func TestAcceptance_AKnownCantripWithNoContentMintsNoRow(t *testing.T) {
 // FAILED_PRECONDITION. A client can tell "I built this wrong" from "the world
 // moved" only because the two codes differ.
 func TestAcceptance_ACastWithNoTargetIsRefusedAsACallerMistake(t *testing.T) {
-	h, bardCtx, _ := castScene(t, spells.ViciousMockery)
+	h, bardCtx, _ := castScene(t, spells.TrueStrike, spells.ViciousMockery)
 
-	row := theCastRow(bardCtx, t, h, "bella")
+	row := castRowFor(bardCtx, t, h, "bella", spells.ViciousMockery)
 	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_MEMBER, row.GetTargetKind(),
 		"the row itself says a target is required, before any click")
 
@@ -452,6 +468,6 @@ func TestAcceptance_ACastWithNoTargetIsRefusedAsACallerMistake(t *testing.T) {
 
 	// AND NOTHING MOVED. A refusal at the door is all-or-none: the action is
 	// still hers to spend, so the row is still there to click.
-	require.Len(t, castRows(bardCtx, t, h, "bella"), 1,
-		"the refused cast cost nothing, so the door is still open")
+	require.Len(t, castRows(bardCtx, t, h, "bella"), 2,
+		"the refused cast cost nothing, so both rows are still there to click")
 }
