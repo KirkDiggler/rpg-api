@@ -1,8 +1,8 @@
 ---
 name: rpg-api quality scorecard
 description: Per-component grade with rationale — a graded scorecard to update as the codebase evolves
-updated: 2026-09-06
-confidence: medium-high — #921 local-dev composition RPC integration is verified by focused handler/orchestrator, registration, and miniredis tests; #897 Appearance conversion/delegation remains verified by focused and Docker-backed integration tests
+updated: 2026-09-08
+confidence: medium-high — #938 composition world authorization is verified by focused provider/cache/interceptor/handler/registration tests, race detection, and miniredis stored-world tests; #897 Appearance conversion/delegation remains verified by focused and Docker-backed integration tests
 ---
 
 # Quality Scorecard
@@ -291,7 +291,7 @@ Unit tests cover key hashing, TTL, duplicate/conflict behavior, fan-out, and clo
 `internal/integration/sessionpresentation` proves two server instances over one Redis.
 Held below A until web traffic exercises the live channel.
 
-### Composition repository — B (new, 2026-09-06)
+### Composition repository and handler — B+ (updated 2026-09-08)
 
 `internal/repositories/composition/` provides typed Create, Get, List, and Delete
 operations over toolkit `world/composition.Data`. One Redis hash per world stores each
@@ -299,17 +299,22 @@ composition under its caller-supplied ID; HSETNX prevents overwrite, HGET/HGETAL
 reads, one HDEL performs idempotent permanent deletion without decoding the payload,
 records do not expire, and lists are sorted by ID. Miniredis tests cover round trips,
 same-ID world isolation, duplicate refusal, absent/empty results, malformed-content
-deletion, storage/decode errors, and snapshot independence.
+deletion, storage/decode errors, wrong stored envelopes, and snapshot independence.
 
-The published Create/Get/List/Delete wire contract has a thin handler and orchestrator:
-the handler requires the existing player context, matches the configured dev-only world,
-and maps JSON strings to `json.RawMessage`; the orchestrator mints IDs before repository
-Create. Registration is limited to `AUTH_DEV_MODE=true`, Create retains the separate
-`RPG_AUTHORING_ENABLED=1` mutation gate for Create and Delete, and reads remain
-available within dev mode.
-Focused tests exercise the wire boundary through miniredis and prove non-dev absence.
-Held at B because this local stub intentionally has no production guild-to-world mapping
-or production traffic.
+The service is now registered outside Dev. A method-scoped interceptor verifies one
+Discord guild membership with the authenticated request token and exposes only the
+direct GuildID-as-WorldID value to the handler. Every method rejects a body/context
+mismatch before service access, passes the trusted world downstream, and checks returned
+data for wrong WorldID or ID. The existing authoring flag gates Create/Delete while
+membership alone permits Get/List. Dev auth retains one explicitly configured local
+world only when enabled; Discord auth never takes that shortcut.
+
+Focused tests cover strict hostile metadata, same-token cache hits, Discord failure
+mapping, bounded digest-key positive-cache expiry/eviction/races and `401` invalidation,
+private credential removal, all handler doors, production/Dev registration, authoring,
+and the real Redis repository boundary. Held below A pending normal deployed Discord
+OAuth/membership traffic; rpg-api#937 identity-cache hardening remains explicitly
+separate.
 
 ### Character repository — B+
 

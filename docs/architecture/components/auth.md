@@ -1,66 +1,74 @@
 ---
 name: auth
-description: Discord token validation, caching, and gRPC interceptors for player identity
-updated: 2026-05-02
-confidence: high — verified by reading interceptor.go, discord.go, cache.go, context.go
+description: Discord identity plus method-scoped trusted guild world context
+updated: 2026-09-08
+confidence: high — verified by focused interceptor, provider, cache, handler, and race tests
 ---
 
 # auth
 
-The auth package handles player identity for all gRPC endpoints. It validates Discord OAuth2 tokens, caches results in memory, injects `playerID` into the request context, and provides unary + streaming gRPC interceptors.
+The auth package establishes player identity for authenticated gRPC endpoints. A
+second unary interceptor derives trusted world context only for the four
+`CompositionService` methods. Global player and character APIs remain unguilded,
+and stream authentication has not acquired a world requirement.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `auth/interceptor.go` | Unary + stream gRPC interceptors |
-| `auth/discord.go` | `TokenValidator` interface + Discord API client |
-| `auth/cache.go` | In-memory LRU token cache |
-| `auth/context.go` | Context helpers: `WithPlayerID`, `PlayerIDFromContext` |
-| `auth/errors.go` | Sentinel errors: `ErrMissingToken`, `ErrInvalidToken`, etc. |
+| `auth/interceptor.go` | Global unary and stream player authentication |
+| `auth/world_interceptor.go` | Exact Composition unary allowlist and guild selector validation |
+| `auth/world_resolver.go` | Dev-world selection or same-token Discord membership verification |
+| `auth/discord.go` | Discord current-user and current-user-guild-member client |
+| `auth/cache.go` | Existing token-to-player identity cache |
+| `auth/membership_cache.go` | Bounded positive membership cache keyed by token digest and GuildID |
+| `auth/context.go` | Player context plus auth-private same-request credential carrier |
+| `worldcontext/context.go` | Handler-visible trusted `WorldID` only |
 
 ## Auth schemes
 
-Two schemes are supported (checked via `Authorization` header prefix):
-
-| Scheme | Format | Validation |
+| Scheme | Validation | Composition world |
 |---|---|---|
-| `Discord <token>` | Real Discord JWT | Validated with Discord API; result cached |
-| `Dev <player_id>` | Bare player ID | Passed directly; only allowed if `DevMode=true` |
+| `Discord <token>` | `/api/users/@me`; identity may be cached | Exactly one canonical `x-rpg-guild-id`, verified with `/api/users/@me/guilds/{guild_id}/member` using the same request token |
+| `Dev <player_id>` | Accepted only with `AUTH_DEV_MODE=true` | `RPG_DEV_WORLD_ID`, defaulting to `test-world`; the untrusted guild selector is ignored |
 
-Dev mode is used by the integration test harness (`harness.go`) and local development. It is explicitly never production-safe (documented in `InterceptorConfig.DevMode`).
+Production does not accept `Dev` auth and never uses the development world. A
+Discord request on a dev-enabled server still follows Discord membership
+verification rather than inheriting the configured Dev world.
 
-`CompositionService` adds a second use of this same deployment boundary: the entire
-service is registered only when `AUTH_DEV_MODE=true`. Its local WorldID defaults to
-`test-world` and can be overridden with `RPG_DEV_WORLD_ID`; that selector is accepted
-only after `auth.GetPlayerID` succeeds and is not treated as authorization proof.
-Non-dev servers do not register the service even if `RPG_DEV_WORLD_ID` is set. A future
-production handler must replace the stub with verified Discord guild-to-world context.
+## Trusted composition boundary
 
-## Skip-auth methods
+`UnaryWorldContextInterceptor` applies only to Create, Get, List, and Delete on
+`api.composition.v1alpha1.CompositionService`. Discord selectors must be one
+non-zero canonical decimal `uint64`; missing selectors are `FailedPrecondition`,
+and empty, repeated, combined, signed, whitespace-bearing, leading-zero,
+non-decimal, or overflowing values are `InvalidArgument`.
 
-Health check and gRPC reflection endpoints bypass auth:
-- `/grpc.health.v1.Health/Check`, `/grpc.health.v1.Health/Watch`
-- `/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo`
-- `/grpc.reflection.v1.ServerReflection/ServerReflectionInfo`
+A successful current-member response must name the same user as the globally
+authenticated player. The verified GuildID is used directly as the toolkit-domain
+WorldID. The interceptor removes its private auth credential before invoking any
+handler and exposes only `worldcontext.Value{WorldID: ...}`. Handlers therefore
+cannot read the token or use a request body as authority.
 
-## Context pattern
+Discord `401` maps to `Unauthenticated` and removes the existing identity entry
+plus every membership entry for that token. `403`/`404` map to
+`PermissionDenied`. Timeouts, rate limits, server errors, malformed responses,
+and missing or mismatched member users map to `Unavailable`; failures are never
+cached.
 
-After validation, `playerID` is injected into the context:
-```go
-ctx = auth.WithPlayerID(ctx, userID)
-// Later in handlers:
-playerID := auth.PlayerIDFromContext(ctx)
-```
+## Caches and deferred hardening
 
-Handlers call `auth.PlayerIDFromContext` and pass `playerID` in their orchestrator input structs. The orchestrator does not access the context for auth information — it receives the ID explicitly.
+The existing identity cache remains a five-minute, process-local raw-token map.
+This slice adds only the `Delete` operation required after an observed membership
+`401`; its raw-key and bounds redesign remains deferred to rpg-api#937.
 
-## Token cache
+The new cache stores only successful `(SHA-256 token digest, GuildID)` decisions,
+for at most 30 seconds and at most 1,024 entries. It never stores raw tokens,
+denials, expired decisions, or stale-on-provider-error results. Eviction is
+oldest-expiry with deterministic insertion-order tie breaking. Browser sign-out
+has no server eviction signal, so a prior positive decision may remain valid only
+until that bounded TTL expires.
 
-`cache.go` implements an in-memory token → userID cache. Tokens are cached after successful Discord validation to avoid a Discord API call on every request. Cache entries expire based on TTL. No Redis-backed token cache — the cache is per-process.
-
-**Gap:** The cache is lost on restart, so every Discord token requires re-validation after a server restart. For a production workload with concurrent users, this creates a burst of Discord API calls on startup. Not a correctness issue, but an operational consideration.
-
-## Known issues
-
-None significant. The auth component is well-scoped with clear responsibilities. The Dev mode boundary is documented. No known security issues with the implementation pattern.
+OAuth transaction/session binding is separate deferred work in rpg-project#403.
+This API boundary does not add a world registry, roles, owner/admin checks,
+character travel, or guild requirements to other RPCs.

@@ -59,3 +59,10 @@ func (c *TokenCache) Set(token, userID string) {
 		expiresAt: time.Now().Add(c.ttl),
 	}
 }
+
+// Delete removes a token after the provider reports that it is no longer valid.
+func (c *TokenCache) Delete(token string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.entries, token)
+}
