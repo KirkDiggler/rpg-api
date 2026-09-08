@@ -1606,3 +1606,37 @@ func TestStruckAndMissedCarryTheReaction(t *testing.T) {
 	}}).GetStruck()
 	require.Nil(t, plain.GetReaction())
 }
+
+// TestEventRollWindowOpened_ReachesTheWireTyped is rpg-project#398's beat: a
+// d20 is on the table, the fight is waiting on the member who rolled it, and
+// the log says who is asked, what they hold and the two numbers they decide
+// with.
+//
+// A SECOND KIND, not a second shape of WINDOW_OPENED. The movement window
+// carries a mover and two cells; this one has neither, and the assertion that
+// the movement body is absent is what keeps the two from being conflated.
+func TestEventRollWindowOpened_ReachesTheWireTyped(t *testing.T) {
+	got := eventToProto(sdk.Event{
+		Session: "sess-1",
+		Kind:    sdk.EventRollWindowOpened,
+		Body: sdk.RollWindowOpenedBody{
+			Audience: "alice",
+			Offer: sdk.ReactionRef{
+				Ref: "dnd5e:conditions:inspired", Name: "Bardic Inspiration",
+			},
+			Roll:  15,
+			Total: 20,
+		},
+	})
+
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_ROLL_WINDOW_OPENED, got.GetKind())
+	w := got.GetRollWindowOpened()
+	require.NotNil(t, w, "the kind and the body arm are one-to-one")
+	require.Equal(t, "alice", w.GetAudience(), "the audience is the roller, and one member")
+	require.Equal(t, "dnd5e:conditions:inspired", w.GetOffer().GetRef())
+	require.Equal(t, "Bardic Inspiration", w.GetOffer().GetName(), "the server authors the label")
+	require.Equal(t, int32(15), w.GetRoll())
+	require.Equal(t, int32(20), w.GetTotal())
+	require.Nil(t, got.GetWindowOpened(),
+		"a post-roll window is not a movement window: no mover, no cells, and no arm pretending otherwise")
+}

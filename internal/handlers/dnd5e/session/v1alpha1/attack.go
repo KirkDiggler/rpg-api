@@ -11,6 +11,23 @@ import (
 // Attack swings one member's weapon at another. v1 compiles character
 // attackers only (design's own note); a monster attacker comes back as
 // FAILED_PRECONDITION via the SDK's ErrNotACharacter.
+//
+// A SWING CAN STOP PART-WAY THROUGH (rpg-project#398). When the attacker
+// holds something spendable on their own d20 -- a Bardic Inspiration die
+// today -- the machine poses a window after the roll and before the outcome
+// is read, and out.Paused is true. Roll and Total are then the only two
+// numbers that are answers; Against, Hit, Critical and Damage are all zero
+// because nothing has landed and the AC has deliberately not been shown.
+//
+// THE PAUSE ITSELF HAS NO WIRE FIELD ON THIS RESPONSE. AttackResponse
+// carries no `paused` bool -- see rpg-api-protos service.proto -- so this
+// handler does not invent one, and a client that only read this message
+// could not tell a pause from a miss that dealt nothing. Two things say it
+// instead, and both are shipped: the ROLL_WINDOW_OPENED beat reaches the
+// attacker's own stream with the roll, the total and the offer's label, and
+// their next Afford carries the REACT row while every other member sees
+// ShortfallWindowOpen. Adding the field is a proto change, not something
+// this converter can paper over.
 func (h *Handler) Attack(ctx context.Context, req *sessionpb.AttackRequest) (*sessionpb.AttackResponse, error) {
 	if err := h.callerActingAs(ctx, req.GetAttacker()); err != nil {
 		return nil, err
