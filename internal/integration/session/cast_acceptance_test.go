@@ -394,6 +394,8 @@ func TestAcceptance_ViciousMockeryRollsASaveAndDeliversDamage(t *testing.T) {
 	require.Greater(t, damage.GetHpBefore(), damage.GetHpAfter(),
 		"the two hit-point readings are either side of the same blow")
 	require.Equal(t, refs.Spells.ViciousMockery().String(), damage.GetSourceRef())
+	require.Equal(t, sessionpb.DamageType_DAMAGE_TYPE_PSYCHIC, damage.GetDamageType(),
+		"the rulebook says what kind of damage this is; a client never reads the spell's ref to work it out")
 	require.NotNil(t, damage.GetCalculation(),
 		"the 1d4's own face reaches the client, not only its total")
 	require.Equal(t, damage.GetRequested(), damage.GetCalculation().GetTotal(),

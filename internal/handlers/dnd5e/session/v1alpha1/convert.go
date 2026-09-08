@@ -1067,6 +1067,7 @@ func damageAppliedBodyToProto(body *sdk.DamageAppliedBody) *sessionpb.DamageAppl
 		Target:     body.Target,
 		Amount:     int32(body.Amount),
 		Requested:  int32(body.Requested),
+		DamageType: damageTypeToProto(body.DamageType),
 		SourceRef:  body.SourceRef,
 		SourceName: body.SourceName,
 		HpBefore:   int32(body.HPBefore),
@@ -1074,20 +1075,11 @@ func damageAppliedBodyToProto(body *sdk.DamageAppliedBody) *sessionpb.DamageAppl
 		// The 1d4's own face, so a client can show the roll rather than only
 		// what it totalled.
 		Calculation: rollCalculationToProto(body.Calculation),
-		// DamageType IS LEFT UNSET, and that is a gap in what reaches the
-		// client rather than a choice made here. The wire field exists and
-		// its own doc says the rulebook authors it -- psychic, for Vicious
-		// Mockery -- but session's DamageAppliedBody carries no damage type
-		// at this pin: Target, Amount, Requested, SourceRef, SourceName,
-		// HPBefore, HPAfter, Calculation, and nothing else. The trace does
-		// not carry one either; only DamageComponent does, on the strike
-		// path. Deriving it from SourceRef here would be this handler
-		// inventing a rule, which is the one thing it may not do, so the
-		// field stays UNSPECIFIED until the body carries the answer.
-		//
-		// The old damage type reads the same, so a heal-shaped omission does
-		// not hide it: this is the SECOND consumer to need what the strike
-		// path already publishes.
+		// COPIED FROM THE BODY, never derived from SourceRef. The rulebook
+		// authors what kind of damage a spell deals -- psychic, for Vicious
+		// Mockery -- and a client that read the spell's ref to decide would
+		// be deriving 5e, which is the whole thing content refs prevent. The
+		// same converter the strike path's components already run through.
 	}
 }
 
