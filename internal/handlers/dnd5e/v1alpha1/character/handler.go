@@ -229,13 +229,14 @@ func (h *Handler) UpdateRace(
 						raceChoices.Skills = append(raceChoices.Skills, convertProtoSkillToToolkit(skill))
 					}
 				}
-			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS:
-				// Spells now include both spells and cantrips
+			// A race grants CANTRIPS and no leveled spells (RaceChoices holds
+			// only Cantrips), so both wire categories land in the one field
+			// the toolkit offers. This dropped every selection before, the
+			// same fail-quiet the class arm had.
+			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS,
+				dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS:
 				if spellSelection := choice.GetSpells(); spellSelection != nil {
-					for _, spell := range spellSelection.Spells {
-						// TODO: Convert spell enum to spells.Spell when proper mapping is available
-						_ = spell
-					}
+					raceChoices.Cantrips = append(raceChoices.Cantrips, selectedSpells(spellSelection)...)
 				}
 			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS:
 				if tools := choice.GetTools(); tools != nil {
@@ -295,13 +296,22 @@ func (h *Handler) UpdateClass(
 				if fs := choice.GetFightingStyle(); fs != nil && fs.Style != dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_UNSPECIFIED {
 					classChoices.FightingStyle = convertProtoFightingStyleToToolkit(fs.Style)
 				}
-			// Note: Cantrips are now part of SPELLS category
+			// Cantrips and leveled spells are SEPARATE CATEGORIES on the
+			// wire, and both arms keep what they are given. They used to
+			// share one arm that kept nothing -- the loop read the enum
+			// list and dropped every entry -- so a bard finalized with no
+			// cantrips and nothing said why. The toolkit is the authority
+			// on which spells are legal (its compiler refuses an unknown
+			// id), so these arms validate nothing about spells; they only
+			// translate the wire's canonical refs into the bare ids the
+			// choice vocabulary speaks (rpg-project#405 R8).
+			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS:
+				if spellList := choice.GetSpells(); spellList != nil {
+					classChoices.Cantrips = append(classChoices.Cantrips, selectedSpells(spellList)...)
+				}
 			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS:
 				if spellList := choice.GetSpells(); spellList != nil {
-					for range spellList.Spells {
-						// TODO: Convert spell enum to spells.Spell when mapping is available
-						// For now, skip spells
-					}
+					classChoices.Spells = append(classChoices.Spells, selectedSpells(spellList)...)
 				}
 			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT:
 				if equipment := choice.GetEquipment(); equipment != nil {

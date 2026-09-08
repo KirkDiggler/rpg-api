@@ -340,15 +340,19 @@ func convertChoiceToProto(choice choices.ChoiceData) *dnd5ev1alpha1.ChoiceData {
 		}
 	}
 
-	// Handle spell selection
+	// Handle spell selection.
+	//
+	// REFS ONLY. This used to append one SPELL_UNSPECIFIED per selection --
+	// a list whose length was right and whose every entry named nothing, so a
+	// client reading it back learned only how many cantrips had been chosen.
+	// The refs say which (rpg-project#405 R8), and the deprecated enum field
+	// is left unwritten rather than filled beside them: two names for one
+	// spell are two names free to disagree.
 	if len(choice.SpellSelection) > 0 {
-		spells := make([]dnd5ev1alpha1.Spell, 0, len(choice.SpellSelection))
-		for range choice.SpellSelection {
-			// TODO: Convert to Spell enum when available, for now use SPELL_UNSPECIFIED
-			spells = append(spells, dnd5ev1alpha1.Spell_SPELL_UNSPECIFIED)
-		}
 		protoChoice.Selection = &dnd5ev1alpha1.ChoiceData_Spells{
-			Spells: &dnd5ev1alpha1.SpellSelection{Spells: spells},
+			Spells: &dnd5ev1alpha1.SpellSelection{
+				SpellRefs: spellRefStrings(choice.SpellSelection),
+			},
 		}
 	}
 
@@ -1245,6 +1249,14 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 			// TODO: Add equipment data when available
 		})
 	}
+
+	// The known spells, as the canonical refs the sheet already stores
+	// (character.Data.KnownCantrips is written by the choice pipeline as
+	// "dnd5e:spells:vicious-mockery"), copied rather than translated. Nothing
+	// read them before -- they were a record of what was chosen with no
+	// reader -- and the cast door is the reader.
+	char.KnownCantrips = data.KnownCantrips
+	char.KnownSpells = data.KnownSpells
 
 	// TODO: Convert spell slots when the proto supports them
 
@@ -2362,10 +2374,53 @@ func loadAllClassChoices(classID classes.Class) []*dnd5ev1alpha1.Choice {
 		}
 	}
 
+	// Add cantrip choice if present (e.g., Bard at level 1).
+	//
+	// This arm has never existed: cantrips were left out of the requirement
+	// walk because nothing could spend what was chosen. The cast door spends
+	// them, so the question is asked in the same slice its answer becomes
+	// reachable (rpg-project#405).
+	if requirements.Cantrips != nil && requirements.Cantrips.Count > 0 {
+		cantripChoice := createCantripChoice(requirements.Cantrips)
+		if cantripChoice != nil {
+			result = append(result, cantripChoice)
+		}
+	}
+
 	// TODO: Add other choice types as needed:
 	// - Language choices (requirements.Languages)
 
 	return result
+}
+
+// createCantripChoice converts a cantrip requirement to a proto Choice.
+//
+// The options travel as canonical refs on available_refs, never as the
+// deprecated Spell enum -- which could not name this slice's two cantrips at
+// all. A requirement whose options this build cannot resolve mints NO CHOICE
+// rather than an empty menu: a choice with nothing behind it is the shape
+// slice one's walk kept finding.
+func createCantripChoice(req *choices.CantripRequirement) *dnd5ev1alpha1.Choice {
+	if req == nil || len(req.Options) == 0 {
+		return nil
+	}
+
+	available := spellRefStrings(req.Options)
+	if len(available) == 0 {
+		return nil
+	}
+
+	return &dnd5ev1alpha1.Choice{
+		Id:          string(req.ID),
+		Description: req.Label,
+		ChooseCount: int32(req.Count),
+		ChoiceType:  dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS,
+		Options: &dnd5ev1alpha1.Choice_SpellOptions{
+			SpellOptions: &dnd5ev1alpha1.SpellOptions{
+				AvailableRefs: available,
+			},
+		},
+	}
 }
 
 // createSkillChoice converts a skill requirement to a proto Choice

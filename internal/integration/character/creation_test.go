@@ -1611,25 +1611,37 @@ func monkClassChoices(optionID string, weapon dnd5ev1alpha1.Weapon) []*dnd5ev1al
 	}
 }
 
-// TestCreateBard_FinalizesWithoutSpellChoices is the walk's first step, and
-// the blocker it closes was a hard stop: finalizing a level-1 bard answered
+// The two cantrips this build can cast, as the canonical refs the wire and
+// the sheet both speak. Written out rather than built from the toolkit's own
+// refs package on purpose: a test that derived the expected string from the
+// same helper the handler uses would agree with itself no matter what the
+// string became.
+const (
+	trueStrikeRef     = "dnd5e:spells:true-strike"
+	viciousMockeryRef = "dnd5e:spells:vicious-mockery"
+)
+
+// TestCreateBard_FinalizesChoosingTwoCantrips is the creation half of the
+// cast door (rpg-project#405), and it REPLACES slice one's assertion that a
+// bard finalizes with no spell choice at all.
 //
-//	draft is incomplete - missing: [class selection or class choices].
-//	Class validation: Choose 2 cantrips required
+// That assertion was true and is not any more, which is the honest shape of
+// this change rather than a test loosened to pass. Slice one removed the
+// cantrip requirement because nothing could spend what was chosen: there was
+// no Cast verb, no slot pool and no reader for the known-spell list. The cast
+// door is the reader, so the question is asked again in the same slice its
+// answer becomes reachable, and a level-1 bard now MUST choose exactly two.
 //
-// so a bard could not be created at all, and nothing further in slice one
-// could be walked.
+// The choice travels as canonical refs on spell_refs (R8), never as the
+// deprecated Spell enum -- which could not name either cantrip if it tried.
 //
-// Kirk's ruling is that slice one is Bardic Inspiration and nothing else: a
-// level-1 bard requires no cantrips and no spells, and the cast door, the
-// slots and the known-spell list all arrive together at rung 2. The fix is
-// the toolkit's -- the two requirements left the level-1 set -- and this
-// asserts the consequence at the seam a player actually comes through.
-//
-// WHAT MAKES IT FAIL. Put either requirement back and finalize refuses,
-// because this draft submits skills, three instruments and the three
-// equipment rows and deliberately submits NO spell choice of any kind.
-func (s *CharacterCreationSuite) TestCreateBard_FinalizesWithoutSpellChoices() {
+// WHAT MAKES IT FAIL. Drop the cantrip choice from this draft and finalize
+// refuses with "Choose 2 cantrips required"; keep it and stop converting it
+// (the arm this slice wrote) and finalize refuses identically, because a
+// selection the handler drops is a selection the toolkit never saw. Break the
+// ref conversion in either direction and the refs read back off the character
+// stop matching.
+func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	ctx := s.authCtx("test-player-bard")
 
 	createResp, err := s.server.CharacterClient.CreateDraft(ctx, &dnd5ev1alpha1.CreateDraftRequest{})
@@ -1659,8 +1671,8 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesWithoutSpellChoices() {
 	s.Require().NoError(err)
 
 	// Three skills from the eighteen the toolkit now enumerates, three
-	// instruments, and one option from each of the bard's three equipment
-	// rows. No spell choice: that is the point.
+	// instruments, one option from each of the bard's three equipment rows,
+	// and the two cantrips this build can actually cast.
 	_, err = s.server.CharacterClient.UpdateClass(ctx, &dnd5ev1alpha1.UpdateClassRequest{
 		DraftId: draftID,
 		Class:   dnd5ev1alpha1.Class_CLASS_BARD,
@@ -1707,9 +1719,47 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesWithoutSpellChoices() {
 				ChoiceId: "bard-instrument", OptionId: "bard-instrument-a",
 				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{}},
 			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "bard-cantrips-1",
+				Selection: &dnd5ev1alpha1.ChoiceData_Spells{Spells: &dnd5ev1alpha1.SpellSelection{
+					SpellRefs: []string{trueStrikeRef, viciousMockeryRef},
+				}},
+			},
 		},
 	})
 	s.Require().NoError(err)
+
+	// THE MENU SAYS THE SAME WORDS THE ANSWER DOES. A choice list offering a
+	// vocabulary the submission cannot speak would let both halves be wrong
+	// together, so the refs above are asserted to be the refs the server
+	// itself offered, read off the class it offers them for.
+	listResp, err := s.server.CharacterClient.ListClasses(ctx, &dnd5ev1alpha1.ListClassesRequest{})
+	s.Require().NoError(err)
+
+	var bardInfo *dnd5ev1alpha1.ClassInfo
+	for _, classInfo := range listResp.GetClasses() {
+		if classInfo.GetClassId() == dnd5ev1alpha1.Class_CLASS_BARD {
+			bardInfo = classInfo
+			break
+		}
+	}
+	s.Require().NotNil(bardInfo, "ListClasses should include Bard")
+
+	var cantripChoice *dnd5ev1alpha1.Choice
+	for _, choice := range bardInfo.GetChoices() {
+		if choice.GetChoiceType() == dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS {
+			cantripChoice = choice
+			break
+		}
+	}
+	s.Require().NotNil(cantripChoice, "a bard is asked for cantrips")
+	s.Equal(int32(2), cantripChoice.GetChooseCount())
+	s.Equal([]string{trueStrikeRef, viciousMockeryRef}, cantripChoice.GetSpellOptions().GetAvailableRefs(),
+		"the options are gated to the cantrips this build can cast, as refs")
+	s.Empty(cantripChoice.GetSpellOptions().GetAvailable(), //nolint:staticcheck // Asserting the deprecated field stays unwritten.
+		"the deprecated enum field is not written beside the refs")
 
 	_, err = s.server.CharacterClient.UpdateBackground(ctx, &dnd5ev1alpha1.UpdateBackgroundRequest{
 		DraftId: draftID, Background: dnd5ev1alpha1.Background_BACKGROUND_OUTLANDER,
@@ -1731,15 +1781,24 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesWithoutSpellChoices() {
 	finalizeResp, err := s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{
 		DraftId: draftID,
 	})
-	s.Require().NoError(err, "a level-1 bard must finalize with no spell choice submitted")
+	s.Require().NoError(err, "a level-1 bard must finalize once two cantrips are chosen")
 	s.Require().NotNil(finalizeResp.GetCharacter())
 	s.Equal(dnd5ev1alpha1.Class_CLASS_BARD, finalizeResp.GetCharacter().GetClass())
+
+	// The cantrips READ BACK OFF THE CHARACTER, which is the whole point of
+	// the round trip: the sheet has held these refs since slice one and no
+	// field on the wire said so, so a chosen cantrip vanished between
+	// finalize and the next read.
+	s.Equal([]string{trueStrikeRef, viciousMockeryRef}, finalizeResp.GetCharacter().GetKnownCantrips())
+	s.Empty(finalizeResp.GetCharacter().GetKnownSpells(), "a level-1 bard knows no leveled spells")
 
 	persisted, err := s.server.CharacterClient.GetCharacter(ctx, &dnd5ev1alpha1.GetCharacterRequest{
 		CharacterId: finalizeResp.GetCharacter().GetId(),
 	})
 	s.Require().NoError(err)
 	s.Equal(dnd5ev1alpha1.Class_CLASS_BARD, persisted.GetCharacter().GetClass())
+	s.Equal([]string{trueStrikeRef, viciousMockeryRef}, persisted.GetCharacter().GetKnownCantrips(),
+		"the refs survive the store, not just the finalize response")
 
 	// -- and the bard PROJECTS. This is the walk's second finding and the one
 	// a creation test alone would never have caught: the bard finalized fine
@@ -1798,6 +1857,12 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesWithoutSpellChoices() {
 
 	// NO SPELL SLOTS, which is a deletion and not an absence (#397 R6):
 	// compileSpellSlots used to hand every bard two first-level slots that
-	// nothing in the stack could reach, let alone spend.
-	s.Empty(stored.Character.Data.SpellSlots, "slice one gives the bard no slots, because nothing casts")
+	// nothing in the stack could reach, let alone spend. A cantrip costs an
+	// action and nothing else (R10), so the cast door does not bring them
+	// back either.
+	s.Empty(stored.Character.Data.SpellSlots, "a cantrip costs an action, so the bard still has no slots")
+
+	// The stored sheet speaks the same canonical refs the wire does, so the
+	// projection is a copy rather than a translation that could drift.
+	s.Equal([]string{trueStrikeRef, viciousMockeryRef}, stored.Character.Data.KnownCantrips)
 }
