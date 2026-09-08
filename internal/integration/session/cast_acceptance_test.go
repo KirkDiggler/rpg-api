@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
@@ -418,4 +420,36 @@ func TestAcceptance_AKnownCantripWithNoContentMintsNoRow(t *testing.T) {
 
 	require.Empty(t, castRows(bardCtx, t, h, "bella"),
 		"Mage Hand and Light carry no cast content, so they mint no rows rather than rows that resolve to nothing")
+}
+
+// TestAcceptance_ACastWithNoTargetIsRefusedAsACallerMistake walks the refusal
+// the whole seam was rewired for: resolution's own ErrBadAction is translated
+// to session's ErrBadCast at the seam, and statusError turns that into
+// INVALID_ARGUMENT.
+//
+// A CALLER MISTAKE, not a world state. Vicious Mockery names one creature, so
+// a request that names nobody is malformed in its own shape -- the same
+// bucket ErrBadActivation sits in, and deliberately NOT the bucket a target
+// that drifted out of range lands in, which is a stale declaration and
+// FAILED_PRECONDITION. A client can tell "I built this wrong" from "the world
+// moved" only because the two codes differ.
+func TestAcceptance_ACastWithNoTargetIsRefusedAsACallerMistake(t *testing.T) {
+	h, bardCtx, _ := castScene(t, spells.ViciousMockery)
+
+	row := theCastRow(bardCtx, t, h, "bella")
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_MEMBER, row.GetTargetKind(),
+		"the row itself says a target is required, before any click")
+
+	_, err := h.handler.Cast(bardCtx, &sessionpb.CastRequest{
+		Session: castSessionID, Member: "bella",
+		DeclarationId: row.GetId(),
+	})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err),
+		"a cast that names nobody is malformed, not refused by the world")
+
+	// AND NOTHING MOVED. A refusal at the door is all-or-none: the action is
+	// still hers to spend, so the row is still there to click.
+	require.Len(t, castRows(bardCtx, t, h, "bella"), 1,
+		"the refused cast cost nothing, so the door is still open")
 }
