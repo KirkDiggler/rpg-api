@@ -1673,3 +1673,49 @@ func TestEventRollWindowOpened_ReachesTheWireTyped(t *testing.T) {
 	require.Nil(t, got.GetWindowOpened(),
 		"a post-roll window is not a movement window: no mover, no cells, and no arm pretending otherwise")
 }
+
+// TestEventToProto_CarriesTheConcentrationBreak covers BOTH halves of the new
+// beat (rpg-project#407, R10) in one assertion set, because either half alone
+// still compiles and still ships a broken beat: an unmapped kind demotes to
+// EVENT_KIND_UNKNOWN at the default arm, and an unmapped body simply stays
+// nil. A break that arrives as a beat the client cannot read is exactly the
+// silence the dedicated kind exists to prevent.
+func TestEventToProto_CarriesTheConcentrationBreak(t *testing.T) {
+	out := eventToProto(sdk.Event{
+		Session: "sess-1",
+		Seq:     7,
+		Kind:    sdk.EventConcentrationEnded,
+		Body: sdk.ConcentrationEndedBody{
+			Caster: "bard-1",
+			Spell: sdk.SpellRef{
+				Ref: "dnd5e:spells:hold-person", Name: "Hold Person",
+			},
+			Reason: "damage",
+		},
+	})
+
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_CONCENTRATION_ENDED, out.GetKind())
+
+	body := out.GetConcentrationEnded()
+	require.NotNil(t, body, "the kind converted but the body did not; the beat is unreadable")
+	require.Equal(t, "bard-1", body.GetCaster())
+	require.Equal(t, "dnd5e:spells:hold-person", body.GetSpell().GetRef())
+	require.Equal(t, "Hold Person", body.GetSpell().GetName(),
+		"the content authors the label; a client never derives it from the ref")
+	require.Equal(t, "damage", body.GetReason(),
+		"the rulebook's own word, copied verbatim rather than classified here")
+}
+
+// TestParticipantToProto_CarriesConcentrating pins R11's one bool
+// (rpg-project#407). Unfilled, every roster row reads as nobody
+// concentrating, and the break beat above lands on a table that was never
+// shown the setup.
+func TestParticipantToProto_CarriesConcentrating(t *testing.T) {
+	holding := participantToProto(sdk.Participant{Member: "bard-1", Concentrating: true})
+	require.True(t, holding.GetConcentrating())
+
+	// The other half, and the one that makes the flag mean anything: a member
+	// holding nothing says so, rather than every row reading alike.
+	idle := participantToProto(sdk.Participant{Member: "fighter-1"})
+	require.False(t, idle.GetConcentrating())
+}
