@@ -35,6 +35,7 @@ jobs:
       run: |
         export PATH=$PATH:$(go env GOPATH)/bin
         make generate
+        git diff --exit-code -- ':(glob)**/mock/*.go'
     
     - name: Run tests with coverage
       run: |
