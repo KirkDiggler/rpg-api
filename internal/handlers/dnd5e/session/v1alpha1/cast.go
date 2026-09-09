@@ -44,11 +44,16 @@ func (h *Handler) Cast(
 		return nil, err
 	}
 
+	// Keep both wire forms separate for the SDK boundary to normalize and
+	// reject on conflict. Copy the canonical list so provider code cannot
+	// mutate protobuf-owned request memory.
+	targets := append([]string(nil), req.GetTargets()...)
 	out, err := h.manager.Cast(ctx, &sdk.CastInput{
 		Session:       req.GetSession(),
 		Member:        req.GetMember(),
 		DeclarationID: req.GetDeclarationId(),
-		Target:        req.GetTarget(),
+		Target:        req.GetTarget(), //nolint:staticcheck // Required deprecated scalar request compatibility.
+		Targets:       targets,
 	})
 	if err != nil {
 		return nil, statusError(err)

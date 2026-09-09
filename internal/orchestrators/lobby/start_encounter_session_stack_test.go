@@ -805,7 +805,9 @@ func (s *SessionStackSuite) TestStartEncounter_FirstAdmissionPersistsCompleteLon
 	s.Equal(tkcharacter.RecoverableResourceData{
 		Current: 2, Maximum: 4, ResetType: coreResources.ResetLongRest,
 	}, gotFighter.Resources[dnd5eResources.HitDice], "exactly half of four spent hit dice recover")
-	s.Equal(tkcharacter.SpellSlotData{Max: 3, Used: 0}, gotFighter.SpellSlots[1])
+	s.Equal(tkcharacter.RecoverableResourceData{
+		Current: 3, Maximum: 3, ResetType: coreResources.ResetLongRest,
+	}, gotFighter.Resources[dnd5eResources.SpellSlotLevel1])
 
 	var secondWind features.SecondWindData
 	s.Require().NoError(json.Unmarshal(effectWithRef(s.T(), gotFighter.Features, refs.Features.SecondWind()), &secondWind))
@@ -940,9 +942,9 @@ func (s *SessionStackSuite) spentFighter(id, playerID string) (*entities.Charact
 			Granted: map[tkcharacter.GrantedActionKey]int{tkcharacter.GrantedAttacks: 1},
 		},
 		DeathSaveState: &saves.DeathSaveState{Successes: 1, Failures: 2, Stabilized: true, Dead: true},
-		SpellSlots:     map[int]tkcharacter.SpellSlotData{1: {Max: 3, Used: 3}},
 		Resources: map[coreResources.ResourceKey]tkcharacter.RecoverableResourceData{
-			dnd5eResources.HitDice: {Current: 0, Maximum: 4, ResetType: coreResources.ResetLongRest},
+			dnd5eResources.HitDice:         {Current: 0, Maximum: 4, ResetType: coreResources.ResetLongRest},
+			dnd5eResources.SpellSlotLevel1: {Current: 0, Maximum: 3, ResetType: coreResources.ResetLongRest},
 		},
 		Features:   []json.RawMessage{secondWind},
 		Conditions: []json.RawMessage{defense, opportunity, prone},

@@ -43,6 +43,9 @@ func TestDeathSave_MapsRequestAndResponseFieldForField(t *testing.T) {
 		PresentationID: "presentation_17", Seq: 41,
 		Saved:    sdk.SaveReport{Written: []string{"character", "encounter", "session"}},
 		Delivery: sdk.DeliveryReport{Events: 2, Failed: true},
+		Calculation: &sdk.RollCalculation{Total: 14, Components: []sdk.RollComponent{{
+			Source: sdk.RollSource{Ref: "dnd5e:saves:death", Name: "Death Save", SourceID: "char-1"},
+		}}},
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
@@ -68,6 +71,8 @@ func TestDeathSave_MapsRequestAndResponseFieldForField(t *testing.T) {
 	require.Equal(t, uint64(41), resp.GetSeq(), "recipient-local sequence stays separate from the opaque token")
 	require.Equal(t, []string{"character", "encounter", "session"}, resp.GetSaved().GetWritten())
 	require.Equal(t, int32(2), resp.GetDelivery().GetEvents())
+	require.Equal(t, int32(14), resp.GetCalculation().GetTotal())
+	require.Equal(t, "char-1", resp.GetCalculation().GetComponents()[0].GetSource().GetSourceId())
 	require.True(t, resp.GetDelivery().GetFailed())
 }
 

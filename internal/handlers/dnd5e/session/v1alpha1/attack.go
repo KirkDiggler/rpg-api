@@ -44,16 +44,17 @@ func (h *Handler) Attack(ctx context.Context, req *sessionpb.AttackRequest) (*se
 	}
 
 	return &sessionpb.AttackResponse{
-		Roll:     int32(out.Roll),
-		Total:    int32(out.Total),
-		Against:  int32(out.Against),
-		Hit:      out.Hit,
-		Critical: out.Critical,
-		Damage:   int32(out.Damage),
-		Seq:      out.Seq,
-		Saved:    saveReportToProto(out.Saved),
-		Delivery: deliveryReportToProto(out.Delivery),
-		Attack:   attackRefToProto(out.Attack),
+		Roll:        int32(out.Roll),
+		Total:       int32(out.Total),
+		Against:     int32(out.Against),
+		Hit:         out.Hit,
+		Critical:    out.Critical,
+		Damage:      int32(out.Damage),
+		Seq:         out.Seq,
+		Saved:       saveReportToProto(out.Saved),
+		Delivery:    deliveryReportToProto(out.Delivery),
+		Attack:      attackRefToProto(out.Attack),
+		Calculation: rollCalculationToProto(out.Calculation),
 		// The opaque token this swing was minted with. The same value reaches
 		// every other member on the Struck/Missed beat, and it is the only
 		// thing the attacker and a witness can both name this roll by: seq is

@@ -18,6 +18,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/tools"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 )
@@ -28,6 +29,41 @@ type ConvertersTestSuite struct {
 
 func TestConvertersTestSuite(t *testing.T) {
 	suite.Run(t, new(ConvertersTestSuite))
+}
+
+func TestCreateSpellbookChoice_ProjectsBaneRequirementWithoutInventingSelectionMode(t *testing.T) {
+	got := createSpellbookChoice(&choices.SpellbookRequirement{
+		ID:         "bard-spells-1",
+		Count:      1,
+		SpellLevel: 1,
+		Options:    []spells.Spell{spells.Bane},
+		Label:      "Choose 1 1st-level spell",
+	})
+
+	require.NotNil(t, got)
+	require.Equal(t, "bard-spells-1", got.GetId())
+	require.Equal(t, "Choose 1 1st-level spell", got.GetDescription())
+	require.Equal(t, int32(1), got.GetChooseCount())
+	require.Equal(t, dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS, got.GetChoiceType())
+	require.Equal(t, []string{refs.Spells.Bane().String()}, got.GetSpellOptions().GetAvailableRefs())
+	require.Equal(t, int32(1), got.GetSpellOptions().GetSpellLevel())
+	require.Equal(t, dnd5ev1alpha1.SpellSelectionType_SPELL_SELECTION_TYPE_UNSPECIFIED,
+		got.GetSpellOptions().GetSelectionType(),
+		"provider does not yet distinguish Bard known spells from a Wizard spellbook")
+	require.Empty(t, got.GetSpellOptions().GetAvailable())
+}
+
+func TestLoadAllClassChoices_ExposesBaneRequirement(t *testing.T) {
+	var spellChoice *dnd5ev1alpha1.Choice
+	for _, choice := range loadAllClassChoices(classes.Bard) {
+		if choice.GetChoiceType() == dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS {
+			spellChoice = choice
+			break
+		}
+	}
+
+	require.NotNil(t, spellChoice)
+	require.Equal(t, []string{refs.Spells.Bane().String()}, spellChoice.GetSpellOptions().GetAvailableRefs())
 }
 
 func (s *ConvertersTestSuite) TestConvertClassDataToProto_Fighter() {

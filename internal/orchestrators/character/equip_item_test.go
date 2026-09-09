@@ -348,7 +348,12 @@ func (s *EquipItemTestSuite) TestEquipItem_PreservesNonEquipmentFields() {
 	fixedCreatedAt := time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)
 	charEntity.Data.BackgroundID = backgrounds.Soldier
 	charEntity.Data.CreatedAt = fixedCreatedAt
-	charEntity.Data.SpellSlots = map[int]character.SpellSlotData{1: {Max: 2, Used: 1}}
+	if charEntity.Data.Resources == nil {
+		charEntity.Data.Resources = make(map[coreResources.ResourceKey]character.RecoverableResourceData)
+	}
+	charEntity.Data.Resources[resources.HitDice] = character.RecoverableResourceData{
+		Current: 1, Maximum: 2, ResetType: coreResources.ResetLongRest,
+	}
 	charEntity.Data.ClassResources = map[shared.ClassResourceType]character.ResourceData{
 		shared.ClassResourceType(99): {Name: "legacy", Current: 1, Max: 2},
 	}
@@ -385,7 +390,7 @@ func (s *EquipItemTestSuite) TestEquipItem_PreservesNonEquipmentFields() {
 	s.Assert().Equal(backgrounds.Soldier, persisted.Data.BackgroundID, "BackgroundID must survive an equip call")
 	s.Assert().True(fixedCreatedAt.Equal(persisted.Data.CreatedAt), "CreatedAt must survive an equip call")
 	s.Assert().Equal(charEntity.Data.Inventory, persisted.Data.Inventory)
-	s.Assert().Equal(charEntity.Data.SpellSlots, persisted.Data.SpellSlots)
+	s.Assert().Equal(charEntity.Data.Resources, persisted.Data.Resources)
 	s.Assert().Equal(charEntity.Data.ClassResources, persisted.Data.ClassResources)
 	s.Assert().Equal(charEntity.Data.Appearance, persisted.Data.Appearance)
 
