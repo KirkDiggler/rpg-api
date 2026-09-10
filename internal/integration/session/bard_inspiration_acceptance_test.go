@@ -325,6 +325,14 @@ func grantAndSwing(t *testing.T) *posedSwing {
 		"the server authors the label the dock's buttons are named for")
 	require.Equal(t, attack.GetRoll(), windows[0].GetRoll())
 	require.Equal(t, attack.GetTotal(), windows[0].GetTotal())
+	require.NotEmpty(t, attack.GetPresentationId())
+	require.Equal(t, attack.GetPresentationId(), windows[0].GetPresentationId())
+	peerStory, err := h.handler.GetStory(bardCtx, &sessionpb.GetStoryRequest{Session: bardSessionID, Member: "bella"})
+	require.NoError(t, err)
+	peerWindows := rollWindowsIn(peerStory.GetEntries())
+	require.Len(t, peerWindows, 1)
+	require.Equal(t, attack.GetPresentationId(), peerWindows[0].GetPresentationId())
+	require.Equal(t, attack.GetRoll(), peerWindows[0].GetRoll())
 
 	// -- the dock is told, before any click, exactly what it may do. There is
 	// no step and nobody to aim at, so this row carries no candidates and

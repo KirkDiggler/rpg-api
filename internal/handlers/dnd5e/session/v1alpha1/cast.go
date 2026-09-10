@@ -48,7 +48,7 @@ func (h *Handler) Cast(
 		Session:       req.GetSession(),
 		Member:        req.GetMember(),
 		DeclarationID: req.GetDeclarationId(),
-		Target:        req.GetTarget(),
+		Target:        req.GetTarget(), //nolint:staticcheck // Preserve the supported single-target contract until the multi-target Cast wave is adopted.
 	})
 	if err != nil {
 		return nil, statusError(err)

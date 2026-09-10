@@ -937,7 +937,7 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		evt.Body = &sessionpb.Event_Cast{Cast: &sessionpb.Cast{
 			Actor:  b.Actor,
 			Spell:  spellRefToProto(b.Spell),
-			Target: b.Target,
+			Target: b.Target, //nolint:staticcheck // Preserve single-target Story for existing clients until the multi-target Cast wave is adopted.
 		}}
 	case sdk.SavedBody:
 		// The whole of one saving throw. SUCCEEDED IS COPIED, never derived
@@ -991,10 +991,11 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		// named nothing to spend could not have been posed -- so it always
 		// converts to a non-nil message.
 		evt.Body = &sessionpb.Event_RollWindowOpened{RollWindowOpened: &sessionpb.RollWindowOpened{
-			Audience: b.Audience,
-			Offer:    reactionRefToProto(&b.Offer),
-			Roll:     int32(b.Roll),
-			Total:    int32(b.Total),
+			PresentationId: b.PresentationID,
+			Audience:       b.Audience,
+			Offer:          reactionRefToProto(&b.Offer),
+			Roll:           int32(b.Roll),
+			Total:          int32(b.Total),
 		}}
 	default:
 		// nil (no typed body for this kind) or a body type this build does
