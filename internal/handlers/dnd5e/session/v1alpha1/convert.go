@@ -3,6 +3,7 @@ package sessionv1alpha1
 import (
 	"fmt"
 
+	"github.com/KirkDiggler/rpg-api/internal/converters/assetref"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/currency"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
@@ -306,7 +307,33 @@ func seenToProto(s *sdk.Seen) *sessionpb.Seen {
 	if s == nil {
 		return nil
 	}
-	return &sessionpb.Seen{Position: positionToProto(s.Position), Standing: standingToProto(s.Standing)}
+	return &sessionpb.Seen{
+		Position:  positionToProto(s.Position),
+		Standing:  standingToProto(s.Standing),
+		Equipment: seenEquipmentToProto(s.Equipment),
+	}
+}
+
+// seenEquipmentToProto mirrors what a subject was observed holding, minting the
+// asset identity a client keys a model off (rpg-toolkit#1615).
+//
+// ABSENT STAYS ABSENT, and that is the whole point of the message being a
+// message. Nil means the hands were not observed — nothing with a sheet behind
+// it, or testimony older than the field — and it must not become an empty
+// SeenEquipment on the wire, because a client reading that would draw somebody
+// whose hands nobody looked at as somebody standing there unarmed.
+//
+// An observed-empty hand is the other claim and survives as an empty string:
+// the message is present, the hand is not holding anything. assetref.Item keeps
+// it empty rather than minting an unrenderable "dnd5e:item:".
+func seenEquipmentToProto(e *sdk.SeenEquipment) *sessionpb.SeenEquipment {
+	if e == nil {
+		return nil
+	}
+	return &sessionpb.SeenEquipment{
+		MainHand: assetref.Item(e.MainHand),
+		OffHand:  assetref.Item(e.OffHand),
+	}
 }
 
 // standingToProto mirrors session.Standing onto the wire enum. Two values,

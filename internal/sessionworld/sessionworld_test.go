@@ -53,7 +53,7 @@ func (s *ReferenceTombSuite) TestTheFileNamesItself() {
 func (s *ReferenceTombSuite) load() *tkencounter.Encounter {
 	enc, err := tkencounter.LoadEncounter(&tkencounter.LoadEncounterInput{
 		Data:       *s.tomb.World,
-		Initiative: orderAsGiven{}, Standing: nobodyDown{}, Sight: nobodySees{},
+		Initiative: orderAsGiven{}, Standing: nobodyDown{}, Sight: nobodySees{}, Equipment: noHandsObserved{},
 		TurnDriver: tkencounter.PassDriver{}, Striker: tkencounter.RefusingStriker{}, Mover: tkencounter.RefusingMover{},
 		// Nobody is in this world, so no clock can advance in it — the same
 		// argument RefusingStriker beside it is making.
@@ -363,6 +363,7 @@ func TestAFightsUnplayedTurnPassesWithoutTouchingTheStriker(t *testing.T) {
 		Initiative: monsterFirst{},
 		Standing:   nobodyDown{},
 		Sight:      allSeeing{},
+		Equipment:  noHandsObserved{},
 		TurnDriver: tkencounter.PassDriver{},
 		Striker:    tkencounter.RefusingStriker{},
 		Mover:      tkencounter.RefusingMover{},
@@ -583,4 +584,21 @@ func TestAnOpenConcealedDoorCompilesToo(t *testing.T) {
 	d, err := Compile([]byte(concealedDungeon("concealed-seam-open", "")))
 	require.NoError(t, err, "an authored hidden passage left open must still compile")
 	require.NotNil(t, d)
+}
+
+// noHandsObserved answers the equipment question for fixtures that are not
+// about equipment: every member is answered for, and every answer is "no hands
+// to observe" — deliberately NOT "everybody is empty-handed", which would be
+// testimony this fixture has no standing to give (rpg-toolkit#1615).
+type noHandsObserved struct{}
+
+func (noHandsObserved) Equipment(
+	members []tkencounter.MemberID,
+) (map[tkencounter.MemberID]*tkencounter.HeldEquipment, error) {
+	out := make(map[tkencounter.MemberID]*tkencounter.HeldEquipment, len(members))
+	for _, id := range members {
+		out[id] = nil
+	}
+
+	return out, nil
 }
