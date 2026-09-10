@@ -1718,7 +1718,8 @@ func TestEventRollWindowOpened_ReachesTheWireTyped(t *testing.T) {
 		Session: "sess-1",
 		Kind:    sdk.EventRollWindowOpened,
 		Body: sdk.RollWindowOpenedBody{
-			Audience: "alice",
+			PresentationID: "opaque~d20",
+			Audience:       "alice",
 			Offer: sdk.ReactionRef{
 				Ref: "dnd5e:conditions:inspired", Name: "Bardic Inspiration",
 			},
@@ -1731,6 +1732,7 @@ func TestEventRollWindowOpened_ReachesTheWireTyped(t *testing.T) {
 	w := got.GetRollWindowOpened()
 	require.NotNil(t, w, "the kind and the body arm are one-to-one")
 	require.Equal(t, "alice", w.GetAudience(), "the audience is the roller, and one member")
+	require.Equal(t, "opaque~d20", w.GetPresentationId())
 	require.Equal(t, "dnd5e:conditions:inspired", w.GetOffer().GetRef())
 	require.Equal(t, "Bardic Inspiration", w.GetOffer().GetName(), "the server authors the label")
 	require.Equal(t, int32(15), w.GetRoll())

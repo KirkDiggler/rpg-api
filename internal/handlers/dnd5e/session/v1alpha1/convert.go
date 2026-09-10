@@ -1002,10 +1002,11 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		// named nothing to spend could not have been posed -- so it always
 		// converts to a non-nil message.
 		evt.Body = &sessionpb.Event_RollWindowOpened{RollWindowOpened: &sessionpb.RollWindowOpened{
-			Audience: b.Audience,
-			Offer:    reactionRefToProto(&b.Offer),
-			Roll:     int32(b.Roll),
-			Total:    int32(b.Total),
+			PresentationId: b.PresentationID,
+			Audience:       b.Audience,
+			Offer:          reactionRefToProto(&b.Offer),
+			Roll:           int32(b.Roll),
+			Total:          int32(b.Total),
 		}}
 	default:
 		// nil (no typed body for this kind) or a body type this build does
