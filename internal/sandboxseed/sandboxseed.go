@@ -31,7 +31,7 @@ const (
 
 	// The bard fixture's known spells, as the canonical refs the live
 	// SpellSelection.spell_refs field takes.
-	bladeWardRef      = "dnd5e:spells:blade-ward"
+	thunderclapRef    = "dnd5e:spells:thunderclap"
 	viciousMockeryRef = "dnd5e:spells:vicious-mockery"
 	baneRef           = "dnd5e:spells:bane"
 )
@@ -76,10 +76,17 @@ func Seed(ctx context.Context, client CharacterRPC) error {
 // This is that character, made once through the same production RPCs the other
 // two use.
 //
-// The cantrips are Blade Ward and Vicious Mockery deliberately: one self-target
-// and one creature-target, so the two cast shapes are both reachable the moment
-// the fixture loads. Charisma is 16 rather than the array's default so the spell
-// save DC is a number worth reading rather than the minimum.
+// The cantrips are Thunderclap and Vicious Mockery deliberately: one AREA cast
+// and one creature-target, so the two shapes a walk cares about are both
+// reachable the moment the fixture loads. Charisma is 16 rather than the
+// array's default so the spell save DC is a number worth reading rather than
+// the minimum.
+//
+// A bard picks exactly two, so a third shape displaces one. Blade Ward gave way
+// to Thunderclap: the self-cast shape it proved has shipped and is pinned by a
+// session test, while the area shape is the one nothing has walked yet. When
+// the fixture needs to cover more shapes than a level-one bard has picks, that
+// is a second character rather than a longer list.
 func seedBard(ctx context.Context, client CharacterRPC) error {
 	identityCtx := authenticatedContext(ctx, bardIdentity)
 	if err := deleteListedCharacters(identityCtx, client, bardIdentity); err != nil {
@@ -177,7 +184,7 @@ func seedBard(ctx context.Context, client CharacterRPC) error {
 				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
 				ChoiceId: "bard-cantrips-1",
 				Selection: &dnd5ev1alpha1.ChoiceData_Spells{Spells: &dnd5ev1alpha1.SpellSelection{
-					SpellRefs: []string{bladeWardRef, viciousMockeryRef},
+					SpellRefs: []string{thunderclapRef, viciousMockeryRef},
 				}},
 			},
 			{
