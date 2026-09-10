@@ -20,12 +20,20 @@ import (
 const (
 	fighterIdentity   = "toolkit-sandbox-fighter"
 	barbarianIdentity = "toolkit-sandbox-barbarian"
+	bardIdentity      = "toolkit-sandbox-bard"
 
 	fighterName   = "Toolkit Sandbox Fighter"
 	barbarianName = "Toolkit Sandbox Barbarian"
+	bardName      = "Toolkit Sandbox Bard"
 
 	listPageSize = 100
 	shieldItemID = "shield"
+
+	// The bard fixture's known spells, as the canonical refs the live
+	// SpellSelection.spell_refs field takes.
+	bladeWardRef      = "dnd5e:spells:blade-ward"
+	viciousMockeryRef = "dnd5e:spells:vicious-mockery"
+	baneRef           = "dnd5e:spells:bane"
 )
 
 // CharacterRPC is the narrow CharacterService client surface used by Seed.
@@ -54,7 +62,206 @@ func Seed(ctx context.Context, client CharacterRPC) error {
 	if err := seedFighter(ctx, client); err != nil {
 		return err
 	}
-	return seedBarbarian(ctx, client)
+	if err := seedBarbarian(ctx, client); err != nil {
+		return err
+	}
+	return seedBard(ctx, client)
+}
+
+// seedBard creates the fixed caster fixture: a level-one bard who already knows
+// two castable cantrips and the one supported leveled spell.
+//
+// The sandbox had a fighter and a barbarian and no caster at all, so every walk
+// of spell work started by building a bard through the creation flow by hand.
+// This is that character, made once through the same production RPCs the other
+// two use.
+//
+// The cantrips are Blade Ward and Vicious Mockery deliberately: one self-target
+// and one creature-target, so the two cast shapes are both reachable the moment
+// the fixture loads. Charisma is 16 rather than the array's default so the spell
+// save DC is a number worth reading rather than the minimum.
+func seedBard(ctx context.Context, client CharacterRPC) error {
+	identityCtx := authenticatedContext(ctx, bardIdentity)
+	if err := deleteListedCharacters(identityCtx, client, bardIdentity); err != nil {
+		return err
+	}
+
+	createResponse, createErr := client.CreateDraft(identityCtx, &dnd5ev1alpha1.CreateDraftRequest{})
+	if createErr != nil {
+		return rpcError(bardIdentity, "CreateDraft", createErr)
+	}
+	draftID := createResponse.GetDraft().GetId()
+	if draftID == "" {
+		return fmt.Errorf("%s CreateDraft: response draft ID is empty", bardIdentity)
+	}
+
+	if _, err := client.UpdateName(identityCtx, &dnd5ev1alpha1.UpdateNameRequest{
+		DraftId: draftID,
+		Name:    bardName,
+	}); err != nil {
+		return rpcError(bardIdentity, "UpdateName", err)
+	}
+	if _, err := client.UpdateRace(identityCtx, &dnd5ev1alpha1.UpdateRaceRequest{
+		DraftId: draftID,
+		Race:    dnd5ev1alpha1.Race_RACE_HUMAN,
+		RaceChoices: []*dnd5ev1alpha1.ChoiceData{{
+			Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES,
+			Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
+			Selection: &dnd5ev1alpha1.ChoiceData_Languages{
+				Languages: &dnd5ev1alpha1.LanguageSelection{
+					Languages: []dnd5ev1alpha1.Language{dnd5ev1alpha1.Language_LANGUAGE_ELVISH},
+				},
+			},
+		}},
+	}); err != nil {
+		return rpcError(bardIdentity, "UpdateRace", err)
+	}
+	if _, err := client.UpdateClass(identityCtx, &dnd5ev1alpha1.UpdateClassRequest{
+		DraftId: draftID,
+		Class:   dnd5ev1alpha1.Class_CLASS_BARD,
+		ClassChoices: []*dnd5ev1alpha1.ChoiceData{
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				Selection: &dnd5ev1alpha1.ChoiceData_Skills{
+					Skills: &dnd5ev1alpha1.SkillSelection{
+						Skills: []dnd5ev1alpha1.Skill{
+							dnd5ev1alpha1.Skill_SKILL_PERSUASION,
+							dnd5ev1alpha1.Skill_SKILL_PERFORMANCE,
+							dnd5ev1alpha1.Skill_SKILL_DECEPTION,
+						},
+					},
+				},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "bard-instruments",
+				Selection: &dnd5ev1alpha1.ChoiceData_Tools{Tools: &dnd5ev1alpha1.ToolSelection{
+					Tools: []dnd5ev1alpha1.Tool{
+						dnd5ev1alpha1.Tool_TOOL_LUTE,
+						dnd5ev1alpha1.Tool_TOOL_FLUTE,
+						dnd5ev1alpha1.Tool_TOOL_DRUM,
+					},
+				}},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "bard-weapons-primary",
+				OptionId: "bard-weapon-a",
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{
+					Equipment: &dnd5ev1alpha1.EquipmentSelection{},
+				},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "bard-pack",
+				OptionId: "bard-pack-a",
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{
+					Equipment: &dnd5ev1alpha1.EquipmentSelection{},
+				},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "bard-instrument",
+				OptionId: "bard-instrument-a",
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{
+					Equipment: &dnd5ev1alpha1.EquipmentSelection{},
+				},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "bard-cantrips-1",
+				Selection: &dnd5ev1alpha1.ChoiceData_Spells{Spells: &dnd5ev1alpha1.SpellSelection{
+					SpellRefs: []string{bladeWardRef, viciousMockeryRef},
+				}},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "bard-spells-1",
+				Selection: &dnd5ev1alpha1.ChoiceData_Spells{Spells: &dnd5ev1alpha1.SpellSelection{
+					SpellRefs: []string{baneRef},
+				}},
+			},
+		},
+	}); err != nil {
+		return rpcError(bardIdentity, "UpdateClass", err)
+	}
+	if _, err := client.UpdateBackground(identityCtx, &dnd5ev1alpha1.UpdateBackgroundRequest{
+		DraftId:    draftID,
+		Background: dnd5ev1alpha1.Background_BACKGROUND_OUTLANDER,
+		BackgroundChoices: []*dnd5ev1alpha1.ChoiceData{
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND,
+				ChoiceId: "outlander-instrument",
+				Selection: &dnd5ev1alpha1.ChoiceData_Tools{Tools: &dnd5ev1alpha1.ToolSelection{
+					Tools: []dnd5ev1alpha1.Tool{dnd5ev1alpha1.Tool_TOOL_LYRE},
+				}},
+			},
+		},
+	}); err != nil {
+		return rpcError(bardIdentity, "UpdateBackground", err)
+	}
+	if _, err := client.UpdateAbilityScores(identityCtx, &dnd5ev1alpha1.UpdateAbilityScoresRequest{
+		DraftId: draftID,
+		ScoresInput: &dnd5ev1alpha1.UpdateAbilityScoresRequest_AbilityScores{
+			AbilityScores: &dnd5ev1alpha1.AbilityScores{
+				Strength:     8,
+				Dexterity:    14,
+				Constitution: 13,
+				Intelligence: 10,
+				Wisdom:       12,
+				Charisma:     16,
+			},
+		},
+	}); err != nil {
+		return rpcError(bardIdentity, "UpdateAbilityScores", err)
+	}
+	if _, err := client.GetDraft(identityCtx, &dnd5ev1alpha1.GetDraftRequest{DraftId: draftID}); err != nil {
+		return rpcError(bardIdentity, "GetDraft", err)
+	}
+	if _, err := client.FinalizeDraft(identityCtx, &dnd5ev1alpha1.FinalizeDraftRequest{
+		DraftId: draftID,
+	}); err != nil {
+		return rpcError(bardIdentity, "FinalizeDraft", err)
+	}
+
+	characterID, err := listExactlyOne(identityCtx, client, bardIdentity, bardName)
+	if err != nil {
+		return err
+	}
+	characterResponse, err := client.GetCharacter(identityCtx, &dnd5ev1alpha1.GetCharacterRequest{
+		CharacterId: characterID,
+	})
+	if err != nil {
+		return rpcError(bardIdentity, "GetCharacter", err)
+	}
+
+	// The known lists are printed rather than assumed. A bard that finalized
+	// but learned nothing is the failure worth catching here: it looks like a
+	// working fixture right up until the action dock has no cast row on it.
+	character := characterResponse.GetCharacter()
+	if len(character.GetKnownCantrips()) == 0 {
+		return fmt.Errorf("%s GetCharacter: finalized with no known cantrips", bardIdentity)
+	}
+	if len(character.GetKnownSpells()) == 0 {
+		return fmt.Errorf("%s GetCharacter: finalized with no known spells", bardIdentity)
+	}
+
+	fmt.Printf("sandboxseed: identity=%s character_id=%s charisma=%d cantrips=%v spells=%v\n",
+		bardIdentity,
+		characterID,
+		character.GetAbilityScores().GetCharisma(),
+		character.GetKnownCantrips(),
+		character.GetKnownSpells(),
+	)
+	return nil
 }
 
 func seedFighter(ctx context.Context, client CharacterRPC) error {
