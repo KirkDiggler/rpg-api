@@ -1617,6 +1617,7 @@ func monkClassChoices(optionID string, weapon dnd5ev1alpha1.Weapon) []*dnd5ev1al
 // same helper the handler uses would agree with itself no matter what the
 // string became.
 const (
+	bladeWardRef      = "dnd5e:spells:blade-ward"
 	trueStrikeRef     = "dnd5e:spells:true-strike"
 	viciousMockeryRef = "dnd5e:spells:vicious-mockery"
 	baneRef           = "dnd5e:spells:bane"
@@ -1767,7 +1768,7 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	}
 	s.Require().NotNil(cantripChoice, "a bard is asked for cantrips")
 	s.Equal(int32(2), cantripChoice.GetChooseCount())
-	s.Equal([]string{trueStrikeRef, viciousMockeryRef}, cantripChoice.GetSpellOptions().GetAvailableRefs(),
+	s.Equal([]string{bladeWardRef, trueStrikeRef, viciousMockeryRef}, cantripChoice.GetSpellOptions().GetAvailableRefs(),
 		"the options are gated to the cantrips this build can cast, as refs")
 	s.Empty(cantripChoice.GetSpellOptions().GetAvailable(), //nolint:staticcheck // Asserting the deprecated field stays unwritten.
 		"the deprecated enum field is not written beside the refs")
