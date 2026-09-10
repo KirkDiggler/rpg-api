@@ -1786,3 +1786,64 @@ func TestParticipantToProto_CarriesConcentrating(t *testing.T) {
 	idle := participantToProto(sdk.Participant{Member: "fighter-1"})
 	require.False(t, idle.GetConcentrating())
 }
+
+// sdkTargetKinds is every selector shape the SDK declares.
+//
+// MAINTAINED BY HAND, and that is the honest limitation: Go cannot enumerate a
+// string-const type, so adding a kind to the SDK without adding it here leaves
+// this list short. It is still worth having — it is the only place that states
+// what the full set is — but the guarantee lives in the test below it, which
+// needs no maintenance at all.
+var sdkTargetKinds = []sdk.TargetKind{
+	sdk.TargetNone,
+	sdk.TargetMember,
+	sdk.TargetPath,
+	sdk.TargetArea,
+}
+
+// TestEverySDKTargetKindReachesTheWire asserts no selector shape degrades to
+// UNSPECIFIED on its way to a client.
+//
+// An SDK kind with no case in targetKindToProto falls to UNSPECIFIED, and the
+// client has no branch for that: the row draws, the click does nothing, and
+// nothing is logged anywhere. That is not hypothetical — it is exactly what
+// TARGET_KIND_AREA did before rpg-api-protos#322, and it cost a walk to find.
+func TestEverySDKTargetKindReachesTheWire(t *testing.T) {
+	for _, kind := range sdkTargetKinds {
+		t.Run(string(kind), func(t *testing.T) {
+			require.NotEqual(t, sessionpb.TargetKind_TARGET_KIND_UNSPECIFIED,
+				targetKindToProto(kind),
+				"%q reaches the client as UNSPECIFIED, which it cannot dispatch on", kind)
+		})
+	}
+}
+
+// TestEveryProtoTargetKindIsProducedBySomeSDKKind is the half that needs no
+// maintenance.
+//
+// The proto enum is GENERATED, so its value set is enumerable at runtime
+// through TargetKind_name. A value declared on the wire that nothing can
+// produce is a contract the seam cannot honor — either a dead value, or a
+// mapping somebody forgot. Either way this fails without anyone remembering to
+// update a list.
+func TestEveryProtoTargetKindIsProducedBySomeSDKKind(t *testing.T) {
+	produced := make(map[sessionpb.TargetKind]sdk.TargetKind, len(sdkTargetKinds))
+	for _, kind := range sdkTargetKinds {
+		produced[targetKindToProto(kind)] = kind
+	}
+
+	for value, name := range sessionpb.TargetKind_name {
+		kind := sessionpb.TargetKind(value)
+		if kind == sessionpb.TargetKind_TARGET_KIND_UNSPECIFIED {
+			continue
+		}
+		require.Containsf(t, produced, kind,
+			"%s is declared in the proto and no SDK target kind maps to it", name)
+	}
+}
+
+// TestTargetKindAreaCrossesTheSeam pins the value this walk was about, by name
+// rather than only by the sweeps above.
+func TestTargetKindAreaCrossesTheSeam(t *testing.T) {
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_AREA, targetKindToProto(sdk.TargetArea))
+}

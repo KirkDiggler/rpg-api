@@ -1438,6 +1438,8 @@ func targetKindToProto(k sdk.TargetKind) sessionpb.TargetKind {
 		return sessionpb.TargetKind_TARGET_KIND_MEMBER
 	case sdk.TargetPath:
 		return sessionpb.TargetKind_TARGET_KIND_PATH
+	case sdk.TargetArea:
+		return sessionpb.TargetKind_TARGET_KIND_AREA
 	default:
 		return sessionpb.TargetKind_TARGET_KIND_UNSPECIFIED
 	}
