@@ -68,6 +68,7 @@ func buildOpenRoom(t *testing.T, width, height int) *tkencounter.EncounterData {
 		Retention:  tkencounter.RetentionUnbounded,
 		Standing:   allStanding{},
 		Sight:      allSeeing{},
+		Equipment:  noHandsObserved{},
 		TurnDriver: tkencounter.PassDriver{},
 		Striker:    tkencounter.RefusingStriker{},
 		Mover:      tkencounter.RefusingMover{},

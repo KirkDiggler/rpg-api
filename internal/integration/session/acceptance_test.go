@@ -250,6 +250,7 @@ func buildTomb(t *testing.T, mutate func(*tkencounter.SetupInput)) *tkencounter.
 		Retention:  tkencounter.RetentionUnbounded,
 		Standing:   allStanding{},
 		Sight:      allSeeing{},
+		Equipment:  noHandsObserved{},
 		// tkencounter.PassDriver{}/RefusingStriker{} are the toolkit's own
 		// trivial, exported stand-ins (rpg-toolkit#1167 closed) --
 		// construction-time only, same as allStanding/allSeeing above: this
@@ -1076,4 +1077,21 @@ func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
 		Session: "doom-run", Member: "alice", Path: []*sessionpb.Position{pbAt(17, 3)},
 	})
 	requireGRPCCode(t, err, codes.FailedPrecondition)
+}
+
+// noHandsObserved answers the equipment question for fixtures that are not
+// about equipment: every member is answered for, and every answer is "no hands
+// to observe" — deliberately NOT "everybody is empty-handed", which would be
+// testimony this fixture has no standing to give (rpg-toolkit#1615).
+type noHandsObserved struct{}
+
+func (noHandsObserved) Equipment(
+	members []tkencounter.MemberID,
+) (map[tkencounter.MemberID]*tkencounter.HeldEquipment, error) {
+	out := make(map[tkencounter.MemberID]*tkencounter.HeldEquipment, len(members))
+	for _, id := range members {
+		out[id] = nil
+	}
+
+	return out, nil
 }
