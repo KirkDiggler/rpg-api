@@ -121,6 +121,12 @@ func TestDeclarationToProto_FieldForField(t *testing.T) {
 			{Member: "goblin-1", Available: true},
 			{Member: "skeleton-1", Available: false, Why: &sdk.Shortfall{Reason: sdk.ShortfallTargetOutOfReach, Text: "target out of reach"}},
 		},
+		MinTargets: 1,
+		MaxTargets: 3,
+		Cost: []sdk.CostComponent{
+			{Currency: sdk.CurrencyAction, Needed: 1},
+			{Currency: sdk.CurrencyCharges, Needed: 1, Label: "1st-level Spell Slots"},
+		},
 	})
 	require.Equal(t, sessionpb.Verb_VERB_ATTACK, out.GetVerb())
 	require.Equal(t, sessionpb.Slot_SLOT_ACTION, out.GetSlot())
@@ -138,6 +144,12 @@ func TestDeclarationToProto_FieldForField(t *testing.T) {
 	require.Nil(t, out.GetCandidates()[0].GetWhy())
 	require.False(t, out.GetCandidates()[1].GetAvailable())
 	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_TARGET_OUT_OF_REACH, out.GetCandidates()[1].GetWhy().GetReason())
+	require.Equal(t, int32(1), out.GetMinTargets())
+	require.Equal(t, int32(3), out.GetMaxTargets())
+	require.Equal(t, []*sessionpb.CostComponent{
+		{Currency: sessionpb.Currency_CURRENCY_ACTION, Needed: 1},
+		{Currency: sessionpb.Currency_CURRENCY_CHARGES, Needed: 1, Label: "1st-level Spell Slots"},
+	}, out.GetCost())
 }
 
 func TestDeclarationToProto_PreservesOptionalAbsenceAndEmptyCandidates(t *testing.T) {
@@ -447,6 +459,57 @@ func TestRollTraceConverters_NilSafe(t *testing.T) {
 	require.Nil(t, rollCalculationToProto(nil))
 }
 
+func TestRolledEventBodiesProjectCalculation(t *testing.T) {
+	calculation := &sdk.RollCalculation{Total: 11, Components: []sdk.RollComponent{{
+		Source: sdk.RollSource{Ref: "dnd5e:spells:bane", Name: "Bane", SourceID: "bard-1"},
+	}}}
+
+	for _, body := range []sdk.EventBody{
+		sdk.DeathSaveBody{Calculation: calculation},
+		sdk.StruckBody{Calculation: calculation},
+		sdk.MissedBody{Calculation: calculation},
+		sdk.SavedBody{Calculation: calculation},
+	} {
+		event := &sessionpb.Event{}
+		setEventBody(event, body)
+		var got *sessionpb.RollCalculation
+		switch {
+		case event.GetDeathSaveRolled() != nil:
+			got = event.GetDeathSaveRolled().GetCalculation()
+		case event.GetStruck() != nil:
+			got = event.GetStruck().GetCalculation()
+		case event.GetMissed() != nil:
+			got = event.GetMissed().GetCalculation()
+		case event.GetSaved() != nil:
+			got = event.GetSaved().GetCalculation()
+		}
+		require.NotNil(t, got)
+		require.Equal(t, int32(11), got.GetTotal())
+		require.Equal(t, "bard-1", got.GetComponents()[0].GetSource().GetSourceId())
+	}
+}
+
+func TestCastBodyToProto_CanonicalTargetsAndFaithfulLegacyProjection(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		targets    []string
+		wantTarget string
+	}{
+		{name: "one target preserves scalar", targets: []string{"goblin-1"}, wantTarget: "goblin-1"},
+		{name: "multiple targets never choose a representative", targets: []string{"goblin-1", "goblin-2"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			event := &sessionpb.Event{}
+			setEventBody(event, sdk.CastBody{
+				Actor: "bard-1", Spell: sdk.SpellRef{Ref: "dnd5e:spells:bane", Name: "Bane"}, Targets: tc.targets,
+			})
+
+			require.Equal(t, tc.targets, event.GetCast().GetTargets())
+			require.Equal(t, tc.wantTarget, event.GetCast().GetTarget())
+		})
+	}
+}
+
 func TestRollCalculationToProto_FieldForFieldOrderPresenceAndIsolation(t *testing.T) {
 	zero := 0
 	negative := -3
@@ -454,7 +517,7 @@ func TestRollCalculationToProto_FieldForFieldOrderPresenceAndIsolation(t *testin
 		Components: []sdk.RollComponent{
 			{
 				Source: sdk.RollSource{
-					Ref: "dnd5e:weapons:greatsword", Name: "Greatsword", Label: "primary",
+					Ref: "dnd5e:weapons:greatsword", Name: "Greatsword", Label: "primary", SourceID: "fighter-1",
 				},
 				Dice: &sdk.DiceTrace{
 					Notation: "2d6", DieSize: 6,
@@ -478,8 +541,9 @@ func TestRollCalculationToProto_FieldForFieldOrderPresenceAndIsolation(t *testin
 				Modifier: &zero,
 			},
 			{
-				Source:   sdk.RollSource{Ref: "dnd5e:abilities:str", Name: "Strength", Label: "ability modifier"},
-				Modifier: &negative,
+				Source:       sdk.RollSource{Ref: "dnd5e:abilities:str", Name: "Strength", Label: "ability modifier"},
+				Modifier:     &negative,
+				SubtractDice: true,
 			},
 		},
 		Total: 777,
@@ -490,7 +554,7 @@ func TestRollCalculationToProto_FieldForFieldOrderPresenceAndIsolation(t *testin
 	want := &sessionpb.RollCalculation{
 		Components: []*sessionpb.RollComponent{
 			{
-				Source: &sessionpb.RollSource{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword", Label: "primary"},
+				Source: &sessionpb.RollSource{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword", Label: "primary", SourceId: "fighter-1"},
 				Dice: &sessionpb.DiceTrace{
 					Notation: "2d6", DieSize: 6,
 					OriginalRolls: []int32{1, 5},
@@ -513,8 +577,9 @@ func TestRollCalculationToProto_FieldForFieldOrderPresenceAndIsolation(t *testin
 				Modifier: &wantZero,
 			},
 			{
-				Source:   &sessionpb.RollSource{Ref: "dnd5e:abilities:str", Name: "Strength", Label: "ability modifier"},
-				Modifier: &wantNegative,
+				Source:       &sessionpb.RollSource{Ref: "dnd5e:abilities:str", Name: "Strength", Label: "ability modifier"},
+				Modifier:     &wantNegative,
+				SubtractDice: true,
 			},
 		},
 		Total: 777,

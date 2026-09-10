@@ -47,5 +47,6 @@ func (h *Handler) DeathSave(
 		Seq:               out.Seq,
 		Saved:             saveReportToProto(out.Saved),
 		Delivery:          deliveryReportToProto(out.Delivery),
+		Calculation:       rollCalculationToProto(out.Calculation),
 	}, nil
 }

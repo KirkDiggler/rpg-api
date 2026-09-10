@@ -29,7 +29,12 @@ func TestAttack_HappyPath(t *testing.T) {
 		Session: "sess-1", Attacker: "char-1", Target: "goblin-1", DeclarationID: "decl-attack-1",
 	}).Return(&sdk.AttackOutput{
 		Roll: 18, Total: 21, Against: 13, Hit: true, Damage: 7, Seq: 9,
-		Attack:         sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
+		Attack: sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
+		Calculation: &sdk.RollCalculation{Total: 21, Components: []sdk.RollComponent{{
+			Source:       sdk.RollSource{Ref: "dnd5e:spells:bane", Name: "Bane", SourceID: "bard-1"},
+			Dice:         &sdk.DiceTrace{Notation: "1d4", DieSize: 4, OriginalRolls: []int{2}, FinalRolls: []int{2}, Subtotal: 2},
+			SubtractDice: true,
+		}}},
 		PresentationID: "presentation_2f1c8b4a-0d6e-4a1b-9c3f-5e7a1b2c3d4e",
 	}, nil)
 
@@ -47,6 +52,9 @@ func TestAttack_HappyPath(t *testing.T) {
 	require.Equal(t, "dnd5e:weapons:longsword", resp.GetAttack().GetRef())
 	require.Equal(t, "Longsword", resp.GetAttack().GetName())
 	require.Equal(t, sessionpb.DamageType_DAMAGE_TYPE_SLASHING, resp.GetAttack().GetDamageType())
+	require.Equal(t, int32(21), resp.GetCalculation().GetTotal())
+	require.True(t, resp.GetCalculation().GetComponents()[0].GetSubtractDice())
+	require.Equal(t, "bard-1", resp.GetCalculation().GetComponents()[0].GetSource().GetSourceId())
 
 	// The attacker's half of the shared roll identity. Seq is per recipient, so
 	// this token is the only thing the attacker and a witness can both name

@@ -2387,10 +2387,38 @@ func loadAllClassChoices(classID classes.Class) []*dnd5ev1alpha1.Choice {
 		}
 	}
 
+	// SelectionType remains unset until the provider distinguishes known-spell
+	// and Wizard-spellbook semantics; the API does not infer class policy from
+	// the requirement's Go type name.
+	if requirements.Spellbook != nil && requirements.Spellbook.Count > 0 {
+		spellbookChoice := createSpellbookChoice(requirements.Spellbook)
+		if spellbookChoice != nil {
+			result = append(result, spellbookChoice)
+		}
+	}
+
 	// TODO: Add other choice types as needed:
 	// - Language choices (requirements.Languages)
 
 	return result
+}
+
+// createSpellbookChoice converts a leveled-spell requirement to a proto Choice.
+func createSpellbookChoice(req *choices.SpellbookRequirement) *dnd5ev1alpha1.Choice {
+	if req == nil || len(req.Options) == 0 {
+		return nil
+	}
+	available := spellRefStrings(req.Options)
+	if len(available) == 0 {
+		return nil
+	}
+	return &dnd5ev1alpha1.Choice{
+		Id: string(req.ID), Description: req.Label, ChooseCount: int32(req.Count),
+		ChoiceType: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS,
+		Options: &dnd5ev1alpha1.Choice_SpellOptions{SpellOptions: &dnd5ev1alpha1.SpellOptions{
+			AvailableRefs: available, SpellLevel: int32(req.SpellLevel),
+		}},
+	}
 }
 
 // createCantripChoice converts a cantrip requirement to a proto Choice.

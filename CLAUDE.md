@@ -413,12 +413,11 @@ Older guidance (per-repo `journey/` and `adr/` as primary doc types) has been re
 ```bash
 make pre-commit
 ```
-This runs:
-1. `fmt` - Format code with gofmt and goimports  
-2. `tidy` - Clean dependencies with go mod tidy
-3. `fix-eof` - Add missing EOF newlines
-4. `lint` - Run golangci-lint with comprehensive checks
-5. `test` - Run unit tests with coverage
+This is check-only: it verifies release pins, CI-script safety, formatting,
+imports, module tidiness, EOF newlines, lint, and the short test suite without
+changing tracked files or the Git index. Prepare deliberate source changes first
+with `make fix` and regenerate mocks explicitly with `make generate`. Required
+tools are installed only by an explicit `make install-tools`.
 
 ### 🚨 CRITICAL RULE: NEVER USE --no-verify 🚨
 **NEVER, EVER, EVER use `git commit --no-verify`**
@@ -463,9 +462,15 @@ make install-tools
 **ALWAYS run `make ci-check` before pushing** to detect CI failures locally:
 
 ```bash
-make ci-check  # Comprehensive CI failure detection
-make ci-fix    # Automatically fix common issues
+make generate  # Explicitly regenerate mocks when interfaces changed
+make fix       # Explicitly format, tidy, and repair EOF newlines
+make ci-check  # Comprehensive non-mutating CI validation
 ```
+
+`make ci-check`, `make pre-commit`, `make lint`, and formatting checks never
+install tools or restore/reset the worktree. If a tool is missing, run
+`make install-tools` explicitly. Hosted workflows retain an explicit generation
+step and fail if it changes committed mock files.
 
 ### Staying Current with Standards
 

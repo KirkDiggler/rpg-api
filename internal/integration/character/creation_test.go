@@ -1619,6 +1619,7 @@ func monkClassChoices(optionID string, weapon dnd5ev1alpha1.Weapon) []*dnd5ev1al
 const (
 	trueStrikeRef     = "dnd5e:spells:true-strike"
 	viciousMockeryRef = "dnd5e:spells:vicious-mockery"
+	baneRef           = "dnd5e:spells:bane"
 )
 
 // TestCreateBard_FinalizesChoosingTwoCantrips is the creation half of the
@@ -1727,6 +1728,14 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 					SpellRefs: []string{trueStrikeRef, viciousMockeryRef},
 				}},
 			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "bard-spells-1",
+				Selection: &dnd5ev1alpha1.ChoiceData_Spells{Spells: &dnd5ev1alpha1.SpellSelection{
+					SpellRefs: []string{baneRef},
+				}},
+			},
 		},
 	})
 	s.Require().NoError(err)
@@ -1747,11 +1756,13 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	}
 	s.Require().NotNil(bardInfo, "ListClasses should include Bard")
 
-	var cantripChoice *dnd5ev1alpha1.Choice
+	var cantripChoice, spellChoice *dnd5ev1alpha1.Choice
 	for _, choice := range bardInfo.GetChoices() {
-		if choice.GetChoiceType() == dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS {
+		switch choice.GetChoiceType() {
+		case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS:
 			cantripChoice = choice
-			break
+		case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS:
+			spellChoice = choice
 		}
 	}
 	s.Require().NotNil(cantripChoice, "a bard is asked for cantrips")
@@ -1760,6 +1771,13 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 		"the options are gated to the cantrips this build can cast, as refs")
 	s.Empty(cantripChoice.GetSpellOptions().GetAvailable(), //nolint:staticcheck // Asserting the deprecated field stays unwritten.
 		"the deprecated enum field is not written beside the refs")
+	s.Require().NotNil(spellChoice, "a bard is asked for the provider's leveled spell choice")
+	s.Equal(int32(1), spellChoice.GetChooseCount())
+	s.Equal(int32(1), spellChoice.GetSpellOptions().GetSpellLevel())
+	s.Equal([]string{baneRef}, spellChoice.GetSpellOptions().GetAvailableRefs())
+	s.Equal(dnd5ev1alpha1.SpellSelectionType_SPELL_SELECTION_TYPE_UNSPECIFIED,
+		spellChoice.GetSpellOptions().GetSelectionType(),
+		"API does not infer Known versus Spellbook until the provider authors that fact")
 
 	_, err = s.server.CharacterClient.UpdateBackground(ctx, &dnd5ev1alpha1.UpdateBackgroundRequest{
 		DraftId: draftID, Background: dnd5ev1alpha1.Background_BACKGROUND_OUTLANDER,
@@ -1781,7 +1799,7 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	finalizeResp, err := s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{
 		DraftId: draftID,
 	})
-	s.Require().NoError(err, "a level-1 bard must finalize once two cantrips are chosen")
+	s.Require().NoError(err, "a level-1 bard must finalize once cantrips and Bane are chosen")
 	s.Require().NotNil(finalizeResp.GetCharacter())
 	s.Equal(dnd5ev1alpha1.Class_CLASS_BARD, finalizeResp.GetCharacter().GetClass())
 
@@ -1790,7 +1808,8 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	// field on the wire said so, so a chosen cantrip vanished between
 	// finalize and the next read.
 	s.Equal([]string{trueStrikeRef, viciousMockeryRef}, finalizeResp.GetCharacter().GetKnownCantrips())
-	s.Empty(finalizeResp.GetCharacter().GetKnownSpells(), "a level-1 bard knows no leveled spells")
+	s.Equal([]string{baneRef}, finalizeResp.GetCharacter().GetKnownSpells(),
+		"the Bane choice reaches the finalized character through the normal service")
 
 	persisted, err := s.server.CharacterClient.GetCharacter(ctx, &dnd5ev1alpha1.GetCharacterRequest{
 		CharacterId: finalizeResp.GetCharacter().GetId(),
@@ -1799,6 +1818,8 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	s.Equal(dnd5ev1alpha1.Class_CLASS_BARD, persisted.GetCharacter().GetClass())
 	s.Equal([]string{trueStrikeRef, viciousMockeryRef}, persisted.GetCharacter().GetKnownCantrips(),
 		"the refs survive the store, not just the finalize response")
+	s.Equal([]string{baneRef}, persisted.GetCharacter().GetKnownSpells(),
+		"the leveled spell survives the same store/reload path")
 
 	// -- and the bard PROJECTS. This is the walk's second finding and the one
 	// a creation test alone would never have caught: the bard finalized fine
@@ -1855,14 +1876,13 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	s.Equal(3, pool.Maximum, "the pool is max(1, CHA mod), and CHA 16 is +3")
 	s.Equal(3, pool.Current, "a freshly made bard has spent none of it")
 
-	// NO SPELL SLOTS, which is a deletion and not an absence (#397 R6):
-	// compileSpellSlots used to hand every bard two first-level slots that
-	// nothing in the stack could reach, let alone spend. A cantrip costs an
-	// action and nothing else (R10), so the cast door does not bring them
-	// back either.
-	s.Empty(stored.Character.Data.SpellSlots, "a cantrip costs an action, so the bard still has no slots")
+	spellSlots, ok := stored.Character.Data.Resources[resources.SpellSlotLevel1]
+	s.Require().True(ok, "Bane's provider-authored level-one pool is stored as a canonical resource")
+	s.Equal(2, spellSlots.Maximum)
+	s.Equal(2, spellSlots.Current)
 
 	// The stored sheet speaks the same canonical refs the wire does, so the
 	// projection is a copy rather than a translation that could drift.
 	s.Equal([]string{trueStrikeRef, viciousMockeryRef}, stored.Character.Data.KnownCantrips)
+	s.Equal([]string{baneRef}, stored.Character.Data.KnownSpells)
 }

@@ -734,6 +734,7 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			Stabilized: b.Stabilized, Dead: b.Dead, Recovered: b.Recovered,
 			HpRestored: int32(b.HPRestored), Continuation: deathSaveContinuationToProto(b.Continuation),
 			PresentationId: b.PresentationID,
+			Calculation:    rollCalculationToProto(b.Calculation),
 		}}
 	case sdk.StruckBody:
 		evt.Body = &sessionpb.Event_Struck{Struck: &sessionpb.Struck{
@@ -757,6 +758,7 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			// Same token the attacker got back on AttackResponse, so this
 			// recipient can name the same roll the attacker is presenting.
 			PresentationId: b.PresentationID,
+			Calculation:    rollCalculationToProto(b.Calculation),
 		}}
 	case sdk.MissedBody:
 		evt.Body = &sessionpb.Event_Missed{Missed: &sessionpb.Missed{
@@ -769,6 +771,7 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			Reaction: reactionRefToProto(b.Reaction),
 			// See the struck case: one shared token per swing.
 			PresentationId: b.PresentationID,
+			Calculation:    rollCalculationToProto(b.Calculation),
 		}}
 	case sdk.ActivatedBody:
 		evt.Body = &sessionpb.Event_Activated{Activated: activatedBodyToProto(b)}
@@ -932,12 +935,19 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			Reaction: reactionRefToProto(&b.Reaction),
 		}}
 	case sdk.CastBody:
-		// What was cast, and at whom. Target is empty for a self-cast and
-		// that absence is the truth rather than a gap.
+		// Targets is canonical and request ordered. The deprecated scalar is
+		// written only when it is a faithful projection of exactly one target;
+		// a multi-target cast never invents a representative.
+		targets := append([]string(nil), b.Targets...)
+		legacyTarget := ""
+		if len(targets) == 1 {
+			legacyTarget = targets[0]
+		}
 		evt.Body = &sessionpb.Event_Cast{Cast: &sessionpb.Cast{
-			Actor:  b.Actor,
-			Spell:  spellRefToProto(b.Spell),
-			Target: b.Target, //nolint:staticcheck // Preserve single-target Story for existing clients until the multi-target Cast wave is adopted.
+			Actor:   b.Actor,
+			Spell:   spellRefToProto(b.Spell),
+			Target:  legacyTarget, //nolint:staticcheck // Faithful compatibility projection for exactly one target.
+			Targets: targets,
 		}}
 	case sdk.SavedBody:
 		// The whole of one saving throw. SUCCEEDED IS COPIED, never derived
@@ -945,13 +955,14 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		// the law DeathSaveRolled.outcome already keeps, so the day beating a
 		// DC means something new every reader is not wrong at once.
 		evt.Body = &sessionpb.Event_Saved{Saved: &sessionpb.Saved{
-			Saver:     b.Saver,
-			Ability:   b.Ability,
-			Roll:      int32(b.Roll),
-			Total:     int32(b.Total),
-			Dc:        int32(b.DC),
-			Succeeded: b.Succeeded,
-			Source:    spellRefToProto(b.Source),
+			Saver:       b.Saver,
+			Ability:     b.Ability,
+			Roll:        int32(b.Roll),
+			Total:       int32(b.Total),
+			Dc:          int32(b.DC),
+			Succeeded:   b.Succeeded,
+			Source:      spellRefToProto(b.Source),
+			Calculation: rollCalculationToProto(b.Calculation),
 		}}
 	case sdk.ConcentrationEndedBody:
 		// Who lost what, and why. THE REASON IS AN OPEN STRING and this
@@ -1424,6 +1435,18 @@ func targetCandidatesToProto(cs []sdk.TargetCandidate) []*sessionpb.TargetCandid
 	return out
 }
 
+func costComponentsToProto(cost []sdk.CostComponent) []*sessionpb.CostComponent {
+	out := make([]*sessionpb.CostComponent, len(cost))
+	for i, component := range cost {
+		out[i] = &sessionpb.CostComponent{
+			Currency: currencyToProto(component.Currency),
+			Needed:   int32(component.Needed),
+			Label:    component.Label,
+		}
+	}
+	return out
+}
+
 // declarationToProto mirrors the SDK's compiled declaration field-for-field.
 // It neither derives availability nor transforms selectors: opaque IDs, full
 // attack refs, target shape, and every independently ruled candidate cross
@@ -1439,6 +1462,9 @@ func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
 		Id:         d.ID,
 		TargetKind: targetKindToProto(d.TargetKind),
 		Candidates: targetCandidatesToProto(d.Candidates),
+		MinTargets: int32(d.MinTargets),
+		MaxTargets: int32(d.MaxTargets),
+		Cost:       costComponentsToProto(d.Cost),
 	}
 	if d.Remaining != nil {
 		remaining := int32(*d.Remaining)
@@ -1591,7 +1617,9 @@ func rollSourceToProto(source *sdk.RollSource) *sessionpb.RollSource {
 	if source == nil {
 		return nil
 	}
-	return &sessionpb.RollSource{Ref: source.Ref, Name: source.Name, Label: source.Label}
+	return &sessionpb.RollSource{
+		Ref: source.Ref, Name: source.Name, Label: source.Label, SourceId: source.SourceID,
+	}
 }
 
 // diceRerollToProto copies one sourced replacement. Ordering is owned by the
@@ -1644,8 +1672,9 @@ func rollComponentToProto(component *sdk.RollComponent) *sessionpb.RollComponent
 		return nil
 	}
 	out := &sessionpb.RollComponent{
-		Source: rollSourceToProto(&component.Source),
-		Dice:   diceTraceToProto(component.Dice),
+		Source:       rollSourceToProto(&component.Source),
+		Dice:         diceTraceToProto(component.Dice),
+		SubtractDice: component.SubtractDice,
 	}
 	if component.Modifier != nil {
 		modifier := int32(*component.Modifier)

@@ -295,7 +295,6 @@ func TestCloneEntityTestHelperDeepCopiesRepresentativeState(t *testing.T) {
 	clone.Data.WeaponProficiencies[0] = proficiencies.WeaponSimple
 	clone.Data.ToolProficiencies[0] = proficiencies.ToolThieves
 	clone.Data.EquipmentSlots[tkcharacter.SlotOffHand] = "torch"
-	clone.Data.SpellSlots[1] = tkcharacter.SpellSlotData{Max: 1, Used: 1}
 	clone.Data.ClassResources[shared.ClassResourceSecondWind] = tkcharacter.ResourceData{Name: "Second Wind", Current: 0, Max: 1, Resets: shared.ResetTypeLongRest}
 	clone.Data.Resources[coreResources.ResourceKey("hit-dice")] = tkcharacter.RecoverableResourceData{Current: 0, Maximum: 2, ResetType: coreResources.ResetShortRest}
 	clone.Data.Features[0] = json.RawMessage(`{"id":"action-surge"}`)
@@ -318,7 +317,6 @@ func TestCloneEntityTestHelperDeepCopiesRepresentativeState(t *testing.T) {
 	require.Equal(t, proficiencies.WeaponSimple, original.Data.WeaponProficiencies[0])
 	require.Equal(t, proficiencies.ToolSmith, original.Data.ToolProficiencies[0])
 	require.Equal(t, "shield", original.Data.EquipmentSlots[tkcharacter.SlotOffHand])
-	require.Equal(t, tkcharacter.SpellSlotData{Max: 2, Used: 1}, original.Data.SpellSlots[1])
 	require.Equal(t, tkcharacter.ResourceData{Name: "Second Wind", Current: 1, Max: 1, Resets: shared.ResetTypeShortRest}, original.Data.ClassResources[shared.ClassResourceSecondWind])
 	require.Equal(t, tkcharacter.RecoverableResourceData{Current: 1, Maximum: 2, ResetType: coreResources.ResetLongRest}, original.Data.Resources[coreResources.ResourceKey("hit-dice")])
 	require.Equal(t, json.RawMessage(`{"id":"second-wind"}`), original.Data.Features[0])
@@ -597,7 +595,6 @@ func galleryCharacter(id string, inventory []tkcharacter.InventoryItemData) *ent
 				tkcharacter.SlotOffHand:  "shield",
 				tkcharacter.SlotArmor:    "chain-mail",
 			},
-			SpellSlots: map[int]tkcharacter.SpellSlotData{1: {Max: 2, Used: 1}},
 			ClassResources: map[shared.ClassResourceType]tkcharacter.ResourceData{
 				shared.ClassResourceSecondWind: {Name: "Second Wind", Current: 1, Max: 1, Resets: shared.ResetTypeShortRest},
 			},
@@ -675,12 +672,6 @@ func cloneEntity(in *entities.Character) *entities.Character {
 			data.EquipmentSlots = make(tkcharacter.EquipmentSlots, len(in.Data.EquipmentSlots))
 			for k, v := range in.Data.EquipmentSlots {
 				data.EquipmentSlots[k] = v
-			}
-		}
-		if in.Data.SpellSlots != nil {
-			data.SpellSlots = make(map[int]tkcharacter.SpellSlotData, len(in.Data.SpellSlots))
-			for k, v := range in.Data.SpellSlots {
-				data.SpellSlots[k] = v
 			}
 		}
 		if in.Data.ClassResources != nil {
