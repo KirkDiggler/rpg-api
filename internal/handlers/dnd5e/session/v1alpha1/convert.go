@@ -636,6 +636,8 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED
 	case sdk.EventRegionRevealed:
 		return sessionpb.EventKind_EVENT_KIND_REGION_REVEALED
+	case sdk.EventSighted:
+		return sessionpb.EventKind_EVENT_KIND_SIGHTED
 	// Holdings (rpg-project#368). Each kind is a STATEMENT -- looted, held,
 	// dropped -- because a verb and a beat are named by what the record will
 	// say. Nothing here says "took": Take is reserved for the act that lands
@@ -838,6 +840,22 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		// reaches the looter alone, as their own DOOR_REVEALED.
 		evt.Body = &sessionpb.Event_Looted{Looted: &sessionpb.Looted{
 			Looter: b.Looter, Body: b.Body,
+		}}
+	case sdk.SightedBody:
+		// PASSED THROUGH, NAMES AND NOTHING ELSE -- and the nothing else is
+		// the design rather than an omission this seam should correct. What
+		// the recipient now perceives about these members (cell, standing,
+		// what is in their hands) is already answered, member-scoped, by
+		// GetView; minting it here would be a SECOND computation of that
+		// same answer, and two computations of one truth is how a patch and
+		// a projection learn to disagree. The client re-reads its view.
+		//
+		// No assetref minting either, for the same reason. This beat names
+		// MEMBERS, not items -- ids the client already holds from its
+		// roster -- so there is nothing here in the rules' vocabulary that
+		// needs turning into the manifest's.
+		evt.Body = &sessionpb.Event_Sighted{Sighted: &sessionpb.Sighted{
+			Gained: b.Gained, Lost: b.Lost,
 		}}
 	case sdk.StanceChangedBody:
 		// Verbatim (rpg-project#375, design §6): the pair as the session
