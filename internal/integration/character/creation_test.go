@@ -1622,6 +1622,7 @@ const (
 	trueStrikeRef     = "dnd5e:spells:true-strike"
 	viciousMockeryRef = "dnd5e:spells:vicious-mockery"
 	baneRef           = "dnd5e:spells:bane"
+	thunderwaveRef    = "dnd5e:spells:thunderwave"
 )
 
 // TestCreateBard_FinalizesChoosingTwoCantrips is the creation half of the
@@ -1735,7 +1736,7 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
 				ChoiceId: "bard-spells-1",
 				Selection: &dnd5ev1alpha1.ChoiceData_Spells{Spells: &dnd5ev1alpha1.SpellSelection{
-					SpellRefs: []string{baneRef},
+					SpellRefs: []string{baneRef, thunderwaveRef},
 				}},
 			},
 		},
@@ -1776,9 +1777,14 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	s.Empty(cantripChoice.GetSpellOptions().GetAvailable(), //nolint:staticcheck // Asserting the deprecated field stays unwritten.
 		"the deprecated enum field is not written beside the refs")
 	s.Require().NotNil(spellChoice, "a bard is asked for the provider's leveled spell choice")
-	s.Equal(int32(1), spellChoice.GetChooseCount())
+	s.Equal(int32(2), spellChoice.GetChooseCount(), "a level-1 bard picks two of the supported spells")
 	s.Equal(int32(1), spellChoice.GetSpellOptions().GetSpellLevel())
-	s.Equal([]string{baneRef}, spellChoice.GetSpellOptions().GetAvailableRefs())
+	// Membership, not the whole list: what the leveled pick offers is the
+	// rulebook's to widen, and Thunderwave arrived beside Bane as soon as the
+	// toolkit could compile it to a cast profile. How many a bard PICKS is a
+	// separate fact and is asserted above, on its own.
+	s.Contains(spellChoice.GetSpellOptions().GetAvailableRefs(), baneRef)
+	s.Contains(spellChoice.GetSpellOptions().GetAvailableRefs(), thunderwaveRef)
 	s.Equal(dnd5ev1alpha1.SpellSelectionType_SPELL_SELECTION_TYPE_UNSPECIFIED,
 		spellChoice.GetSpellOptions().GetSelectionType(),
 		"API does not infer Known versus Spellbook until the provider authors that fact")
@@ -1803,7 +1809,7 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	finalizeResp, err := s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{
 		DraftId: draftID,
 	})
-	s.Require().NoError(err, "a level-1 bard must finalize once cantrips and Bane are chosen")
+	s.Require().NoError(err, "a level-1 bard must finalize once cantrips and both leveled spells are chosen")
 	s.Require().NotNil(finalizeResp.GetCharacter())
 	s.Equal(dnd5ev1alpha1.Class_CLASS_BARD, finalizeResp.GetCharacter().GetClass())
 
@@ -1812,8 +1818,10 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	// field on the wire said so, so a chosen cantrip vanished between
 	// finalize and the next read.
 	s.Equal([]string{trueStrikeRef, viciousMockeryRef}, finalizeResp.GetCharacter().GetKnownCantrips())
-	s.Equal([]string{baneRef}, finalizeResp.GetCharacter().GetKnownSpells(),
-		"the Bane choice reaches the finalized character through the normal service")
+	s.Contains(finalizeResp.GetCharacter().GetKnownSpells(), baneRef,
+		"the leveled choice reaches the finalized character through the normal service")
+	s.Contains(finalizeResp.GetCharacter().GetKnownSpells(), thunderwaveRef,
+		"both of them, not just the first")
 
 	persisted, err := s.server.CharacterClient.GetCharacter(ctx, &dnd5ev1alpha1.GetCharacterRequest{
 		CharacterId: finalizeResp.GetCharacter().GetId(),
@@ -1822,8 +1830,9 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	s.Equal(dnd5ev1alpha1.Class_CLASS_BARD, persisted.GetCharacter().GetClass())
 	s.Equal([]string{trueStrikeRef, viciousMockeryRef}, persisted.GetCharacter().GetKnownCantrips(),
 		"the refs survive the store, not just the finalize response")
-	s.Equal([]string{baneRef}, persisted.GetCharacter().GetKnownSpells(),
-		"the leveled spell survives the same store/reload path")
+	s.Contains(persisted.GetCharacter().GetKnownSpells(), baneRef,
+		"the leveled spells survive the same store/reload path")
+	s.Contains(persisted.GetCharacter().GetKnownSpells(), thunderwaveRef)
 
 	// -- and the bard PROJECTS. This is the walk's second finding and the one
 	// a creation test alone would never have caught: the bard finalized fine
@@ -1888,5 +1897,6 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	// The stored sheet speaks the same canonical refs the wire does, so the
 	// projection is a copy rather than a translation that could drift.
 	s.Equal([]string{trueStrikeRef, viciousMockeryRef}, stored.Character.Data.KnownCantrips)
-	s.Equal([]string{baneRef}, stored.Character.Data.KnownSpells)
+	s.Contains(stored.Character.Data.KnownSpells, baneRef)
+	s.Contains(stored.Character.Data.KnownSpells, thunderwaveRef)
 }

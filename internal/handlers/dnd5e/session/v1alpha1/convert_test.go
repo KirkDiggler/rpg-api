@@ -24,6 +24,24 @@ func TestPositionFromProto_Nil_ReturnsZeroValue(t *testing.T) {
 	require.Equal(t, spatial.Position{}, positionFromProto(nil))
 }
 
+// The optional form must keep absence and the origin apart.
+//
+// If an unset field collapsed to (0,0) the two would be the same value on the
+// way in, and every rule below that refuses a missing cell would instead be
+// handed the middle of the map. The pointer is the only thing carrying that
+// distinction across the boundary.
+func TestPositionPtrFromProto_SeparatesAbsenceFromTheOrigin(t *testing.T) {
+	require.Nil(t, positionPtrFromProto(nil), "an unset field is absent")
+
+	atOrigin := positionPtrFromProto(&sessionpb.Position{X: 0, Y: 0})
+	require.NotNil(t, atOrigin, "the origin is a cell somebody can point at")
+	require.Equal(t, spatial.Position{X: 0, Y: 0}, *atOrigin)
+
+	elsewhere := positionPtrFromProto(&sessionpb.Position{X: 4, Y: -2})
+	require.NotNil(t, elsewhere)
+	require.Equal(t, spatial.Position{X: 4, Y: -2}, *elsewhere)
+}
+
 func TestMemberKindToProto(t *testing.T) {
 	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_PLAYER, memberKindToProto(sdk.KindPlayer))
 	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_MONSTER, memberKindToProto(sdk.KindMonster))
@@ -95,6 +113,8 @@ func TestTargetKindToProto(t *testing.T) {
 	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_NONE, targetKindToProto(sdk.TargetNone))
 	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_MEMBER, targetKindToProto(sdk.TargetMember))
 	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_PATH, targetKindToProto(sdk.TargetPath))
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_AREA, targetKindToProto(sdk.TargetArea))
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_CELL, targetKindToProto(sdk.TargetCell))
 	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_UNSPECIFIED, targetKindToProto(sdk.TargetKind("bogus")))
 }
 
@@ -932,6 +952,62 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 		require.Nil(t, result.GetConditionApplied())
 		require.Nil(t, result.GetConditionRemoved())
 	})
+
+	// A creature the blast MOVED is one more delivered effect, and it reaches
+	// a client the same way damage does: as an arm of ActivationResult on the
+	// stream, not as a field on the cast's own acknowledgement.
+	//
+	// It is not the movement. Every cell crossed is already its own beat with
+	// the cause on it; this is the line that says how far and what got in the
+	// way, which a reader would otherwise have to reconstruct by correlating
+	// those beats by hand.
+	t.Run("MoveImposed", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventActivationResult,
+			Body: sdk.ActivationResultBody{
+				Actor: "bard-1",
+				MoveImposed: &sdk.MoveImposedBody{
+					Target: "skeleton-1", SourceRef: "dnd5e:spells:thunderwave", SourceName: "Thunderwave",
+					MovedCells: 1, StoppedBy: "a pillar",
+				},
+			},
+		})
+
+		result := got.GetActivationResult()
+		require.NotNil(t, result)
+		require.Equal(t, "bard-1", result.GetActor())
+		moved := result.GetMoveImposed()
+		require.NotNil(t, moved)
+		require.Equal(t, "skeleton-1", moved.GetTarget())
+		require.Equal(t, int32(1), moved.GetMovedCells())
+		require.Equal(t, "a pillar", moved.GetStoppedBy())
+		require.Nil(t, result.GetHealingApplied())
+		require.Nil(t, result.GetConditionApplied())
+		require.Nil(t, result.GetDamageApplied())
+	})
+
+	// ZERO CELLS IS A RESULT, NOT AN ABSENCE. A creature already against the
+	// wall is pushed nowhere, and the caster is owed that sentence: the blast
+	// landed and the wall is why nothing moved. The wire field is unset at
+	// zero by proto3's own rules, so the arm itself has to be present for a
+	// client to tell "pushed nowhere" from "not pushed".
+	t.Run("MoveImposed pinned against the fold", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventActivationResult,
+			Body: sdk.ActivationResultBody{
+				Actor: "bard-1",
+				MoveImposed: &sdk.MoveImposedBody{
+					Target: "skeleton-2", SourceRef: "dnd5e:spells:thunderwave", SourceName: "Thunderwave",
+					MovedCells: 0, StoppedBy: "a wall",
+				},
+			},
+		})
+
+		moved := got.GetActivationResult().GetMoveImposed()
+		require.NotNil(t, moved, "a push that moved nobody is still a push that happened")
+		require.Equal(t, int32(0), moved.GetMovedCells())
+		require.Equal(t, "a wall", moved.GetStoppedBy())
+	})
 }
 
 func TestActivationResultVariantConverters_NilSafe(t *testing.T) {
@@ -939,6 +1015,7 @@ func TestActivationResultVariantConverters_NilSafe(t *testing.T) {
 	require.Nil(t, conditionAppliedBodyToProto(nil))
 	require.Nil(t, conditionRemovedBodyToProto(nil))
 	require.Nil(t, capacityGrantedBodyToProto(nil))
+	require.Nil(t, moveImposedBodyToProto(nil))
 }
 
 func TestActivationEventBody_NilOrMalformedStaysNil(t *testing.T) {
@@ -954,6 +1031,16 @@ func TestActivationEventBody_NilOrMalformedStaysNil(t *testing.T) {
 				Actor:            "alice",
 				ConditionApplied: &sdk.ConditionAppliedBody{Target: "alice"},
 				CapacityGranted:  &sdk.CapacityGrantedBody{Member: "alice"},
+			},
+		},
+		{
+			name: "a moved result beside another result",
+			body: sdk.ActivationResultBody{
+				Actor:       "alice",
+				MoveImposed: &sdk.MoveImposedBody{Target: "bob"},
+				DamageApplied: &sdk.DamageAppliedBody{
+					Target: "bob", SourceRef: "dnd5e:spells:thunderwave",
+				},
 			},
 		},
 	}
@@ -1894,6 +1981,7 @@ var sdkTargetKinds = []sdk.TargetKind{
 	sdk.TargetMember,
 	sdk.TargetPath,
 	sdk.TargetArea,
+	sdk.TargetCell,
 }
 
 // TestEverySDKTargetKindReachesTheWire asserts no selector shape degrades to
@@ -1941,6 +2029,16 @@ func TestEveryProtoTargetKindIsProducedBySomeSDKKind(t *testing.T) {
 // rather than only by the sweeps above.
 func TestTargetKindAreaCrossesTheSeam(t *testing.T) {
 	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_AREA, targetKindToProto(sdk.TargetArea))
+}
+
+// TestTargetKindCellCrossesTheSeam pins the shape an AIMED cast announces.
+//
+// CELL is the kind a client cannot guess at. AREA fires the moment it is
+// armed; CELL has to wait for a ground click, and a client that reads
+// UNSPECIFIED here would fire the cube at nothing. The sweeps above would
+// catch it, this says which value it is.
+func TestTargetKindCellCrossesTheSeam(t *testing.T) {
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_CELL, targetKindToProto(sdk.TargetCell))
 }
 
 // sdkUnresolvedReasons is every reason the SDK declares. Hand-kept, with the
