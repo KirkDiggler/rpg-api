@@ -102,7 +102,7 @@ place:
   - { ref: "dnd5e:props:pillar", at: [12,5], blocks_movement: true, blocks_los: true }
   - { ref: "dnd5e:props:torch-ornate", at: [10,1], blocks_movement: false, blocks_los: false }
   - { ref: "dnd5e:props:bone-pile", at: [14,6], blocks_movement: false, blocks_los: false }
-  - { ref: "dnd5e:monsters:skeleton", at: [11,3], targeting: lowest-health }
+  - { ref: "dnd5e:monsters:zombie", at: [11,3], targeting: closest }
   - { ref: "dnd5e:monsters:skeleton", at: [13,5], targeting: lowest-health }
   - { ref: "dnd5e:props:coffin", at: [22,3], blocks_movement: true, blocks_los: false }
   - { ref: "dnd5e:props:altar", at: [25,3], blocks_movement: true, blocks_los: false }
