@@ -66,5 +66,6 @@ func (h *Handler) Cast(
 	return &sessionpb.CastResponse{
 		Saved:    saveReportToProto(out.Persisted),
 		Delivery: deliveryReportToProto(out.Delivery),
+		Caught:   caughtMembersToProto(out.Caught),
 	}, nil
 }
