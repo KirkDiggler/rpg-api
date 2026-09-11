@@ -10,8 +10,8 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/npc v0.2.0
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.154.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.71.1-0.20260911015427-d05527a0f46b
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.73.1-0.20260911015524-f58dd988c7cd
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.71.1-0.20260911033240-28ef7e9a0524
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.73.1-0.20260911033604-0e48c6777c19
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.11.0
 	github.com/KirkDiggler/rpg-toolkit/world v0.4.1
 	github.com/alicebob/miniredis/v2 v2.35.0

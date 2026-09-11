@@ -49,6 +49,7 @@ type EquipItemTestSuite struct {
 	ctx               context.Context
 
 	testCharacterID string
+	notified        *recordingNotifier
 }
 
 func TestEquipItemSuite(t *testing.T) {
@@ -57,17 +58,20 @@ func TestEquipItemSuite(t *testing.T) {
 
 func (s *EquipItemTestSuite) SetupTest() {
 	s.ctrl = gomock.NewController(s.T())
+	s.notified = &recordingNotifier{}
 	s.mockCharacterRepo = charactermock.NewMockRepository(s.ctrl)
 	s.ctx = context.Background()
 	s.testCharacterID = "char-fighter-1"
 
 	var err error
+	s.notified = &recordingNotifier{}
 	s.orchestrator, err = New(&Config{
-		DraftRepo:        draftmock.NewMockRepository(s.ctrl),
-		CharacterRepo:    s.mockCharacterRepo,
-		DiceService:      dicemock.NewMockService(s.ctrl),
-		IDGenerator:      idgenmock.NewMockGenerator(s.ctrl),
-		DraftIDGenerator: idgenmock.NewMockGenerator(s.ctrl),
+		DraftRepo:          draftmock.NewMockRepository(s.ctrl),
+		CharacterRepo:      s.mockCharacterRepo,
+		DiceService:        dicemock.NewMockService(s.ctrl),
+		IDGenerator:        idgenmock.NewMockGenerator(s.ctrl),
+		DraftIDGenerator:   idgenmock.NewMockGenerator(s.ctrl),
+		AppearanceNotifier: s.notified,
 	})
 	s.Require().NoError(err)
 }
@@ -785,4 +789,86 @@ func (s *EquipItemTestSuite) TestEquipItem_SyncsStoredArmorClass() {
 	s.Require().NoError(err)
 	s.Require().NotNil(persisted)
 	s.Assert().Equal(16, persisted.ArmorClass, "stored ArmorClass must be refreshed to the real EffectiveAC total")
+}
+
+// recordingNotifier stands in for the thing that finds a player's live
+// encounter, so these tests can ask whether the doorbell rang and what it
+// carried — while this package still knows nothing about encounters.
+type recordingNotifier struct {
+	calls []AppearanceChangedInput
+	err   error
+}
+
+func (r *recordingNotifier) AppearanceChanged(_ context.Context, in *AppearanceChangedInput) error {
+	r.calls = append(r.calls, *in)
+	return r.err
+}
+
+// THE DOORBELL RINGS, AND CARRIES BOTH IDS. The notifier needs the owning
+// player to find a live encounter and the character to name the member inside
+// it, and this orchestrator has just loaded the record holding both — so it
+// passes them rather than making the notifier read the store back.
+func (s *EquipItemTestSuite) TestEquipItem_TellsWatchersTheAppearanceChanged() {
+	entity := s.fighterWithLongswordAndShield()
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
+	s.mockCharacterRepo.EXPECT().
+		PatchEquipment(s.ctx, gomock.Any()).
+		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
+			return s.appliedPatch(entity, input), nil
+		})
+
+	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
+		CharacterID: s.testCharacterID, ItemID: "longsword", Slot: character.SlotMainHand,
+	})
+	s.Require().NoError(err)
+
+	s.Require().Len(s.notified.calls, 1, "one equip, one telling")
+	s.Equal(s.testCharacterID, s.notified.calls[0].CharacterID)
+	s.Equal(entity.Data.PlayerID, s.notified.calls[0].PlayerID,
+		"the owner is how a live encounter gets found")
+}
+
+// A REFUSED EQUIP TELLS NOBODY. Nothing was written, so there is nothing for
+// a watcher to re-read — and a nudge here would send every client to refetch
+// a view that did not change.
+func (s *EquipItemTestSuite) TestEquipItem_ARefusalTellsNobody() {
+	entity := s.fighterWithLongswordAndShield()
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
+	// Deliberately no PatchEquipment expectation: the item is not held.
+
+	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
+		CharacterID: s.testCharacterID, ItemID: "a-sword-she-does-not-have",
+		Slot: character.SlotMainHand,
+	})
+	s.Require().Error(err)
+	s.Empty(s.notified.calls, "nothing was written, so nobody is owed a second look")
+}
+
+// A FAILED NOTIFICATION DOES NOT FAIL THE EQUIP. The sheet is already written
+// and durable; returning an error now would tell the client its equip failed
+// and invite a retry that writes again. What it costs instead is that watchers
+// keep the picture they had until the next sight refresh — which is where this
+// started, so the degradation is to yesterday rather than to broken.
+func (s *EquipItemTestSuite) TestEquipItem_ANotifierFailureDoesNotFailTheEquip() {
+	s.notified.err = errors.New("the session is gone")
+	entity := s.fighterWithLongswordAndShield()
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
+	s.mockCharacterRepo.EXPECT().
+		PatchEquipment(s.ctx, gomock.Any()).
+		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
+			return s.appliedPatch(entity, input), nil
+		})
+
+	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
+		CharacterID: s.testCharacterID, ItemID: "longsword", Slot: character.SlotMainHand,
+	})
+	s.Require().NoError(err, "the write succeeded, so the call succeeded")
+	s.Require().NotNil(out)
+	s.Len(s.notified.calls, 1, "and it was attempted")
 }

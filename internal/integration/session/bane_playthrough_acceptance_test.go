@@ -42,6 +42,10 @@ func newCharacterCreationHandler(t *testing.T, h *acceptanceHarness) *characterh
 	characters, err := characterorch.New(&characterorch.Config{
 		DraftRepo: drafts, CharacterRepo: h.charRepo, DiceService: diceService,
 		IDGenerator: idgen.NewSequential("character"), DraftIDGenerator: idgen.NewSequential("draft"),
+		// This playthrough is about a spell, not about who was told a
+		// weapon moved — said out loud, because the capability is required
+		// so that "nobody is told" is a choice rather than a nil.
+		AppearanceNotifier: characterorch.NoAppearanceNotifier{},
 	})
 	require.NoError(t, err)
 	handler, err := characterhandler.NewHandler(&characterhandler.HandlerConfig{CharacterService: characters})

@@ -253,12 +253,27 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 		return fmt.Errorf("dice service: %w", err)
 	}
 
+	// BUILT AHEAD OF THE CHARACTER SERVICE, mirroring cmd/server: the
+	// character service takes an AppearanceNotifier as a required capability
+	// and the only thing that can answer it needs both of these. Wired for
+	// real here rather than stubbed, so an integration test that equips
+	// something mid-encounter exercises the whole doorbell.
+	sessOrch, err := sessionorch.New(sessionorch.Config{
+		Redis: ts.redisClient, Characters: charRepo, TTL: 24 * time.Hour,
+		PresentationIDs: idgen.NewSequential("presentation"),
+	})
+	if err != nil {
+		return fmt.Errorf("session orchestrator: %w", err)
+	}
+	ts.LobbyRepo = lobbyrepo.NewInMemory()
+
 	characterService, err := character.New(&character.Config{
-		DraftRepo:        draftRepo,
-		CharacterRepo:    charRepo,
-		DiceService:      diceService,
-		IDGenerator:      idgen.NewUUID("char"),
-		DraftIDGenerator: idgen.NewUUID("draft"),
+		DraftRepo:          draftRepo,
+		CharacterRepo:      charRepo,
+		DiceService:        diceService,
+		IDGenerator:        idgen.NewUUID("char"),
+		DraftIDGenerator:   idgen.NewUUID("draft"),
+		AppearanceNotifier: lobbyorch.NewAppearanceNotifier(ts.LobbyRepo, sessOrch.Manager),
 	})
 	if err != nil {
 		return fmt.Errorf("character service: %w", err)
@@ -320,13 +335,6 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	// path has been removed (rpg-project#227). Shares charRepo with the rest
 	// of the harness's wiring, mirroring cmd/server/server.go's production
 	// wiring.
-	sessOrch, err := sessionorch.New(sessionorch.Config{
-		Redis: ts.redisClient, Characters: charRepo, TTL: 24 * time.Hour,
-		PresentationIDs: idgen.NewSequential("presentation"),
-	})
-	if err != nil {
-		return fmt.Errorf("session orchestrator: %w", err)
-	}
 	ts.SessionOrch = sessOrch
 
 	access, err := sessionaccess.New(charRepo, sessOrch.Manager)
@@ -377,7 +385,6 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	}
 
 	ts.LobbyBroker = lobbyorch.NewBroker()
-	ts.LobbyRepo = lobbyrepo.NewInMemory()
 	lobbyOrch, err := lobbyorch.New(&lobbyorch.Config{
 		LobbyRepo:            ts.LobbyRepo,
 		LobbyBroker:          ts.LobbyBroker,

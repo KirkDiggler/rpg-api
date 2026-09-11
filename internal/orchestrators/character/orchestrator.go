@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"strings"
 
@@ -31,6 +32,15 @@ type Config struct {
 	DiceService      dice.Service
 	IDGenerator      idgen.Generator
 	DraftIDGenerator idgen.Generator
+
+	// AppearanceNotifier is told when something an observer could SEE about
+	// a character changes. REQUIRED, and required for the reason every
+	// capability on this seam is: a nil one would mean "nobody is ever
+	// told", which is a decision no caller made out loud
+	// (rpg-toolkit#1033 — supplied, never defaulted). A deployment with no
+	// encounters supplies one that does nothing, and says so by supplying
+	// it.
+	AppearanceNotifier AppearanceNotifier
 }
 
 // Validate ensures all required dependencies are present
@@ -43,6 +53,9 @@ func (c *Config) Validate() error {
 	}
 	if c.DiceService == nil {
 		return apierr.InvalidArgument("dice service is required")
+	}
+	if c.AppearanceNotifier == nil {
+		return apierr.InvalidArgument("appearance notifier is required")
 	}
 	if c.IDGenerator == nil {
 		return apierr.InvalidArgument("ID generator is required")
@@ -61,6 +74,7 @@ type Orchestrator struct {
 	idGen         idgen.Generator
 	draftIDGen    idgen.Generator
 	projectLoaded projectLoadedCharacterFunc
+	appearance    AppearanceNotifier
 }
 
 // New creates a new character orchestrator
@@ -79,6 +93,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 		idGen:         cfg.IDGenerator,
 		draftIDGen:    cfg.DraftIDGenerator,
 		projectLoaded: projectLoadedCharacter,
+		appearance:    cfg.AppearanceNotifier,
 	}, nil
 }
 
@@ -944,6 +959,24 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 		if !patch.Applied {
 			current = &characterrepo.GetOutput{Character: patch.Character, Version: patch.Version}
 			continue
+		}
+
+		// THE SHEET IS WRITTEN; NOW TELL WHOEVER CAN SEE IT. After the
+		// patch applied, never before: a notification for a write that then
+		// failed its version check would send watchers to re-read a change
+		// that never happened.
+		//
+		// A FAILURE HERE DOES NOT FAIL THE EQUIP. The write succeeded and is
+		// durable; returning an error now would tell the client its equip
+		// failed and invite a retry that writes again. What it costs instead
+		// is that watchers keep the picture they had until the next sight
+		// refresh — which is exactly the behaviour this notification was
+		// added to improve on, so the degradation is to yesterday rather
+		// than to something broken. Logged with both ids so it is visible
+		// rather than silent.
+		if err := o.notifyAppearance(ctx, patch.Character.Data, input.CharacterID); err != nil {
+			slog.WarnContext(ctx, "character: watchers not told of an equipment change",
+				"character_id", input.CharacterID, "slot", input.Slot, "error", err)
 		}
 
 		return &EquipItemOutput{
