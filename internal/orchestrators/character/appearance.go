@@ -2,8 +2,13 @@ package character
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
+	"maps"
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
 
 // AppearanceChangedInput names the character whose look changed, and the
@@ -84,4 +89,73 @@ type NoAppearanceNotifier struct{}
 // AppearanceChanged does nothing and succeeds.
 func (NoAppearanceNotifier) AppearanceChanged(_ context.Context, _ *AppearanceChangedInput) error {
 	return nil
+}
+
+// equipmentWriteInput is one attempt at writing a character's equipment slots.
+type equipmentWriteInput struct {
+	CharacterID string
+	// Slot is carried for the log alone — it says which slot moved when a
+	// notification fails, and decides nothing.
+	Slot       character.InventorySlot
+	Current    *characterrepo.GetOutput
+	Slots      character.EquipmentSlots
+	ArmorClass int
+}
+
+// writeEquipment persists one equipment change and, WHEN AND ONLY WHEN the
+// write lands, tells whoever can see this character that their view is stale.
+//
+// # Why the notification lives here and not in the verbs
+//
+// It used to live in EquipItem, and UnequipItem did not have it — so putting a
+// weapon away was invisible to a watching peer until somebody took a step,
+// while drawing one appeared instantly. Kirk found that in the first walk.
+//
+// The bug was not the missing line. It was that "the sheet changed" and
+// "watchers are told" were two facts kept in step by hand, in two verbs that
+// are otherwise byte-identical here. A third writer — a swap, a disarm, loot
+// landing in a hand — would have been the same mistake a third time. So the
+// two facts are now one: this is the only place equipment is written, and
+// nothing can write it without telling.
+//
+// # Returns
+//
+//   - (patch, nil, nil)   the write landed, and watchers have been told
+//   - (nil, current, nil) a version race; caller should re-read and retry.
+//     NOTHING was written, so nobody is told.
+//   - (nil, nil, err)     the write failed
+//
+// A FAILING NOTIFICATION DOES NOT FAIL THE WRITE. The sheet is durable by
+// then; returning an error would tell the client its equip failed and invite a
+// retry that writes again. The cost instead is that watchers keep the picture
+// they had until the next sight refresh — which is where this whole thing
+// started, so it degrades to yesterday rather than to broken. Logged, never
+// swallowed.
+func (o *Orchestrator) writeEquipment(
+	ctx context.Context, in *equipmentWriteInput,
+) (*characterrepo.PatchEquipmentOutput, *characterrepo.GetOutput, error) {
+	patch, err := o.characterRepo.PatchEquipment(ctx, characterrepo.PatchEquipmentInput{
+		CharacterID:            in.CharacterID,
+		ExpectedVersion:        in.Current.Version,
+		ExpectedEquipmentSlots: maps.Clone(in.Current.Character.Data.EquipmentSlots),
+		EquipmentSlots:         in.Slots,
+		ArmorClass:             in.ArmorClass,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to patch character equipment: %w", err)
+	}
+	if patch == nil || patch.Character == nil || patch.Character.Data == nil {
+		return nil, nil, fmt.Errorf(
+			"failed to patch character equipment: repository returned no character data")
+	}
+	if !patch.Applied {
+		return nil, &characterrepo.GetOutput{Character: patch.Character, Version: patch.Version}, nil
+	}
+
+	if nerr := o.notifyAppearance(ctx, patch.Character.Data, in.CharacterID); nerr != nil {
+		slog.WarnContext(ctx, "character: watchers not told of an equipment change",
+			"character_id", in.CharacterID, "slot", in.Slot, "error", nerr)
+	}
+
+	return patch, nil, nil
 }

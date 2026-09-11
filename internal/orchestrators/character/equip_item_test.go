@@ -872,3 +872,74 @@ func (s *EquipItemTestSuite) TestEquipItem_ANotifierFailureDoesNotFailTheEquip()
 	s.Require().NotNil(out)
 	s.Len(s.notified.calls, 1, "and it was attempted")
 }
+
+// TestUnequipItem_TellsWatchersTheAppearanceChanged is the regression for the
+// half that was missing.
+//
+// Equipping told watchers and unequipping did not, so drawing a weapon
+// appeared instantly to a peer while putting one away stayed invisible until
+// somebody took a step — found on the first walk. Both verbs now write through
+// one path, so this and its equip twin are asserting the same line.
+func (s *EquipItemTestSuite) TestUnequipItem_TellsWatchersTheAppearanceChanged() {
+	entity := s.fighterWithLongswordAndShield()
+	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotMainHand: "longsword"}
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
+	s.mockCharacterRepo.EXPECT().
+		PatchEquipment(s.ctx, gomock.Any()).
+		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
+			return s.appliedPatch(entity, input), nil
+		})
+
+	_, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
+		CharacterID: s.testCharacterID, Slot: character.SlotMainHand,
+	})
+	s.Require().NoError(err)
+
+	s.Require().Len(s.notified.calls, 1, "putting a weapon away is a change watchers can see")
+	s.Equal(s.testCharacterID, s.notified.calls[0].CharacterID)
+	s.Equal(entity.Data.PlayerID, s.notified.calls[0].PlayerID)
+}
+
+// A LOSING VERSION RACE TELLS NOBODY, AND THE WINNING RETRY TELLS ONCE.
+//
+// This is the guard the single write path actually implements: the first
+// attempt is rejected on its version, nothing is written, and watchers hear
+// nothing about it. The retry lands and they hear once. Notifying on the
+// rejected attempt would send every watcher to re-read a change that never
+// happened; notifying twice would do it again for one that happened once.
+func (s *EquipItemTestSuite) TestEquipItem_AVersionRaceTellsNobodyUntilTheWriteLands() {
+	entity := s.fighterWithLongswordAndShield()
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity, Version: "version-before-combat"}, nil)
+
+	latestData := *entity.Data
+	latestData.HitPoints = 7
+	latestData.EquipmentSlots = maps.Clone(entity.Data.EquipmentSlots)
+	latest := &entities.Character{Data: &latestData}
+
+	gomock.InOrder(
+		s.mockCharacterRepo.EXPECT().
+			PatchEquipment(s.ctx, gomock.Any()).
+			DoAndReturn(func(_ context.Context, _ characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
+				return &characterrepo.PatchEquipmentOutput{
+					Character: latest, Version: "version-after-combat", Applied: false,
+				}, nil
+			}),
+		s.mockCharacterRepo.EXPECT().
+			PatchEquipment(s.ctx, gomock.Any()).
+			DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
+				return s.appliedPatch(latest, input), nil
+			}),
+	)
+
+	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
+		CharacterID: s.testCharacterID, ItemID: "longsword", Slot: character.SlotMainHand,
+	})
+	s.Require().NoError(err)
+
+	s.Len(s.notified.calls, 1,
+		"the rejected attempt wrote nothing and said nothing; the retry wrote once and said once")
+}

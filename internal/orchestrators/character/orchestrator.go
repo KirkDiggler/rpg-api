@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"strings"
 
@@ -943,40 +942,21 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 			return nil, characterDataUnavailable(fmt.Errorf("compute effective AC: %w", acErr))
 		}
 
-		patch, patchErr := o.characterRepo.PatchEquipment(ctx, characterrepo.PatchEquipmentInput{
-			CharacterID:            input.CharacterID,
-			ExpectedVersion:        current.Version,
-			ExpectedEquipmentSlots: maps.Clone(current.Character.Data.EquipmentSlots),
-			EquipmentSlots:         maps.Clone(char.ToData().EquipmentSlots),
-			ArmorClass:             breakdown.Total,
+		patch, retry, patchErr := o.writeEquipment(ctx, &equipmentWriteInput{
+			CharacterID: input.CharacterID,
+			Slot:        input.Slot,
+			Current:     current,
+			Slots:       maps.Clone(char.ToData().EquipmentSlots),
+			ArmorClass:  breakdown.Total,
 		})
 		if patchErr != nil {
-			return nil, fmt.Errorf("failed to patch character equipment: %w", patchErr)
+			return nil, patchErr
 		}
-		if patch == nil || patch.Character == nil || patch.Character.Data == nil {
-			return nil, fmt.Errorf("failed to patch character equipment: repository returned no character data")
-		}
-		if !patch.Applied {
-			current = &characterrepo.GetOutput{Character: patch.Character, Version: patch.Version}
+		if patch == nil {
+			// A version race: the stored slots moved under us. Re-read and
+			// try again — nothing was written, so nobody is told.
+			current = retry
 			continue
-		}
-
-		// THE SHEET IS WRITTEN; NOW TELL WHOEVER CAN SEE IT. After the
-		// patch applied, never before: a notification for a write that then
-		// failed its version check would send watchers to re-read a change
-		// that never happened.
-		//
-		// A FAILURE HERE DOES NOT FAIL THE EQUIP. The write succeeded and is
-		// durable; returning an error now would tell the client its equip
-		// failed and invite a retry that writes again. What it costs instead
-		// is that watchers keep the picture they had until the next sight
-		// refresh — which is exactly the behaviour this notification was
-		// added to improve on, so the degradation is to yesterday rather
-		// than to something broken. Logged with both ids so it is visible
-		// rather than silent.
-		if err := o.notifyAppearance(ctx, patch.Character.Data, input.CharacterID); err != nil {
-			slog.WarnContext(ctx, "character: watchers not told of an equipment change",
-				"character_id", input.CharacterID, "slot", input.Slot, "error", err)
 		}
 
 		return &EquipItemOutput{
@@ -1044,21 +1024,20 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 			return nil, characterDataUnavailable(fmt.Errorf("compute effective AC: %w", acErr))
 		}
 
-		patch, patchErr := o.characterRepo.PatchEquipment(ctx, characterrepo.PatchEquipmentInput{
-			CharacterID:            input.CharacterID,
-			ExpectedVersion:        current.Version,
-			ExpectedEquipmentSlots: maps.Clone(current.Character.Data.EquipmentSlots),
-			EquipmentSlots:         maps.Clone(char.ToData().EquipmentSlots),
-			ArmorClass:             breakdown.Total,
+		patch, retry, patchErr := o.writeEquipment(ctx, &equipmentWriteInput{
+			CharacterID: input.CharacterID,
+			Slot:        input.Slot,
+			Current:     current,
+			Slots:       maps.Clone(char.ToData().EquipmentSlots),
+			ArmorClass:  breakdown.Total,
 		})
 		if patchErr != nil {
-			return nil, fmt.Errorf("failed to patch character equipment: %w", patchErr)
+			return nil, patchErr
 		}
-		if patch == nil || patch.Character == nil || patch.Character.Data == nil {
-			return nil, fmt.Errorf("failed to patch character equipment: repository returned no character data")
-		}
-		if !patch.Applied {
-			current = &characterrepo.GetOutput{Character: patch.Character, Version: patch.Version}
+		if patch == nil {
+			// A version race: the stored slots moved under us. Re-read and
+			// try again — nothing was written, so nobody is told.
+			current = retry
 			continue
 		}
 
