@@ -54,6 +54,13 @@ func (h *Handler) Cast(
 		DeclarationID: req.GetDeclarationId(),
 		Target:        req.GetTarget(), //nolint:staticcheck // Required deprecated scalar request compatibility.
 		Targets:       targets,
+		// A REFERENCE, copied and not read. The cell is where the caster
+		// pointed a shape they never computed: which shape it is, whether
+		// the caster's own cell is a legal aim, and whether this declaration
+		// needed a cell at all are rules, and session refuses on every one of
+		// them. Nothing here inspects the cell, exactly as nothing here
+		// inspects the path a Move carries.
+		Cell: positionPtrFromProto(req.GetCell()),
 	})
 	if err != nil {
 		return nil, statusError(err)

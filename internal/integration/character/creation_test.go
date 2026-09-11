@@ -1622,6 +1622,7 @@ const (
 	trueStrikeRef     = "dnd5e:spells:true-strike"
 	viciousMockeryRef = "dnd5e:spells:vicious-mockery"
 	baneRef           = "dnd5e:spells:bane"
+	thunderwaveRef    = "dnd5e:spells:thunderwave"
 )
 
 // TestCreateBard_FinalizesChoosingTwoCantrips is the creation half of the
@@ -1778,7 +1779,12 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	s.Require().NotNil(spellChoice, "a bard is asked for the provider's leveled spell choice")
 	s.Equal(int32(1), spellChoice.GetChooseCount())
 	s.Equal(int32(1), spellChoice.GetSpellOptions().GetSpellLevel())
-	s.Equal([]string{baneRef}, spellChoice.GetSpellOptions().GetAvailableRefs())
+	// Membership, not the whole list: what the leveled pick offers is the
+	// rulebook's to widen, and Thunderwave arrived beside Bane as soon as the
+	// toolkit could compile it to a cast profile. How many a bard PICKS is a
+	// separate fact and is still asserted above.
+	s.Contains(spellChoice.GetSpellOptions().GetAvailableRefs(), baneRef)
+	s.Contains(spellChoice.GetSpellOptions().GetAvailableRefs(), thunderwaveRef)
 	s.Equal(dnd5ev1alpha1.SpellSelectionType_SPELL_SELECTION_TYPE_UNSPECIFIED,
 		spellChoice.GetSpellOptions().GetSelectionType(),
 		"API does not infer Known versus Spellbook until the provider authors that fact")

@@ -33,7 +33,16 @@ const (
 	// SpellSelection.spell_refs field takes.
 	bladeWardRef      = "dnd5e:spells:blade-ward"
 	viciousMockeryRef = "dnd5e:spells:vicious-mockery"
-	baneRef           = "dnd5e:spells:bane"
+	// THE LEVELED PICK TAKES EXACTLY ONE. The bard's level-1 spellbook
+	// requirement offers Bane and Thunderwave and validates
+	// len(chosen) == Count, so the sandbox fixture has one slot on it and
+	// spending it is a choice, not an addition. It goes to Thunderwave
+	// because Thunderwave is the only cast the sandbox can AIM -- the
+	// caster-edge cube that the cell on CastRequest exists to point -- and
+	// a fixture nobody can aim with cannot walk that seam. Bane's own
+	// coverage does not ride here: the Bane acceptance test builds its own
+	// bard through the normal draft service.
+	thunderwaveRef = "dnd5e:spells:thunderwave"
 )
 
 // CharacterRPC is the narrow CharacterService client surface used by Seed.
@@ -185,7 +194,7 @@ func seedBard(ctx context.Context, client CharacterRPC) error {
 				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
 				ChoiceId: "bard-spells-1",
 				Selection: &dnd5ev1alpha1.ChoiceData_Spells{Spells: &dnd5ev1alpha1.SpellSelection{
-					SpellRefs: []string{baneRef},
+					SpellRefs: []string{thunderwaveRef},
 				}},
 			},
 		},

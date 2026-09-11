@@ -45,6 +45,10 @@ func TestCreateSpellbookChoice_ProjectsBaneRequirementWithoutInventingSelectionM
 	require.Equal(t, "Choose 1 1st-level spell", got.GetDescription())
 	require.Equal(t, int32(1), got.GetChooseCount())
 	require.Equal(t, dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS, got.GetChoiceType())
+	// Equality is right HERE and membership is right in the test below: this
+	// one hands createSpellbookChoice its own one-spell requirement, so the
+	// whole list is the test's own input and pinning it pins the projection.
+	// The other reads the rulebook's real bard pick, which is free to widen.
 	require.Equal(t, []string{refs.Spells.Bane().String()}, got.GetSpellOptions().GetAvailableRefs())
 	require.Equal(t, int32(1), got.GetSpellOptions().GetSpellLevel())
 	require.Equal(t, dnd5ev1alpha1.SpellSelectionType_SPELL_SELECTION_TYPE_UNSPECIFIED,
@@ -63,7 +67,13 @@ func TestLoadAllClassChoices_ExposesBaneRequirement(t *testing.T) {
 	}
 
 	require.NotNil(t, spellChoice)
-	require.Equal(t, []string{refs.Spells.Bane().String()}, spellChoice.GetSpellOptions().GetAvailableRefs())
+	// MEMBERSHIP, not the whole list. This reads the rulebook's real bard
+	// pick, and which spells it OFFERS is the rulebook's to widen --
+	// Thunderwave joined Bane the moment the toolkit could compile it to a
+	// cast profile. Equality here would tax every such addition while proving
+	// nothing this test is about, which is that the pool crosses as refs.
+	require.Contains(t, spellChoice.GetSpellOptions().GetAvailableRefs(), refs.Spells.Bane().String())
+	require.Contains(t, spellChoice.GetSpellOptions().GetAvailableRefs(), refs.Spells.Thunderwave().String())
 }
 
 func (s *ConvertersTestSuite) TestConvertClassDataToProto_Fighter() {

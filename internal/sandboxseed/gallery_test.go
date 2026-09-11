@@ -288,7 +288,8 @@ func TestSeed_BardAsksForBothCantripsAndTheSupportedLevelOneSpell(t *testing.T) 
 
 	require.Equal(t, []string{bladeWardRef, viciousMockeryRef}, cantrips,
 		"one self-target cast and one creature-target cast, so both shapes are reachable")
-	require.Equal(t, []string{baneRef}, leveled)
+	require.Contains(t, leveled, thunderwaveRef,
+		"the walk needs an aimed cast, and Thunderwave is the only one the bard can learn at level 1")
 }
 
 func TestCloneGalleryCharacterPreservesToolkitAppearance(t *testing.T) {
@@ -812,7 +813,7 @@ type galleryFakeClient struct {
 func newGalleryFakeClient() *galleryFakeClient {
 	return &galleryFakeClient{
 		knownCantrips: []string{bladeWardRef, viciousMockeryRef},
-		knownSpells:   []string{baneRef},
+		knownSpells:   []string{thunderwaveRef},
 	}
 }
 
@@ -926,7 +927,7 @@ func TestSeed_RefusesABardThatFinalizedKnowingNothing(t *testing.T) {
 		spells   []string
 		want     string
 	}{
-		{"no cantrips", nil, []string{baneRef}, "no known cantrips"},
+		{"no cantrips", nil, []string{thunderwaveRef}, "no known cantrips"},
 		{"no spells", []string{bladeWardRef}, nil, "no known spells"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
