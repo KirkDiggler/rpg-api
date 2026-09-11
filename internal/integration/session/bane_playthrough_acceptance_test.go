@@ -25,8 +25,9 @@ import (
 )
 
 const (
-	baneSpellRef        = "dnd5e:spells:bane"
-	thunderwaveSpellRef = "dnd5e:spells:thunderwave"
+	baneSpellRef              = "dnd5e:spells:bane"
+	thunderwaveSpellRef       = "dnd5e:spells:thunderwave"
+	dissonantWhispersSpellRef = "dnd5e:spells:dissonant-whispers"
 )
 
 func newCharacterCreationHandler(t *testing.T, h *acceptanceHarness) *characterhandler.Handler {
@@ -126,7 +127,7 @@ func createFinalizedBaneBard(t *testing.T, h *acceptanceHarness, playerID string
 				// and Thunderwave rides along only because the pick refuses a
 				// bard who left the second slot empty.
 				Selection: &dnd5epb.ChoiceData_Spells{Spells: &dnd5epb.SpellSelection{SpellRefs: []string{
-					baneSpellRef, thunderwaveSpellRef,
+					baneSpellRef, thunderwaveSpellRef, dissonantWhispersSpellRef,
 				}}},
 			},
 		},

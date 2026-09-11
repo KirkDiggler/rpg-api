@@ -826,7 +826,10 @@ func (s *SessionStackSuite) TestStartEncounter_FirstAdmissionPersistsCompleteLon
 	var opportunity conditions.OpportunityAttackConditionData
 	s.Require().NoError(json.Unmarshal(
 		effectWithRef(s.T(), gotFighter.Conditions, refs.Conditions.OpportunityAttack()), &opportunity))
-	s.False(opportunity.UsedThisTurn, "the retained reaction meter resets")
+	// The reaction's meter is the character's action economy, cleared
+	// above; the condition carries no meter of its own any more
+	// (rpg-project#437). What survives the rest is the seat.
+	s.Equal("char-p1", opportunity.MemberID, "the retained reaction survives, still seated on its holder")
 	s.Nil(effectWithRefOrNil(gotFighter.Conditions, refs.Conditions.Prone()),
 		"the temporary condition removes itself")
 	s.Equal(backgrounds.Soldier, gotFighter.BackgroundID)
@@ -918,9 +921,7 @@ func (s *SessionStackSuite) spentFighter(id, playerID string) (*entities.Charact
 		Ref: refs.Conditions.FightingStyleDefense(), MemberID: id,
 	})
 	s.Require().NoError(err)
-	opportunity, err := (&conditions.OpportunityAttackCondition{
-		MemberID: id, UsedThisTurn: true,
-	}).ToJSON()
+	opportunity, err := conditions.NewOpportunityAttackCondition(id).ToJSON()
 	s.Require().NoError(err)
 	prone, err := conditions.NewProneCondition(id).ToJSON()
 	s.Require().NoError(err)
