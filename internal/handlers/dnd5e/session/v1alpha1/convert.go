@@ -854,8 +854,15 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		// MEMBERS, not items -- ids the client already holds from its
 		// roster -- so there is nothing here in the rules' vocabulary that
 		// needs turning into the manifest's.
+		//
+		// ALL THREE LISTS CROSS THE SAME WAY. `changed` is a peer still in
+		// view whose appearance moved under the recipient; it is neither
+		// arriving nor leaving, and it is deliberately not accompanied by
+		// WHAT changed. Saying a weapon was drawn would hand this recipient
+		// a fact rather than the news that their own view is stale, and the
+		// fact is exactly what an illusion has to be able to lie about.
 		evt.Body = &sessionpb.Event_Sighted{Sighted: &sessionpb.Sighted{
-			Gained: b.Gained, Lost: b.Lost,
+			Gained: b.Gained, Lost: b.Lost, Changed: b.Changed,
 		}}
 	case sdk.StanceChangedBody:
 		// Verbatim (rpg-project#375, design §6): the pair as the session
