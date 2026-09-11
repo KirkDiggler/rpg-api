@@ -8,6 +8,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
@@ -48,6 +49,57 @@ func TestCast_ForwardsDeprecatedScalarForProviderNormalization(t *testing.T) {
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.Cast(ctx, &sessionpb.CastRequest{
 		Session: "sess-1", Member: "bard-1", DeclarationId: "decl-bane-1", Target: "goblin-1",
+	})
+	require.NoError(t, err)
+}
+
+// A CELL cast carries the cell the caster pointed at, and the handler is the
+// only place the wire's Position becomes the SDK's.
+//
+// The handler does not ask what the cell MEANS. Which shape is aimed, whether
+// the caster's own cell is legal, whether a cell was required at all -- every
+// one of those is a rule, and session refuses on all of them. This copies a
+// reference through, exactly as it already does for a path on Move.
+func TestCast_ForwardsTheAimedCell(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Cast(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, in *sdk.CastInput) (*sdk.CastOutput, error) {
+			require.NotNil(t, in.Cell, "a cast that named a cell must reach the SDK carrying it")
+			require.Equal(t, spatial.Position{X: 4, Y: 2}, *in.Cell)
+			return &sdk.CastOutput{}, nil
+		},
+	)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	_, err := h.Cast(ctx, &sessionpb.CastRequest{
+		Session: "sess-1", Member: "bard-1", DeclarationId: "decl-thunderwave-1",
+		Cell: &sessionpb.Position{X: 4, Y: 2},
+	})
+	require.NoError(t, err)
+}
+
+// An unset cell stays nil rather than becoming the origin.
+//
+// (0,0) is a real cell on this grid, so a zero Position cannot stand in for
+// "no cell was named" -- the two would be indistinguishable and session's
+// refusal for a CELL cast with no cell could never fire. The pointer is what
+// makes the absence sayable.
+func TestCast_LeavesTheCellNilWhenTheRequestNamesNone(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Cast(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, in *sdk.CastInput) (*sdk.CastOutput, error) {
+			require.Nil(t, in.Cell, "an unset cell is absent, not the origin")
+			return &sdk.CastOutput{}, nil
+		},
+	)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	_, err := h.Cast(ctx, &sessionpb.CastRequest{
+		Session: "sess-1", Member: "bard-1", DeclarationId: "decl-bane-1", Targets: []string{"goblin-1"},
 	})
 	require.NoError(t, err)
 }

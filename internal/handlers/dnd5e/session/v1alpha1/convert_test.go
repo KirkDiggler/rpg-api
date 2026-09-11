@@ -24,6 +24,24 @@ func TestPositionFromProto_Nil_ReturnsZeroValue(t *testing.T) {
 	require.Equal(t, spatial.Position{}, positionFromProto(nil))
 }
 
+// The optional form must keep absence and the origin apart.
+//
+// If an unset field collapsed to (0,0) the two would be the same value on the
+// way in, and every rule below that refuses a missing cell would instead be
+// handed the middle of the map. The pointer is the only thing carrying that
+// distinction across the boundary.
+func TestPositionPtrFromProto_SeparatesAbsenceFromTheOrigin(t *testing.T) {
+	require.Nil(t, positionPtrFromProto(nil), "an unset field is absent")
+
+	atOrigin := positionPtrFromProto(&sessionpb.Position{X: 0, Y: 0})
+	require.NotNil(t, atOrigin, "the origin is a cell somebody can point at")
+	require.Equal(t, spatial.Position{X: 0, Y: 0}, *atOrigin)
+
+	elsewhere := positionPtrFromProto(&sessionpb.Position{X: 4, Y: -2})
+	require.NotNil(t, elsewhere)
+	require.Equal(t, spatial.Position{X: 4, Y: -2}, *elsewhere)
+}
+
 func TestMemberKindToProto(t *testing.T) {
 	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_PLAYER, memberKindToProto(sdk.KindPlayer))
 	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_MONSTER, memberKindToProto(sdk.KindMonster))
@@ -95,6 +113,8 @@ func TestTargetKindToProto(t *testing.T) {
 	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_NONE, targetKindToProto(sdk.TargetNone))
 	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_MEMBER, targetKindToProto(sdk.TargetMember))
 	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_PATH, targetKindToProto(sdk.TargetPath))
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_AREA, targetKindToProto(sdk.TargetArea))
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_CELL, targetKindToProto(sdk.TargetCell))
 	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_UNSPECIFIED, targetKindToProto(sdk.TargetKind("bogus")))
 }
 
@@ -932,6 +952,62 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 		require.Nil(t, result.GetConditionApplied())
 		require.Nil(t, result.GetConditionRemoved())
 	})
+
+	// A creature the blast MOVED is one more delivered effect, and it reaches
+	// a client the same way damage does: as an arm of ActivationResult on the
+	// stream, not as a field on the cast's own acknowledgement.
+	//
+	// It is not the movement. Every cell crossed is already its own beat with
+	// the cause on it; this is the line that says how far and what got in the
+	// way, which a reader would otherwise have to reconstruct by correlating
+	// those beats by hand.
+	t.Run("MoveImposed", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventActivationResult,
+			Body: sdk.ActivationResultBody{
+				Actor: "bard-1",
+				MoveImposed: &sdk.MoveImposedBody{
+					Target: "skeleton-1", SourceRef: "dnd5e:spells:thunderwave", SourceName: "Thunderwave",
+					MovedCells: 1, StoppedBy: "a pillar",
+				},
+			},
+		})
+
+		result := got.GetActivationResult()
+		require.NotNil(t, result)
+		require.Equal(t, "bard-1", result.GetActor())
+		moved := result.GetMoveImposed()
+		require.NotNil(t, moved)
+		require.Equal(t, "skeleton-1", moved.GetTarget())
+		require.Equal(t, int32(1), moved.GetMovedCells())
+		require.Equal(t, "a pillar", moved.GetStoppedBy())
+		require.Nil(t, result.GetHealingApplied())
+		require.Nil(t, result.GetConditionApplied())
+		require.Nil(t, result.GetDamageApplied())
+	})
+
+	// ZERO CELLS IS A RESULT, NOT AN ABSENCE. A creature already against the
+	// wall is pushed nowhere, and the caster is owed that sentence: the blast
+	// landed and the wall is why nothing moved. The wire field is unset at
+	// zero by proto3's own rules, so the arm itself has to be present for a
+	// client to tell "pushed nowhere" from "not pushed".
+	t.Run("MoveImposed pinned against the fold", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventActivationResult,
+			Body: sdk.ActivationResultBody{
+				Actor: "bard-1",
+				MoveImposed: &sdk.MoveImposedBody{
+					Target: "skeleton-2", SourceRef: "dnd5e:spells:thunderwave", SourceName: "Thunderwave",
+					MovedCells: 0, StoppedBy: "a wall",
+				},
+			},
+		})
+
+		moved := got.GetActivationResult().GetMoveImposed()
+		require.NotNil(t, moved, "a push that moved nobody is still a push that happened")
+		require.Equal(t, int32(0), moved.GetMovedCells())
+		require.Equal(t, "a wall", moved.GetStoppedBy())
+	})
 }
 
 func TestActivationResultVariantConverters_NilSafe(t *testing.T) {
@@ -939,6 +1015,7 @@ func TestActivationResultVariantConverters_NilSafe(t *testing.T) {
 	require.Nil(t, conditionAppliedBodyToProto(nil))
 	require.Nil(t, conditionRemovedBodyToProto(nil))
 	require.Nil(t, capacityGrantedBodyToProto(nil))
+	require.Nil(t, moveImposedBodyToProto(nil))
 }
 
 func TestActivationEventBody_NilOrMalformedStaysNil(t *testing.T) {
@@ -954,6 +1031,16 @@ func TestActivationEventBody_NilOrMalformedStaysNil(t *testing.T) {
 				Actor:            "alice",
 				ConditionApplied: &sdk.ConditionAppliedBody{Target: "alice"},
 				CapacityGranted:  &sdk.CapacityGrantedBody{Member: "alice"},
+			},
+		},
+		{
+			name: "a moved result beside another result",
+			body: sdk.ActivationResultBody{
+				Actor:       "alice",
+				MoveImposed: &sdk.MoveImposedBody{Target: "bob"},
+				DamageApplied: &sdk.DamageAppliedBody{
+					Target: "bob", SourceRef: "dnd5e:spells:thunderwave",
+				},
 			},
 		},
 	}
@@ -1467,6 +1554,101 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 		require.Len(t, r.GetBoundaries(), 1)
 		require.True(t, r.GetBoundaries()[0].GetBlocksLineOfSight())
 	})
+
+	// Sighted: a change in ONE recipient's own perception, passed through as
+	// member ids and nothing else. The names are the whole body on purpose --
+	// what the recipient now perceives about them is already answered,
+	// member-scoped, by GetView, and minting it here would be a second
+	// computation of that same answer.
+	t.Run("Sighted_CarriesNamesVerbatim", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{Gained: []string{"goblin-2", "orc-1"}, Lost: []string{"wolf-3"}},
+		})
+		require.Equal(t, sessionpb.EventKind_EVENT_KIND_SIGHTED, got.GetKind())
+
+		sighted := got.GetSighted()
+		require.NotNil(t, sighted)
+		require.Equal(t, []string{"goblin-2", "orc-1"}, sighted.GetGained(),
+			"member ids verbatim, in the order the session settled them")
+		require.Equal(t, []string{"wolf-3"}, sighted.GetLost())
+	})
+
+	// EITHER HALF MAY BE ABSENT, and the seam does not invent the other. A
+	// client reads an empty Gained as "nobody arrived" rather than wondering
+	// whether the question was asked -- so this side must not turn an absent
+	// list into a present empty one, nor the reverse.
+	t.Run("Sighted_TheHalfThatDidNotHappenStaysAbsent", func(t *testing.T) {
+		arrived := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{Gained: []string{"goblin-2"}},
+		}).GetSighted()
+		require.Equal(t, []string{"goblin-2"}, arrived.GetGained())
+		require.Empty(t, arrived.GetLost(), "nobody left, so nothing is named as leaving")
+
+		departed := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{Lost: []string{"wolf-3"}},
+		}).GetSighted()
+		require.Empty(t, departed.GetGained())
+		require.Equal(t, []string{"wolf-3"}, departed.GetLost())
+	})
+
+	// NO ASSET REF IS MINTED HERE, unlike the equipment this seam does mint
+	// for (assetref.Item). This beat names MEMBERS, not items -- ids the
+	// client already holds from its roster -- so there is nothing in the
+	// rules' vocabulary needing translation into the manifest's. Pinned so a
+	// future "be consistent, namespace everything" pass has to argue with a
+	// test.
+	// THE THIRD LIST: a peer still in view whose appearance moved under the
+	// recipient. It crosses beside the two transitions rather than instead of
+	// them, because one pass can carry all three.
+	t.Run("Sighted_CarriesTheChangedHalf", func(t *testing.T) {
+		sighted := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{Changed: []string{"goblin-2"}},
+		}).GetSighted()
+		require.Equal(t, []string{"goblin-2"}, sighted.GetChanged())
+		require.Empty(t, sighted.GetGained(), "nobody arrived — it was already in view")
+		require.Empty(t, sighted.GetLost())
+
+		all := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{
+				Gained: []string{"orc-1"}, Lost: []string{"wolf-3"}, Changed: []string{"goblin-2"},
+			},
+		}).GetSighted()
+		require.Equal(t, []string{"orc-1"}, all.GetGained())
+		require.Equal(t, []string{"wolf-3"}, all.GetLost())
+		require.Equal(t, []string{"goblin-2"}, all.GetChanged(),
+			"three independent lists, and one pass can carry all of them")
+	})
+
+	// AND IT SAYS NOTHING ABOUT WHAT CHANGED. There is no item, slot or verb
+	// anywhere on this body — only a name. Pinned so the next person tempted
+	// to "just include the weapon, the client needs it anyway" has to argue
+	// with a test rather than with a comment: the fact is exactly what an
+	// illusion must be able to lie about, and a fact on the wire is true for
+	// everybody by construction.
+	t.Run("Sighted_SaysWhoChangedAndNeverWhat", func(t *testing.T) {
+		sighted := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{Changed: []string{"goblin-2"}},
+		}).GetSighted()
+
+		require.Equal(t, []string{"goblin-2"}, sighted.GetChanged())
+		require.Equal(t, 3, sighted.ProtoReflect().Descriptor().Fields().Len(),
+			"gained, lost, changed — and nowhere to put an item")
+	})
+
+	t.Run("Sighted_MemberIdsAreNotAssetRefs", func(t *testing.T) {
+		sighted := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{Gained: []string{"goblin-2"}},
+		}).GetSighted()
+		require.Equal(t, "goblin-2", sighted.GetGained()[0],
+			"a member id crosses as itself, not as dnd5e:item:goblin-2")
+	})
 }
 
 // TestEventToProto_UntypedKind_BodyStaysNilPayloadCarries pins the other
@@ -1799,6 +1981,7 @@ var sdkTargetKinds = []sdk.TargetKind{
 	sdk.TargetMember,
 	sdk.TargetPath,
 	sdk.TargetArea,
+	sdk.TargetCell,
 }
 
 // TestEverySDKTargetKindReachesTheWire asserts no selector shape degrades to
@@ -1846,6 +2029,16 @@ func TestEveryProtoTargetKindIsProducedBySomeSDKKind(t *testing.T) {
 // rather than only by the sweeps above.
 func TestTargetKindAreaCrossesTheSeam(t *testing.T) {
 	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_AREA, targetKindToProto(sdk.TargetArea))
+}
+
+// TestTargetKindCellCrossesTheSeam pins the shape an AIMED cast announces.
+//
+// CELL is the kind a client cannot guess at. AREA fires the moment it is
+// armed; CELL has to wait for a ground click, and a client that reads
+// UNSPECIFIED here would fire the cube at nothing. The sweeps above would
+// catch it, this says which value it is.
+func TestTargetKindCellCrossesTheSeam(t *testing.T) {
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_CELL, targetKindToProto(sdk.TargetCell))
 }
 
 // sdkUnresolvedReasons is every reason the SDK declares. Hand-kept, with the

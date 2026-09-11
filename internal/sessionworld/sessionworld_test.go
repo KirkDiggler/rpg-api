@@ -156,8 +156,8 @@ func (s *ReferenceTombSuite) TestTheAuthorsWordsAboutMonstersSurviveTheCompile()
 		}
 	}
 
-	s.Equal(2, targeting["lowest-health"], "the garrison's authored targeting is carried")
-	s.Equal(1, targeting["closest"], "and so is the captain's")
+	s.Equal(1, targeting["lowest-health"], "the skeleton's authored targeting is carried")
+	s.Equal(2, targeting["closest"], "and so are the zombie's and the captain's")
 	s.Equal(1, bosses, "exactly one boss")
 }
 
@@ -179,8 +179,11 @@ func (s *ReferenceTombSuite) TestEveryMonsterIsNamedAfterWhatItIs() {
 		byID[m.MemberID] = m
 	}
 
+	// The hall holds one zombie and one skeleton, so BOTH are numbered 1 —
+	// which is the per-ref rule stated more plainly than two skeletons ever
+	// could: numbering across the dungeon would have made one of them 2.
+	s.Contains(byID, "zombie-1")
 	s.Contains(byID, "skeleton-1")
-	s.Contains(byID, "skeleton-2")
 	s.Contains(byID, "skeleton-captain-1", "the captain is numbered within its OWN ref, not across the dungeon")
 	s.True(byID["skeleton-captain-1"].Boss)
 }

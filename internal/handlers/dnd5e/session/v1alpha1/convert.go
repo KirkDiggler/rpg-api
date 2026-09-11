@@ -34,6 +34,23 @@ func positionFromProto(p *sessionpb.Position) spatial.Position {
 	return spatial.Position{X: p.GetX(), Y: p.GetY()}
 }
 
+// positionPtrFromProto mirrors an OPTIONAL wire Position onto a pointer, which
+// is what the SDK takes wherever a position may legitimately be absent.
+//
+// A nil proto position stays nil rather than becoming the origin, and that is
+// the whole reason this exists beside positionFromProto: (0,0) is a real cell
+// on this grid, so the zero Position cannot also mean "none was named". Fold
+// the two together and a cast that pointed at nothing becomes a cast that
+// pointed at the middle of the map, which no layer below could ever refuse.
+// Whether absence is LEGAL here is the SDK's ruling, not this converter's.
+func positionPtrFromProto(p *sessionpb.Position) *spatial.Position {
+	if p == nil {
+		return nil
+	}
+	pos := positionFromProto(p)
+	return &pos
+}
+
 // moneyToProto mirrors currency.Money onto the wire Money.
 func moneyToProto(m currency.Money) *sessionpb.Money {
 	return &sessionpb.Money{Copper: int32(m.Copper)}
@@ -636,6 +653,8 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED
 	case sdk.EventRegionRevealed:
 		return sessionpb.EventKind_EVENT_KIND_REGION_REVEALED
+	case sdk.EventSighted:
+		return sessionpb.EventKind_EVENT_KIND_SIGHTED
 	// Holdings (rpg-project#368). Each kind is a STATEMENT -- looted, held,
 	// dropped -- because a verb and a beat are named by what the record will
 	// say. Nothing here says "took": Take is reserved for the act that lands
@@ -838,6 +857,29 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		// reaches the looter alone, as their own DOOR_REVEALED.
 		evt.Body = &sessionpb.Event_Looted{Looted: &sessionpb.Looted{
 			Looter: b.Looter, Body: b.Body,
+		}}
+	case sdk.SightedBody:
+		// PASSED THROUGH, NAMES AND NOTHING ELSE -- and the nothing else is
+		// the design rather than an omission this seam should correct. What
+		// the recipient now perceives about these members (cell, standing,
+		// what is in their hands) is already answered, member-scoped, by
+		// GetView; minting it here would be a SECOND computation of that
+		// same answer, and two computations of one truth is how a patch and
+		// a projection learn to disagree. The client re-reads its view.
+		//
+		// No assetref minting either, for the same reason. This beat names
+		// MEMBERS, not items -- ids the client already holds from its
+		// roster -- so there is nothing here in the rules' vocabulary that
+		// needs turning into the manifest's.
+		//
+		// ALL THREE LISTS CROSS THE SAME WAY. `changed` is a peer still in
+		// view whose appearance moved under the recipient; it is neither
+		// arriving nor leaving, and it is deliberately not accompanied by
+		// WHAT changed. Saying a weapon was drawn would hand this recipient
+		// a fact rather than the news that their own view is stale, and the
+		// fact is exactly what an illusion has to be able to lie about.
+		evt.Body = &sessionpb.Event_Sighted{Sighted: &sessionpb.Sighted{
+			Gained: b.Gained, Lost: b.Lost, Changed: b.Changed,
 		}}
 	case sdk.StanceChangedBody:
 		// Verbatim (rpg-project#375, design §6): the pair as the session
@@ -1092,10 +1134,46 @@ func activationResultBodyToProto(body sdk.ActivationResultBody) *sessionpb.Activ
 			DamageApplied: damageAppliedBodyToProto(body.DamageApplied),
 		}
 	}
+	// A creature the effect MOVED is a result arm for the same reason damage
+	// is one: a push is a thing an effect delivered, and ActivationResult is
+	// already where delivered effects are read. It is deliberately NOT the
+	// movement -- every cell crossed is its own beat carrying the cause, and
+	// those are what a client animates. This is the one line saying how far
+	// and what stopped it. It counts toward the one-arm invariant like every
+	// other arm.
+	if body.MoveImposed != nil {
+		populated++
+		result.Result = &sessionpb.ActivationResult_MoveImposed{
+			MoveImposed: moveImposedBodyToProto(body.MoveImposed),
+		}
+	}
 	if populated != 1 {
 		return nil
 	}
 	return result
+}
+
+// moveImposedBodyToProto mirrors an imposed move field-for-field.
+//
+// The wire message is narrower than the SDK body: SourceRef and SourceName
+// have no field on it, so what moved the creature does not cross here. That is
+// a gap in the contract rather than something this converter may paper over --
+// deriving a name from the ref, or borrowing the enclosing cast's, would be
+// inventing a fact the provider authored elsewhere. Recorded on the PR.
+func moveImposedBodyToProto(body *sdk.MoveImposedBody) *sessionpb.MoveImposed {
+	if body == nil {
+		return nil
+	}
+
+	return &sessionpb.MoveImposed{
+		Target: body.Target,
+		// ALWAYS WRITTEN, zero included. A creature pinned against a wall is
+		// pushed nowhere, and that is an outcome the caster is owed. proto3
+		// leaves the field off the wire at zero, which is exactly why the ARM
+		// has to be present: its presence is what says a push happened.
+		MovedCells: int32(body.MovedCells),
+		StoppedBy:  body.StoppedBy,
+	}
 }
 
 // healingAppliedBodyToProto mirrors a heal onto the wire without deriving one
@@ -1440,6 +1518,8 @@ func targetKindToProto(k sdk.TargetKind) sessionpb.TargetKind {
 		return sessionpb.TargetKind_TARGET_KIND_PATH
 	case sdk.TargetArea:
 		return sessionpb.TargetKind_TARGET_KIND_AREA
+	case sdk.TargetCell:
+		return sessionpb.TargetKind_TARGET_KIND_CELL
 	default:
 		return sessionpb.TargetKind_TARGET_KIND_UNSPECIFIED
 	}

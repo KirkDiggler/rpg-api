@@ -83,6 +83,10 @@ func (s *OrchestratorTestSuite) SetupTest() {
 		DiceService:      s.mockDiceService,
 		IDGenerator:      s.mockIDGen,
 		DraftIDGenerator: s.mockDraftIDGen,
+		// Not what these cases are about, and said out loud rather than
+		// left nil — the capability is required precisely so that "nobody
+		// is told" is a choice somebody wrote down.
+		AppearanceNotifier: NoAppearanceNotifier{},
 	}
 
 	var err error

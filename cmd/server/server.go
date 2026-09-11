@@ -206,6 +206,24 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create dice service: %w", err)
 	}
 
+	// BUILT AHEAD OF THE CHARACTER SERVICE, which is why these two sit here
+	// rather than beside the rest of their own wiring further down: the
+	// character service takes an AppearanceNotifier as a required
+	// capability, and the only thing that can answer "which live encounter
+	// is this player in" needs both of these. Neither depends on the
+	// character service in turn — the session orchestrator takes the
+	// character REPOSITORY — so there is no cycle to break, only an order to
+	// state.
+	sessionOrch, err := sessionorch.New(sessionorch.Config{
+		Redis:      redisClient,
+		Characters: charRepo,
+		TTL:        24 * time.Hour,
+	})
+	if err != nil {
+		return fmt.Errorf("session orchestrator: %w", err)
+	}
+	lobbyRepo := lobbyrepo.NewRedis(redisClient, lobbyTTL)
+
 	// Initialize services
 	characterService, err := character.New(&character.Config{
 		DraftRepo:        draftRepo,
@@ -213,6 +231,9 @@ func runServer(_ *cobra.Command, _ []string) error {
 		DiceService:      diceService,
 		IDGenerator:      idgen.NewUUID("char"),
 		DraftIDGenerator: idgen.NewUUID("draft"),
+		// An equip changes what watchers can SEE, and the lobby is the only
+		// index from a player to the encounter they are standing in.
+		AppearanceNotifier: lobbyorch.NewAppearanceNotifier(lobbyRepo, sessionOrch.Manager),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create character service: %w", err)
@@ -255,14 +276,6 @@ func runServer(_ *cobra.Command, _ []string) error {
 	// SDK -- the sole encounter-construction stack now that the old
 	// v1alpha2 encounter path (github.com/KirkDiggler/rpg-toolkit/encounter)
 	// has been removed. charRepo is shared with the rest of the stack.
-	sessionOrch, err := sessionorch.New(sessionorch.Config{
-		Redis:      redisClient,
-		Characters: charRepo,
-		TTL:        24 * time.Hour,
-	})
-	if err != nil {
-		return fmt.Errorf("session orchestrator: %w", err)
-	}
 	access, err := sessionaccess.New(charRepo, sessionOrch.Manager)
 	if err != nil {
 		return fmt.Errorf("session access: %w", err)
@@ -329,7 +342,6 @@ func runServer(_ *cobra.Command, _ []string) error {
 	// construction path. StartEncounter builds directly onto sessionOrch's
 	// Manager -- the session stack is the only stack now (rpg-project#227).
 	lobbyBroker := lobbyorch.NewBroker()
-	lobbyRepo := lobbyrepo.NewRedis(redisClient, lobbyTTL)
 	lobbyCfg := &lobbyorch.Config{
 		LobbyRepo:            lobbyRepo,
 		LobbyBroker:          lobbyBroker,
