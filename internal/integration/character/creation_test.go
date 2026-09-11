@@ -1617,12 +1617,13 @@ func monkClassChoices(optionID string, weapon dnd5ev1alpha1.Weapon) []*dnd5ev1al
 // same helper the handler uses would agree with itself no matter what the
 // string became.
 const (
-	bladeWardRef      = "dnd5e:spells:blade-ward"
-	thunderclapRef    = "dnd5e:spells:thunderclap"
-	trueStrikeRef     = "dnd5e:spells:true-strike"
-	viciousMockeryRef = "dnd5e:spells:vicious-mockery"
-	baneRef           = "dnd5e:spells:bane"
-	thunderwaveRef    = "dnd5e:spells:thunderwave"
+	bladeWardRef         = "dnd5e:spells:blade-ward"
+	thunderclapRef       = "dnd5e:spells:thunderclap"
+	trueStrikeRef        = "dnd5e:spells:true-strike"
+	viciousMockeryRef    = "dnd5e:spells:vicious-mockery"
+	baneRef              = "dnd5e:spells:bane"
+	thunderwaveRef       = "dnd5e:spells:thunderwave"
+	dissonantWhispersRef = "dnd5e:spells:dissonant-whispers"
 )
 
 // TestCreateBard_FinalizesChoosingTwoCantrips is the creation half of the
@@ -1736,7 +1737,7 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
 				ChoiceId: "bard-spells-1",
 				Selection: &dnd5ev1alpha1.ChoiceData_Spells{Spells: &dnd5ev1alpha1.SpellSelection{
-					SpellRefs: []string{baneRef, thunderwaveRef},
+					SpellRefs: []string{baneRef, thunderwaveRef, dissonantWhispersRef},
 				}},
 			},
 		},
@@ -1777,7 +1778,12 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	s.Empty(cantripChoice.GetSpellOptions().GetAvailable(), //nolint:staticcheck // Asserting the deprecated field stays unwritten.
 		"the deprecated enum field is not written beside the refs")
 	s.Require().NotNil(spellChoice, "a bard is asked for the provider's leveled spell choice")
-	s.Equal(int32(2), spellChoice.GetChooseCount(), "a level-1 bard picks two of the supported spells")
+	// THE COUNT TRACKS THE CATALOGUE (rpg-toolkit#1661): while the supported
+	// level-1 spells are fewer than the class progression's four, a bard
+	// picks all of them, so the number is not pinned here -- it is the size
+	// of the offer, and it stops moving at four.
+	s.Equal(int32(len(spellChoice.GetSpellOptions().GetAvailableRefs())), spellChoice.GetChooseCount(),
+		"a level-1 bard picks every supported spell while the catalogue is smaller than the progression")
 	s.Equal(int32(1), spellChoice.GetSpellOptions().GetSpellLevel())
 	// Membership, not the whole list: what the leveled pick offers is the
 	// rulebook's to widen, and Thunderwave arrived beside Bane as soon as the
@@ -1785,6 +1791,7 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	// separate fact and is asserted above, on its own.
 	s.Contains(spellChoice.GetSpellOptions().GetAvailableRefs(), baneRef)
 	s.Contains(spellChoice.GetSpellOptions().GetAvailableRefs(), thunderwaveRef)
+	s.Contains(spellChoice.GetSpellOptions().GetAvailableRefs(), dissonantWhispersRef)
 	s.Equal(dnd5ev1alpha1.SpellSelectionType_SPELL_SELECTION_TYPE_UNSPECIFIED,
 		spellChoice.GetSpellOptions().GetSelectionType(),
 		"API does not infer Known versus Spellbook until the provider authors that fact")
