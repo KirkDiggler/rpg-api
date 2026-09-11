@@ -1847,3 +1847,57 @@ func TestEveryProtoTargetKindIsProducedBySomeSDKKind(t *testing.T) {
 func TestTargetKindAreaCrossesTheSeam(t *testing.T) {
 	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_AREA, targetKindToProto(sdk.TargetArea))
 }
+
+// sdkUnresolvedReasons is every reason the SDK declares. Hand-kept, with the
+// same limitation sdkTargetKinds has and the same mechanical partner below.
+var sdkUnresolvedReasons = []sdk.UnresolvedReason{
+	sdk.UnresolvedNoSheet,
+}
+
+// TestEveryProtoUnresolvedReasonIsProduced needs no list maintained.
+//
+// The proto enum is generated, so its values are enumerable at runtime. A wire
+// value nothing can produce is a contract the seam cannot honor — and this is
+// the guard TargetKind did not have, which is why an area cast reached a client
+// as UNSPECIFIED and cost a walk to find.
+func TestEveryProtoUnresolvedReasonIsProduced(t *testing.T) {
+	produced := make(map[sessionpb.UnresolvedReason]sdk.UnresolvedReason, len(sdkUnresolvedReasons))
+	for _, reason := range sdkUnresolvedReasons {
+		produced[unresolvedReasonToProto(reason)] = reason
+	}
+
+	for value, name := range sessionpb.UnresolvedReason_name {
+		reason := sessionpb.UnresolvedReason(value)
+		if reason == sessionpb.UnresolvedReason_UNRESOLVED_REASON_UNSPECIFIED {
+			continue
+		}
+		require.Containsf(t, produced, reason,
+			"%s is declared in the proto and no SDK reason maps to it", name)
+	}
+}
+
+// TestACaughtMemberCrossesTheSeamWhole asserts member, kind and reason all
+// survive the conversion.
+//
+// The whole point of the field: a shopkeeper standing in a thunderclap must
+// reach the client as somebody, not as the absence of a target. Member, kind
+// and reason all have to survive, or the client can see that SOMETHING was
+// caught without being able to say what or why.
+func TestACaughtMemberCrossesTheSeamWhole(t *testing.T) {
+	got := caughtMembersToProto([]sdk.CaughtMember{{
+		Member: "demo-merchant-1", Kind: sdk.KindWorld, Reason: sdk.UnresolvedNoSheet,
+	}})
+
+	require.Len(t, got, 1)
+	require.Equal(t, "demo-merchant-1", got[0].GetMember())
+	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_WORLD, got[0].GetKind())
+	require.Equal(t, sessionpb.UnresolvedReason_UNRESOLVED_REASON_NO_SHEET, got[0].GetReason())
+}
+
+// TestCatchingNobodyIsNilRatherThanEmpty — most casts catch nobody this way and
+// every cast that is not an area catches nobody at all, so an empty slice would
+// be a second way of saying the same nothing.
+func TestCatchingNobodyIsNilRatherThanEmpty(t *testing.T) {
+	require.Nil(t, caughtMembersToProto(nil))
+	require.Nil(t, caughtMembersToProto([]sdk.CaughtMember{}))
+}

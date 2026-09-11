@@ -1957,3 +1957,39 @@ func tradeOfferFromProto(o *sessionpb.TradeOffer) sdk.TradeOffer {
 	}
 	return sdk.TradeOffer{Items: items, Currency: moneyFromProto(o.GetCurrency())}
 }
+
+// caughtMembersToProto carries the members an area cast reached and the engine
+// could not resolve against.
+//
+// NIL IN, NIL OUT. Most casts catch nobody this way and every cast that is not
+// an area catches nobody at all, so an empty slice would be a second way of
+// saying the same nothing.
+func caughtMembersToProto(caught []sdk.CaughtMember) []*sessionpb.CaughtMember {
+	if len(caught) == 0 {
+		return nil
+	}
+	out := make([]*sessionpb.CaughtMember, 0, len(caught))
+	for _, member := range caught {
+		out = append(out, &sessionpb.CaughtMember{
+			Member: member.Member,
+			Kind:   memberKindToProto(member.Kind),
+			Reason: unresolvedReasonToProto(member.Reason),
+		})
+	}
+	return out
+}
+
+// unresolvedReasonToProto mirrors the SDK's closed reason enum.
+//
+// An unknown value reaches UNSPECIFIED rather than being guessed, the way every
+// other closed enum here does — and TestEveryProtoUnresolvedReasonIsProduced
+// keeps that from silently swallowing a new one, which is the failure this
+// package has already paid for once with TargetKind.
+func unresolvedReasonToProto(r sdk.UnresolvedReason) sessionpb.UnresolvedReason {
+	switch r {
+	case sdk.UnresolvedNoSheet:
+		return sessionpb.UnresolvedReason_UNRESOLVED_REASON_NO_SHEET
+	default:
+		return sessionpb.UnresolvedReason_UNRESOLVED_REASON_UNSPECIFIED
+	}
+}
