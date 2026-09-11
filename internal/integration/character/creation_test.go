@@ -1618,12 +1618,10 @@ func monkClassChoices(optionID string, weapon dnd5ev1alpha1.Weapon) []*dnd5ev1al
 // string became.
 const (
 	bladeWardRef      = "dnd5e:spells:blade-ward"
+	thunderclapRef    = "dnd5e:spells:thunderclap"
 	trueStrikeRef     = "dnd5e:spells:true-strike"
 	viciousMockeryRef = "dnd5e:spells:vicious-mockery"
-	// Joined the castable set with rpg-toolkit#1642, which gave content a
-	// way to declare a shape in space and used Thunderclap to prove it.
-	thunderclapRef = "dnd5e:spells:thunderclap"
-	baneRef        = "dnd5e:spells:bane"
+	baneRef           = "dnd5e:spells:bane"
 )
 
 // TestCreateBard_FinalizesChoosingTwoCantrips is the creation half of the
@@ -1773,7 +1771,8 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	s.Equal(int32(2), cantripChoice.GetChooseCount())
 	s.Equal([]string{bladeWardRef, trueStrikeRef, viciousMockeryRef, thunderclapRef},
 		cantripChoice.GetSpellOptions().GetAvailableRefs(),
-		"the options are gated to the cantrips this build can cast, as refs")
+		"the options are gated to the cantrips this build can cast, as refs — "+
+			"book order first, then what this build has added")
 	s.Empty(cantripChoice.GetSpellOptions().GetAvailable(), //nolint:staticcheck // Asserting the deprecated field stays unwritten.
 		"the deprecated enum field is not written beside the refs")
 	s.Require().NotNil(spellChoice, "a bard is asked for the provider's leveled spell choice")

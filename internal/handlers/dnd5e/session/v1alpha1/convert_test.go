@@ -1881,3 +1881,118 @@ func TestParticipantToProto_CarriesConcentrating(t *testing.T) {
 	idle := participantToProto(sdk.Participant{Member: "fighter-1"})
 	require.False(t, idle.GetConcentrating())
 }
+
+// sdkTargetKinds is every selector shape the SDK declares.
+//
+// MAINTAINED BY HAND, and that is the honest limitation: Go cannot enumerate a
+// string-const type, so adding a kind to the SDK without adding it here leaves
+// this list short. It is still worth having — it is the only place that states
+// what the full set is — but the guarantee lives in the test below it, which
+// needs no maintenance at all.
+var sdkTargetKinds = []sdk.TargetKind{
+	sdk.TargetNone,
+	sdk.TargetMember,
+	sdk.TargetPath,
+	sdk.TargetArea,
+}
+
+// TestEverySDKTargetKindReachesTheWire asserts no selector shape degrades to
+// UNSPECIFIED on its way to a client.
+//
+// An SDK kind with no case in targetKindToProto falls to UNSPECIFIED, and the
+// client has no branch for that: the row draws, the click does nothing, and
+// nothing is logged anywhere. That is not hypothetical — it is exactly what
+// TARGET_KIND_AREA did before rpg-api-protos#322, and it cost a walk to find.
+func TestEverySDKTargetKindReachesTheWire(t *testing.T) {
+	for _, kind := range sdkTargetKinds {
+		t.Run(string(kind), func(t *testing.T) {
+			require.NotEqual(t, sessionpb.TargetKind_TARGET_KIND_UNSPECIFIED,
+				targetKindToProto(kind),
+				"%q reaches the client as UNSPECIFIED, which it cannot dispatch on", kind)
+		})
+	}
+}
+
+// TestEveryProtoTargetKindIsProducedBySomeSDKKind is the half that needs no
+// maintenance.
+//
+// The proto enum is GENERATED, so its value set is enumerable at runtime
+// through TargetKind_name. A value declared on the wire that nothing can
+// produce is a contract the seam cannot honor — either a dead value, or a
+// mapping somebody forgot. Either way this fails without anyone remembering to
+// update a list.
+func TestEveryProtoTargetKindIsProducedBySomeSDKKind(t *testing.T) {
+	produced := make(map[sessionpb.TargetKind]sdk.TargetKind, len(sdkTargetKinds))
+	for _, kind := range sdkTargetKinds {
+		produced[targetKindToProto(kind)] = kind
+	}
+
+	for value, name := range sessionpb.TargetKind_name {
+		kind := sessionpb.TargetKind(value)
+		if kind == sessionpb.TargetKind_TARGET_KIND_UNSPECIFIED {
+			continue
+		}
+		require.Containsf(t, produced, kind,
+			"%s is declared in the proto and no SDK target kind maps to it", name)
+	}
+}
+
+// TestTargetKindAreaCrossesTheSeam pins the value this walk was about, by name
+// rather than only by the sweeps above.
+func TestTargetKindAreaCrossesTheSeam(t *testing.T) {
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_AREA, targetKindToProto(sdk.TargetArea))
+}
+
+// sdkUnresolvedReasons is every reason the SDK declares. Hand-kept, with the
+// same limitation sdkTargetKinds has and the same mechanical partner below.
+var sdkUnresolvedReasons = []sdk.UnresolvedReason{
+	sdk.UnresolvedNoSheet,
+}
+
+// TestEveryProtoUnresolvedReasonIsProduced needs no list maintained.
+//
+// The proto enum is generated, so its values are enumerable at runtime. A wire
+// value nothing can produce is a contract the seam cannot honor — and this is
+// the guard TargetKind did not have, which is why an area cast reached a client
+// as UNSPECIFIED and cost a walk to find.
+func TestEveryProtoUnresolvedReasonIsProduced(t *testing.T) {
+	produced := make(map[sessionpb.UnresolvedReason]sdk.UnresolvedReason, len(sdkUnresolvedReasons))
+	for _, reason := range sdkUnresolvedReasons {
+		produced[unresolvedReasonToProto(reason)] = reason
+	}
+
+	for value, name := range sessionpb.UnresolvedReason_name {
+		reason := sessionpb.UnresolvedReason(value)
+		if reason == sessionpb.UnresolvedReason_UNRESOLVED_REASON_UNSPECIFIED {
+			continue
+		}
+		require.Containsf(t, produced, reason,
+			"%s is declared in the proto and no SDK reason maps to it", name)
+	}
+}
+
+// TestACaughtMemberCrossesTheSeamWhole asserts member, kind and reason all
+// survive the conversion.
+//
+// The whole point of the field: a shopkeeper standing in a thunderclap must
+// reach the client as somebody, not as the absence of a target. Member, kind
+// and reason all have to survive, or the client can see that SOMETHING was
+// caught without being able to say what or why.
+func TestACaughtMemberCrossesTheSeamWhole(t *testing.T) {
+	got := caughtMembersToProto([]sdk.CaughtMember{{
+		Member: "demo-merchant-1", Kind: sdk.KindWorld, Reason: sdk.UnresolvedNoSheet,
+	}})
+
+	require.Len(t, got, 1)
+	require.Equal(t, "demo-merchant-1", got[0].GetMember())
+	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_WORLD, got[0].GetKind())
+	require.Equal(t, sessionpb.UnresolvedReason_UNRESOLVED_REASON_NO_SHEET, got[0].GetReason())
+}
+
+// TestCatchingNobodyIsNilRatherThanEmpty — most casts catch nobody this way and
+// every cast that is not an area catches nobody at all, so an empty slice would
+// be a second way of saying the same nothing.
+func TestCatchingNobodyIsNilRatherThanEmpty(t *testing.T) {
+	require.Nil(t, caughtMembersToProto(nil))
+	require.Nil(t, caughtMembersToProto([]sdk.CaughtMember{}))
+}
