@@ -31,6 +31,15 @@ type Config struct {
 	DiceService      dice.Service
 	IDGenerator      idgen.Generator
 	DraftIDGenerator idgen.Generator
+
+	// AppearanceNotifier is told when something an observer could SEE about
+	// a character changes. REQUIRED, and required for the reason every
+	// capability on this seam is: a nil one would mean "nobody is ever
+	// told", which is a decision no caller made out loud
+	// (rpg-toolkit#1033 — supplied, never defaulted). A deployment with no
+	// encounters supplies one that does nothing, and says so by supplying
+	// it.
+	AppearanceNotifier AppearanceNotifier
 }
 
 // Validate ensures all required dependencies are present
@@ -43,6 +52,9 @@ func (c *Config) Validate() error {
 	}
 	if c.DiceService == nil {
 		return apierr.InvalidArgument("dice service is required")
+	}
+	if c.AppearanceNotifier == nil {
+		return apierr.InvalidArgument("appearance notifier is required")
 	}
 	if c.IDGenerator == nil {
 		return apierr.InvalidArgument("ID generator is required")
@@ -61,6 +73,7 @@ type Orchestrator struct {
 	idGen         idgen.Generator
 	draftIDGen    idgen.Generator
 	projectLoaded projectLoadedCharacterFunc
+	appearance    AppearanceNotifier
 }
 
 // New creates a new character orchestrator
@@ -79,6 +92,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 		idGen:         cfg.IDGenerator,
 		draftIDGen:    cfg.DraftIDGenerator,
 		projectLoaded: projectLoadedCharacter,
+		appearance:    cfg.AppearanceNotifier,
 	}, nil
 }
 
@@ -928,21 +942,20 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 			return nil, characterDataUnavailable(fmt.Errorf("compute effective AC: %w", acErr))
 		}
 
-		patch, patchErr := o.characterRepo.PatchEquipment(ctx, characterrepo.PatchEquipmentInput{
-			CharacterID:            input.CharacterID,
-			ExpectedVersion:        current.Version,
-			ExpectedEquipmentSlots: maps.Clone(current.Character.Data.EquipmentSlots),
-			EquipmentSlots:         maps.Clone(char.ToData().EquipmentSlots),
-			ArmorClass:             breakdown.Total,
+		patch, retry, patchErr := o.writeEquipment(ctx, &equipmentWriteInput{
+			CharacterID: input.CharacterID,
+			Slot:        input.Slot,
+			Current:     current,
+			Slots:       maps.Clone(char.ToData().EquipmentSlots),
+			ArmorClass:  breakdown.Total,
 		})
 		if patchErr != nil {
-			return nil, fmt.Errorf("failed to patch character equipment: %w", patchErr)
+			return nil, patchErr
 		}
-		if patch == nil || patch.Character == nil || patch.Character.Data == nil {
-			return nil, fmt.Errorf("failed to patch character equipment: repository returned no character data")
-		}
-		if !patch.Applied {
-			current = &characterrepo.GetOutput{Character: patch.Character, Version: patch.Version}
+		if patch == nil {
+			// A version race: the stored slots moved under us. Re-read and
+			// try again — nothing was written, so nobody is told.
+			current = retry
 			continue
 		}
 
@@ -1011,21 +1024,20 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 			return nil, characterDataUnavailable(fmt.Errorf("compute effective AC: %w", acErr))
 		}
 
-		patch, patchErr := o.characterRepo.PatchEquipment(ctx, characterrepo.PatchEquipmentInput{
-			CharacterID:            input.CharacterID,
-			ExpectedVersion:        current.Version,
-			ExpectedEquipmentSlots: maps.Clone(current.Character.Data.EquipmentSlots),
-			EquipmentSlots:         maps.Clone(char.ToData().EquipmentSlots),
-			ArmorClass:             breakdown.Total,
+		patch, retry, patchErr := o.writeEquipment(ctx, &equipmentWriteInput{
+			CharacterID: input.CharacterID,
+			Slot:        input.Slot,
+			Current:     current,
+			Slots:       maps.Clone(char.ToData().EquipmentSlots),
+			ArmorClass:  breakdown.Total,
 		})
 		if patchErr != nil {
-			return nil, fmt.Errorf("failed to patch character equipment: %w", patchErr)
+			return nil, patchErr
 		}
-		if patch == nil || patch.Character == nil || patch.Character.Data == nil {
-			return nil, fmt.Errorf("failed to patch character equipment: repository returned no character data")
-		}
-		if !patch.Applied {
-			current = &characterrepo.GetOutput{Character: patch.Character, Version: patch.Version}
+		if patch == nil {
+			// A version race: the stored slots moved under us. Re-read and
+			// try again — nothing was written, so nobody is told.
+			current = retry
 			continue
 		}
 

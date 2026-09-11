@@ -1467,6 +1467,101 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 		require.Len(t, r.GetBoundaries(), 1)
 		require.True(t, r.GetBoundaries()[0].GetBlocksLineOfSight())
 	})
+
+	// Sighted: a change in ONE recipient's own perception, passed through as
+	// member ids and nothing else. The names are the whole body on purpose --
+	// what the recipient now perceives about them is already answered,
+	// member-scoped, by GetView, and minting it here would be a second
+	// computation of that same answer.
+	t.Run("Sighted_CarriesNamesVerbatim", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{Gained: []string{"goblin-2", "orc-1"}, Lost: []string{"wolf-3"}},
+		})
+		require.Equal(t, sessionpb.EventKind_EVENT_KIND_SIGHTED, got.GetKind())
+
+		sighted := got.GetSighted()
+		require.NotNil(t, sighted)
+		require.Equal(t, []string{"goblin-2", "orc-1"}, sighted.GetGained(),
+			"member ids verbatim, in the order the session settled them")
+		require.Equal(t, []string{"wolf-3"}, sighted.GetLost())
+	})
+
+	// EITHER HALF MAY BE ABSENT, and the seam does not invent the other. A
+	// client reads an empty Gained as "nobody arrived" rather than wondering
+	// whether the question was asked -- so this side must not turn an absent
+	// list into a present empty one, nor the reverse.
+	t.Run("Sighted_TheHalfThatDidNotHappenStaysAbsent", func(t *testing.T) {
+		arrived := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{Gained: []string{"goblin-2"}},
+		}).GetSighted()
+		require.Equal(t, []string{"goblin-2"}, arrived.GetGained())
+		require.Empty(t, arrived.GetLost(), "nobody left, so nothing is named as leaving")
+
+		departed := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{Lost: []string{"wolf-3"}},
+		}).GetSighted()
+		require.Empty(t, departed.GetGained())
+		require.Equal(t, []string{"wolf-3"}, departed.GetLost())
+	})
+
+	// NO ASSET REF IS MINTED HERE, unlike the equipment this seam does mint
+	// for (assetref.Item). This beat names MEMBERS, not items -- ids the
+	// client already holds from its roster -- so there is nothing in the
+	// rules' vocabulary needing translation into the manifest's. Pinned so a
+	// future "be consistent, namespace everything" pass has to argue with a
+	// test.
+	// THE THIRD LIST: a peer still in view whose appearance moved under the
+	// recipient. It crosses beside the two transitions rather than instead of
+	// them, because one pass can carry all three.
+	t.Run("Sighted_CarriesTheChangedHalf", func(t *testing.T) {
+		sighted := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{Changed: []string{"goblin-2"}},
+		}).GetSighted()
+		require.Equal(t, []string{"goblin-2"}, sighted.GetChanged())
+		require.Empty(t, sighted.GetGained(), "nobody arrived — it was already in view")
+		require.Empty(t, sighted.GetLost())
+
+		all := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{
+				Gained: []string{"orc-1"}, Lost: []string{"wolf-3"}, Changed: []string{"goblin-2"},
+			},
+		}).GetSighted()
+		require.Equal(t, []string{"orc-1"}, all.GetGained())
+		require.Equal(t, []string{"wolf-3"}, all.GetLost())
+		require.Equal(t, []string{"goblin-2"}, all.GetChanged(),
+			"three independent lists, and one pass can carry all of them")
+	})
+
+	// AND IT SAYS NOTHING ABOUT WHAT CHANGED. There is no item, slot or verb
+	// anywhere on this body — only a name. Pinned so the next person tempted
+	// to "just include the weapon, the client needs it anyway" has to argue
+	// with a test rather than with a comment: the fact is exactly what an
+	// illusion must be able to lie about, and a fact on the wire is true for
+	// everybody by construction.
+	t.Run("Sighted_SaysWhoChangedAndNeverWhat", func(t *testing.T) {
+		sighted := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{Changed: []string{"goblin-2"}},
+		}).GetSighted()
+
+		require.Equal(t, []string{"goblin-2"}, sighted.GetChanged())
+		require.Equal(t, 3, sighted.ProtoReflect().Descriptor().Fields().Len(),
+			"gained, lost, changed — and nowhere to put an item")
+	})
+
+	t.Run("Sighted_MemberIdsAreNotAssetRefs", func(t *testing.T) {
+		sighted := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{Gained: []string{"goblin-2"}},
+		}).GetSighted()
+		require.Equal(t, "goblin-2", sighted.GetGained()[0],
+			"a member id crosses as itself, not as dnd5e:item:goblin-2")
+	})
 }
 
 // TestEventToProto_UntypedKind_BodyStaysNilPayloadCarries pins the other
