@@ -18,6 +18,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/tools"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 )
@@ -28,6 +29,51 @@ type ConvertersTestSuite struct {
 
 func TestConvertersTestSuite(t *testing.T) {
 	suite.Run(t, new(ConvertersTestSuite))
+}
+
+func TestCreateSpellbookChoice_ProjectsBaneRequirementWithoutInventingSelectionMode(t *testing.T) {
+	got := createSpellbookChoice(&choices.SpellbookRequirement{
+		ID:         "bard-spells-1",
+		Count:      1,
+		SpellLevel: 1,
+		Options:    []spells.Spell{spells.Bane},
+		Label:      "Choose 1 1st-level spell",
+	})
+
+	require.NotNil(t, got)
+	require.Equal(t, "bard-spells-1", got.GetId())
+	require.Equal(t, "Choose 1 1st-level spell", got.GetDescription())
+	require.Equal(t, int32(1), got.GetChooseCount())
+	require.Equal(t, dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS, got.GetChoiceType())
+	// Equality is right HERE and membership is right in the test below: this
+	// one hands createSpellbookChoice its own one-spell requirement, so the
+	// whole list is the test's own input and pinning it pins the projection.
+	// The other reads the rulebook's real bard pick, which is free to widen.
+	require.Equal(t, []string{refs.Spells.Bane().String()}, got.GetSpellOptions().GetAvailableRefs())
+	require.Equal(t, int32(1), got.GetSpellOptions().GetSpellLevel())
+	require.Equal(t, dnd5ev1alpha1.SpellSelectionType_SPELL_SELECTION_TYPE_UNSPECIFIED,
+		got.GetSpellOptions().GetSelectionType(),
+		"provider does not yet distinguish Bard known spells from a Wizard spellbook")
+	require.Empty(t, got.GetSpellOptions().GetAvailable())
+}
+
+func TestLoadAllClassChoices_ExposesBaneRequirement(t *testing.T) {
+	var spellChoice *dnd5ev1alpha1.Choice
+	for _, choice := range loadAllClassChoices(classes.Bard) {
+		if choice.GetChoiceType() == dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS {
+			spellChoice = choice
+			break
+		}
+	}
+
+	require.NotNil(t, spellChoice)
+	// MEMBERSHIP, not the whole list. This reads the rulebook's real bard
+	// pick, and which spells it OFFERS is the rulebook's to widen --
+	// Thunderwave joined Bane the moment the toolkit could compile it to a
+	// cast profile. Equality here would tax every such addition while proving
+	// nothing this test is about, which is that the pool crosses as refs.
+	require.Contains(t, spellChoice.GetSpellOptions().GetAvailableRefs(), refs.Spells.Bane().String())
+	require.Contains(t, spellChoice.GetSpellOptions().GetAvailableRefs(), refs.Spells.Thunderwave().String())
 }
 
 func (s *ConvertersTestSuite) TestConvertClassDataToProto_Fighter() {
@@ -1231,4 +1277,33 @@ func (s *ConvertersTestSuite) TestExtractIDFromRef_KeepsTheWholeID() {
 			assert.Equal(s.T(), tc.want, extractIDFromRef(tc.ref))
 		})
 	}
+}
+
+// TestLoadAllClassChoices_Bard_OffersTheEighteenSkills closes the sentinel
+// nobody implemented (rpg-project#397, shape §1). The bard's skill
+// requirement used to carry an EMPTY option list meaning "any three", and
+// this side of the seam reads an empty list as "nothing to offer" and builds
+// no choice at all -- so a bard was offered no skills to pick and could not
+// be finished. The toolkit now enumerates all eighteen, and both readings
+// agree; this is the rpg-api half of that agreement, and it fails the moment
+// the list goes back to empty.
+func (s *ConvertersTestSuite) TestLoadAllClassChoices_Bard_OffersTheEighteenSkills() {
+	var skillChoice *dnd5ev1alpha1.Choice
+	for _, c := range loadAllClassChoices(classes.Bard) {
+		if c.GetChoiceType() == dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS {
+			skillChoice = c
+		}
+	}
+
+	require.NotNil(s.T(), skillChoice, "a bard with no skill choice cannot be created")
+	assert.Equal(s.T(), int32(3), skillChoice.GetChooseCount())
+
+	available := skillChoice.GetSkillOptions().GetAvailable()
+	assert.Len(s.T(), available, 18, "any three skills, written out rather than implied")
+	// The two the class is named for, and one nothing else on the list would
+	// have caught: an empty option list produces no choice, so a spot check
+	// here is a check that the enumeration crossed the seam at all.
+	assert.Contains(s.T(), available, dnd5ev1alpha1.Skill_SKILL_PERFORMANCE)
+	assert.Contains(s.T(), available, dnd5ev1alpha1.Skill_SKILL_PERSUASION)
+	assert.Contains(s.T(), available, dnd5ev1alpha1.Skill_SKILL_SURVIVAL)
 }

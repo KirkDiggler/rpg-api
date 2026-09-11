@@ -3,6 +3,7 @@ package sessionv1alpha1
 import (
 	"fmt"
 
+	"github.com/KirkDiggler/rpg-api/internal/converters/assetref"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/currency"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
@@ -31,6 +32,23 @@ func positionFromProto(p *sessionpb.Position) spatial.Position {
 		return spatial.Position{}
 	}
 	return spatial.Position{X: p.GetX(), Y: p.GetY()}
+}
+
+// positionPtrFromProto mirrors an OPTIONAL wire Position onto a pointer, which
+// is what the SDK takes wherever a position may legitimately be absent.
+//
+// A nil proto position stays nil rather than becoming the origin, and that is
+// the whole reason this exists beside positionFromProto: (0,0) is a real cell
+// on this grid, so the zero Position cannot also mean "none was named". Fold
+// the two together and a cast that pointed at nothing becomes a cast that
+// pointed at the middle of the map, which no layer below could ever refuse.
+// Whether absence is LEGAL here is the SDK's ruling, not this converter's.
+func positionPtrFromProto(p *sessionpb.Position) *spatial.Position {
+	if p == nil {
+		return nil
+	}
+	pos := positionFromProto(p)
+	return &pos
 }
 
 // moneyToProto mirrors currency.Money onto the wire Money.
@@ -306,7 +324,33 @@ func seenToProto(s *sdk.Seen) *sessionpb.Seen {
 	if s == nil {
 		return nil
 	}
-	return &sessionpb.Seen{Position: positionToProto(s.Position), Standing: standingToProto(s.Standing)}
+	return &sessionpb.Seen{
+		Position:  positionToProto(s.Position),
+		Standing:  standingToProto(s.Standing),
+		Equipment: seenEquipmentToProto(s.Equipment),
+	}
+}
+
+// seenEquipmentToProto mirrors what a subject was observed holding, minting the
+// asset identity a client keys a model off (rpg-toolkit#1615).
+//
+// ABSENT STAYS ABSENT, and that is the whole point of the message being a
+// message. Nil means the hands were not observed — nothing with a sheet behind
+// it, or testimony older than the field — and it must not become an empty
+// SeenEquipment on the wire, because a client reading that would draw somebody
+// whose hands nobody looked at as somebody standing there unarmed.
+//
+// An observed-empty hand is the other claim and survives as an empty string:
+// the message is present, the hand is not holding anything. assetref.Item keeps
+// it empty rather than minting an unrenderable "dnd5e:item:".
+func seenEquipmentToProto(e *sdk.SeenEquipment) *sessionpb.SeenEquipment {
+	if e == nil {
+		return nil
+	}
+	return &sessionpb.SeenEquipment{
+		MainHand: assetref.Item(e.MainHand),
+		OffHand:  assetref.Item(e.OffHand),
+	}
 }
 
 // standingToProto mirrors session.Standing onto the wire enum. Two values,
@@ -609,6 +653,8 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED
 	case sdk.EventRegionRevealed:
 		return sessionpb.EventKind_EVENT_KIND_REGION_REVEALED
+	case sdk.EventSighted:
+		return sessionpb.EventKind_EVENT_KIND_SIGHTED
 	// Holdings (rpg-project#368). Each kind is a STATEMENT -- looted, held,
 	// dropped -- because a verb and a beat are named by what the record will
 	// say. Nothing here says "took": Take is reserved for the act that lands
@@ -625,6 +671,39 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_ARRIVED
 	case sdk.EventWindowOpened:
 		return sessionpb.EventKind_EVENT_KIND_WINDOW_OPENED
+	// The post-roll window (rpg-project#398). A SECOND KIND rather than a
+	// second shape of the first: WindowOpened is movement-shaped -- mover,
+	// from, to, all load-bearing -- and a window opened on a d20 has no
+	// mover and no cells, so widening it would put three zero values that
+	// lie on every post-roll beat.
+	case sdk.EventRollWindowOpened:
+		return sessionpb.EventKind_EVENT_KIND_ROLL_WINDOW_OPENED
+	// The cast door (rpg-project#405). TWO KINDS rather than one, and neither
+	// reuses an existing body: DeathSaveRolled is death-shaped -- stabilized,
+	// dead, hp_restored, a continuation -- whose zero values would lie on
+	// every ordinary save, and Door carries total/dc/beaten but is a door.
+	//
+	// Both arms land HERE, in the same change as the bodies below. An
+	// unmapped kind does not fail, it demotes to EVENT_KIND_UNKNOWN at the
+	// default arm and its body stays nil, so a cast would reach the client as
+	// a beat that happened and could not be read.
+	case sdk.EventCast:
+		return sessionpb.EventKind_EVENT_KIND_CAST
+	case sdk.EventSaved:
+		return sessionpb.EventKind_EVENT_KIND_SAVED
+	// A concentration broke (rpg-project#407, R10). A DEDICATED KIND rather
+	// than something a reader infers from the condition-removed beats that
+	// follow it: three of the six reasons a concentration ends produce no
+	// check at all, and the removals land on OTHER members' sheets, where an
+	// unexplained drop reads as random. This beat is the sentence that makes
+	// those removals mean something.
+	//
+	// Both arms land HERE and in setEventBody below in the same change, for
+	// the reason the cast door's did: an unmapped kind demotes to
+	// EVENT_KIND_UNKNOWN with a nil body, so a break would arrive as a beat
+	// that happened and could not be read.
+	case sdk.EventConcentrationEnded:
+		return sessionpb.EventKind_EVENT_KIND_CONCENTRATION_ENDED
 	default:
 		return sessionpb.EventKind_EVENT_KIND_UNKNOWN
 	}
@@ -701,6 +780,7 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			Stabilized: b.Stabilized, Dead: b.Dead, Recovered: b.Recovered,
 			HpRestored: int32(b.HPRestored), Continuation: deathSaveContinuationToProto(b.Continuation),
 			PresentationId: b.PresentationID,
+			Calculation:    rollCalculationToProto(b.Calculation),
 		}}
 	case sdk.StruckBody:
 		evt.Body = &sessionpb.Event_Struck{Struck: &sessionpb.Struck{
@@ -724,6 +804,7 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			// Same token the attacker got back on AttackResponse, so this
 			// recipient can name the same roll the attacker is presenting.
 			PresentationId: b.PresentationID,
+			Calculation:    rollCalculationToProto(b.Calculation),
 		}}
 	case sdk.MissedBody:
 		evt.Body = &sessionpb.Event_Missed{Missed: &sessionpb.Missed{
@@ -736,6 +817,7 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			Reaction: reactionRefToProto(b.Reaction),
 			// See the struck case: one shared token per swing.
 			PresentationId: b.PresentationID,
+			Calculation:    rollCalculationToProto(b.Calculation),
 		}}
 	case sdk.ActivatedBody:
 		evt.Body = &sessionpb.Event_Activated{Activated: activatedBodyToProto(b)}
@@ -775,6 +857,29 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		// reaches the looter alone, as their own DOOR_REVEALED.
 		evt.Body = &sessionpb.Event_Looted{Looted: &sessionpb.Looted{
 			Looter: b.Looter, Body: b.Body,
+		}}
+	case sdk.SightedBody:
+		// PASSED THROUGH, NAMES AND NOTHING ELSE -- and the nothing else is
+		// the design rather than an omission this seam should correct. What
+		// the recipient now perceives about these members (cell, standing,
+		// what is in their hands) is already answered, member-scoped, by
+		// GetView; minting it here would be a SECOND computation of that
+		// same answer, and two computations of one truth is how a patch and
+		// a projection learn to disagree. The client re-reads its view.
+		//
+		// No assetref minting either, for the same reason. This beat names
+		// MEMBERS, not items -- ids the client already holds from its
+		// roster -- so there is nothing here in the rules' vocabulary that
+		// needs turning into the manifest's.
+		//
+		// ALL THREE LISTS CROSS THE SAME WAY. `changed` is a peer still in
+		// view whose appearance moved under the recipient; it is neither
+		// arriving nor leaving, and it is deliberately not accompanied by
+		// WHAT changed. Saying a weapon was drawn would hand this recipient
+		// a fact rather than the news that their own view is stale, and the
+		// fact is exactly what an illusion has to be able to lie about.
+		evt.Body = &sessionpb.Event_Sighted{Sighted: &sessionpb.Sighted{
+			Gained: b.Gained, Lost: b.Lost, Changed: b.Changed,
 		}}
 	case sdk.StanceChangedBody:
 		// Verbatim (rpg-project#375, design §6): the pair as the session
@@ -898,6 +1003,80 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			To:       positionToProto(b.To),
 			Reaction: reactionRefToProto(&b.Reaction),
 		}}
+	case sdk.CastBody:
+		// Targets is canonical and request ordered. The deprecated scalar is
+		// written only when it is a faithful projection of exactly one target;
+		// a multi-target cast never invents a representative.
+		targets := append([]string(nil), b.Targets...)
+		legacyTarget := ""
+		if len(targets) == 1 {
+			legacyTarget = targets[0]
+		}
+		evt.Body = &sessionpb.Event_Cast{Cast: &sessionpb.Cast{
+			Actor:   b.Actor,
+			Spell:   spellRefToProto(b.Spell),
+			Target:  legacyTarget, //nolint:staticcheck // Faithful compatibility projection for exactly one target.
+			Targets: targets,
+		}}
+	case sdk.SavedBody:
+		// The whole of one saving throw. SUCCEEDED IS COPIED, never derived
+		// here from total against dc -- the rulebook classifies its own roll,
+		// the law DeathSaveRolled.outcome already keeps, so the day beating a
+		// DC means something new every reader is not wrong at once.
+		evt.Body = &sessionpb.Event_Saved{Saved: &sessionpb.Saved{
+			Saver:       b.Saver,
+			Ability:     b.Ability,
+			Roll:        int32(b.Roll),
+			Total:       int32(b.Total),
+			Dc:          int32(b.DC),
+			Succeeded:   b.Succeeded,
+			Source:      spellRefToProto(b.Source),
+			Calculation: rollCalculationToProto(b.Calculation),
+		}}
+	case sdk.ConcentrationEndedBody:
+		// Who lost what, and why. THE REASON IS AN OPEN STRING and this
+		// converter copies it verbatim -- the vocabulary is the rulebook's
+		// ("damage", "recast", "duration", "combat_end", "spell_ended",
+		// "caster_down") and it grows with the rulebook, so a closed set here
+		// would have to be widened in three modules every time a spell learns
+		// a new way to end.
+		//
+		// NO SAVE AND NO REMOVALS ride this body, exactly as the SDK's own
+		// shape has none. The failed check travels beside it as EventSaved
+		// and each stripped condition as its own ActivationResult beat, in
+		// one train from one interaction; repeating them here would give a
+		// client two places to read one fact.
+		evt.Body = &sessionpb.Event_ConcentrationEnded{ConcentrationEnded: &sessionpb.ConcentrationEnded{
+			Caster: b.Caster,
+			Spell:  spellRefToProto(b.Spell),
+			Reason: b.Reason,
+		}}
+	case sdk.RollWindowOpenedBody:
+		// A roll stopped to ask (rpg-project#398). The d20 is already on the
+		// table and the fight is waiting on the one member who rolled it.
+		//
+		// AUDIENCE IS A SINGLE MEMBER HERE, not a list as it is above, and
+		// the asymmetry is the SDK's own: a movement fold asks every player
+		// reactor at once, while this slice poses one window to the roller
+		// and to nobody else. An offer whose audience is not the roller is
+		// refused below the seam rather than posed to somebody no freeze was
+		// designed for, so this converter never sees a second name.
+		//
+		// THE TARGET'S AC IS NOT ON THIS BEAT and there is no field for it.
+		// Roll and total are what the player decides with; whether the swing
+		// lands is what they are deciding about, and the struck or missed
+		// beat says it AFTER the answer.
+		//
+		// Offer is a value on this body, not a pointer -- a window that
+		// named nothing to spend could not have been posed -- so it always
+		// converts to a non-nil message.
+		evt.Body = &sessionpb.Event_RollWindowOpened{RollWindowOpened: &sessionpb.RollWindowOpened{
+			PresentationId: b.PresentationID,
+			Audience:       b.Audience,
+			Offer:          reactionRefToProto(&b.Offer),
+			Roll:           int32(b.Roll),
+			Total:          int32(b.Total),
+		}}
 	default:
 		// nil (no typed body for this kind) or a body type this build does
 		// not recognize: leave evt.Body nil. payload stays the passthrough
@@ -944,10 +1123,57 @@ func activationResultBodyToProto(body sdk.ActivationResultBody) *sessionpb.Activ
 			CapacityGranted: capacityGrantedBodyToProto(body.CapacityGranted),
 		}
 	}
+	// Damage is a RESULT ARM rather than a beat of its own (rpg-project#405
+	// R7): Vicious Mockery's 1d4 is a thing an effect delivered, exactly like
+	// the condition beside it, and ActivationResult already carries delivered
+	// effects. It counts toward the one-arm invariant like every other arm,
+	// so a malformed body with two results still produces no wire body at all.
+	if body.DamageApplied != nil {
+		populated++
+		result.Result = &sessionpb.ActivationResult_DamageApplied{
+			DamageApplied: damageAppliedBodyToProto(body.DamageApplied),
+		}
+	}
+	// A creature the effect MOVED is a result arm for the same reason damage
+	// is one: a push is a thing an effect delivered, and ActivationResult is
+	// already where delivered effects are read. It is deliberately NOT the
+	// movement -- every cell crossed is its own beat carrying the cause, and
+	// those are what a client animates. This is the one line saying how far
+	// and what stopped it. It counts toward the one-arm invariant like every
+	// other arm.
+	if body.MoveImposed != nil {
+		populated++
+		result.Result = &sessionpb.ActivationResult_MoveImposed{
+			MoveImposed: moveImposedBodyToProto(body.MoveImposed),
+		}
+	}
 	if populated != 1 {
 		return nil
 	}
 	return result
+}
+
+// moveImposedBodyToProto mirrors an imposed move field-for-field.
+//
+// The wire message is narrower than the SDK body: SourceRef and SourceName
+// have no field on it, so what moved the creature does not cross here. That is
+// a gap in the contract rather than something this converter may paper over --
+// deriving a name from the ref, or borrowing the enclosing cast's, would be
+// inventing a fact the provider authored elsewhere. Recorded on the PR.
+func moveImposedBodyToProto(body *sdk.MoveImposedBody) *sessionpb.MoveImposed {
+	if body == nil {
+		return nil
+	}
+
+	return &sessionpb.MoveImposed{
+		Target: body.Target,
+		// ALWAYS WRITTEN, zero included. A creature pinned against a wall is
+		// pushed nowhere, and that is an outcome the caster is owed. proto3
+		// leaves the field off the wire at zero, which is exactly why the ARM
+		// has to be present: its presence is what says a push happened.
+		MovedCells: int32(body.MovedCells),
+		StoppedBy:  body.StoppedBy,
+	}
 }
 
 // healingAppliedBodyToProto mirrors a heal onto the wire without deriving one
@@ -973,6 +1199,44 @@ func healingAppliedBodyToProto(body *sdk.HealingAppliedBody) *sessionpb.HealingA
 		out.Modifier = int32(body.Modifier) //nolint:staticcheck // Required read compatibility for pre-trace Story records.
 	}
 	return out
+}
+
+// damageAppliedBodyToProto mirrors damage HealingApplied's way, and the
+// asymmetry between them is deliberate: a heal carries deprecated Roll and
+// Modifier scalars for Story records written before roll traces existed, and
+// NOTHING EVER WROTE A DAMAGE RESULT before them, so there is no legacy shape
+// to read and Calculation is the only representation of the dice.
+func damageAppliedBodyToProto(body *sdk.DamageAppliedBody) *sessionpb.DamageApplied {
+	if body == nil {
+		return nil
+	}
+
+	return &sessionpb.DamageApplied{
+		Target:     body.Target,
+		Amount:     int32(body.Amount),
+		Requested:  int32(body.Requested),
+		DamageType: damageTypeToProto(body.DamageType),
+		SourceRef:  body.SourceRef,
+		SourceName: body.SourceName,
+		HpBefore:   int32(body.HPBefore),
+		HpAfter:    int32(body.HPAfter),
+		// The 1d4's own face, so a client can show the roll rather than only
+		// what it totalled.
+		Calculation: rollCalculationToProto(body.Calculation),
+		// COPIED FROM THE BODY, never derived from SourceRef. The rulebook
+		// authors what kind of damage a spell deals -- psychic, for Vicious
+		// Mockery -- and a client that read the spell's ref to decide would
+		// be deriving 5e, which is the whole thing content refs prevent. The
+		// same converter the strike path's components already run through.
+	}
+}
+
+// spellRefToProto mirrors AbilityRef's shape one content type over: the full
+// ref for correlation and an icon table, and a name the content authored.
+// A reader never derives the name from the ref, and never branches on the ref
+// to decide what a spell does.
+func spellRefToProto(s sdk.SpellRef) *sessionpb.SpellRef {
+	return &sessionpb.SpellRef{Ref: s.Ref, Name: s.Name}
 }
 
 func conditionAppliedBodyToProto(body *sdk.ConditionAppliedBody) *sessionpb.ConditionApplied {
@@ -1203,6 +1467,13 @@ func verbToProto(v sdk.Verb) sessionpb.Verb {
 		return sessionpb.Verb_VERB_DEATH_SAVE
 	case sdk.VerbReact:
 		return sessionpb.Verb_VERB_REACT
+	// VerbCast (rpg-project#405). Afford compiles ONE ROW PER CASTABLE
+	// CANTRIP -- many per member, the way VerbActivate arrives -- so leaving
+	// it unmapped would label every Cast row a bard can reach
+	// VERB_UNSPECIFIED, and the dock drops a verb it cannot name rather than
+	// showing it wrong. That is the whole panel this slice exists to fill.
+	case sdk.VerbCast:
+		return sessionpb.Verb_VERB_CAST
 	default:
 		return sessionpb.Verb_VERB_UNSPECIFIED
 	}
@@ -1245,6 +1516,10 @@ func targetKindToProto(k sdk.TargetKind) sessionpb.TargetKind {
 		return sessionpb.TargetKind_TARGET_KIND_MEMBER
 	case sdk.TargetPath:
 		return sessionpb.TargetKind_TARGET_KIND_PATH
+	case sdk.TargetArea:
+		return sessionpb.TargetKind_TARGET_KIND_AREA
+	case sdk.TargetCell:
+		return sessionpb.TargetKind_TARGET_KIND_CELL
 	default:
 		return sessionpb.TargetKind_TARGET_KIND_UNSPECIFIED
 	}
@@ -1269,6 +1544,18 @@ func targetCandidatesToProto(cs []sdk.TargetCandidate) []*sessionpb.TargetCandid
 	return out
 }
 
+func costComponentsToProto(cost []sdk.CostComponent) []*sessionpb.CostComponent {
+	out := make([]*sessionpb.CostComponent, len(cost))
+	for i, component := range cost {
+		out[i] = &sessionpb.CostComponent{
+			Currency: currencyToProto(component.Currency),
+			Needed:   int32(component.Needed),
+			Label:    component.Label,
+		}
+	}
+	return out
+}
+
 // declarationToProto mirrors the SDK's compiled declaration field-for-field.
 // It neither derives availability nor transforms selectors: opaque IDs, full
 // attack refs, target shape, and every independently ruled candidate cross
@@ -1284,6 +1571,9 @@ func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
 		Id:         d.ID,
 		TargetKind: targetKindToProto(d.TargetKind),
 		Candidates: targetCandidatesToProto(d.Candidates),
+		MinTargets: int32(d.MinTargets),
+		MaxTargets: int32(d.MaxTargets),
+		Cost:       costComponentsToProto(d.Cost),
 	}
 	if d.Remaining != nil {
 		remaining := int32(*d.Remaining)
@@ -1300,6 +1590,17 @@ func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
 	}
 	if d.Reaction != nil {
 		out.Reaction = reactionRefToProto(d.Reaction)
+	}
+	// WHICH CANTRIP this row casts. Present on every VerbCast declaration and
+	// absent from every other, which is the same presence law Attack and
+	// Ability keep one field up: a dock says "Vicious Mockery" rather than
+	// "Cast" because one verb compiles one row per castable cantrip, and the
+	// verb alone cannot tell them apart.
+	//
+	// The SDK's own pointer decides, not the verb: a zeroed SpellRef on a
+	// non-cast row would read as a spell nobody named.
+	if d.Spell != nil {
+		out.Spell = spellRefToProto(*d.Spell)
 	}
 	return out
 }
@@ -1425,7 +1726,9 @@ func rollSourceToProto(source *sdk.RollSource) *sessionpb.RollSource {
 	if source == nil {
 		return nil
 	}
-	return &sessionpb.RollSource{Ref: source.Ref, Name: source.Name, Label: source.Label}
+	return &sessionpb.RollSource{
+		Ref: source.Ref, Name: source.Name, Label: source.Label, SourceId: source.SourceID,
+	}
 }
 
 // diceRerollToProto copies one sourced replacement. Ordering is owned by the
@@ -1478,8 +1781,9 @@ func rollComponentToProto(component *sdk.RollComponent) *sessionpb.RollComponent
 		return nil
 	}
 	out := &sessionpb.RollComponent{
-		Source: rollSourceToProto(&component.Source),
-		Dice:   diceTraceToProto(component.Dice),
+		Source:       rollSourceToProto(&component.Source),
+		Dice:         diceTraceToProto(component.Dice),
+		SubtractDice: component.SubtractDice,
 	}
 	if component.Modifier != nil {
 		modifier := int32(*component.Modifier)
@@ -1604,6 +1908,20 @@ func participantToProto(p sdk.Participant) *sessionpb.Participant {
 		Active:     p.Active,
 		LifeState:  lifeStateToProto(p.LifeState),
 		DeathSaves: deathSaveProgressToProto(p.DeathSaves),
+		// Whether this member is holding a spell together right now
+		// (rpg-project#407, R11). FOR THE PEOPLE WHO CANNOT SEE THE SHEET:
+		// the caster reads its own concentrating condition off its own
+		// status, and a creature carrying a spell's effect learns the caster
+		// from that effect's own source. What the rest of the table cannot
+		// otherwise learn is that a member whose sheet they do not hold is
+		// concentrating at all -- and a concentration-ended beat about a
+		// member whose state was never visible is a beat with no setup.
+		//
+		// ONE BOOL AND NOTHING MORE, mirroring Active: no spell, no ref, no
+		// remaining duration. Which spell somebody is holding is a fact their
+		// own sheet answers, and a roster row that named it would publish the
+		// caster's hand to the room.
+		Concentrating: p.Concentrating,
 	}
 }
 
@@ -1718,4 +2036,40 @@ func tradeOfferFromProto(o *sessionpb.TradeOffer) sdk.TradeOffer {
 		items[i] = tradeItemFromProto(it)
 	}
 	return sdk.TradeOffer{Items: items, Currency: moneyFromProto(o.GetCurrency())}
+}
+
+// caughtMembersToProto carries the members an area cast reached and the engine
+// could not resolve against.
+//
+// NIL IN, NIL OUT. Most casts catch nobody this way and every cast that is not
+// an area catches nobody at all, so an empty slice would be a second way of
+// saying the same nothing.
+func caughtMembersToProto(caught []sdk.CaughtMember) []*sessionpb.CaughtMember {
+	if len(caught) == 0 {
+		return nil
+	}
+	out := make([]*sessionpb.CaughtMember, 0, len(caught))
+	for _, member := range caught {
+		out = append(out, &sessionpb.CaughtMember{
+			Member: member.Member,
+			Kind:   memberKindToProto(member.Kind),
+			Reason: unresolvedReasonToProto(member.Reason),
+		})
+	}
+	return out
+}
+
+// unresolvedReasonToProto mirrors the SDK's closed reason enum.
+//
+// An unknown value reaches UNSPECIFIED rather than being guessed, the way every
+// other closed enum here does — and TestEveryProtoUnresolvedReasonIsProduced
+// keeps that from silently swallowing a new one, which is the failure this
+// package has already paid for once with TargetKind.
+func unresolvedReasonToProto(r sdk.UnresolvedReason) sessionpb.UnresolvedReason {
+	switch r {
+	case sdk.UnresolvedNoSheet:
+		return sessionpb.UnresolvedReason_UNRESOLVED_REASON_NO_SHEET
+	default:
+		return sessionpb.UnresolvedReason_UNRESOLVED_REASON_UNSPECIFIED
+	}
 }

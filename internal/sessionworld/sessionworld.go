@@ -395,6 +395,7 @@ func buildWorld(
 		Initiative: orderAsGiven{},
 		Standing:   nobodyDown{},
 		Sight:      nobodySees{},
+		Equipment:  nobodyHasHands{},
 		// Same trivial stand-in as above: this world is empty at the moment
 		// it is built, so no clock ever lands on anyone here either
 		// (toolkit#1162, ADR-0043). Striker is the same story one seam over
@@ -654,6 +655,26 @@ func (nobodyDown) Assess(members []tkencounter.MemberID) (*tkencounter.Participa
 			Turn:      tkencounter.TurnParticipationWait,
 		})
 	}
+	return out, nil
+}
+
+type nobodyHasHands struct{}
+
+// Equipment answers "no hands to observe" for every member -- there are no
+// members in a world this new, so it answers nothing; see [buildWorld].
+//
+// Nil rather than an empty pair, deliberately. Empty hands would be a claim
+// that somebody was looked at and found holding nothing, and nobody has been
+// looked at here. The session package supplies the real capability, reading
+// actual sheets, when it loads this world to play it.
+func (nobodyHasHands) Equipment(
+	members []tkencounter.MemberID,
+) (map[tkencounter.MemberID]*tkencounter.HeldEquipment, error) {
+	out := make(map[tkencounter.MemberID]*tkencounter.HeldEquipment, len(members))
+	for _, id := range members {
+		out[id] = nil
+	}
+
 	return out, nil
 }
 

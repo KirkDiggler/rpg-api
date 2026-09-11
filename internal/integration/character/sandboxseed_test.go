@@ -81,7 +81,7 @@ func (s *SandboxSeedSuite) listExactlyOne(identity string) *dnd5ev1alpha1.Charac
 	return response.GetCharacters()[0]
 }
 
-func (s *SandboxSeedSuite) TestSandboxSeed_ResetsTwoIdentitiesThroughRPCs() {
+func (s *SandboxSeedSuite) TestSandboxSeed_ResetsThreeIdentitiesThroughRPCs() {
 	require.NoError(s.T(), sandboxseed.Seed(s.ctx, s.server.CharacterClient))
 	require.NoError(s.T(), sandboxseed.Seed(s.ctx, s.server.CharacterClient))
 
@@ -115,6 +115,20 @@ func (s *SandboxSeedSuite) TestSandboxSeed_ResetsTwoIdentitiesThroughRPCs() {
 		"toolkit-sandbox-barbarian:ListCharacters",
 		"toolkit-sandbox-barbarian:GetCharacter",
 		"toolkit-sandbox-barbarian:ListCharacters",
+		// The bard equips nothing, so it lists twice rather than three times
+		// and never calls EquipItem.
+		"toolkit-sandbox-bard:ListCharacters",
+		"toolkit-sandbox-bard:DeleteCharacter",
+		"toolkit-sandbox-bard:CreateDraft",
+		"toolkit-sandbox-bard:UpdateName",
+		"toolkit-sandbox-bard:UpdateRace",
+		"toolkit-sandbox-bard:UpdateClass",
+		"toolkit-sandbox-bard:UpdateBackground",
+		"toolkit-sandbox-bard:UpdateAbilityScores",
+		"toolkit-sandbox-bard:GetDraft",
+		"toolkit-sandbox-bard:FinalizeDraft",
+		"toolkit-sandbox-bard:ListCharacters",
+		"toolkit-sandbox-bard:GetCharacter",
 	}, recordingClient.calls)
 
 	fighter := s.listExactlyOne("toolkit-sandbox-fighter")

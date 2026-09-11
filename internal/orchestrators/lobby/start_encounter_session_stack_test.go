@@ -232,8 +232,13 @@ func (s *SessionStackSuite) TestStartEncounter_SDKRosterIsAuthoritative() {
 }
 
 // TestStartEncounter_SeatsTheTombsWholeGarrison checks that starting on the new
-// stack seeds the AUTHORED dungeon, not a stand-in: both hall skeletons and the
-// captain behind the locked door are real members of a real session.
+// stack seeds the AUTHORED dungeon, not a stand-in: the hall's zombie and
+// skeleton, and the captain behind the locked door, are real members of a real
+// session.
+//
+// The member ids are the ref plus an ordinal, so they follow what the tomb
+// authors rather than the other way round: the hall holds one zombie (melee,
+// so it closes) and one skeleton (ranged, so it holds its distance).
 //
 // Turn is the probe because it works for ANY member regardless of combat or
 // equipment state ("asked of a member, never of the session"), so it proves
@@ -256,7 +261,7 @@ func (s *SessionStackSuite) TestStartEncounter_SeatsTheTombsWholeGarrison() {
 	})
 	s.Require().NoError(err)
 
-	for _, member := range []string{"skeleton-1", "skeleton-2", "skeleton-captain-1"} {
+	for _, member := range []string{"zombie-1", "skeleton-1", "skeleton-captain-1"} {
 		turn, terr := s.sessOrch.Manager.Turn(s.ctx, &sdk.TurnInput{
 			Session: out.EncounterID, Member: member,
 		})
@@ -805,7 +810,9 @@ func (s *SessionStackSuite) TestStartEncounter_FirstAdmissionPersistsCompleteLon
 	s.Equal(tkcharacter.RecoverableResourceData{
 		Current: 2, Maximum: 4, ResetType: coreResources.ResetLongRest,
 	}, gotFighter.Resources[dnd5eResources.HitDice], "exactly half of four spent hit dice recover")
-	s.Equal(tkcharacter.SpellSlotData{Max: 3, Used: 0}, gotFighter.SpellSlots[1])
+	s.Equal(tkcharacter.RecoverableResourceData{
+		Current: 3, Maximum: 3, ResetType: coreResources.ResetLongRest,
+	}, gotFighter.Resources[dnd5eResources.SpellSlotLevel1])
 
 	var secondWind features.SecondWindData
 	s.Require().NoError(json.Unmarshal(effectWithRef(s.T(), gotFighter.Features, refs.Features.SecondWind()), &secondWind))
@@ -940,9 +947,9 @@ func (s *SessionStackSuite) spentFighter(id, playerID string) (*entities.Charact
 			Granted: map[tkcharacter.GrantedActionKey]int{tkcharacter.GrantedAttacks: 1},
 		},
 		DeathSaveState: &saves.DeathSaveState{Successes: 1, Failures: 2, Stabilized: true, Dead: true},
-		SpellSlots:     map[int]tkcharacter.SpellSlotData{1: {Max: 3, Used: 3}},
 		Resources: map[coreResources.ResourceKey]tkcharacter.RecoverableResourceData{
-			dnd5eResources.HitDice: {Current: 0, Maximum: 4, ResetType: coreResources.ResetLongRest},
+			dnd5eResources.HitDice:         {Current: 0, Maximum: 4, ResetType: coreResources.ResetLongRest},
+			dnd5eResources.SpellSlotLevel1: {Current: 0, Maximum: 3, ResetType: coreResources.ResetLongRest},
 		},
 		Features:   []json.RawMessage{secondWind},
 		Conditions: []json.RawMessage{defense, opportunity, prone},

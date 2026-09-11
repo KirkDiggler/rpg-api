@@ -26,9 +26,11 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/pkg/clock"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/tools"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
@@ -1607,4 +1609,294 @@ func monkClassChoices(optionID string, weapon dnd5ev1alpha1.Weapon) []*dnd5ev1al
 			}},
 		},
 	}
+}
+
+// The two cantrips this build can cast, as the canonical refs the wire and
+// the sheet both speak. Written out rather than built from the toolkit's own
+// refs package on purpose: a test that derived the expected string from the
+// same helper the handler uses would agree with itself no matter what the
+// string became.
+const (
+	bladeWardRef      = "dnd5e:spells:blade-ward"
+	thunderclapRef    = "dnd5e:spells:thunderclap"
+	trueStrikeRef     = "dnd5e:spells:true-strike"
+	viciousMockeryRef = "dnd5e:spells:vicious-mockery"
+	baneRef           = "dnd5e:spells:bane"
+	thunderwaveRef    = "dnd5e:spells:thunderwave"
+)
+
+// TestCreateBard_FinalizesChoosingTwoCantrips is the creation half of the
+// cast door (rpg-project#405), and it REPLACES slice one's assertion that a
+// bard finalizes with no spell choice at all.
+//
+// That assertion was true and is not any more, which is the honest shape of
+// this change rather than a test loosened to pass. Slice one removed the
+// cantrip requirement because nothing could spend what was chosen: there was
+// no Cast verb, no slot pool and no reader for the known-spell list. The cast
+// door is the reader, so the question is asked again in the same slice its
+// answer becomes reachable, and a level-1 bard now MUST choose exactly two.
+//
+// The choice travels as canonical refs on spell_refs (R8), never as the
+// deprecated Spell enum -- which could not name either cantrip if it tried.
+//
+// WHAT MAKES IT FAIL. Drop the cantrip choice from this draft and finalize
+// refuses with "Choose 2 cantrips required"; keep it and stop converting it
+// (the arm this slice wrote) and finalize refuses identically, because a
+// selection the handler drops is a selection the toolkit never saw. Break the
+// ref conversion in either direction and the refs read back off the character
+// stop matching.
+func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
+	ctx := s.authCtx("test-player-bard")
+
+	createResp, err := s.server.CharacterClient.CreateDraft(ctx, &dnd5ev1alpha1.CreateDraftRequest{})
+	s.Require().NoError(err)
+	draftID := createResp.GetDraft().GetId()
+
+	_, err = s.server.CharacterClient.UpdateName(ctx, &dnd5ev1alpha1.UpdateNameRequest{
+		DraftId: draftID, Name: "Bella",
+	})
+	s.Require().NoError(err)
+
+	_, err = s.server.CharacterClient.UpdateRace(ctx, &dnd5ev1alpha1.UpdateRaceRequest{
+		DraftId: draftID,
+		Race:    dnd5ev1alpha1.Race_RACE_HUMAN,
+		RaceChoices: []*dnd5ev1alpha1.ChoiceData{
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE,
+				Selection: &dnd5ev1alpha1.ChoiceData_Languages{
+					Languages: &dnd5ev1alpha1.LanguageSelection{
+						Languages: []dnd5ev1alpha1.Language{dnd5ev1alpha1.Language_LANGUAGE_ELVISH},
+					},
+				},
+			},
+		},
+	})
+	s.Require().NoError(err)
+
+	// Three skills from the eighteen the toolkit now enumerates, three
+	// instruments, one option from each of the bard's three equipment rows,
+	// and the two cantrips this build can actually cast.
+	_, err = s.server.CharacterClient.UpdateClass(ctx, &dnd5ev1alpha1.UpdateClassRequest{
+		DraftId: draftID,
+		Class:   dnd5ev1alpha1.Class_CLASS_BARD,
+		ClassChoices: []*dnd5ev1alpha1.ChoiceData{
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "bard-skills",
+				Selection: &dnd5ev1alpha1.ChoiceData_Skills{Skills: &dnd5ev1alpha1.SkillSelection{
+					Skills: []dnd5ev1alpha1.Skill{
+						dnd5ev1alpha1.Skill_SKILL_PERFORMANCE,
+						dnd5ev1alpha1.Skill_SKILL_PERSUASION,
+						dnd5ev1alpha1.Skill_SKILL_DECEPTION,
+					},
+				}},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_TOOLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "bard-instruments",
+				Selection: &dnd5ev1alpha1.ChoiceData_Tools{Tools: &dnd5ev1alpha1.ToolSelection{
+					Tools: []dnd5ev1alpha1.Tool{
+						dnd5ev1alpha1.Tool_TOOL_LUTE,
+						dnd5ev1alpha1.Tool_TOOL_FLUTE,
+						dnd5ev1alpha1.Tool_TOOL_DRUM,
+					},
+				}},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "bard-weapons-primary", OptionId: "bard-weapon-a",
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{}},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "bard-pack", OptionId: "bard-pack-b",
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{}},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_EQUIPMENT,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "bard-instrument", OptionId: "bard-instrument-a",
+				Selection: &dnd5ev1alpha1.ChoiceData_Equipment{Equipment: &dnd5ev1alpha1.EquipmentSelection{}},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "bard-cantrips-1",
+				Selection: &dnd5ev1alpha1.ChoiceData_Spells{Spells: &dnd5ev1alpha1.SpellSelection{
+					SpellRefs: []string{trueStrikeRef, viciousMockeryRef},
+				}},
+			},
+			{
+				Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS,
+				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
+				ChoiceId: "bard-spells-1",
+				Selection: &dnd5ev1alpha1.ChoiceData_Spells{Spells: &dnd5ev1alpha1.SpellSelection{
+					SpellRefs: []string{baneRef, thunderwaveRef},
+				}},
+			},
+		},
+	})
+	s.Require().NoError(err)
+
+	// THE MENU SAYS THE SAME WORDS THE ANSWER DOES. A choice list offering a
+	// vocabulary the submission cannot speak would let both halves be wrong
+	// together, so the refs above are asserted to be the refs the server
+	// itself offered, read off the class it offers them for.
+	listResp, err := s.server.CharacterClient.ListClasses(ctx, &dnd5ev1alpha1.ListClassesRequest{})
+	s.Require().NoError(err)
+
+	var bardInfo *dnd5ev1alpha1.ClassInfo
+	for _, classInfo := range listResp.GetClasses() {
+		if classInfo.GetClassId() == dnd5ev1alpha1.Class_CLASS_BARD {
+			bardInfo = classInfo
+			break
+		}
+	}
+	s.Require().NotNil(bardInfo, "ListClasses should include Bard")
+
+	var cantripChoice, spellChoice *dnd5ev1alpha1.Choice
+	for _, choice := range bardInfo.GetChoices() {
+		switch choice.GetChoiceType() {
+		case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS:
+			cantripChoice = choice
+		case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS:
+			spellChoice = choice
+		}
+	}
+	s.Require().NotNil(cantripChoice, "a bard is asked for cantrips")
+	s.Equal(int32(2), cantripChoice.GetChooseCount())
+	s.Equal([]string{bladeWardRef, trueStrikeRef, viciousMockeryRef, thunderclapRef},
+		cantripChoice.GetSpellOptions().GetAvailableRefs(),
+		"the options are gated to the cantrips this build can cast, as refs — "+
+			"book order first, then what this build has added")
+	s.Empty(cantripChoice.GetSpellOptions().GetAvailable(), //nolint:staticcheck // Asserting the deprecated field stays unwritten.
+		"the deprecated enum field is not written beside the refs")
+	s.Require().NotNil(spellChoice, "a bard is asked for the provider's leveled spell choice")
+	s.Equal(int32(2), spellChoice.GetChooseCount(), "a level-1 bard picks two of the supported spells")
+	s.Equal(int32(1), spellChoice.GetSpellOptions().GetSpellLevel())
+	// Membership, not the whole list: what the leveled pick offers is the
+	// rulebook's to widen, and Thunderwave arrived beside Bane as soon as the
+	// toolkit could compile it to a cast profile. How many a bard PICKS is a
+	// separate fact and is asserted above, on its own.
+	s.Contains(spellChoice.GetSpellOptions().GetAvailableRefs(), baneRef)
+	s.Contains(spellChoice.GetSpellOptions().GetAvailableRefs(), thunderwaveRef)
+	s.Equal(dnd5ev1alpha1.SpellSelectionType_SPELL_SELECTION_TYPE_UNSPECIFIED,
+		spellChoice.GetSpellOptions().GetSelectionType(),
+		"API does not infer Known versus Spellbook until the provider authors that fact")
+
+	_, err = s.server.CharacterClient.UpdateBackground(ctx, &dnd5ev1alpha1.UpdateBackgroundRequest{
+		DraftId: draftID, Background: dnd5ev1alpha1.Background_BACKGROUND_OUTLANDER,
+		BackgroundChoices: outlanderBackgroundChoices(),
+	})
+	s.Require().NoError(err)
+
+	_, err = s.server.CharacterClient.UpdateAbilityScores(ctx, &dnd5ev1alpha1.UpdateAbilityScoresRequest{
+		DraftId: draftID,
+		ScoresInput: &dnd5ev1alpha1.UpdateAbilityScoresRequest_AbilityScores{
+			AbilityScores: &dnd5ev1alpha1.AbilityScores{
+				Strength: 8, Dexterity: 14, Constitution: 12,
+				Intelligence: 10, Wisdom: 12, Charisma: 16,
+			},
+		},
+	})
+	s.Require().NoError(err)
+
+	finalizeResp, err := s.server.CharacterClient.FinalizeDraft(ctx, &dnd5ev1alpha1.FinalizeDraftRequest{
+		DraftId: draftID,
+	})
+	s.Require().NoError(err, "a level-1 bard must finalize once cantrips and both leveled spells are chosen")
+	s.Require().NotNil(finalizeResp.GetCharacter())
+	s.Equal(dnd5ev1alpha1.Class_CLASS_BARD, finalizeResp.GetCharacter().GetClass())
+
+	// The cantrips READ BACK OFF THE CHARACTER, which is the whole point of
+	// the round trip: the sheet has held these refs since slice one and no
+	// field on the wire said so, so a chosen cantrip vanished between
+	// finalize and the next read.
+	s.Equal([]string{trueStrikeRef, viciousMockeryRef}, finalizeResp.GetCharacter().GetKnownCantrips())
+	s.Contains(finalizeResp.GetCharacter().GetKnownSpells(), baneRef,
+		"the leveled choice reaches the finalized character through the normal service")
+	s.Contains(finalizeResp.GetCharacter().GetKnownSpells(), thunderwaveRef,
+		"both of them, not just the first")
+
+	persisted, err := s.server.CharacterClient.GetCharacter(ctx, &dnd5ev1alpha1.GetCharacterRequest{
+		CharacterId: finalizeResp.GetCharacter().GetId(),
+	})
+	s.Require().NoError(err)
+	s.Equal(dnd5ev1alpha1.Class_CLASS_BARD, persisted.GetCharacter().GetClass())
+	s.Equal([]string{trueStrikeRef, viciousMockeryRef}, persisted.GetCharacter().GetKnownCantrips(),
+		"the refs survive the store, not just the finalize response")
+	s.Contains(persisted.GetCharacter().GetKnownSpells(), baneRef,
+		"the leveled spells survive the same store/reload path")
+	s.Contains(persisted.GetCharacter().GetKnownSpells(), thunderwaveRef)
+
+	// -- and the bard PROJECTS. This is the walk's second finding and the one
+	// a creation test alone would never have caught: the bard finalized fine
+	// and then could not be looked at. In the dungeon her status read
+	// "unavailable" and no equipment showed, because GetCharacterData is one
+	// call and a refused status view takes the equipment down with it.
+	//
+	// The cause was three closed catalogs where the design named one: the
+	// resource display name had its bard arm and the status view's feature
+	// and owner catalogs did not, so the strict projection refused the
+	// inspiration pool it had just been told to carry. Recorded on
+	// rpg-project#397; fixed in rpg-toolkit's character/status_view.go.
+	//
+	// Asserted through the same v2 RPC the dungeon calls, not through the
+	// orchestrator, because the whole failure was that this response never
+	// arrived. --
+	viewResp, err := s.server.CharacterClientV2.GetCharacterData(ctx, &characterv2pb.GetCharacterDataRequest{
+		CharacterId: finalizeResp.GetCharacter().GetId(),
+	})
+	s.Require().NoError(err, "a finalized bard must be viewable in a dungeon")
+
+	pools := map[string]*encounterv2pb.ResourceView{}
+	for _, resource := range viewResp.GetCharacter().GetResources() {
+		pools[resource.GetKey()] = resource
+	}
+
+	inspiration, ok := pools["inspiration"]
+	s.Require().True(ok, "the bard's own die must reach the view she is looked at through")
+	s.Equal("Bardic Inspiration", inspiration.GetName(), "the server authors the label")
+	s.Equal(int32(3), inspiration.GetCurrent())
+	s.Equal(int32(3), inspiration.GetMaximum(), "the pool is max(1, CHA mod), and CHA 16 is +3")
+
+	// Hit dice ride the same owner catalog and were refused by the same
+	// missing arm, so they are the half that says the fix was not
+	// inspiration-shaped special-casing.
+	_, hasHitDice := pools["hit_dice"]
+	s.True(hasHitDice, "a bard's hit dice come through the same owner catalog")
+
+	// -- and the bard finalized with the thing slice one is about: a pool of
+	// inspiration dice sized to their Charisma modifier, and no spell slots.
+	//
+	// READ OFF THE STORED SHEET, not the response. convertCharacterDataToProto
+	// drops class resources and spell slots entirely -- both are TODOs that
+	// predate this work and affect every class, Rage included -- so asserting
+	// either through the wire would be asserting against an empty list and
+	// could not fail. --
+	stored, err := s.server.CharacterRepo.Get(s.ctx, characterrepo.GetInput{
+		ID: finalizeResp.GetCharacter().GetId(),
+	})
+	s.Require().NoError(err)
+
+	pool, ok := stored.Character.Data.Resources[resources.Inspiration]
+	s.Require().True(ok, "a level-1 bard carries an inspiration pool")
+	s.Equal(3, pool.Maximum, "the pool is max(1, CHA mod), and CHA 16 is +3")
+	s.Equal(3, pool.Current, "a freshly made bard has spent none of it")
+
+	spellSlots, ok := stored.Character.Data.Resources[resources.SpellSlotLevel1]
+	s.Require().True(ok, "Bane's provider-authored level-one pool is stored as a canonical resource")
+	s.Equal(2, spellSlots.Maximum)
+	s.Equal(2, spellSlots.Current)
+
+	// The stored sheet speaks the same canonical refs the wire does, so the
+	// projection is a copy rather than a translation that could drift.
+	s.Equal([]string{trueStrikeRef, viciousMockeryRef}, stored.Character.Data.KnownCantrips)
+	s.Contains(stored.Character.Data.KnownSpells, baneRef)
+	s.Contains(stored.Character.Data.KnownSpells, thunderwaveRef)
 }

@@ -24,6 +24,24 @@ func TestPositionFromProto_Nil_ReturnsZeroValue(t *testing.T) {
 	require.Equal(t, spatial.Position{}, positionFromProto(nil))
 }
 
+// The optional form must keep absence and the origin apart.
+//
+// If an unset field collapsed to (0,0) the two would be the same value on the
+// way in, and every rule below that refuses a missing cell would instead be
+// handed the middle of the map. The pointer is the only thing carrying that
+// distinction across the boundary.
+func TestPositionPtrFromProto_SeparatesAbsenceFromTheOrigin(t *testing.T) {
+	require.Nil(t, positionPtrFromProto(nil), "an unset field is absent")
+
+	atOrigin := positionPtrFromProto(&sessionpb.Position{X: 0, Y: 0})
+	require.NotNil(t, atOrigin, "the origin is a cell somebody can point at")
+	require.Equal(t, spatial.Position{X: 0, Y: 0}, *atOrigin)
+
+	elsewhere := positionPtrFromProto(&sessionpb.Position{X: 4, Y: -2})
+	require.NotNil(t, elsewhere)
+	require.Equal(t, spatial.Position{X: 4, Y: -2}, *elsewhere)
+}
+
 func TestMemberKindToProto(t *testing.T) {
 	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_PLAYER, memberKindToProto(sdk.KindPlayer))
 	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_MONSTER, memberKindToProto(sdk.KindMonster))
@@ -95,6 +113,8 @@ func TestTargetKindToProto(t *testing.T) {
 	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_NONE, targetKindToProto(sdk.TargetNone))
 	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_MEMBER, targetKindToProto(sdk.TargetMember))
 	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_PATH, targetKindToProto(sdk.TargetPath))
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_AREA, targetKindToProto(sdk.TargetArea))
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_CELL, targetKindToProto(sdk.TargetCell))
 	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_UNSPECIFIED, targetKindToProto(sdk.TargetKind("bogus")))
 }
 
@@ -121,6 +141,12 @@ func TestDeclarationToProto_FieldForField(t *testing.T) {
 			{Member: "goblin-1", Available: true},
 			{Member: "skeleton-1", Available: false, Why: &sdk.Shortfall{Reason: sdk.ShortfallTargetOutOfReach, Text: "target out of reach"}},
 		},
+		MinTargets: 1,
+		MaxTargets: 3,
+		Cost: []sdk.CostComponent{
+			{Currency: sdk.CurrencyAction, Needed: 1},
+			{Currency: sdk.CurrencyCharges, Needed: 1, Label: "1st-level Spell Slots"},
+		},
 	})
 	require.Equal(t, sessionpb.Verb_VERB_ATTACK, out.GetVerb())
 	require.Equal(t, sessionpb.Slot_SLOT_ACTION, out.GetSlot())
@@ -138,6 +164,12 @@ func TestDeclarationToProto_FieldForField(t *testing.T) {
 	require.Nil(t, out.GetCandidates()[0].GetWhy())
 	require.False(t, out.GetCandidates()[1].GetAvailable())
 	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_TARGET_OUT_OF_REACH, out.GetCandidates()[1].GetWhy().GetReason())
+	require.Equal(t, int32(1), out.GetMinTargets())
+	require.Equal(t, int32(3), out.GetMaxTargets())
+	require.Equal(t, []*sessionpb.CostComponent{
+		{Currency: sessionpb.Currency_CURRENCY_ACTION, Needed: 1},
+		{Currency: sessionpb.Currency_CURRENCY_CHARGES, Needed: 1, Label: "1st-level Spell Slots"},
+	}, out.GetCost())
 }
 
 func TestDeclarationToProto_PreservesOptionalAbsenceAndEmptyCandidates(t *testing.T) {
@@ -447,6 +479,57 @@ func TestRollTraceConverters_NilSafe(t *testing.T) {
 	require.Nil(t, rollCalculationToProto(nil))
 }
 
+func TestRolledEventBodiesProjectCalculation(t *testing.T) {
+	calculation := &sdk.RollCalculation{Total: 11, Components: []sdk.RollComponent{{
+		Source: sdk.RollSource{Ref: "dnd5e:spells:bane", Name: "Bane", SourceID: "bard-1"},
+	}}}
+
+	for _, body := range []sdk.EventBody{
+		sdk.DeathSaveBody{Calculation: calculation},
+		sdk.StruckBody{Calculation: calculation},
+		sdk.MissedBody{Calculation: calculation},
+		sdk.SavedBody{Calculation: calculation},
+	} {
+		event := &sessionpb.Event{}
+		setEventBody(event, body)
+		var got *sessionpb.RollCalculation
+		switch {
+		case event.GetDeathSaveRolled() != nil:
+			got = event.GetDeathSaveRolled().GetCalculation()
+		case event.GetStruck() != nil:
+			got = event.GetStruck().GetCalculation()
+		case event.GetMissed() != nil:
+			got = event.GetMissed().GetCalculation()
+		case event.GetSaved() != nil:
+			got = event.GetSaved().GetCalculation()
+		}
+		require.NotNil(t, got)
+		require.Equal(t, int32(11), got.GetTotal())
+		require.Equal(t, "bard-1", got.GetComponents()[0].GetSource().GetSourceId())
+	}
+}
+
+func TestCastBodyToProto_CanonicalTargetsAndFaithfulLegacyProjection(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		targets    []string
+		wantTarget string
+	}{
+		{name: "one target preserves scalar", targets: []string{"goblin-1"}, wantTarget: "goblin-1"},
+		{name: "multiple targets never choose a representative", targets: []string{"goblin-1", "goblin-2"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			event := &sessionpb.Event{}
+			setEventBody(event, sdk.CastBody{
+				Actor: "bard-1", Spell: sdk.SpellRef{Ref: "dnd5e:spells:bane", Name: "Bane"}, Targets: tc.targets,
+			})
+
+			require.Equal(t, tc.targets, event.GetCast().GetTargets())
+			require.Equal(t, tc.wantTarget, event.GetCast().GetTarget())
+		})
+	}
+}
+
 func TestRollCalculationToProto_FieldForFieldOrderPresenceAndIsolation(t *testing.T) {
 	zero := 0
 	negative := -3
@@ -454,7 +537,7 @@ func TestRollCalculationToProto_FieldForFieldOrderPresenceAndIsolation(t *testin
 		Components: []sdk.RollComponent{
 			{
 				Source: sdk.RollSource{
-					Ref: "dnd5e:weapons:greatsword", Name: "Greatsword", Label: "primary",
+					Ref: "dnd5e:weapons:greatsword", Name: "Greatsword", Label: "primary", SourceID: "fighter-1",
 				},
 				Dice: &sdk.DiceTrace{
 					Notation: "2d6", DieSize: 6,
@@ -478,8 +561,9 @@ func TestRollCalculationToProto_FieldForFieldOrderPresenceAndIsolation(t *testin
 				Modifier: &zero,
 			},
 			{
-				Source:   sdk.RollSource{Ref: "dnd5e:abilities:str", Name: "Strength", Label: "ability modifier"},
-				Modifier: &negative,
+				Source:       sdk.RollSource{Ref: "dnd5e:abilities:str", Name: "Strength", Label: "ability modifier"},
+				Modifier:     &negative,
+				SubtractDice: true,
 			},
 		},
 		Total: 777,
@@ -490,7 +574,7 @@ func TestRollCalculationToProto_FieldForFieldOrderPresenceAndIsolation(t *testin
 	want := &sessionpb.RollCalculation{
 		Components: []*sessionpb.RollComponent{
 			{
-				Source: &sessionpb.RollSource{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword", Label: "primary"},
+				Source: &sessionpb.RollSource{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword", Label: "primary", SourceId: "fighter-1"},
 				Dice: &sessionpb.DiceTrace{
 					Notation: "2d6", DieSize: 6,
 					OriginalRolls: []int32{1, 5},
@@ -513,8 +597,9 @@ func TestRollCalculationToProto_FieldForFieldOrderPresenceAndIsolation(t *testin
 				Modifier: &wantZero,
 			},
 			{
-				Source:   &sessionpb.RollSource{Ref: "dnd5e:abilities:str", Name: "Strength", Label: "ability modifier"},
-				Modifier: &wantNegative,
+				Source:       &sessionpb.RollSource{Ref: "dnd5e:abilities:str", Name: "Strength", Label: "ability modifier"},
+				Modifier:     &wantNegative,
+				SubtractDice: true,
 			},
 		},
 		Total: 777,
@@ -867,6 +952,62 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 		require.Nil(t, result.GetConditionApplied())
 		require.Nil(t, result.GetConditionRemoved())
 	})
+
+	// A creature the blast MOVED is one more delivered effect, and it reaches
+	// a client the same way damage does: as an arm of ActivationResult on the
+	// stream, not as a field on the cast's own acknowledgement.
+	//
+	// It is not the movement. Every cell crossed is already its own beat with
+	// the cause on it; this is the line that says how far and what got in the
+	// way, which a reader would otherwise have to reconstruct by correlating
+	// those beats by hand.
+	t.Run("MoveImposed", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventActivationResult,
+			Body: sdk.ActivationResultBody{
+				Actor: "bard-1",
+				MoveImposed: &sdk.MoveImposedBody{
+					Target: "skeleton-1", SourceRef: "dnd5e:spells:thunderwave", SourceName: "Thunderwave",
+					MovedCells: 1, StoppedBy: "a pillar",
+				},
+			},
+		})
+
+		result := got.GetActivationResult()
+		require.NotNil(t, result)
+		require.Equal(t, "bard-1", result.GetActor())
+		moved := result.GetMoveImposed()
+		require.NotNil(t, moved)
+		require.Equal(t, "skeleton-1", moved.GetTarget())
+		require.Equal(t, int32(1), moved.GetMovedCells())
+		require.Equal(t, "a pillar", moved.GetStoppedBy())
+		require.Nil(t, result.GetHealingApplied())
+		require.Nil(t, result.GetConditionApplied())
+		require.Nil(t, result.GetDamageApplied())
+	})
+
+	// ZERO CELLS IS A RESULT, NOT AN ABSENCE. A creature already against the
+	// wall is pushed nowhere, and the caster is owed that sentence: the blast
+	// landed and the wall is why nothing moved. The wire field is unset at
+	// zero by proto3's own rules, so the arm itself has to be present for a
+	// client to tell "pushed nowhere" from "not pushed".
+	t.Run("MoveImposed pinned against the fold", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventActivationResult,
+			Body: sdk.ActivationResultBody{
+				Actor: "bard-1",
+				MoveImposed: &sdk.MoveImposedBody{
+					Target: "skeleton-2", SourceRef: "dnd5e:spells:thunderwave", SourceName: "Thunderwave",
+					MovedCells: 0, StoppedBy: "a wall",
+				},
+			},
+		})
+
+		moved := got.GetActivationResult().GetMoveImposed()
+		require.NotNil(t, moved, "a push that moved nobody is still a push that happened")
+		require.Equal(t, int32(0), moved.GetMovedCells())
+		require.Equal(t, "a wall", moved.GetStoppedBy())
+	})
 }
 
 func TestActivationResultVariantConverters_NilSafe(t *testing.T) {
@@ -874,6 +1015,7 @@ func TestActivationResultVariantConverters_NilSafe(t *testing.T) {
 	require.Nil(t, conditionAppliedBodyToProto(nil))
 	require.Nil(t, conditionRemovedBodyToProto(nil))
 	require.Nil(t, capacityGrantedBodyToProto(nil))
+	require.Nil(t, moveImposedBodyToProto(nil))
 }
 
 func TestActivationEventBody_NilOrMalformedStaysNil(t *testing.T) {
@@ -889,6 +1031,16 @@ func TestActivationEventBody_NilOrMalformedStaysNil(t *testing.T) {
 				Actor:            "alice",
 				ConditionApplied: &sdk.ConditionAppliedBody{Target: "alice"},
 				CapacityGranted:  &sdk.CapacityGrantedBody{Member: "alice"},
+			},
+		},
+		{
+			name: "a moved result beside another result",
+			body: sdk.ActivationResultBody{
+				Actor:       "alice",
+				MoveImposed: &sdk.MoveImposedBody{Target: "bob"},
+				DamageApplied: &sdk.DamageAppliedBody{
+					Target: "bob", SourceRef: "dnd5e:spells:thunderwave",
+				},
 			},
 		},
 	}
@@ -1402,6 +1554,101 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 		require.Len(t, r.GetBoundaries(), 1)
 		require.True(t, r.GetBoundaries()[0].GetBlocksLineOfSight())
 	})
+
+	// Sighted: a change in ONE recipient's own perception, passed through as
+	// member ids and nothing else. The names are the whole body on purpose --
+	// what the recipient now perceives about them is already answered,
+	// member-scoped, by GetView, and minting it here would be a second
+	// computation of that same answer.
+	t.Run("Sighted_CarriesNamesVerbatim", func(t *testing.T) {
+		got := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{Gained: []string{"goblin-2", "orc-1"}, Lost: []string{"wolf-3"}},
+		})
+		require.Equal(t, sessionpb.EventKind_EVENT_KIND_SIGHTED, got.GetKind())
+
+		sighted := got.GetSighted()
+		require.NotNil(t, sighted)
+		require.Equal(t, []string{"goblin-2", "orc-1"}, sighted.GetGained(),
+			"member ids verbatim, in the order the session settled them")
+		require.Equal(t, []string{"wolf-3"}, sighted.GetLost())
+	})
+
+	// EITHER HALF MAY BE ABSENT, and the seam does not invent the other. A
+	// client reads an empty Gained as "nobody arrived" rather than wondering
+	// whether the question was asked -- so this side must not turn an absent
+	// list into a present empty one, nor the reverse.
+	t.Run("Sighted_TheHalfThatDidNotHappenStaysAbsent", func(t *testing.T) {
+		arrived := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{Gained: []string{"goblin-2"}},
+		}).GetSighted()
+		require.Equal(t, []string{"goblin-2"}, arrived.GetGained())
+		require.Empty(t, arrived.GetLost(), "nobody left, so nothing is named as leaving")
+
+		departed := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{Lost: []string{"wolf-3"}},
+		}).GetSighted()
+		require.Empty(t, departed.GetGained())
+		require.Equal(t, []string{"wolf-3"}, departed.GetLost())
+	})
+
+	// NO ASSET REF IS MINTED HERE, unlike the equipment this seam does mint
+	// for (assetref.Item). This beat names MEMBERS, not items -- ids the
+	// client already holds from its roster -- so there is nothing in the
+	// rules' vocabulary needing translation into the manifest's. Pinned so a
+	// future "be consistent, namespace everything" pass has to argue with a
+	// test.
+	// THE THIRD LIST: a peer still in view whose appearance moved under the
+	// recipient. It crosses beside the two transitions rather than instead of
+	// them, because one pass can carry all three.
+	t.Run("Sighted_CarriesTheChangedHalf", func(t *testing.T) {
+		sighted := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{Changed: []string{"goblin-2"}},
+		}).GetSighted()
+		require.Equal(t, []string{"goblin-2"}, sighted.GetChanged())
+		require.Empty(t, sighted.GetGained(), "nobody arrived — it was already in view")
+		require.Empty(t, sighted.GetLost())
+
+		all := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{
+				Gained: []string{"orc-1"}, Lost: []string{"wolf-3"}, Changed: []string{"goblin-2"},
+			},
+		}).GetSighted()
+		require.Equal(t, []string{"orc-1"}, all.GetGained())
+		require.Equal(t, []string{"wolf-3"}, all.GetLost())
+		require.Equal(t, []string{"goblin-2"}, all.GetChanged(),
+			"three independent lists, and one pass can carry all of them")
+	})
+
+	// AND IT SAYS NOTHING ABOUT WHAT CHANGED. There is no item, slot or verb
+	// anywhere on this body — only a name. Pinned so the next person tempted
+	// to "just include the weapon, the client needs it anyway" has to argue
+	// with a test rather than with a comment: the fact is exactly what an
+	// illusion must be able to lie about, and a fact on the wire is true for
+	// everybody by construction.
+	t.Run("Sighted_SaysWhoChangedAndNeverWhat", func(t *testing.T) {
+		sighted := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{Changed: []string{"goblin-2"}},
+		}).GetSighted()
+
+		require.Equal(t, []string{"goblin-2"}, sighted.GetChanged())
+		require.Equal(t, 3, sighted.ProtoReflect().Descriptor().Fields().Len(),
+			"gained, lost, changed — and nowhere to put an item")
+	})
+
+	t.Run("Sighted_MemberIdsAreNotAssetRefs", func(t *testing.T) {
+		sighted := eventToProto(sdk.Event{
+			Kind: sdk.EventSighted,
+			Body: sdk.SightedBody{Gained: []string{"goblin-2"}},
+		}).GetSighted()
+		require.Equal(t, "goblin-2", sighted.GetGained()[0],
+			"a member id crosses as itself, not as dnd5e:item:goblin-2")
+	})
 }
 
 // TestEventToProto_UntypedKind_BodyStaysNilPayloadCarries pins the other
@@ -1530,6 +1777,39 @@ func TestDeclarationToProto_OmitsTheReactionOnAnOrdinaryRow(t *testing.T) {
 	require.Nil(t, out.GetReaction())
 }
 
+// TestDeclarationToProto_CarriesTheSpell covers the CAST row (rpg-project#405).
+// The verb alone cannot say which cantrip a row casts -- one verb compiles one
+// row per castable cantrip -- so this field is what lets a dock label the
+// button "Vicious Mockery" instead of "Cast".
+func TestDeclarationToProto_CarriesTheSpell(t *testing.T) {
+	out := declarationToProto(sdk.Declaration{
+		Verb:       sdk.VerbCast,
+		Slot:       sdk.SlotAction,
+		Available:  true,
+		ID:         "decl-cast-1",
+		TargetKind: sdk.TargetMember,
+		Candidates: []sdk.TargetCandidate{{Member: "skel-1", Available: true}},
+		Spell: &sdk.SpellRef{
+			Ref: "dnd5e:spells:vicious-mockery", Name: "Vicious Mockery",
+		},
+	})
+
+	require.Equal(t, sessionpb.Verb_VERB_CAST, out.GetVerb())
+	require.Equal(t, sessionpb.Slot_SLOT_ACTION, out.GetSlot(),
+		"a cantrip costs one action, and the row shows the price the door charges")
+	require.Equal(t, "dnd5e:spells:vicious-mockery", out.GetSpell().GetRef())
+	require.Equal(t, "Vicious Mockery", out.GetSpell().GetName(),
+		"the content authors the label; a client never derives it from the ref")
+}
+
+// The other half, and the one that makes the field mean anything: a row that
+// is not a cast carries NO spell. A zeroed SpellRef here would read as a
+// spell nobody named, on every Move and Attack row on the same panel.
+func TestDeclarationToProto_OmitsTheSpellOnAnOrdinaryRow(t *testing.T) {
+	out := declarationToProto(sdk.Declaration{Verb: sdk.VerbMove, ID: "decl-move-2"})
+	require.Nil(t, out.GetSpell())
+}
+
 // TestEventWindowOpened_ReachesTheWireTyped is the beat half of the done-when:
 // the fight paused, and the log says whose step, between which cells, who is
 // being asked, and with what.
@@ -1605,4 +1885,212 @@ func TestStruckAndMissedCarryTheReaction(t *testing.T) {
 		Attacker: "char-1", Target: "skel-1",
 	}}).GetStruck()
 	require.Nil(t, plain.GetReaction())
+}
+
+// TestEventRollWindowOpened_ReachesTheWireTyped is rpg-project#398's beat: a
+// d20 is on the table, the fight is waiting on the member who rolled it, and
+// the log says who is asked, what they hold and the two numbers they decide
+// with.
+//
+// A SECOND KIND, not a second shape of WINDOW_OPENED. The movement window
+// carries a mover and two cells; this one has neither, and the assertion that
+// the movement body is absent is what keeps the two from being conflated.
+func TestEventRollWindowOpened_ReachesTheWireTyped(t *testing.T) {
+	got := eventToProto(sdk.Event{
+		Session: "sess-1",
+		Kind:    sdk.EventRollWindowOpened,
+		Body: sdk.RollWindowOpenedBody{
+			PresentationID: "opaque~d20",
+			Audience:       "alice",
+			Offer: sdk.ReactionRef{
+				Ref: "dnd5e:conditions:inspired", Name: "Bardic Inspiration",
+			},
+			Roll:  15,
+			Total: 20,
+		},
+	})
+
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_ROLL_WINDOW_OPENED, got.GetKind())
+	w := got.GetRollWindowOpened()
+	require.NotNil(t, w, "the kind and the body arm are one-to-one")
+	require.Equal(t, "alice", w.GetAudience(), "the audience is the roller, and one member")
+	require.Equal(t, "opaque~d20", w.GetPresentationId())
+	require.Equal(t, "dnd5e:conditions:inspired", w.GetOffer().GetRef())
+	require.Equal(t, "Bardic Inspiration", w.GetOffer().GetName(), "the server authors the label")
+	require.Equal(t, int32(15), w.GetRoll())
+	require.Equal(t, int32(20), w.GetTotal())
+	require.Nil(t, got.GetWindowOpened(),
+		"a post-roll window is not a movement window: no mover, no cells, and no arm pretending otherwise")
+}
+
+// TestEventToProto_CarriesTheConcentrationBreak covers BOTH halves of the new
+// beat (rpg-project#407, R10) in one assertion set, because either half alone
+// still compiles and still ships a broken beat: an unmapped kind demotes to
+// EVENT_KIND_UNKNOWN at the default arm, and an unmapped body simply stays
+// nil. A break that arrives as a beat the client cannot read is exactly the
+// silence the dedicated kind exists to prevent.
+func TestEventToProto_CarriesTheConcentrationBreak(t *testing.T) {
+	out := eventToProto(sdk.Event{
+		Session: "sess-1",
+		Seq:     7,
+		Kind:    sdk.EventConcentrationEnded,
+		Body: sdk.ConcentrationEndedBody{
+			Caster: "bard-1",
+			Spell: sdk.SpellRef{
+				Ref: "dnd5e:spells:hold-person", Name: "Hold Person",
+			},
+			Reason: "damage",
+		},
+	})
+
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_CONCENTRATION_ENDED, out.GetKind())
+
+	body := out.GetConcentrationEnded()
+	require.NotNil(t, body, "the kind converted but the body did not; the beat is unreadable")
+	require.Equal(t, "bard-1", body.GetCaster())
+	require.Equal(t, "dnd5e:spells:hold-person", body.GetSpell().GetRef())
+	require.Equal(t, "Hold Person", body.GetSpell().GetName(),
+		"the content authors the label; a client never derives it from the ref")
+	require.Equal(t, "damage", body.GetReason(),
+		"the rulebook's own word, copied verbatim rather than classified here")
+}
+
+// TestParticipantToProto_CarriesConcentrating pins R11's one bool
+// (rpg-project#407). Unfilled, every roster row reads as nobody
+// concentrating, and the break beat above lands on a table that was never
+// shown the setup.
+func TestParticipantToProto_CarriesConcentrating(t *testing.T) {
+	holding := participantToProto(sdk.Participant{Member: "bard-1", Concentrating: true})
+	require.True(t, holding.GetConcentrating())
+
+	// The other half, and the one that makes the flag mean anything: a member
+	// holding nothing says so, rather than every row reading alike.
+	idle := participantToProto(sdk.Participant{Member: "fighter-1"})
+	require.False(t, idle.GetConcentrating())
+}
+
+// sdkTargetKinds is every selector shape the SDK declares.
+//
+// MAINTAINED BY HAND, and that is the honest limitation: Go cannot enumerate a
+// string-const type, so adding a kind to the SDK without adding it here leaves
+// this list short. It is still worth having — it is the only place that states
+// what the full set is — but the guarantee lives in the test below it, which
+// needs no maintenance at all.
+var sdkTargetKinds = []sdk.TargetKind{
+	sdk.TargetNone,
+	sdk.TargetMember,
+	sdk.TargetPath,
+	sdk.TargetArea,
+	sdk.TargetCell,
+}
+
+// TestEverySDKTargetKindReachesTheWire asserts no selector shape degrades to
+// UNSPECIFIED on its way to a client.
+//
+// An SDK kind with no case in targetKindToProto falls to UNSPECIFIED, and the
+// client has no branch for that: the row draws, the click does nothing, and
+// nothing is logged anywhere. That is not hypothetical — it is exactly what
+// TARGET_KIND_AREA did before rpg-api-protos#322, and it cost a walk to find.
+func TestEverySDKTargetKindReachesTheWire(t *testing.T) {
+	for _, kind := range sdkTargetKinds {
+		t.Run(string(kind), func(t *testing.T) {
+			require.NotEqual(t, sessionpb.TargetKind_TARGET_KIND_UNSPECIFIED,
+				targetKindToProto(kind),
+				"%q reaches the client as UNSPECIFIED, which it cannot dispatch on", kind)
+		})
+	}
+}
+
+// TestEveryProtoTargetKindIsProducedBySomeSDKKind is the half that needs no
+// maintenance.
+//
+// The proto enum is GENERATED, so its value set is enumerable at runtime
+// through TargetKind_name. A value declared on the wire that nothing can
+// produce is a contract the seam cannot honor — either a dead value, or a
+// mapping somebody forgot. Either way this fails without anyone remembering to
+// update a list.
+func TestEveryProtoTargetKindIsProducedBySomeSDKKind(t *testing.T) {
+	produced := make(map[sessionpb.TargetKind]sdk.TargetKind, len(sdkTargetKinds))
+	for _, kind := range sdkTargetKinds {
+		produced[targetKindToProto(kind)] = kind
+	}
+
+	for value, name := range sessionpb.TargetKind_name {
+		kind := sessionpb.TargetKind(value)
+		if kind == sessionpb.TargetKind_TARGET_KIND_UNSPECIFIED {
+			continue
+		}
+		require.Containsf(t, produced, kind,
+			"%s is declared in the proto and no SDK target kind maps to it", name)
+	}
+}
+
+// TestTargetKindAreaCrossesTheSeam pins the value this walk was about, by name
+// rather than only by the sweeps above.
+func TestTargetKindAreaCrossesTheSeam(t *testing.T) {
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_AREA, targetKindToProto(sdk.TargetArea))
+}
+
+// TestTargetKindCellCrossesTheSeam pins the shape an AIMED cast announces.
+//
+// CELL is the kind a client cannot guess at. AREA fires the moment it is
+// armed; CELL has to wait for a ground click, and a client that reads
+// UNSPECIFIED here would fire the cube at nothing. The sweeps above would
+// catch it, this says which value it is.
+func TestTargetKindCellCrossesTheSeam(t *testing.T) {
+	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_CELL, targetKindToProto(sdk.TargetCell))
+}
+
+// sdkUnresolvedReasons is every reason the SDK declares. Hand-kept, with the
+// same limitation sdkTargetKinds has and the same mechanical partner below.
+var sdkUnresolvedReasons = []sdk.UnresolvedReason{
+	sdk.UnresolvedNoSheet,
+}
+
+// TestEveryProtoUnresolvedReasonIsProduced needs no list maintained.
+//
+// The proto enum is generated, so its values are enumerable at runtime. A wire
+// value nothing can produce is a contract the seam cannot honor — and this is
+// the guard TargetKind did not have, which is why an area cast reached a client
+// as UNSPECIFIED and cost a walk to find.
+func TestEveryProtoUnresolvedReasonIsProduced(t *testing.T) {
+	produced := make(map[sessionpb.UnresolvedReason]sdk.UnresolvedReason, len(sdkUnresolvedReasons))
+	for _, reason := range sdkUnresolvedReasons {
+		produced[unresolvedReasonToProto(reason)] = reason
+	}
+
+	for value, name := range sessionpb.UnresolvedReason_name {
+		reason := sessionpb.UnresolvedReason(value)
+		if reason == sessionpb.UnresolvedReason_UNRESOLVED_REASON_UNSPECIFIED {
+			continue
+		}
+		require.Containsf(t, produced, reason,
+			"%s is declared in the proto and no SDK reason maps to it", name)
+	}
+}
+
+// TestACaughtMemberCrossesTheSeamWhole asserts member, kind and reason all
+// survive the conversion.
+//
+// The whole point of the field: a shopkeeper standing in a thunderclap must
+// reach the client as somebody, not as the absence of a target. Member, kind
+// and reason all have to survive, or the client can see that SOMETHING was
+// caught without being able to say what or why.
+func TestACaughtMemberCrossesTheSeamWhole(t *testing.T) {
+	got := caughtMembersToProto([]sdk.CaughtMember{{
+		Member: "demo-merchant-1", Kind: sdk.KindWorld, Reason: sdk.UnresolvedNoSheet,
+	}})
+
+	require.Len(t, got, 1)
+	require.Equal(t, "demo-merchant-1", got[0].GetMember())
+	require.Equal(t, sessionpb.MemberKind_MEMBER_KIND_WORLD, got[0].GetKind())
+	require.Equal(t, sessionpb.UnresolvedReason_UNRESOLVED_REASON_NO_SHEET, got[0].GetReason())
+}
+
+// TestCatchingNobodyIsNilRatherThanEmpty — most casts catch nobody this way and
+// every cast that is not an area catches nobody at all, so an empty slice would
+// be a second way of saying the same nothing.
+func TestCatchingNobodyIsNilRatherThanEmpty(t *testing.T) {
+	require.Nil(t, caughtMembersToProto(nil))
+	require.Nil(t, caughtMembersToProto([]sdk.CaughtMember{}))
 }

@@ -49,6 +49,7 @@ type EquipItemTestSuite struct {
 	ctx               context.Context
 
 	testCharacterID string
+	notified        *recordingNotifier
 }
 
 func TestEquipItemSuite(t *testing.T) {
@@ -57,17 +58,20 @@ func TestEquipItemSuite(t *testing.T) {
 
 func (s *EquipItemTestSuite) SetupTest() {
 	s.ctrl = gomock.NewController(s.T())
+	s.notified = &recordingNotifier{}
 	s.mockCharacterRepo = charactermock.NewMockRepository(s.ctrl)
 	s.ctx = context.Background()
 	s.testCharacterID = "char-fighter-1"
 
 	var err error
+	s.notified = &recordingNotifier{}
 	s.orchestrator, err = New(&Config{
-		DraftRepo:        draftmock.NewMockRepository(s.ctrl),
-		CharacterRepo:    s.mockCharacterRepo,
-		DiceService:      dicemock.NewMockService(s.ctrl),
-		IDGenerator:      idgenmock.NewMockGenerator(s.ctrl),
-		DraftIDGenerator: idgenmock.NewMockGenerator(s.ctrl),
+		DraftRepo:          draftmock.NewMockRepository(s.ctrl),
+		CharacterRepo:      s.mockCharacterRepo,
+		DiceService:        dicemock.NewMockService(s.ctrl),
+		IDGenerator:        idgenmock.NewMockGenerator(s.ctrl),
+		DraftIDGenerator:   idgenmock.NewMockGenerator(s.ctrl),
+		AppearanceNotifier: s.notified,
 	})
 	s.Require().NoError(err)
 }
@@ -348,7 +352,12 @@ func (s *EquipItemTestSuite) TestEquipItem_PreservesNonEquipmentFields() {
 	fixedCreatedAt := time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)
 	charEntity.Data.BackgroundID = backgrounds.Soldier
 	charEntity.Data.CreatedAt = fixedCreatedAt
-	charEntity.Data.SpellSlots = map[int]character.SpellSlotData{1: {Max: 2, Used: 1}}
+	if charEntity.Data.Resources == nil {
+		charEntity.Data.Resources = make(map[coreResources.ResourceKey]character.RecoverableResourceData)
+	}
+	charEntity.Data.Resources[resources.HitDice] = character.RecoverableResourceData{
+		Current: 1, Maximum: 2, ResetType: coreResources.ResetLongRest,
+	}
 	charEntity.Data.ClassResources = map[shared.ClassResourceType]character.ResourceData{
 		shared.ClassResourceType(99): {Name: "legacy", Current: 1, Max: 2},
 	}
@@ -385,7 +394,7 @@ func (s *EquipItemTestSuite) TestEquipItem_PreservesNonEquipmentFields() {
 	s.Assert().Equal(backgrounds.Soldier, persisted.Data.BackgroundID, "BackgroundID must survive an equip call")
 	s.Assert().True(fixedCreatedAt.Equal(persisted.Data.CreatedAt), "CreatedAt must survive an equip call")
 	s.Assert().Equal(charEntity.Data.Inventory, persisted.Data.Inventory)
-	s.Assert().Equal(charEntity.Data.SpellSlots, persisted.Data.SpellSlots)
+	s.Assert().Equal(charEntity.Data.Resources, persisted.Data.Resources)
 	s.Assert().Equal(charEntity.Data.ClassResources, persisted.Data.ClassResources)
 	s.Assert().Equal(charEntity.Data.Appearance, persisted.Data.Appearance)
 
@@ -780,4 +789,157 @@ func (s *EquipItemTestSuite) TestEquipItem_SyncsStoredArmorClass() {
 	s.Require().NoError(err)
 	s.Require().NotNil(persisted)
 	s.Assert().Equal(16, persisted.ArmorClass, "stored ArmorClass must be refreshed to the real EffectiveAC total")
+}
+
+// recordingNotifier stands in for the thing that finds a player's live
+// encounter, so these tests can ask whether the doorbell rang and what it
+// carried — while this package still knows nothing about encounters.
+type recordingNotifier struct {
+	calls []AppearanceChangedInput
+	err   error
+}
+
+func (r *recordingNotifier) AppearanceChanged(_ context.Context, in *AppearanceChangedInput) error {
+	r.calls = append(r.calls, *in)
+	return r.err
+}
+
+// THE DOORBELL RINGS, AND CARRIES BOTH IDS. The notifier needs the owning
+// player to find a live encounter and the character to name the member inside
+// it, and this orchestrator has just loaded the record holding both — so it
+// passes them rather than making the notifier read the store back.
+func (s *EquipItemTestSuite) TestEquipItem_TellsWatchersTheAppearanceChanged() {
+	entity := s.fighterWithLongswordAndShield()
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
+	s.mockCharacterRepo.EXPECT().
+		PatchEquipment(s.ctx, gomock.Any()).
+		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
+			return s.appliedPatch(entity, input), nil
+		})
+
+	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
+		CharacterID: s.testCharacterID, ItemID: "longsword", Slot: character.SlotMainHand,
+	})
+	s.Require().NoError(err)
+
+	s.Require().Len(s.notified.calls, 1, "one equip, one telling")
+	s.Equal(s.testCharacterID, s.notified.calls[0].CharacterID)
+	s.Equal(entity.Data.PlayerID, s.notified.calls[0].PlayerID,
+		"the owner is how a live encounter gets found")
+}
+
+// A REFUSED EQUIP TELLS NOBODY. Nothing was written, so there is nothing for
+// a watcher to re-read — and a nudge here would send every client to refetch
+// a view that did not change.
+func (s *EquipItemTestSuite) TestEquipItem_ARefusalTellsNobody() {
+	entity := s.fighterWithLongswordAndShield()
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
+	// Deliberately no PatchEquipment expectation: the item is not held.
+
+	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
+		CharacterID: s.testCharacterID, ItemID: "a-sword-she-does-not-have",
+		Slot: character.SlotMainHand,
+	})
+	s.Require().Error(err)
+	s.Empty(s.notified.calls, "nothing was written, so nobody is owed a second look")
+}
+
+// A FAILED NOTIFICATION DOES NOT FAIL THE EQUIP. The sheet is already written
+// and durable; returning an error now would tell the client its equip failed
+// and invite a retry that writes again. What it costs instead is that watchers
+// keep the picture they had until the next sight refresh — which is where this
+// started, so the degradation is to yesterday rather than to broken.
+func (s *EquipItemTestSuite) TestEquipItem_ANotifierFailureDoesNotFailTheEquip() {
+	s.notified.err = errors.New("the session is gone")
+	entity := s.fighterWithLongswordAndShield()
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
+	s.mockCharacterRepo.EXPECT().
+		PatchEquipment(s.ctx, gomock.Any()).
+		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
+			return s.appliedPatch(entity, input), nil
+		})
+
+	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
+		CharacterID: s.testCharacterID, ItemID: "longsword", Slot: character.SlotMainHand,
+	})
+	s.Require().NoError(err, "the write succeeded, so the call succeeded")
+	s.Require().NotNil(out)
+	s.Len(s.notified.calls, 1, "and it was attempted")
+}
+
+// TestUnequipItem_TellsWatchersTheAppearanceChanged is the regression for the
+// half that was missing.
+//
+// Equipping told watchers and unequipping did not, so drawing a weapon
+// appeared instantly to a peer while putting one away stayed invisible until
+// somebody took a step — found on the first walk. Both verbs now write through
+// one path, so this and its equip twin are asserting the same line.
+func (s *EquipItemTestSuite) TestUnequipItem_TellsWatchersTheAppearanceChanged() {
+	entity := s.fighterWithLongswordAndShield()
+	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotMainHand: "longsword"}
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
+	s.mockCharacterRepo.EXPECT().
+		PatchEquipment(s.ctx, gomock.Any()).
+		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
+			return s.appliedPatch(entity, input), nil
+		})
+
+	_, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
+		CharacterID: s.testCharacterID, Slot: character.SlotMainHand,
+	})
+	s.Require().NoError(err)
+
+	s.Require().Len(s.notified.calls, 1, "putting a weapon away is a change watchers can see")
+	s.Equal(s.testCharacterID, s.notified.calls[0].CharacterID)
+	s.Equal(entity.Data.PlayerID, s.notified.calls[0].PlayerID)
+}
+
+// A LOSING VERSION RACE TELLS NOBODY, AND THE WINNING RETRY TELLS ONCE.
+//
+// This is the guard the single write path actually implements: the first
+// attempt is rejected on its version, nothing is written, and watchers hear
+// nothing about it. The retry lands and they hear once. Notifying on the
+// rejected attempt would send every watcher to re-read a change that never
+// happened; notifying twice would do it again for one that happened once.
+func (s *EquipItemTestSuite) TestEquipItem_AVersionRaceTellsNobodyUntilTheWriteLands() {
+	entity := s.fighterWithLongswordAndShield()
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity, Version: "version-before-combat"}, nil)
+
+	latestData := *entity.Data
+	latestData.HitPoints = 7
+	latestData.EquipmentSlots = maps.Clone(entity.Data.EquipmentSlots)
+	latest := &entities.Character{Data: &latestData}
+
+	gomock.InOrder(
+		s.mockCharacterRepo.EXPECT().
+			PatchEquipment(s.ctx, gomock.Any()).
+			DoAndReturn(func(_ context.Context, _ characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
+				return &characterrepo.PatchEquipmentOutput{
+					Character: latest, Version: "version-after-combat", Applied: false,
+				}, nil
+			}),
+		s.mockCharacterRepo.EXPECT().
+			PatchEquipment(s.ctx, gomock.Any()).
+			DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
+				return s.appliedPatch(latest, input), nil
+			}),
+	)
+
+	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
+		CharacterID: s.testCharacterID, ItemID: "longsword", Slot: character.SlotMainHand,
+	})
+	s.Require().NoError(err)
+
+	s.Len(s.notified.calls, 1,
+		"the rejected attempt wrote nothing and said nothing; the retry wrote once and said once")
 }

@@ -101,6 +101,21 @@ func (mr *MockManagerMockRecorder) Attack(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Attack", reflect.TypeOf((*MockManager)(nil).Attack), ctx, in)
 }
 
+// Cast mocks base method.
+func (m *MockManager) Cast(ctx context.Context, in *session.CastInput) (*session.CastOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Cast", ctx, in)
+	ret0, _ := ret[0].(*session.CastOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Cast indicates an expected call of Cast.
+func (mr *MockManagerMockRecorder) Cast(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Cast", reflect.TypeOf((*MockManager)(nil).Cast), ctx, in)
+}
+
 // DeathSave mocks base method.
 func (m *MockManager) DeathSave(ctx context.Context, in *session.DeathSaveInput) (*session.DeathSaveOutput, error) {
 	m.ctrl.T.Helper()

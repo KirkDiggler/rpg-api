@@ -239,15 +239,59 @@ func TestSeed_DefaultStillDeletesAndRecreatesToolkitFixtures(t *testing.T) {
 		{Characters: []*dnd5ev1alpha1.Character{{Id: "old-barbarian", Name: barbarianName}}},
 		{Characters: []*dnd5ev1alpha1.Character{{Id: "new-barbarian", Name: barbarianName}}},
 		{Characters: []*dnd5ev1alpha1.Character{{Id: "new-barbarian", Name: barbarianName}}},
+		// The bard lists twice rather than three times: it equips nothing, so
+		// there is no post-equip confirmation list.
+		{Characters: []*dnd5ev1alpha1.Character{{Id: "old-bard", Name: bardName}}},
+		{Characters: []*dnd5ev1alpha1.Character{{Id: "new-bard", Name: bardName}}},
 	}
 
 	err := Seed(context.Background(), client)
 
 	require.NoError(t, err)
-	require.Equal(t, []string{"old-fighter", "old-barbarian"}, client.deletedIDs)
-	require.Equal(t, 2, client.createDrafts)
+	require.Equal(t, []string{"old-fighter", "old-barbarian", "old-bard"}, client.deletedIDs)
+	require.Equal(t, 3, client.createDrafts)
 	require.Contains(t, client.authHeaders, "Dev "+fighterIdentity)
 	require.Contains(t, client.authHeaders, "Dev "+barbarianIdentity)
+	require.Contains(t, client.authHeaders, "Dev "+bardIdentity)
+}
+
+// The caster fixture's whole point is that it arrives already able to cast, so
+// the two cast shapes and the leveled spell are pinned as REFS on the request
+// rather than left to whatever the creation flow happened to default to.
+func TestSeed_BardAsksForBothCantripsAndBothSupportedLevelOneSpells(t *testing.T) {
+	client := newGalleryFakeClient()
+	client.listResponses = []*dnd5ev1alpha1.ListCharactersResponse{
+		{}, {Characters: []*dnd5ev1alpha1.Character{{Id: "new-fighter", Name: fighterName}}},
+		{Characters: []*dnd5ev1alpha1.Character{{Id: "new-fighter", Name: fighterName}}},
+		{}, {Characters: []*dnd5ev1alpha1.Character{{Id: "new-barbarian", Name: barbarianName}}},
+		{Characters: []*dnd5ev1alpha1.Character{{Id: "new-barbarian", Name: barbarianName}}},
+		{}, {Characters: []*dnd5ev1alpha1.Character{{Id: "new-bard", Name: bardName}}},
+	}
+
+	require.NoError(t, Seed(context.Background(), client))
+
+	var cantrips, leveled []string
+	for _, request := range client.updateClassRequests {
+		if request.GetClass() != dnd5ev1alpha1.Class_CLASS_BARD {
+			continue
+		}
+		for _, choice := range request.GetClassChoices() {
+			refs := choice.GetSpells().GetSpellRefs()
+			switch choice.GetCategory() {
+			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS:
+				cantrips = refs
+			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS:
+				leveled = refs
+			}
+		}
+	}
+
+	require.Equal(t, []string{bladeWardRef, viciousMockeryRef}, cantrips,
+		"one self-target cast and one creature-target cast, so both shapes are reachable")
+	require.Contains(t, leveled, baneRef,
+		"a cast aimed at creatures the caller names")
+	require.Contains(t, leveled, thunderwaveRef,
+		"and one aimed at a cell, so the fixture can walk either selector shape")
 }
 
 func TestCloneGalleryCharacterPreservesToolkitAppearance(t *testing.T) {
@@ -295,7 +339,6 @@ func TestCloneEntityTestHelperDeepCopiesRepresentativeState(t *testing.T) {
 	clone.Data.WeaponProficiencies[0] = proficiencies.WeaponSimple
 	clone.Data.ToolProficiencies[0] = proficiencies.ToolThieves
 	clone.Data.EquipmentSlots[tkcharacter.SlotOffHand] = "torch"
-	clone.Data.SpellSlots[1] = tkcharacter.SpellSlotData{Max: 1, Used: 1}
 	clone.Data.ClassResources[shared.ClassResourceSecondWind] = tkcharacter.ResourceData{Name: "Second Wind", Current: 0, Max: 1, Resets: shared.ResetTypeLongRest}
 	clone.Data.Resources[coreResources.ResourceKey("hit-dice")] = tkcharacter.RecoverableResourceData{Current: 0, Maximum: 2, ResetType: coreResources.ResetShortRest}
 	clone.Data.Features[0] = json.RawMessage(`{"id":"action-surge"}`)
@@ -318,7 +361,6 @@ func TestCloneEntityTestHelperDeepCopiesRepresentativeState(t *testing.T) {
 	require.Equal(t, proficiencies.WeaponSimple, original.Data.WeaponProficiencies[0])
 	require.Equal(t, proficiencies.ToolSmith, original.Data.ToolProficiencies[0])
 	require.Equal(t, "shield", original.Data.EquipmentSlots[tkcharacter.SlotOffHand])
-	require.Equal(t, tkcharacter.SpellSlotData{Max: 2, Used: 1}, original.Data.SpellSlots[1])
 	require.Equal(t, tkcharacter.ResourceData{Name: "Second Wind", Current: 1, Max: 1, Resets: shared.ResetTypeShortRest}, original.Data.ClassResources[shared.ClassResourceSecondWind])
 	require.Equal(t, tkcharacter.RecoverableResourceData{Current: 1, Maximum: 2, ResetType: coreResources.ResetLongRest}, original.Data.Resources[coreResources.ResourceKey("hit-dice")])
 	require.Equal(t, json.RawMessage(`{"id":"second-wind"}`), original.Data.Features[0])
@@ -597,7 +639,6 @@ func galleryCharacter(id string, inventory []tkcharacter.InventoryItemData) *ent
 				tkcharacter.SlotOffHand:  "shield",
 				tkcharacter.SlotArmor:    "chain-mail",
 			},
-			SpellSlots: map[int]tkcharacter.SpellSlotData{1: {Max: 2, Used: 1}},
 			ClassResources: map[shared.ClassResourceType]tkcharacter.ResourceData{
 				shared.ClassResourceSecondWind: {Name: "Second Wind", Current: 1, Max: 1, Resets: shared.ResetTypeShortRest},
 			},
@@ -675,12 +716,6 @@ func cloneEntity(in *entities.Character) *entities.Character {
 			data.EquipmentSlots = make(tkcharacter.EquipmentSlots, len(in.Data.EquipmentSlots))
 			for k, v := range in.Data.EquipmentSlots {
 				data.EquipmentSlots[k] = v
-			}
-		}
-		if in.Data.SpellSlots != nil {
-			data.SpellSlots = make(map[int]tkcharacter.SpellSlotData, len(in.Data.SpellSlots))
-			for k, v := range in.Data.SpellSlots {
-				data.SpellSlots[k] = v
 			}
 		}
 		if in.Data.ClassResources != nil {
@@ -769,9 +804,20 @@ type galleryFakeClient struct {
 	updateAbilityScoreRequests []*dnd5ev1alpha1.UpdateAbilityScoresRequest
 	getDraftRequests           []*dnd5ev1alpha1.GetDraftRequest
 	finalizeDraftRequests      []*dnd5ev1alpha1.FinalizeDraftRequest
+
+	// What GetCharacter reports the character learned. Defaulted to the bard
+	// fixture's real refs and overridable so the seeder's own refusal -- a
+	// character that finalized knowing nothing -- can be exercised.
+	knownCantrips []string
+	knownSpells   []string
 }
 
-func newGalleryFakeClient() *galleryFakeClient { return &galleryFakeClient{} }
+func newGalleryFakeClient() *galleryFakeClient {
+	return &galleryFakeClient{
+		knownCantrips: []string{bladeWardRef, viciousMockeryRef},
+		knownSpells:   []string{baneRef, thunderwaveRef},
+	}
+}
 
 func (c *galleryFakeClient) record(ctx context.Context, method string) {
 	c.calls = append(c.calls, method)
@@ -846,7 +892,14 @@ func (c *galleryFakeClient) FinalizeDraft(ctx context.Context, request *dnd5ev1a
 
 func (c *galleryFakeClient) GetCharacter(ctx context.Context, request *dnd5ev1alpha1.GetCharacterRequest, _ ...grpc.CallOption) (*dnd5ev1alpha1.GetCharacterResponse, error) {
 	c.record(ctx, "GetCharacter")
-	character := &dnd5ev1alpha1.Character{Id: request.GetCharacterId(), AbilityScores: &dnd5ev1alpha1.AbilityScores{Strength: 15}, EquipmentSlots: &dnd5ev1alpha1.EquipmentSlots{}, Inventory: []*dnd5ev1alpha1.InventoryItem{{ItemId: shieldItemID}}}
+	character := &dnd5ev1alpha1.Character{
+		Id:             request.GetCharacterId(),
+		AbilityScores:  &dnd5ev1alpha1.AbilityScores{Strength: 15},
+		EquipmentSlots: &dnd5ev1alpha1.EquipmentSlots{},
+		Inventory:      []*dnd5ev1alpha1.InventoryItem{{ItemId: shieldItemID}},
+		KnownCantrips:  c.knownCantrips,
+		KnownSpells:    c.knownSpells,
+	}
 	return &dnd5ev1alpha1.GetCharacterResponse{Character: character}, nil
 }
 
@@ -864,3 +917,36 @@ func first(values []string) string {
 }
 
 var _ CharacterRPC = (*galleryFakeClient)(nil)
+
+// A bard that finalized having learned nothing is the failure this fixture
+// exists to prevent: it looks like a working character right up until the
+// action dock has no cast row on it. The seeder refuses rather than reporting
+// a fixture nobody can cast with.
+func TestSeed_RefusesABardThatFinalizedKnowingNothing(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		cantrips []string
+		spells   []string
+		want     string
+	}{
+		{"no cantrips", nil, []string{baneRef, thunderwaveRef}, "no known cantrips"},
+		{"no spells", []string{bladeWardRef}, nil, "no known spells"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := newGalleryFakeClient()
+			client.knownCantrips = tc.cantrips
+			client.knownSpells = tc.spells
+			client.listResponses = []*dnd5ev1alpha1.ListCharactersResponse{
+				{}, {Characters: []*dnd5ev1alpha1.Character{{Id: "new-fighter", Name: fighterName}}},
+				{Characters: []*dnd5ev1alpha1.Character{{Id: "new-fighter", Name: fighterName}}},
+				{}, {Characters: []*dnd5ev1alpha1.Character{{Id: "new-barbarian", Name: barbarianName}}},
+				{Characters: []*dnd5ev1alpha1.Character{{Id: "new-barbarian", Name: barbarianName}}},
+				{}, {Characters: []*dnd5ev1alpha1.Character{{Id: "new-bard", Name: bardName}}},
+			}
+
+			err := Seed(context.Background(), client)
+
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
+}

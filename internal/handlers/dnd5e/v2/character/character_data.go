@@ -16,14 +16,19 @@ import (
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
+	"github.com/KirkDiggler/rpg-api/internal/converters/assetref"
 	orchcharacter "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 )
 
 const (
-	refModuleDnd5e = "dnd5e"
+	refModuleDnd5e = assetref.Module
 	refTypeClass   = "class"
 	refTypeRace    = "race"
-	refTypeItem    = "item"
+
+	// refTypeItem is the asset pipeline's namespace, not a rules one. It lives
+	// in assetref so this seam and the session seam cannot drift about what a
+	// shield is called (rpg-toolkit#1615).
+	refTypeItem = assetref.TypeItem
 )
 
 // BuildCharacterData maps the complete detached owner-private View onto the
