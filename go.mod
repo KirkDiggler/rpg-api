@@ -10,8 +10,8 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/npc v0.2.0
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.154.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.71.1-0.20260911033240-28ef7e9a0524
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.73.1-0.20260911033604-0e48c6777c19
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.72.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.74.0
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.12.0
 	github.com/KirkDiggler/rpg-toolkit/world v0.4.1
 	github.com/alicebob/miniredis/v2 v2.35.0
@@ -34,7 +34,7 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/game v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1 // indirect
 	github.com/KirkDiggler/rpg-toolkit/play/clock v0.1.0 // indirect
-	github.com/KirkDiggler/rpg-toolkit/play/intel v0.1.1-0.20260911012734-3c8bd921bd73 // indirect
+	github.com/KirkDiggler/rpg-toolkit/play/intel v0.2.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/play/interrupt v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/play/record v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/behavior v0.3.0 // indirect
