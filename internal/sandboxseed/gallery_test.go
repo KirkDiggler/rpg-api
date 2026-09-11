@@ -258,7 +258,7 @@ func TestSeed_DefaultStillDeletesAndRecreatesToolkitFixtures(t *testing.T) {
 // The caster fixture's whole point is that it arrives already able to cast, so
 // the two cast shapes and the leveled spell are pinned as REFS on the request
 // rather than left to whatever the creation flow happened to default to.
-func TestSeed_BardAsksForBothCantripsAndTheSupportedLevelOneSpell(t *testing.T) {
+func TestSeed_BardAsksForBothCantripsAndBothSupportedLevelOneSpells(t *testing.T) {
 	client := newGalleryFakeClient()
 	client.listResponses = []*dnd5ev1alpha1.ListCharactersResponse{
 		{}, {Characters: []*dnd5ev1alpha1.Character{{Id: "new-fighter", Name: fighterName}}},
@@ -288,8 +288,10 @@ func TestSeed_BardAsksForBothCantripsAndTheSupportedLevelOneSpell(t *testing.T) 
 
 	require.Equal(t, []string{bladeWardRef, viciousMockeryRef}, cantrips,
 		"one self-target cast and one creature-target cast, so both shapes are reachable")
+	require.Contains(t, leveled, baneRef,
+		"a cast aimed at creatures the caller names")
 	require.Contains(t, leveled, thunderwaveRef,
-		"the walk needs an aimed cast, and Thunderwave is the only one the bard can learn at level 1")
+		"and one aimed at a cell, so the fixture can walk either selector shape")
 }
 
 func TestCloneGalleryCharacterPreservesToolkitAppearance(t *testing.T) {
@@ -813,7 +815,7 @@ type galleryFakeClient struct {
 func newGalleryFakeClient() *galleryFakeClient {
 	return &galleryFakeClient{
 		knownCantrips: []string{bladeWardRef, viciousMockeryRef},
-		knownSpells:   []string{thunderwaveRef},
+		knownSpells:   []string{baneRef, thunderwaveRef},
 	}
 }
 
@@ -927,7 +929,7 @@ func TestSeed_RefusesABardThatFinalizedKnowingNothing(t *testing.T) {
 		spells   []string
 		want     string
 	}{
-		{"no cantrips", nil, []string{thunderwaveRef}, "no known cantrips"},
+		{"no cantrips", nil, []string{baneRef, thunderwaveRef}, "no known cantrips"},
 		{"no spells", []string{bladeWardRef}, nil, "no known spells"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

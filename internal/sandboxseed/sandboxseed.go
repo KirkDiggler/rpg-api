@@ -33,15 +33,16 @@ const (
 	// SpellSelection.spell_refs field takes.
 	bladeWardRef      = "dnd5e:spells:blade-ward"
 	viciousMockeryRef = "dnd5e:spells:vicious-mockery"
-	// THE LEVELED PICK TAKES EXACTLY ONE. The bard's level-1 spellbook
-	// requirement offers Bane and Thunderwave and validates
-	// len(chosen) == Count, so the sandbox fixture has one slot on it and
-	// spending it is a choice, not an addition. It goes to Thunderwave
-	// because Thunderwave is the only cast the sandbox can AIM -- the
-	// caster-edge cube that the cell on CastRequest exists to point -- and
-	// a fixture nobody can aim with cannot walk that seam. Bane's own
-	// coverage does not ride here: the Bane acceptance test builds its own
-	// bard through the normal draft service.
+	// BOTH, because the bard's level-1 pick takes two (rpg-toolkit#1661).
+	// The requirement validates len(chosen) == Count exactly, so this list
+	// is not a preference -- it is the whole of what the pick allows, and a
+	// fixture carrying one of them would be refused at finalize.
+	//
+	// The pair is also the pair worth having. Bane is the cast aimed at
+	// CREATURES the caller names; Thunderwave is the one aimed at a CELL,
+	// the caster-edge cube that the cell on CastRequest exists to point. A
+	// sandbox bard who knows both can walk either selector shape.
+	baneRef        = "dnd5e:spells:bane"
 	thunderwaveRef = "dnd5e:spells:thunderwave"
 )
 
@@ -194,7 +195,7 @@ func seedBard(ctx context.Context, client CharacterRPC) error {
 				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
 				ChoiceId: "bard-spells-1",
 				Selection: &dnd5ev1alpha1.ChoiceData_Spells{Spells: &dnd5ev1alpha1.SpellSelection{
-					SpellRefs: []string{thunderwaveRef},
+					SpellRefs: []string{baneRef, thunderwaveRef},
 				}},
 			},
 		},
