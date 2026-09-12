@@ -33,13 +33,13 @@ const (
 	// SpellSelection.spell_refs field takes.
 	bladeWardRef      = "dnd5e:spells:blade-ward"
 	viciousMockeryRef = "dnd5e:spells:vicious-mockery"
-	// ALL FOUR, because the bard's level-1 pick takes the whole catalogue
-	// while the catalogue is no larger than the class progression
+	// ALL FOUR, because the bard's level-1 pick takes the whole catalog
+	// while the catalog is no larger than the class progression
 	// (rpg-toolkit#1661). The requirement validates len(chosen) == Count
 	// exactly, so this list is not a preference -- it is the whole of what
 	// the pick allows, and a fixture carrying fewer would be refused at
 	// finalize. Command is the arrival that took the count to four, which is
-	// where the progression stops: from here the catalogue outgrows the pick
+	// where the progression stops: from here the catalog outgrows the pick
 	// and this list becomes a choice again.
 	//
 	// The four are also the four worth having. Bane is the cast aimed at
