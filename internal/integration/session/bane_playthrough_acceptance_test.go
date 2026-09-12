@@ -28,6 +28,7 @@ const (
 	baneSpellRef              = "dnd5e:spells:bane"
 	thunderwaveSpellRef       = "dnd5e:spells:thunderwave"
 	dissonantWhispersSpellRef = "dnd5e:spells:dissonant-whispers"
+	commandSpellRef           = "dnd5e:spells:command"
 )
 
 func newCharacterCreationHandler(t *testing.T, h *acceptanceHarness) *characterhandler.Handler {
@@ -122,12 +123,13 @@ func createFinalizedBaneBard(t *testing.T, h *acceptanceHarness, playerID string
 			{
 				Category: dnd5epb.ChoiceCategory_CHOICE_CATEGORY_SPELLS, Source: dnd5epb.ChoiceSource_CHOICE_SOURCE_CLASS,
 				ChoiceId: "bard-spells-1",
-				// BOTH, because the level-1 pick takes two (rpg-toolkit#1661)
-				// and validates the count exactly. This test is about Bane,
-				// and Thunderwave rides along only because the pick refuses a
-				// bard who left the second slot empty.
+				// ALL OF THEM, because the level-1 pick takes every
+				// supported spell (rpg-toolkit#1661) and validates the count
+				// exactly. This test is about Bane; the other three ride
+				// along only because the pick refuses a bard who left a slot
+				// empty.
 				Selection: &dnd5epb.ChoiceData_Spells{Spells: &dnd5epb.SpellSelection{SpellRefs: []string{
-					baneSpellRef, thunderwaveSpellRef, dissonantWhispersSpellRef,
+					baneSpellRef, thunderwaveSpellRef, dissonantWhispersSpellRef, commandSpellRef,
 				}}},
 			},
 		},
