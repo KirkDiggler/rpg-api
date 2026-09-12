@@ -2143,3 +2143,82 @@ func TestDeclarationToProto_CarriesNoMenuOnARowThatOffersNoChoice(t *testing.T) 
 	})
 	require.Empty(t, out.GetOptions(), "a spell with no menu offers no word to choose")
 }
+
+// TestConditionAppliedToProto_NamesWhoIsResponsible is the walk finding of
+// 2026-09-12: the raw activation-result payload carried source_id and the
+// typed conditionApplied.sourceId beside it was empty, because this converter
+// copied three of the body's four fields.
+//
+// THE SOURCE IS PART OF THE CONDITION'S ADDRESS, not decoration. Two casters
+// can each land Bane on the same fighter, and target+ref alone cannot tell
+// those instances apart -- which is exactly what a client needs to say whose
+// Command holds a creature, and which of two Banes ended when one caster's
+// concentration broke.
+func TestConditionAppliedToProto_NamesWhoIsResponsible(t *testing.T) {
+	got := eventToProto(sdk.Event{
+		Kind: sdk.EventActivationResult,
+		Body: sdk.ActivationResultBody{
+			Actor: "char_bard",
+			ConditionApplied: &sdk.ConditionAppliedBody{
+				Target:   "zombie-1",
+				Ref:      "dnd5e:conditions:commanded",
+				Name:     "the commanded condition",
+				SourceID: "char_bard",
+			},
+		},
+	})
+
+	condition := got.GetActivationResult().GetConditionApplied()
+	require.NotNil(t, condition)
+	require.Equal(t, "char_bard", condition.GetSourceId(),
+		"the typed field must say what the raw payload already said")
+	require.Equal(t, "zombie-1", condition.GetTarget())
+	require.Equal(t, "dnd5e:conditions:commanded", condition.GetRef())
+	require.Equal(t, "the commanded condition", condition.GetName())
+}
+
+// The half that keeps the field honest: a body with no source leaves the wire
+// field empty rather than borrowing the actor beside it.
+//
+// The actor is who ACTED and the source is who the condition answers to, and
+// they are the same id often enough that filling one from the other would look
+// right for a long time. A condition applied by no one -- terrain, a trap the
+// rulebook does not attribute -- would then be blamed on whoever was standing
+// there.
+func TestConditionAppliedToProto_LeavesAnUnattributedConditionUnattributed(t *testing.T) {
+	got := eventToProto(sdk.Event{
+		Kind: sdk.EventActivationResult,
+		Body: sdk.ActivationResultBody{
+			Actor: "char_bard",
+			ConditionApplied: &sdk.ConditionAppliedBody{
+				Target: "zombie-1", Ref: "dnd5e:conditions:prone", Name: "Prone",
+			},
+		},
+	})
+	require.Empty(t, got.GetActivationResult().GetConditionApplied().GetSourceId())
+}
+
+// The removal beat carries the same address for the same reason, and dropped
+// it in the same way. Without it "a Bane ended on the fighter" cannot say
+// WHICH Bane, so a client holding two would have to guess which row to strike.
+func TestConditionRemovedToProto_NamesWhoIsResponsible(t *testing.T) {
+	got := eventToProto(sdk.Event{
+		Kind: sdk.EventActivationResult,
+		Body: sdk.ActivationResultBody{
+			Actor: "char_bard",
+			ConditionRemoved: &sdk.ConditionRemovedBody{
+				Target:   "fighter",
+				Ref:      "dnd5e:conditions:baned",
+				Name:     "Bane",
+				Reason:   "concentration ended",
+				SourceID: "char_bard",
+			},
+		},
+	})
+
+	condition := got.GetActivationResult().GetConditionRemoved()
+	require.NotNil(t, condition)
+	require.Equal(t, "char_bard", condition.GetSourceId(),
+		"which instance ended is the source plus the target plus the ref")
+	require.Equal(t, "concentration ended", condition.GetReason())
+}

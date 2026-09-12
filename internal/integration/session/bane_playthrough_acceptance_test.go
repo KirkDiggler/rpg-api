@@ -235,12 +235,18 @@ func TestAcceptance_BaneCreationCastPaymentAndAffectedRoll(t *testing.T) {
 	require.NoError(t, err)
 	var castEvent *sessionpb.Cast
 	var saveEvent *sessionpb.Saved
+	var baned *sessionpb.ConditionApplied
 	for _, event := range story.GetEntries() {
 		switch event.GetKind() {
 		case sessionpb.EventKind_EVENT_KIND_CAST:
 			castEvent = event.GetCast()
 		case sessionpb.EventKind_EVENT_KIND_SAVED:
 			saveEvent = event.GetSaved()
+		case sessionpb.EventKind_EVENT_KIND_ACTIVATION_RESULT:
+			if applied := event.GetActivationResult().GetConditionApplied(); applied != nil &&
+				applied.GetRef() == refs.Conditions.Baned().String() {
+				baned = applied
+			}
 		}
 	}
 	require.NotNil(t, castEvent)
@@ -249,6 +255,17 @@ func TestAcceptance_BaneCreationCastPaymentAndAffectedRoll(t *testing.T) {
 	require.NotNil(t, saveEvent)
 	require.NotNil(t, saveEvent.GetCalculation(), "the Bane saving throw carries provider-authored calculation facts")
 	require.Equal(t, saveEvent.GetTotal(), saveEvent.GetCalculation().GetTotal())
+
+	// WHOSE BANE. Two casters can each land Bane on this fighter, and the
+	// condition's address is target plus ref plus source -- so the beat that
+	// announces one must name the caster, or a client holding two rows cannot
+	// say which is which, and cannot strike the right one when a removal beat
+	// arrives. Read here, end to end, because the walk found the typed field
+	// empty while the raw payload beside it carried the id (2026-09-12).
+	require.NotNil(t, baned, "the failed save attached Bane, and the beat says so")
+	require.Equal(t, "fighter", baned.GetTarget())
+	require.Equal(t, bardID, baned.GetSourceId(),
+		"the caster who spent the slot is the source the beat names")
 
 	_, err = h.handler.EndTurn(bardCtx, &sessionpb.EndTurnRequest{
 		Session: "bane-playthrough", Member: bardID,

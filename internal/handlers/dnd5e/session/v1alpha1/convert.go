@@ -1239,19 +1239,39 @@ func spellRefToProto(s sdk.SpellRef) *sessionpb.SpellRef {
 	return &sessionpb.SpellRef{Ref: s.Ref, Name: s.Name}
 }
 
+// conditionAppliedBodyToProto mirrors the attach beat, SOURCE INCLUDED.
+//
+// Target plus ref is not the condition's address -- the source is the third
+// part of it. Two casters can each land Bane on the same fighter, and the
+// rulebook keeps those apart; a beat that named only the target and the ref
+// would collapse them, so a client could not say whose Command holds a
+// creature, and a later removal beat would have two rows it might mean.
+//
+// The source is copied and never inferred. ActivationResultBody.Actor is who
+// ACTED and SourceID is who the condition answers to; they are the same id
+// often enough that filling one from the other would look right for a long
+// time, and would then blame a trap's condition on whoever was standing there.
+// An unattributed condition stays unattributed.
 func conditionAppliedBodyToProto(body *sdk.ConditionAppliedBody) *sessionpb.ConditionApplied {
 	if body == nil {
 		return nil
 	}
-	return &sessionpb.ConditionApplied{Target: body.Target, Ref: body.Ref, Name: body.Name}
+	return &sessionpb.ConditionApplied{
+		Target: body.Target, Ref: body.Ref, Name: body.Name, SourceId: body.SourceID,
+	}
 }
 
+// conditionRemovedBodyToProto mirrors the detach beat, and carries the source
+// for the reason its twin above does: WHICH instance ended is the target, the
+// ref and the caster together. A client holding two Banes on one fighter
+// strikes the wrong row without it.
 func conditionRemovedBodyToProto(body *sdk.ConditionRemovedBody) *sessionpb.ConditionRemoved {
 	if body == nil {
 		return nil
 	}
 	return &sessionpb.ConditionRemoved{
 		Target: body.Target, Ref: body.Ref, Name: body.Name, Reason: body.Reason,
+		SourceId: body.SourceID,
 	}
 }
 
