@@ -2094,3 +2094,52 @@ func TestCatchingNobodyIsNilRatherThanEmpty(t *testing.T) {
 	require.Nil(t, caughtMembersToProto(nil))
 	require.Nil(t, caughtMembersToProto([]sdk.CaughtMember{}))
 }
+
+// TestDeclarationToProto_CarriesTheMenuInContentOrder covers Command's cast
+// menu (rpg-project#442). The words are an input the request brings back, not
+// a row per word, so one offer lists what may be chosen and the client draws
+// that list.
+//
+// ORDER IS THE CONTENT'S. Approach, Flee, Grovel is how the spell authored
+// them, and a converter that sorted or regrouped would be editing a spell's
+// own presentation from four layers away.
+func TestDeclarationToProto_CarriesTheMenuInContentOrder(t *testing.T) {
+	out := declarationToProto(sdk.Declaration{
+		Verb:       sdk.VerbCast,
+		Slot:       sdk.SlotAction,
+		Available:  true,
+		ID:         "decl-command-1",
+		TargetKind: sdk.TargetMember,
+		Spell:      &sdk.SpellRef{Ref: "dnd5e:spells:command", Name: "Command"},
+		Options: []sdk.CastOption{
+			{ID: "approach", Label: "Approach"},
+			{ID: "flee", Label: "Flee"},
+			{ID: "grovel", Label: "Grovel"},
+		},
+	})
+
+	require.Equal(t, []*sessionpb.CastOption{
+		{Id: "approach", Label: "Approach"},
+		{Id: "flee", Label: "Flee"},
+		{Id: "grovel", Label: "Grovel"},
+	}, out.GetOptions(), "the whole menu crosses in the order the spell authored")
+}
+
+// The other half, and the one that makes the menu mean something: a row that
+// offers no choice lists nothing.
+//
+// A row listing options REQUIRES one back and a row listing none REFUSES one,
+// so an invented entry here would make session refuse a cast this layer had
+// promised was answerable. Every verb but Cast and every spell but Command is
+// on this side of the law today.
+func TestDeclarationToProto_CarriesNoMenuOnARowThatOffersNoChoice(t *testing.T) {
+	out := declarationToProto(sdk.Declaration{
+		Verb:       sdk.VerbCast,
+		Slot:       sdk.SlotAction,
+		Available:  true,
+		ID:         "decl-cast-2",
+		TargetKind: sdk.TargetMember,
+		Spell:      &sdk.SpellRef{Ref: "dnd5e:spells:vicious-mockery", Name: "Vicious Mockery"},
+	})
+	require.Empty(t, out.GetOptions(), "a spell with no menu offers no word to choose")
+}

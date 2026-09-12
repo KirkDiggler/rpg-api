@@ -1556,6 +1556,28 @@ func costComponentsToProto(cost []sdk.CostComponent) []*sessionpb.CostComponent 
 	return out
 }
 
+// castOptionsToProto mirrors a cast row's menu -- Command's "Approach",
+// "Flee", "Grovel" -- in the content's own order, which is the order a picker
+// draws.
+//
+// NOTHING IS SORTED, GROUPED OR INFERRED. The order and the label are the
+// spell's own presentation, authored beside the id; a converter that ranked
+// them would be editing a spell from four layers away, and a client that
+// derived a label from an id would be deriving 5e. The id is opaque here and
+// stays opaque all the way back in on CastRequest.option.
+//
+// Make-then-map for the reason the candidate list uses it: a non-nil empty SDK
+// answer stays non-nil empty in Go. On the wire an empty menu and an absent
+// one are the same thing, and both say the same sentence -- this row offers no
+// choice and will refuse one.
+func castOptionsToProto(options []sdk.CastOption) []*sessionpb.CastOption {
+	out := make([]*sessionpb.CastOption, len(options))
+	for i, option := range options {
+		out[i] = &sessionpb.CastOption{Id: option.ID, Label: option.Label}
+	}
+	return out
+}
+
 // declarationToProto mirrors the SDK's compiled declaration field-for-field.
 // It neither derives availability nor transforms selectors: opaque IDs, full
 // attack refs, target shape, and every independently ruled candidate cross
@@ -1574,6 +1596,13 @@ func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
 		MinTargets: int32(d.MinTargets),
 		MaxTargets: int32(d.MaxTargets),
 		Cost:       costComponentsToProto(d.Cost),
+		// WHAT THE REQUEST MUST BRING BACK, when the spell asks a question
+		// before it goes. A row listing options REQUIRES one on
+		// CastRequest.option and a row listing none REFUSES one, which is the
+		// law TargetKind already keeps for the aimed cell: the offer says what
+		// the answer needs, rather than the client assembling a second
+		// selector out of rows.
+		Options: castOptionsToProto(d.Options),
 	}
 	if d.Remaining != nil {
 		remaining := int32(*d.Remaining)
