@@ -2,6 +2,7 @@ package sessionv1alpha1
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/KirkDiggler/rpg-api/internal/converters/assetref"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/currency"
@@ -1630,9 +1631,16 @@ func footprintToProto(footprint *sdk.Footprint) *sessionpb.Footprint {
 	if footprint == nil {
 		return nil
 	}
+	// Like UNSPECIFIED for an unknown enum, zero is an invalid present extent.
+	// Preserve that producer defect instead of wrapping or clamping an
+	// unrepresentable size into an apparently usable outline.
+	var sizeFeet int32
+	if footprint.SizeFeet > 0 && int64(footprint.SizeFeet) <= math.MaxInt32 {
+		sizeFeet = int32(footprint.SizeFeet)
+	}
 	return &sessionpb.Footprint{
 		Shape:    footprintShapeToProto(footprint.Shape),
-		SizeFeet: int32(footprint.SizeFeet),
+		SizeFeet: sizeFeet,
 		Origin:   footprintOriginToProto(footprint.Origin),
 	}
 }

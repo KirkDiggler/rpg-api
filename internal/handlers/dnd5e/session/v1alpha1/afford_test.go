@@ -165,6 +165,34 @@ func TestAfford_UnknownFootprintEnumsFailClosed(t *testing.T) {
 	require.Equal(t, sessionpb.FootprintOrigin_FOOTPRINT_ORIGIN_UNSPECIFIED, footprint.GetOrigin())
 }
 
+func TestFootprintToProto_InvalidExtentCannotWrapIntoAUsableOutline(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		size int64
+		want int32
+	}{
+		{name: "ordinary extent", size: 15, want: 15},
+		{name: "largest wire extent", size: 2147483647, want: 2147483647},
+		{name: "zero is invalid", size: 0, want: 0},
+		{name: "negative is invalid", size: -1, want: 0},
+		{name: "above wire maximum", size: 2147483648, want: 0},
+		{name: "would wrap to fifteen", size: 4294967311, want: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if int64(int(tc.size)) != tc.size {
+				t.Skip("provider int cannot represent this input on this architecture")
+			}
+			out := footprintToProto(&sdk.Footprint{
+				Shape: sdk.FootprintShapeBox, SizeFeet: int(tc.size), Origin: sdk.FootprintOriginCasterEdge,
+			})
+			require.NotNil(t, out, "invalid presentation remains visibly present as a producer defect")
+			require.Equal(t, tc.want, out.GetSizeFeet())
+			require.Equal(t, sessionpb.FootprintShape_FOOTPRINT_SHAPE_BOX, out.GetShape())
+			require.Equal(t, sessionpb.FootprintOrigin_FOOTPRINT_ORIGIN_CASTER_EDGE, out.GetOrigin())
+		})
+	}
+}
+
 // TestAfford_WorldClock_DeclarationsEmpty pins the other half of ADR-0042:
 // on the world clock the economy does not apply, and that arrives as an
 // EMPTY repeated field, never a null one -- a client reading "declarations":
