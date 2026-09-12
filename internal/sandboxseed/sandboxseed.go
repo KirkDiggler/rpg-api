@@ -33,23 +33,29 @@ const (
 	// SpellSelection.spell_refs field takes.
 	bladeWardRef      = "dnd5e:spells:blade-ward"
 	viciousMockeryRef = "dnd5e:spells:vicious-mockery"
-	// ALL THREE, because the bard's level-1 pick takes the whole catalogue
-	// while the catalogue is smaller than the class progression
+	// ALL FOUR, because the bard's level-1 pick takes the whole catalog
+	// while the catalog is no larger than the class progression
 	// (rpg-toolkit#1661). The requirement validates len(chosen) == Count
 	// exactly, so this list is not a preference -- it is the whole of what
 	// the pick allows, and a fixture carrying fewer would be refused at
-	// finalize. It grows with the catalogue until the count stops at four.
+	// finalize. Command is the arrival that took the count to four, which is
+	// where the progression stops: from here the catalog outgrows the pick
+	// and this list becomes a choice again.
 	//
-	// The three are also the three worth having. Bane is the cast aimed at
+	// The four are also the four worth having. Bane is the cast aimed at
 	// CREATURES the caller names; Thunderwave is the one aimed at a CELL,
 	// the caster-edge cube that the cell on CastRequest exists to point;
 	// Dissonant Whispers is the one creature that saves for HALF and, on a
-	// failure, pays its reaction and runs (rpg-project#437). A sandbox bard
-	// who knows all three can walk every selector shape and both save
-	// outcomes.
+	// failure, pays its reaction and runs (rpg-project#437); Command is the
+	// one that asks the CASTER a question before it goes -- the word rides
+	// on CastRequest.option the way the cell rides on CastRequest.cell --
+	// and then spends its victim's whole next turn (rpg-project#442). A
+	// sandbox bard who knows all four can walk every selector shape, both
+	// save outcomes, and the only cast-time menu on the board.
 	baneRef              = "dnd5e:spells:bane"
 	thunderwaveRef       = "dnd5e:spells:thunderwave"
 	dissonantWhispersRef = "dnd5e:spells:dissonant-whispers"
+	commandRef           = "dnd5e:spells:command"
 )
 
 // CharacterRPC is the narrow CharacterService client surface used by Seed.
@@ -201,7 +207,7 @@ func seedBard(ctx context.Context, client CharacterRPC) error {
 				Source:   dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS,
 				ChoiceId: "bard-spells-1",
 				Selection: &dnd5ev1alpha1.ChoiceData_Spells{Spells: &dnd5ev1alpha1.SpellSelection{
-					SpellRefs: []string{baneRef, thunderwaveRef, dissonantWhispersRef},
+					SpellRefs: []string{baneRef, thunderwaveRef, dissonantWhispersRef, commandRef},
 				}},
 			},
 		},

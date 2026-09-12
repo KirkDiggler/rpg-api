@@ -103,3 +103,30 @@ func TestCast_LeavesTheCellNilWhenTheRequestNamesNone(t *testing.T) {
 	})
 	require.NoError(t, err)
 }
+
+// A cast that answered a menu carries the chosen word to the SDK
+// (rpg-project#442, Command).
+//
+// The handler copies an OPAQUE ID and asks nothing about it. Whether this
+// declaration offered a menu at all, whether the id is on it, and what the
+// word then does to a creature are rules; session refuses on the first two and
+// resolution owns the third. This is the aimed cell's law one field over.
+func TestCast_ForwardsTheChosenWord(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Cast(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, in *sdk.CastInput) (*sdk.CastOutput, error) {
+			require.Equal(t, "grovel", in.Option,
+				"the word the caster picked must reach the SDK that judges it")
+			return &sdk.CastOutput{}, nil
+		},
+	)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	_, err := h.Cast(ctx, &sessionpb.CastRequest{
+		Session: "sess-1", Member: "bard-1", DeclarationId: "decl-command-1",
+		Targets: []string{"skel-1"}, Option: "grovel",
+	})
+	require.NoError(t, err)
+}

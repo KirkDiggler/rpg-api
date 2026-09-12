@@ -1239,19 +1239,39 @@ func spellRefToProto(s sdk.SpellRef) *sessionpb.SpellRef {
 	return &sessionpb.SpellRef{Ref: s.Ref, Name: s.Name}
 }
 
+// conditionAppliedBodyToProto mirrors the attach beat, SOURCE INCLUDED.
+//
+// Target plus ref is not the condition's address -- the source is the third
+// part of it. Two casters can each land Bane on the same fighter, and the
+// rulebook keeps those apart; a beat that named only the target and the ref
+// would collapse them, so a client could not say whose Command holds a
+// creature, and a later removal beat would have two rows it might mean.
+//
+// The source is copied and never inferred. ActivationResultBody.Actor is who
+// ACTED and SourceID is who the condition answers to; they are the same id
+// often enough that filling one from the other would look right for a long
+// time, and would then blame a trap's condition on whoever was standing there.
+// An unattributed condition stays unattributed.
 func conditionAppliedBodyToProto(body *sdk.ConditionAppliedBody) *sessionpb.ConditionApplied {
 	if body == nil {
 		return nil
 	}
-	return &sessionpb.ConditionApplied{Target: body.Target, Ref: body.Ref, Name: body.Name}
+	return &sessionpb.ConditionApplied{
+		Target: body.Target, Ref: body.Ref, Name: body.Name, SourceId: body.SourceID,
+	}
 }
 
+// conditionRemovedBodyToProto mirrors the detach beat, and carries the source
+// for the reason its twin above does: WHICH instance ended is the target, the
+// ref and the caster together. A client holding two Banes on one fighter
+// strikes the wrong row without it.
 func conditionRemovedBodyToProto(body *sdk.ConditionRemovedBody) *sessionpb.ConditionRemoved {
 	if body == nil {
 		return nil
 	}
 	return &sessionpb.ConditionRemoved{
 		Target: body.Target, Ref: body.Ref, Name: body.Name, Reason: body.Reason,
+		SourceId: body.SourceID,
 	}
 }
 
@@ -1556,6 +1576,28 @@ func costComponentsToProto(cost []sdk.CostComponent) []*sessionpb.CostComponent 
 	return out
 }
 
+// castOptionsToProto mirrors a cast row's menu -- Command's "Approach",
+// "Flee", "Grovel" -- in the content's own order, which is the order a picker
+// draws.
+//
+// NOTHING IS SORTED, GROUPED OR INFERRED. The order and the label are the
+// spell's own presentation, authored beside the id; a converter that ranked
+// them would be editing a spell from four layers away, and a client that
+// derived a label from an id would be deriving 5e. The id is opaque here and
+// stays opaque all the way back in on CastRequest.option.
+//
+// Make-then-map for the reason the candidate list uses it: a non-nil empty SDK
+// answer stays non-nil empty in Go. On the wire an empty menu and an absent
+// one are the same thing, and both say the same sentence -- this row offers no
+// choice and will refuse one.
+func castOptionsToProto(options []sdk.CastOption) []*sessionpb.CastOption {
+	out := make([]*sessionpb.CastOption, len(options))
+	for i, option := range options {
+		out[i] = &sessionpb.CastOption{Id: option.ID, Label: option.Label}
+	}
+	return out
+}
+
 // declarationToProto mirrors the SDK's compiled declaration field-for-field.
 // It neither derives availability nor transforms selectors: opaque IDs, full
 // attack refs, target shape, and every independently ruled candidate cross
@@ -1574,6 +1616,13 @@ func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
 		MinTargets: int32(d.MinTargets),
 		MaxTargets: int32(d.MaxTargets),
 		Cost:       costComponentsToProto(d.Cost),
+		// WHAT THE REQUEST MUST BRING BACK, when the spell asks a question
+		// before it goes. A row listing options REQUIRES one on
+		// CastRequest.option and a row listing none REFUSES one, which is the
+		// law TargetKind already keeps for the aimed cell: the offer says what
+		// the answer needs, rather than the client assembling a second
+		// selector out of rows.
+		Options: castOptionsToProto(d.Options),
 	}
 	if d.Remaining != nil {
 		remaining := int32(*d.Remaining)
