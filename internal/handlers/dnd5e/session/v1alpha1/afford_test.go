@@ -66,6 +66,105 @@ func TestAfford_HappyPath_ProjectsNestedDeclaration(t *testing.T) {
 	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_TARGET_OUT_OF_REACH, decl.GetCandidates()[1].GetWhy().GetReason())
 }
 
+func TestAfford_AreaFootprintsCrossWholeForAvailableAndUnavailableDeclarations(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Afford(gomock.Any(), &sdk.AffordInput{Session: "sess-1", Member: "char-1"}).Return(&sdk.AffordOutput{
+		Clock: sdk.ClockTurn,
+		Declarations: []sdk.Declaration{
+			{
+				Verb:       sdk.VerbCast,
+				Available:  true,
+				ID:         "decl-radius-1",
+				TargetKind: sdk.TargetNone,
+				Footprint: &sdk.Footprint{
+					Shape:    sdk.FootprintShapeRadius,
+					SizeFeet: 10,
+					Origin:   sdk.FootprintOriginCaster,
+				},
+			},
+			{
+				Verb:       sdk.VerbCast,
+				Available:  false,
+				Why:        &sdk.Shortfall{Reason: sdk.ShortfallNoBudget, Text: "action unavailable"},
+				ID:         "decl-box-1",
+				TargetKind: sdk.TargetCell,
+				Footprint: &sdk.Footprint{
+					Shape:    sdk.FootprintShapeBox,
+					SizeFeet: 15,
+					Origin:   sdk.FootprintOriginCasterEdge,
+				},
+			},
+		},
+	}, nil)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
+	require.NoError(t, err)
+	require.Len(t, resp.GetDeclarations(), 2)
+
+	radius := resp.GetDeclarations()[0]
+	require.True(t, radius.GetAvailable())
+	require.Equal(t, sessionpb.FootprintShape_FOOTPRINT_SHAPE_RADIUS, radius.GetFootprint().GetShape())
+	require.Equal(t, int32(10), radius.GetFootprint().GetSizeFeet())
+	require.Equal(t, sessionpb.FootprintOrigin_FOOTPRINT_ORIGIN_CASTER, radius.GetFootprint().GetOrigin())
+
+	box := resp.GetDeclarations()[1]
+	require.False(t, box.GetAvailable(), "an unavailable compiled declaration keeps its footprint")
+	require.NotNil(t, box.GetWhy())
+	require.Equal(t, sessionpb.FootprintShape_FOOTPRINT_SHAPE_BOX, box.GetFootprint().GetShape())
+	require.Equal(t, int32(15), box.GetFootprint().GetSizeFeet())
+	require.Equal(t, sessionpb.FootprintOrigin_FOOTPRINT_ORIGIN_CASTER_EDGE, box.GetFootprint().GetOrigin())
+}
+
+func TestAfford_AbsentFootprintStaysAbsent(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Afford(gomock.Any(), &sdk.AffordInput{Session: "sess-1", Member: "char-1"}).Return(&sdk.AffordOutput{
+		Clock: sdk.ClockTurn,
+		Declarations: []sdk.Declaration{
+			{Verb: sdk.VerbMove, Available: true, ID: "decl-move-1", TargetKind: sdk.TargetPath},
+		},
+	}, nil)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
+	require.NoError(t, err)
+	require.Len(t, resp.GetDeclarations(), 1)
+	require.Nil(t, resp.GetDeclarations()[0].GetFootprint())
+}
+
+func TestAfford_UnknownFootprintEnumsFailClosed(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Afford(gomock.Any(), &sdk.AffordInput{Session: "sess-1", Member: "char-1"}).Return(&sdk.AffordOutput{
+		Clock: sdk.ClockTurn,
+		Declarations: []sdk.Declaration{
+			{
+				Verb: sdk.VerbCast, Available: true, ID: "decl-future-1", TargetKind: sdk.TargetCell,
+				Footprint: &sdk.Footprint{
+					Shape:    sdk.FootprintShape("future-shape"),
+					SizeFeet: 25,
+					Origin:   sdk.FootprintOrigin("future-origin"),
+				},
+			},
+		},
+	}, nil)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
+	require.NoError(t, err)
+	require.Len(t, resp.GetDeclarations(), 1)
+	footprint := resp.GetDeclarations()[0].GetFootprint()
+	require.NotNil(t, footprint, "a present provider footprint stays present even when its closed enums are unknown")
+	require.Equal(t, sessionpb.FootprintShape_FOOTPRINT_SHAPE_UNSPECIFIED, footprint.GetShape())
+	require.Equal(t, int32(25), footprint.GetSizeFeet())
+	require.Equal(t, sessionpb.FootprintOrigin_FOOTPRINT_ORIGIN_UNSPECIFIED, footprint.GetOrigin())
+}
+
 // TestAfford_WorldClock_DeclarationsEmpty pins the other half of ADR-0042:
 // on the world clock the economy does not apply, and that arrives as an
 // EMPTY repeated field, never a null one -- a client reading "declarations":

@@ -1598,6 +1598,45 @@ func castOptionsToProto(options []sdk.CastOption) []*sessionpb.CastOption {
 	return out
 }
 
+// footprintShapeToProto mirrors the provider's closed outline vocabulary.
+// An unrecognized value reaches UNSPECIFIED, a producer defect.
+func footprintShapeToProto(shape sdk.FootprintShape) sessionpb.FootprintShape {
+	switch shape {
+	case sdk.FootprintShapeRadius:
+		return sessionpb.FootprintShape_FOOTPRINT_SHAPE_RADIUS
+	case sdk.FootprintShapeBox:
+		return sessionpb.FootprintShape_FOOTPRINT_SHAPE_BOX
+	default:
+		return sessionpb.FootprintShape_FOOTPRINT_SHAPE_UNSPECIFIED
+	}
+}
+
+// footprintOriginToProto mirrors the provider's closed anchor vocabulary.
+// An unrecognized value reaches UNSPECIFIED, a producer defect.
+func footprintOriginToProto(origin sdk.FootprintOrigin) sessionpb.FootprintOrigin {
+	switch origin {
+	case sdk.FootprintOriginCaster:
+		return sessionpb.FootprintOrigin_FOOTPRINT_ORIGIN_CASTER
+	case sdk.FootprintOriginCasterEdge:
+		return sessionpb.FootprintOrigin_FOOTPRINT_ORIGIN_CASTER_EDGE
+	default:
+		return sessionpb.FootprintOrigin_FOOTPRINT_ORIGIN_UNSPECIFIED
+	}
+}
+
+// footprintToProto copies optional provider-authored area presentation without
+// deriving geometry or interpreting spell identity.
+func footprintToProto(footprint *sdk.Footprint) *sessionpb.Footprint {
+	if footprint == nil {
+		return nil
+	}
+	return &sessionpb.Footprint{
+		Shape:    footprintShapeToProto(footprint.Shape),
+		SizeFeet: int32(footprint.SizeFeet),
+		Origin:   footprintOriginToProto(footprint.Origin),
+	}
+}
+
 // declarationToProto mirrors the SDK's compiled declaration field-for-field.
 // It neither derives availability nor transforms selectors: opaque IDs, full
 // attack refs, target shape, and every independently ruled candidate cross
@@ -1622,7 +1661,8 @@ func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
 		// law TargetKind already keeps for the aimed cell: the offer says what
 		// the answer needs, rather than the client assembling a second
 		// selector out of rows.
-		Options: castOptionsToProto(d.Options),
+		Options:   castOptionsToProto(d.Options),
+		Footprint: footprintToProto(d.Footprint),
 	}
 	if d.Remaining != nil {
 		remaining := int32(*d.Remaining)
