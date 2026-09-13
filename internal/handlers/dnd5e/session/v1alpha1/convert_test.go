@@ -1132,8 +1132,26 @@ func TestStandingToProto(t *testing.T) {
 // grew alongside Position (rpg-toolkit#1137): Seen is sight-channel
 // knowledge, not a roster read, so Standing belongs here.
 func TestSeenToProto_CarriesStanding(t *testing.T) {
-	got := seenToProto(&sdk.Seen{Position: spatial.Position{X: 1, Y: 2}, Standing: sdk.StandingDowned})
-	require.Equal(t, sessionpb.Standing_STANDING_DOWNED, got.GetStanding())
+	for _, tc := range []struct {
+		standing sdk.Standing
+		want     sessionpb.Standing
+	}{
+		{sdk.StandingUp, sessionpb.Standing_STANDING_UP},
+		{sdk.StandingDowned, sessionpb.Standing_STANDING_DOWNED},
+	} {
+		t.Run(string(tc.standing), func(t *testing.T) {
+			got := seenToProto(&sdk.Seen{Position: spatial.Position{X: 1, Y: 2}, Standing: &tc.standing})
+			require.Equal(t, tc.want, got.GetStanding())
+		})
+	}
+}
+
+func TestSeenToProto_UnobservedStandingIsNotGuessed(t *testing.T) {
+	got := seenToProto(&sdk.Seen{Position: spatial.Position{X: 1, Y: 2}})
+	require.NotNil(t, got)
+	require.Equal(t, sessionpb.Standing_STANDING_UNSPECIFIED, got.GetStanding())
+	require.Equal(t, 1.0, got.GetPosition().GetX())
+	require.Equal(t, 2.0, got.GetPosition().GetY())
 }
 
 // TestSightingToProto_CarriesName pins rpg-dnd5e-web#564: names, not ids --

@@ -2,6 +2,7 @@ package sessionv1alpha1
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/KirkDiggler/rpg-api/internal/converters/assetref"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/currency"
@@ -324,11 +325,16 @@ func seenToProto(s *sdk.Seen) *sessionpb.Seen {
 	if s == nil {
 		return nil
 	}
-	return &sessionpb.Seen{
+	out := &sessionpb.Seen{
 		Position:  positionToProto(s.Position),
-		Standing:  standingToProto(s.Standing),
 		Equipment: seenEquipmentToProto(s.Equipment),
 	}
+	// Nil is unobserved, not StandingUp. The wire enum remains UNSPECIFIED
+	// unless the provider supplied an observed value.
+	if s.Standing != nil {
+		out.Standing = standingToProto(*s.Standing)
+	}
+	return out
 }
 
 // seenEquipmentToProto mirrors what a subject was observed holding, minting the
@@ -1598,6 +1604,52 @@ func castOptionsToProto(options []sdk.CastOption) []*sessionpb.CastOption {
 	return out
 }
 
+// footprintShapeToProto mirrors the provider's closed outline vocabulary.
+// An unrecognized value reaches UNSPECIFIED, a producer defect.
+func footprintShapeToProto(shape sdk.FootprintShape) sessionpb.FootprintShape {
+	switch shape {
+	case sdk.FootprintShapeRadius:
+		return sessionpb.FootprintShape_FOOTPRINT_SHAPE_RADIUS
+	case sdk.FootprintShapeBox:
+		return sessionpb.FootprintShape_FOOTPRINT_SHAPE_BOX
+	default:
+		return sessionpb.FootprintShape_FOOTPRINT_SHAPE_UNSPECIFIED
+	}
+}
+
+// footprintOriginToProto mirrors the provider's closed anchor vocabulary.
+// An unrecognized value reaches UNSPECIFIED, a producer defect.
+func footprintOriginToProto(origin sdk.FootprintOrigin) sessionpb.FootprintOrigin {
+	switch origin {
+	case sdk.FootprintOriginCaster:
+		return sessionpb.FootprintOrigin_FOOTPRINT_ORIGIN_CASTER
+	case sdk.FootprintOriginCasterEdge:
+		return sessionpb.FootprintOrigin_FOOTPRINT_ORIGIN_CASTER_EDGE
+	default:
+		return sessionpb.FootprintOrigin_FOOTPRINT_ORIGIN_UNSPECIFIED
+	}
+}
+
+// footprintToProto copies optional provider-authored area presentation without
+// deriving geometry or interpreting spell identity.
+func footprintToProto(footprint *sdk.Footprint) *sessionpb.Footprint {
+	if footprint == nil {
+		return nil
+	}
+	// Like UNSPECIFIED for an unknown enum, zero is an invalid present extent.
+	// Preserve that producer defect instead of wrapping or clamping an
+	// unrepresentable size into an apparently usable outline.
+	var sizeFeet int32
+	if footprint.SizeFeet > 0 && int64(footprint.SizeFeet) <= math.MaxInt32 {
+		sizeFeet = int32(footprint.SizeFeet)
+	}
+	return &sessionpb.Footprint{
+		Shape:    footprintShapeToProto(footprint.Shape),
+		SizeFeet: sizeFeet,
+		Origin:   footprintOriginToProto(footprint.Origin),
+	}
+}
+
 // declarationToProto mirrors the SDK's compiled declaration field-for-field.
 // It neither derives availability nor transforms selectors: opaque IDs, full
 // attack refs, target shape, and every independently ruled candidate cross
@@ -1622,7 +1674,8 @@ func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
 		// law TargetKind already keeps for the aimed cell: the offer says what
 		// the answer needs, rather than the client assembling a second
 		// selector out of rows.
-		Options: castOptionsToProto(d.Options),
+		Options:   castOptionsToProto(d.Options),
+		Footprint: footprintToProto(d.Footprint),
 	}
 	if d.Remaining != nil {
 		remaining := int32(*d.Remaining)
