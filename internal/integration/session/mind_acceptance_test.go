@@ -124,3 +124,78 @@ func TestAcceptance_SpawnedMonsterCarriesTheMindItsSheetNames(t *testing.T) {
 	require.Equal(t, tkmonster.MindUnspecified.String(), recorder.viewOf(t, "gob-1").Mind,
 		"a monster whose definition names no mind crosses empty, which is what selects the basic brain")
 }
+
+// TestAcceptance_TwoSessionsEachDriveTheirOwnMonsters runs the PRODUCTION
+// driver wiring -- no scripted driver, so the orchestrator's per-session cache
+// is what answers -- for two sessions in one process.
+//
+// WHAT IT PROVES AND WHAT IT DOES NOT, because the difference matters. It
+// proves the cache serves every session rather than only the first: the second
+// session's EndTurn walks the clock across its own skeleton and comes back,
+// which a source that answered for one session and failed for the next would
+// break (a resolver error fails the verb; the SDK never falls back).
+//
+// It does NOT show two DISTINCT drivers, and cannot from here: nothing on the
+// wire or in any projection reports which driver took a turn. That claim is
+// proved where it is observable -- turnDriverCache's own test one package over,
+// and rpg-toolkit's TestEachSessionDrivesItsOwnTurnsWithItsOwnDriver, which
+// drives two sessions through one Manager and shows a member recorded in one
+// is unknown in the other.
+func TestAcceptance_TwoSessionsEachDriveTheirOwnMonsters(t *testing.T) {
+	h := newAcceptanceHarness(t)
+
+	for _, run := range []struct {
+		session string
+		player  string
+		fighter string
+	}{
+		{"mind-run-a", "player-alice", "alice"},
+		{"mind-run-b", "player-bob", "bob"},
+	} {
+		t.Run(run.session, func(t *testing.T) {
+			ctx := auth.WithPlayerID(context.Background(), run.player)
+
+			_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
+				Character: &entities.Character{Data: armedFighter(run.fighter, run.player)},
+			})
+			require.NoError(t, err)
+
+			_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+				Session: run.session, Encounter: run.session + "-encounter", World: buildOpenRoom(t, 12, 6),
+			})
+			require.NoError(t, err)
+
+			_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{
+				Session: run.session, Member: run.fighter, Position: pbAt(3, 0),
+			})
+			require.NoError(t, err)
+			inCombat(t, h.charRepo, run.fighter, 1)
+
+			// The SAME member id in both sessions, which is the caveat this
+			// whole wave is about: ids are authored per dungeon, not minted
+			// per run, so two parties in the same tomb hold a skeleton of the
+			// same name.
+			_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+				Session: run.session, ID: "skel-1", Ref: refs.Monsters.Skeleton().String(), Position: at(4, 0),
+			})
+			require.NoError(t, err)
+
+			turn, err := h.handler.Turn(ctx, &sessionpb.TurnRequest{Session: run.session, Member: run.fighter})
+			require.NoError(t, err)
+			require.Equal(t, []string{run.fighter, "skel-1"}, turn.GetOrder(),
+				"geometry gate: the fighter acts first, so ending the turn asks the skeleton once")
+
+			_, err = h.handler.EndTurn(ctx, &sessionpb.EndTurnRequest{
+				Session: run.session, Member: run.fighter,
+				DeclarationId: currentDeclarationID(
+					ctx, t, h.handler, run.session, run.fighter, sessionpb.Verb_VERB_END_TURN),
+			})
+			require.NoError(t, err, "this session's driver answered for its own skeleton")
+
+			after, err := h.handler.Turn(ctx, &sessionpb.TurnRequest{Session: run.session, Member: run.fighter})
+			require.NoError(t, err)
+			require.Equal(t, run.fighter, after.GetActive(),
+				"the skeleton's turn was taken and ended, so the clock is back on the player")
+		})
+	}
+}

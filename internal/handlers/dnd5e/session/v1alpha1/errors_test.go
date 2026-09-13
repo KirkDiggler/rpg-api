@@ -172,6 +172,12 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrInvalidSession", sdk.ErrInvalidSession, codes.Internal},
 		{"ErrNilConfig", sdk.ErrNilConfig, codes.Internal},
 		{"ErrIncompleteConfig", sdk.ErrIncompleteConfig, codes.Internal},
+		// Both turn-driver sentinels of rpg-toolkit#1734. ErrAmbiguousConfig
+		// is construction-only, like the two above it; ErrNoTurnDriver is
+		// raised mid-verb when this server's own per-session driver cache
+		// reports success and hands over nothing. Both are server wiring.
+		{"ErrAmbiguousConfig", sdk.ErrAmbiguousConfig, codes.Internal},
+		{"ErrNoTurnDriver", sdk.ErrNoTurnDriver, codes.Internal},
 		// Back to caller-facing with the door verbs (rpg-project#268):
 		// GetDoors/OpenDoor/Unlock name a door, so one the dungeon does not
 		// have is the caller's NotFound again.
