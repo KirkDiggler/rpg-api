@@ -325,11 +325,16 @@ func seenToProto(s *sdk.Seen) *sessionpb.Seen {
 	if s == nil {
 		return nil
 	}
-	return &sessionpb.Seen{
+	out := &sessionpb.Seen{
 		Position:  positionToProto(s.Position),
-		Standing:  standingToProto(s.Standing),
 		Equipment: seenEquipmentToProto(s.Equipment),
 	}
+	// Nil is unobserved, not StandingUp. The wire enum remains UNSPECIFIED
+	// unless the provider supplied an observed value.
+	if s.Standing != nil {
+		out.Standing = standingToProto(*s.Standing)
+	}
+	return out
 }
 
 // seenEquipmentToProto mirrors what a subject was observed holding, minting the
