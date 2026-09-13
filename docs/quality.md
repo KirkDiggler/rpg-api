@@ -15,7 +15,7 @@ as work lands and as the boundary violations are addressed.
 
 ## Handlers
 
-Cleric/Bless consumer (#975): focused boundary coverage now includes domain draft/finalization, host stale-target configuration, mixed CastMissed/condition order through live and reloaded story paths, and both Cleric heals. Rules remain provider-owned. No broader grade increase or UI/deployment claim; see the [handoff](how-to/cleric-bless-web-handoff.md).
+Cleric/Bless consumer (#975/#978): boundary coverage now selects a returned Life Domain, resumes saved spell choices, finalizes natively, enters combat from world mode, and casts Bless and both heals with spending/live/reloaded Story assertions. Both stale-target policies use that native character. Owner-private data now passes its native regression with root v0.165.1; Knowledge Domain extra choices still need provider input support. No broader grade increase or UI/deployment claim; see the [handoff](how-to/cleric-bless-web-handoff.md).
 
 
 ### ~~Encounter handler — C+~~ DELETED (rpg-api#642, 2026-07-13)

@@ -7,6 +7,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	dnd5epb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
@@ -19,9 +23,6 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	dicesession "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
 
 const (
@@ -32,6 +33,13 @@ const (
 )
 
 func newCharacterCreationHandler(t *testing.T, h *acceptanceHarness) *characterhandler.Handler {
+	t.Helper()
+	handler, err := characterhandler.NewHandler(&characterhandler.HandlerConfig{CharacterService: newAcceptanceCharacterService(t, h)})
+	require.NoError(t, err)
+	return handler
+}
+
+func newAcceptanceCharacterService(t *testing.T, h *acceptanceHarness) characterorch.Service {
 	t.Helper()
 
 	drafts, err := characterdraft.NewRedis(&characterdraft.Config{
@@ -53,9 +61,7 @@ func newCharacterCreationHandler(t *testing.T, h *acceptanceHarness) *characterh
 		AppearanceNotifier: characterorch.NoAppearanceNotifier{},
 	})
 	require.NoError(t, err)
-	handler, err := characterhandler.NewHandler(&characterhandler.HandlerConfig{CharacterService: characters})
-	require.NoError(t, err)
-	return handler
+	return characters
 }
 
 func createFinalizedBaneBard(t *testing.T, h *acceptanceHarness, playerID string) string {

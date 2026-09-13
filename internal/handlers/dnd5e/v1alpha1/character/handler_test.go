@@ -10,12 +10,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/apierr"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
-	"github.com/KirkDiggler/rpg-api/internal/entities"
-	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
-	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
@@ -23,6 +17,13 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+
+	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/auth"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
+	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
+	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
 )
 
 type HandlerTestSuite struct {
@@ -49,6 +50,24 @@ func (s *HandlerTestSuite) SetupTest() {
 
 func (s *HandlerTestSuite) TearDownTest() {
 	s.ctrl.Finish()
+}
+
+func (s *HandlerTestSuite) TestGetClassDetails_EmptyIDIsInvalid() {
+	_, err := s.handler.GetClassDetails(s.ctx, &dnd5ev1alpha1.GetClassDetailsRequest{})
+	s.Equal(codes.InvalidArgument, status.Code(err))
+}
+
+func (s *HandlerTestSuite) TestGetClassDetails_UnknownIDIsNotFound() {
+	s.mockService.EXPECT().ListClasses(gomock.Any(), &character.ListClassesInput{}).Return(&character.ListClassesOutput{}, nil)
+	_, err := s.handler.GetClassDetails(s.ctx, &dnd5ev1alpha1.GetClassDetailsRequest{ClassId: "unknown"})
+	s.Equal(codes.NotFound, status.Code(err))
+}
+
+func (s *HandlerTestSuite) TestGetClassDetails_PropagatesServiceError() {
+	want := errors.New("catalog unavailable")
+	s.mockService.EXPECT().ListClasses(gomock.Any(), &character.ListClassesInput{}).Return(nil, want)
+	_, err := s.handler.GetClassDetails(s.ctx, &dnd5ev1alpha1.GetClassDetailsRequest{ClassId: "cleric"})
+	s.ErrorIs(err, want)
 }
 
 func (s *HandlerTestSuite) TestUpdateRace_MapsDwarfToolChoice() {

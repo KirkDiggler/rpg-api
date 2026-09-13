@@ -1,13 +1,14 @@
 # Cleric/Bless API integration and web handoff
 
-API issue #975 consumes published providers after their merges:
+API issue #975 introduced the consumer; follow-up #978 audits native creation
+and private projection. Current published provider pins (including later dev updates):
 
 | Module | Adopted release |
 | --- | --- |
-| rpg-toolkit/rulebooks/dnd5e | v0.165.0 (includes acquisition PR #1713) |
-| rpg-toolkit/rulebooks/dnd5e/resolution | v0.46.0 |
-| rpg-toolkit/rulebooks/dnd5e/encounter | v0.79.0 |
-| rpg-toolkit/rulebooks/dnd5e/session | v0.82.0 |
+| rpg-toolkit/rulebooks/dnd5e | v0.165.1 (acquisition #1713 and strict Cleric projection #1721) |
+| rpg-toolkit/rulebooks/dnd5e/resolution | v0.47.0 |
+| rpg-toolkit/rulebooks/dnd5e/encounter | v0.80.0 |
+| rpg-toolkit/rulebooks/dnd5e/session | v0.83.0 |
 | rpg-api-protos/gen/go | v0.0.0-20260913015835-f97bcce04ae5 (generated after proto PR #333) |
 
 `internal/handlers/dnd5e/session/v1alpha1/convert.go` maps `EventCastMissed`
@@ -36,6 +37,57 @@ and Healing Word. Preparation and automatic domain grants remain deferred. Loadi
 existing characters does not backfill spells. The Character wire still lacks a
 finalized subclass field; draft subclass round-tripping and stored toolkit data
 retain it.
+
+## Native creation follow-up (#978)
+
+`ListClasses` and `GetClassDetails("cleric")` now use the same class projection:
+provider domain names, descriptions, selection level, resolved choice overlays,
+and spellcasting metadata. Overlay `SubclassInfo.additional_choices` by choice ID
+over the base class choices. Saved drafts include `class_info`, their domain, and
+the correct SPELLS/CANTRIPS categories, so a fresh client can resume and resubmit.
+Spellcasting ability, counts and first-level slots come directly from ClassData;
+the choice requirements are authoritative for acquisition. A zero static
+`spells_known` value does not erase the Cleric's five-spell acquisition pool.
+
+No new proto is required for these repairs. Published Go SDK `f97bcce04ae5`
+(TypeScript v0.1.189) already contains these catalog/draft fields, owner-private
+CharacterData, open SpellRefs, healing/sourced conditions, and CastMissed.
+Preparation and automatic domain spell grants remain outside this work.
+
+The native acceptance helper selects Life Domain from the returned catalog,
+creates and saves all choices, reloads the draft through a fresh service,
+resubmits the returned choices, and finalizes without seeded character data.
+The session tests join that character in world mode and start combat by spawning
+a perceived enemy. World exploration has no available Cast offers under the
+current provider clock; combat is required for this playthrough.
+
+Real Bless, Cure Wounds and Healing Word then pass at the API boundary. Tests
+assert slot spending, action/bonus-action spending, ordered targets, healing and
+condition sources, and equality of streamed events with Story after reopening
+the host. The same native character covers default/refuse/attempt stale-target
+policy, refusal without spending, paid misses, and ordered mixed outcomes.
+These in-process handler/Redis tests do not establish browser or deployment
+readiness. The web playthrough must be repeated against the resulting API build.
+
+### Private projection fixed; remaining acquisition limitation
+
+Published root v0.165.1 is exactly toolkit PR #1721's merge commit
+`9ec6aae85f3a6125fabc2ea486b7457078bdef6c`. It fixes the strict Cleric resource
+owner catalog and condition sources tracked in toolkit #1720. The native
+`TestAcceptance_NativeClericOwnerPrivateData` now passes through the real owner
+handler. No permissive loader, API-authored owner catalog, or local module
+replacement is used.
+
+- **Knowledge Domain acquisition:** the provider advertises additional skill
+  and language requirements, but its ClassChoices input has no grouped extra
+  skill/language fields and SetClass validates the base skill count. Its language
+  requirement also has nil options meaning any language. The API preserves the
+  advertised requirements; it does not invent choices or hide the domain.
+  This is separate provider work. Native acceptance currently covers Life Domain.
+
+The private-view regression was observed failing with v0.165.0 and passing with
+v0.165.1. Full repository gate results are recorded in the API PR. Browser and
+deployment acceptance remain a web follow-on.
 
 ## Web follow-on after API review and merge
 
