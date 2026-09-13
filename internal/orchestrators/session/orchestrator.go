@@ -14,6 +14,7 @@ package session
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/KirkDiggler/rpg-toolkit/dice"
@@ -61,13 +62,14 @@ type Config struct {
 	PresentationIDs sdk.PresentationIDGenerator
 
 	// TurnDriver decides what an unplayed member does on its turn. Optional:
-	// nil selects sdk.Behavior(), the production driver (see turnDriver
-	// below). Dice's own doc explains the shape and it applies verbatim here
-	// -- what New hands to sdk.Config.TurnDriver is always explicit and never
-	// nil, and the override exists so a test can script a monster's turn
-	// without reaching past this package into the SDK's construction.
+	// nil selects sdk.Minded(nil), the production driver (see
+	// newDefaultTurnDriver below). Dice's own doc explains the shape and it
+	// applies verbatim here -- what New hands to sdk.Config.TurnDriver is
+	// always explicit and never nil, and the override exists so a test can
+	// script a monster's turn without reaching past this package into the
+	// SDK's construction.
 	//
-	// The reason a test needs to: sdk.Behavior() attacks the closest standing
+	// The reason a test needs to: the default driver attacks a standing
 	// player and otherwise closes the distance, so it will never walk OUT of
 	// a fighter's reach. A reaction window is exactly what a monster leaving
 	// reach opens (rpg-project#316), which means the interrupt path has no
@@ -76,22 +78,71 @@ type Config struct {
 	TurnDriver sdk.TurnDriver
 }
 
-// turnDriver answers "what happens when the clock lands on a member with no
-// player" -- toolkit#1162, ADR-0043 (rpg-toolkit encounter#1163). Without
-// one, EndTurn parks the clock on a monster forever: nothing can act for it,
-// since EndTurn requires Member to be the active member and the host binds
-// Member to the authenticated human, who does not own the monster.
+// newDefaultTurnDriver answers "what happens when the clock lands on a member
+// with no player" -- toolkit#1162, ADR-0043 (rpg-toolkit encounter#1163).
+// Without one, EndTurn parks the clock on a monster forever: nothing can act
+// for it, since EndTurn requires Member to be the active member and the host
+// binds Member to the authenticated human, who does not own the monster.
 //
-// sdk.Behavior() is the reference driver (rpg-project#254, design
-// rpg-project/ideas/monster-turn/design.md): a monster attacks the closest
-// standing player if one is in reach, otherwise closes the distance,
-// otherwise passes -- driven through synchronously at the moment the
-// clock lands on them, the same as v1's sdk.Pass{} was. It wraps
-// rulebooks/dnd5e/behavior.Basic entirely inside the toolkit; this package
-// never imports encounter or behavior to get it. The Monster AI initiative
-// (rpg-project#201) replaces this value through the exact same
-// sdk.Config.TurnDriver seam, with no change to session's own shape.
-var turnDriver = sdk.Behavior()
+// sdk.Minded(nil) is the production driver as of rpg-toolkit#1725: each
+// member is driven by the mind ITS OWN SHEET NAMES (rule A5), and a member
+// whose sheet names none gets exactly sdk.Behavior()'s answer -- attack the
+// closest standing player if one is in reach, otherwise close the distance,
+// otherwise pass. Only the skeleton names a mind today ("retaliator": it
+// turns on whoever attacked it while the deed is fresh, and otherwise goes
+// for the closest), so every other monster's turn is unchanged. Passing nil
+// takes the rulebook's own Patience, the feel number the first walk tunes;
+// this package never names it, because a host naming a rules number is the
+// smell CLAUDE.md opens with. It wraps rulebooks/dnd5e/behavior entirely
+// inside the toolkit; this package never imports encounter or behavior.
+//
+// A failure here is a WIRING fault, not a game outcome, so it is returned
+// and New refuses to build -- a monster silently falling back to the basic
+// driver would look like a design choice rather than a broken pin.
+func newDefaultTurnDriver() (sdk.TurnDriver, error) {
+	driver, err := sdk.Minded(nil)
+	if err != nil {
+		return nil, fmt.Errorf("construct default turn driver: %w", err)
+	}
+
+	return &serializedTurnDriver{driver: driver}, nil
+}
+
+// serializedTurnDriver serializes Act against one stateful driver.
+//
+// WHY THIS EXISTS, and it is not a nicety: sdk.Minded is STATEFUL and its own
+// doc says so -- "one driver serves one encounter, one turn at a time; not
+// safe for concurrent use". It remembers which mind each member was given,
+// and it parks the view it is answering from on itself for the length of the
+// call. This package has nowhere to hang one driver per encounter: the SDK
+// takes TurnDriver once, on session.Config, and the Manager built from it
+// serves EVERY session in the process. So the one driver is shared, and two
+// sessions taking a monster's turn at the same moment would race its maps --
+// a Go runtime panic, not a wrong answer.
+//
+// What sharing still costs after the lock, stated rather than waved away:
+// the mind a member was assigned persists across sessions, keyed by the
+// member id, and member ids are AUTHORED PER DUNGEON (sessionworld's
+// Monster.MemberID) rather than minted per run. Two runs of the same dungeon
+// therefore hand the same member the same mind, which is the answer its
+// sheet names both times. It stops being harmless the day one id can mean
+// two different sheets; the fix then is a driver per encounter, which needs
+// a seam the SDK does not have yet (rpg-toolkit#1725 follow-up).
+type serializedTurnDriver struct {
+	mu     sync.Mutex
+	driver sdk.TurnDriver
+}
+
+// compile-time proof the adapter satisfies what it is handed to.
+var _ sdk.TurnDriver = (*serializedTurnDriver)(nil)
+
+// Act takes one member's turn, one at a time.
+func (d *serializedTurnDriver) Act(view sdk.MonsterView) (sdk.TurnIntent, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	return d.driver.Act(view)
+}
 
 const presentationIDPrefix = "presentation"
 
@@ -132,7 +183,10 @@ func New(cfg Config) (*Orchestrator, error) {
 
 	driver := cfg.TurnDriver
 	if driver == nil {
-		driver = turnDriver
+		var err error
+		if driver, err = newDefaultTurnDriver(); err != nil {
+			return nil, fmt.Errorf("session orchestrator: %w", err)
+		}
 	}
 
 	policy := cfg.StaleTargetPolicy
