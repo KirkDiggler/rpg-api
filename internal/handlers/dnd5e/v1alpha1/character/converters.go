@@ -6,9 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/apierr"
-	customizationconverter "github.com/KirkDiggler/rpg-api/internal/converters/customization"
 	"github.com/KirkDiggler/rpg-toolkit/core/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/ammunition"
@@ -22,6 +19,10 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/fightingstyles"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/languages"
+
+	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	customizationconverter "github.com/KirkDiggler/rpg-api/internal/converters/customization"
 
 	// "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/packs" // TODO: Uncomment when Pack enum is available
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/proficiencies"
@@ -55,6 +56,7 @@ func convertDraftDataToProto(draft *toolkitchar.DraftData) *dnd5ev1alpha1.Charac
 		Race:              convertRaceToProtoEnum(draft.Race),
 		Subrace:           convertSubraceToProtoEnum(draft.Subrace),
 		Class:             convertClassToProtoEnum(draft.Class),
+		ClassInfo:         convertClassDataToProto(classes.ClassData[draft.Class]),
 		Subclass:          convertSubclassToProtoEnum(draft.Subclass),
 		Background:        convertBackgroundToProtoEnum(draft.Background),
 		BaseAbilityScores: convertAbilityScoresToProto(draft.BaseAbilityScores),
@@ -555,6 +557,10 @@ func convertBackgroundToProtoEnum(background backgrounds.Background) dnd5ev1alph
 
 func convertChoiceCategoryToProto(category shared.ChoiceCategory) dnd5ev1alpha1.ChoiceCategory {
 	switch category {
+	case shared.ChoiceSpells:
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS
+	case shared.ChoiceCantrips:
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS
 	case shared.ChoiceSkills:
 		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS
 	case shared.ChoiceLanguages:
@@ -914,6 +920,30 @@ func convertClassDataToProto(data *classes.Data) *dnd5ev1alpha1.ClassInfo {
 
 	// REQUIREMENTS - Load ALL choices from toolkit
 	allChoices := loadAllClassChoices(data.ID)
+	subclasses := make([]*dnd5ev1alpha1.SubclassInfo, 0, len(data.Subclasses))
+	for _, subclass := range data.Subclasses {
+		id := convertSubclassToProtoEnum(subclass)
+		if id == dnd5ev1alpha1.Subclass_SUBCLASS_UNSPECIFIED {
+			continue
+		}
+		subclasses = append(subclasses, &dnd5ev1alpha1.SubclassInfo{
+			SubclassId: id, Name: classes.SubClassName(subclass),
+			Description: classes.SubClassDescription(subclass), Level: int32(data.SubclassLevel),
+			// Resolved requirements replace base choices with matching IDs.
+			AdditionalChoices: classRequirementsToProto(choices.GetClassRequirementsWithSubclass(data.ID, data.SubclassLevel, subclass)),
+		})
+	}
+
+	var spellcasting *dnd5ev1alpha1.SpellcastingInfo
+	if data.SpellcastingAbility != "" {
+		spellcasting = &dnd5ev1alpha1.SpellcastingInfo{
+			SpellcastingAbility: string(data.SpellcastingAbility),
+			CantripsKnown:       int32(data.CantripsKnown), SpellsKnown: int32(data.SpellsKnown),
+		}
+		if len(data.SpellSlots) > 0 {
+			spellcasting.SpellSlotsLevel_1 = int32(data.SpellSlots[0])
+		}
+	}
 
 	return &dnd5ev1alpha1.ClassInfo{
 		ClassId:        convertClassToProtoEnum(data.ID),
@@ -928,7 +958,9 @@ func convertClassDataToProto(data *classes.Data) *dnd5ev1alpha1.ClassInfo {
 		ToolProficiencies:           toolProfs,
 		SavingThrowProficiencies:    savingThrows,
 		// Requirements (choices) - ALL in one place
-		Choices: allChoices,
+		Choices:      allChoices,
+		Subclasses:   subclasses,
+		Spellcasting: spellcasting,
 	}
 }
 
@@ -2358,8 +2390,10 @@ func convertToolProficiencyToProto(tool proficiencies.Tool) dnd5ev1alpha1.Tool {
 
 // loadAllClassChoices loads ALL choices (skills, equipment, etc.) from toolkit requirements
 func loadAllClassChoices(classID classes.Class) []*dnd5ev1alpha1.Choice {
-	// Get all requirements from the toolkit
-	requirements := choices.GetClassRequirements(classID)
+	return classRequirementsToProto(choices.GetClassRequirements(classID))
+}
+
+func classRequirementsToProto(requirements *choices.Requirements) []*dnd5ev1alpha1.Choice {
 	if requirements == nil {
 		return nil
 	}
@@ -2372,6 +2406,22 @@ func loadAllClassChoices(classID classes.Class) []*dnd5ev1alpha1.Choice {
 		if skillChoice != nil {
 			result = append(result, skillChoice)
 		}
+	}
+	for _, req := range requirements.AdditionalSkills {
+		if choice := createSkillChoice(req); choice != nil {
+			result = append(result, choice)
+		}
+	}
+	for _, req := range requirements.Languages {
+		available := make([]dnd5ev1alpha1.Language, 0, len(req.Options))
+		for _, language := range req.Options {
+			available = append(available, convertLanguageToProtoEnum(language))
+		}
+		result = append(result, &dnd5ev1alpha1.Choice{
+			Id: string(req.ID), Description: req.Label, ChooseCount: int32(req.Count),
+			ChoiceType: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES,
+			Options:    &dnd5ev1alpha1.Choice_LanguageOptions{LanguageOptions: &dnd5ev1alpha1.LanguageOptions{Available: available}},
+		})
 	}
 
 	// Add equipment choices
@@ -2428,9 +2478,6 @@ func loadAllClassChoices(classID classes.Class) []*dnd5ev1alpha1.Choice {
 			result = append(result, spellbookChoice)
 		}
 	}
-
-	// TODO: Add other choice types as needed:
-	// - Language choices (requirements.Languages)
 
 	return result
 }

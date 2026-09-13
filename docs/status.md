@@ -11,7 +11,7 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
-**Cleric/Bless API consumer (rpg-api#975)** — Published toolkit session v0.82.0 and root v0.165.0 expose Bless and Cleric acquisition. The API adds named CastMissed live/story translation, explicit host refusal with attempt configuration, and missing Cleric domain enum conversions. Existing ordered-target, healing, sourced-condition, and offer-reason mappings are reused. See [provider pins, boundary validation, and web handoff](how-to/cleric-bless-web-handoff.md). UI/deployment verification remains a follow-on.
+**Cleric/Bless API consumer (rpg-api#975, follow-up #978)** — Catalog/detail and saved-draft projections now carry provider domains, choice overlays, spellcasting metadata and spell categories. Native Life Cleric creation/resume/finalization and real combat casts pass boundary tests, including both host policies and live/reloaded Story equality. Owner-private CharacterData now passes with published root v0.165.1 (toolkit #1721); its native regression was red on v0.165.0. Knowledge Domain's extra skill/language acquisition is a separate provider input gap. See [exact pins, evidence, and web handoff](how-to/cleric-bless-web-handoff.md). Browser/deployment acceptance remains pending.
 
 
 **Trusted guild-derived composition world (rpg-api#938, 2026-09-08)** —
