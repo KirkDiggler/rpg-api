@@ -10,8 +10,8 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/npc v0.2.0
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.165.2-0.20260913075151-0bbef1304f37
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.80.1-0.20260913080956-0dfca088185b
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.83.1-0.20260913084232-62c48cc7fc45
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.80.1-0.20260913092035-c4a5a61bf0b3
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.83.1-0.20260913092737-d994362970d7
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.13.0
 	github.com/KirkDiggler/rpg-toolkit/world v0.4.1
 	github.com/alicebob/miniredis/v2 v2.35.0
@@ -39,7 +39,7 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/play/intel v0.4.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/play/interrupt v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/play/record v0.1.0 // indirect
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/behavior v0.3.1-0.20260913081832-2ad535dcdedd // indirect
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/behavior v0.3.1-0.20260913092355-4f1761f566bb // indirect
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.47.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
