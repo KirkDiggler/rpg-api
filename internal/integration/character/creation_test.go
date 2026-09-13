@@ -1783,8 +1783,8 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	// level-1 spells are fewer than the class progression's four, a bard
 	// picks all of them, so the number is not pinned here -- it is the size
 	// of the offer, and it stops moving at four.
-	s.Equal(int32(len(spellChoice.GetSpellOptions().GetAvailableRefs())), spellChoice.GetChooseCount(),
-		"a level-1 bard picks every supported spell while the catalog is smaller than the progression")
+	s.Equal(int32(4), spellChoice.GetChooseCount(),
+		"the provider keeps the level-1 pick at four as Healing Word expands the available pool")
 	s.Equal(int32(1), spellChoice.GetSpellOptions().GetSpellLevel())
 	// Membership, not the whole list: what the leveled pick offers is the
 	// rulebook's to widen, and Thunderwave arrived beside Bane as soon as the
@@ -1794,6 +1794,7 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	s.Contains(spellChoice.GetSpellOptions().GetAvailableRefs(), thunderwaveRef)
 	s.Contains(spellChoice.GetSpellOptions().GetAvailableRefs(), dissonantWhispersRef)
 	s.Contains(spellChoice.GetSpellOptions().GetAvailableRefs(), commandRef)
+	s.Contains(spellChoice.GetSpellOptions().GetAvailableRefs(), "dnd5e:spells:healing-word")
 	s.Equal(dnd5ev1alpha1.SpellSelectionType_SPELL_SELECTION_TYPE_UNSPECIFIED,
 		spellChoice.GetSpellOptions().GetSelectionType(),
 		"API does not infer Known versus Spellbook until the provider authors that fact")
