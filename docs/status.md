@@ -11,6 +11,8 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Spare the Dying stabilization (#982)** — Published session v0.86.1 and proto SDK v0.1.190 are adopted through the shared live/Story ActivationResult converter. API cast acceptance covers dying and already-stable recipients, action-only payment with no dice, owner-private refresh, per-recipient replay and stable turn advancement. Existing private fields and privacy checks are reused. Browser acceptance remains separate; see the [handoff](how-to/spare-the-dying-web-handoff.md).
+
 **Cleric/Bless API consumer (rpg-api#975, follow-up #978)** — Catalog/detail and saved-draft projections now carry provider domains, choice overlays, spellcasting metadata and spell categories. Native Life Cleric creation/resume/finalization and real combat casts pass boundary tests, including both host policies and live/reloaded Story equality. Owner-private CharacterData now passes with published root v0.165.1 (toolkit #1721); its native regression was red on v0.165.0. Knowledge Domain's extra skill/language acquisition is a separate provider input gap. See [exact pins, evidence, and web handoff](how-to/cleric-bless-web-handoff.md). Browser/deployment acceptance remains pending.
 
 
