@@ -496,6 +496,22 @@ func convertSubclassToProtoEnum(subclass classes.Subclass) dnd5ev1alpha1.Subclas
 		return dnd5ev1alpha1.Subclass_SUBCLASS_CHAMPION
 	case classes.BattleMaster:
 		return dnd5ev1alpha1.Subclass_SUBCLASS_BATTLE_MASTER
+	case classes.LifeDomain:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_LIFE_DOMAIN
+	case classes.DeathDomain:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_DEATH_DOMAIN
+	case classes.TrickeryDomain:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_TRICKERY_DOMAIN
+	case classes.NatureDomain:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_NATURE_DOMAIN
+	case classes.WarDomain:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_WAR_DOMAIN
+	case classes.LightDomain:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_LIGHT_DOMAIN
+	case classes.TempestDomain:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_TEMPEST_DOMAIN
+	case classes.KnowledgeDomain:
+		return dnd5ev1alpha1.Subclass_SUBCLASS_KNOWLEDGE_DOMAIN
 	case classes.EldritchKnight:
 		return dnd5ev1alpha1.Subclass_SUBCLASS_ELDRITCH_KNIGHT
 	// Add more as needed
@@ -2158,6 +2174,22 @@ func convertProtoSubclassToToolkit(subclass dnd5ev1alpha1.Subclass) classes.Subc
 		return classes.Champion
 	case dnd5ev1alpha1.Subclass_SUBCLASS_BATTLE_MASTER:
 		return classes.BattleMaster
+	case dnd5ev1alpha1.Subclass_SUBCLASS_LIFE_DOMAIN:
+		return classes.LifeDomain
+	case dnd5ev1alpha1.Subclass_SUBCLASS_DEATH_DOMAIN:
+		return classes.DeathDomain
+	case dnd5ev1alpha1.Subclass_SUBCLASS_TRICKERY_DOMAIN:
+		return classes.TrickeryDomain
+	case dnd5ev1alpha1.Subclass_SUBCLASS_NATURE_DOMAIN:
+		return classes.NatureDomain
+	case dnd5ev1alpha1.Subclass_SUBCLASS_WAR_DOMAIN:
+		return classes.WarDomain
+	case dnd5ev1alpha1.Subclass_SUBCLASS_LIGHT_DOMAIN:
+		return classes.LightDomain
+	case dnd5ev1alpha1.Subclass_SUBCLASS_TEMPEST_DOMAIN:
+		return classes.TempestDomain
+	case dnd5ev1alpha1.Subclass_SUBCLASS_KNOWLEDGE_DOMAIN:
+		return classes.KnowledgeDomain
 	case dnd5ev1alpha1.Subclass_SUBCLASS_ELDRITCH_KNIGHT:
 		return classes.EldritchKnight
 	default:

@@ -31,6 +31,22 @@ func TestConvertersTestSuite(t *testing.T) {
 	suite.Run(t, new(ConvertersTestSuite))
 }
 
+func (s *ConvertersTestSuite) TestClericDomainMappings() {
+	for wire, domain := range map[dnd5ev1alpha1.Subclass]classes.Subclass{
+		dnd5ev1alpha1.Subclass_SUBCLASS_LIFE_DOMAIN:      classes.LifeDomain,
+		dnd5ev1alpha1.Subclass_SUBCLASS_DEATH_DOMAIN:     classes.DeathDomain,
+		dnd5ev1alpha1.Subclass_SUBCLASS_TRICKERY_DOMAIN:  classes.TrickeryDomain,
+		dnd5ev1alpha1.Subclass_SUBCLASS_NATURE_DOMAIN:    classes.NatureDomain,
+		dnd5ev1alpha1.Subclass_SUBCLASS_WAR_DOMAIN:       classes.WarDomain,
+		dnd5ev1alpha1.Subclass_SUBCLASS_LIGHT_DOMAIN:     classes.LightDomain,
+		dnd5ev1alpha1.Subclass_SUBCLASS_TEMPEST_DOMAIN:   classes.TempestDomain,
+		dnd5ev1alpha1.Subclass_SUBCLASS_KNOWLEDGE_DOMAIN: classes.KnowledgeDomain,
+	} {
+		s.Equal(domain, convertProtoSubclassToToolkit(wire))
+		s.Equal(wire, convertSubclassToProtoEnum(domain))
+	}
+}
+
 func TestCreateSpellbookChoice_ProjectsBaneRequirementWithoutInventingSelectionMode(t *testing.T) {
 	got := createSpellbookChoice(&choices.SpellbookRequirement{
 		ID:         "bard-spells-1",
