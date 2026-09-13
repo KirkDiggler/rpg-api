@@ -24,11 +24,15 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
 
-// Config carries what New needs to build an Orchestrator. Every field is
-// required: the SDK's own construction law (S8, "construction is total") is
-// honored one level up here too, rather than letting a missing dependency
-// surface later as a nil-pointer panic mid-verb.
+// Config carries what New needs to build an Orchestrator. Redis and Characters
+// are required; optional host settings have the defaults documented below.
+// New supplies each SDK capability explicitly.
 type Config struct {
+	// StaleTargetPolicy is host configuration for known-creature casts.
+	// Empty selects the API default, refuse; attempt permits paid misses.
+	// The toolkit validates nonempty values and owns all casting rules.
+	StaleTargetPolicy sdk.StaleTargetPolicy
+
 	// Redis is the client backing the session and encounter stores.
 	Redis redisclient.Client
 
@@ -131,15 +135,21 @@ func New(cfg Config) (*Orchestrator, error) {
 		driver = turnDriver
 	}
 
+	policy := cfg.StaleTargetPolicy
+	if policy == "" {
+		policy = sdk.StaleTargetRefuse
+	}
+
 	broker := NewBroker()
 	mgr, err := sdk.NewManager(&sdk.Config{
-		PresentationIDs: presentationIDs,
-		Sessions:        NewSessionRepository(cfg.Redis, cfg.TTL),
-		Encounters:      NewEncounterRepository(cfg.Redis, cfg.TTL),
-		Characters:      NewCharacterRepository(cfg.Characters),
-		Events:          broker,
-		Dice:            roller,
-		TurnDriver:      driver,
+		StaleTargetPolicy: policy,
+		PresentationIDs:   presentationIDs,
+		Sessions:          NewSessionRepository(cfg.Redis, cfg.TTL),
+		Encounters:        NewEncounterRepository(cfg.Redis, cfg.TTL),
+		Characters:        NewCharacterRepository(cfg.Characters),
+		Events:            broker,
+		Dice:              roller,
+		TurnDriver:        driver,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("construct session manager: %w", err)

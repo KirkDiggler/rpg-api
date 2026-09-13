@@ -15,6 +15,9 @@ as work lands and as the boundary violations are addressed.
 
 ## Handlers
 
+Cleric/Bless consumer (#975): focused boundary coverage now includes domain draft/finalization, host stale-target configuration, mixed CastMissed/condition order through live and reloaded story paths, and both Cleric heals. Rules remain provider-owned. No broader grade increase or UI/deployment claim; see the [handoff](how-to/cleric-bless-web-handoff.md).
+
+
 ### ~~Encounter handler — C+~~ DELETED (rpg-api#642, 2026-07-13)
 
 `internal/handlers/dnd5e/v1alpha1/encounter/handler.go` — this file, its

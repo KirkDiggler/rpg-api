@@ -83,6 +83,10 @@ const (
 	// outside the working directory so a volume mounted over ./content
 	// cannot hide it.
 	envShippedContentDir = "RPG_SHIPPED_CONTENT_DIR"
+	// envStaleTargetPolicy selects the host's known-creature cast policy.
+	// Unset defaults to refuse in the session orchestrator; attempt opts in
+	// to paid misses. Invalid values fail manager construction.
+	envStaleTargetPolicy = "RPG_STALE_TARGET_POLICY"
 )
 
 var (
@@ -215,9 +219,10 @@ func runServer(_ *cobra.Command, _ []string) error {
 	// character REPOSITORY — so there is no cycle to break, only an order to
 	// state.
 	sessionOrch, err := sessionorch.New(sessionorch.Config{
-		Redis:      redisClient,
-		Characters: charRepo,
-		TTL:        24 * time.Hour,
+		StaleTargetPolicy: sdk.StaleTargetPolicy(os.Getenv(envStaleTargetPolicy)),
+		Redis:             redisClient,
+		Characters:        charRepo,
+		TTL:               24 * time.Hour,
 	})
 	if err != nil {
 		return fmt.Errorf("session orchestrator: %w", err)

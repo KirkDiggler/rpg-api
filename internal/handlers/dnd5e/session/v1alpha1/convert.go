@@ -649,6 +649,8 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_DOOR
 	case sdk.EventMissed:
 		return sessionpb.EventKind_EVENT_KIND_MISSED
+	case sdk.EventCastMissed:
+		return sessionpb.EventKind_EVENT_KIND_CAST_MISSED
 	case sdk.EventActivated:
 		return sessionpb.EventKind_EVENT_KIND_ACTIVATED
 	case sdk.EventActivationResult:
@@ -811,6 +813,10 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			// recipient can name the same roll the attacker is presenting.
 			PresentationId: b.PresentationID,
 			Calculation:    rollCalculationToProto(b.Calculation),
+		}}
+	case sdk.CastMissedBody:
+		evt.Body = &sessionpb.Event_CastMissed{CastMissed: &sessionpb.CastMissed{
+			Actor: b.Actor, Target: b.Target, Spell: spellRefToProto(b.Spell),
 		}}
 	case sdk.MissedBody:
 		evt.Body = &sessionpb.Event_Missed{Missed: &sessionpb.Missed{
