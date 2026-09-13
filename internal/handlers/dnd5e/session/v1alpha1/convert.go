@@ -1159,6 +1159,17 @@ func activationResultBodyToProto(body sdk.ActivationResultBody) *sessionpb.Activ
 			MoveImposed: moveImposedBodyToProto(body.MoveImposed),
 		}
 	}
+	if body.Stabilized != nil {
+		populated++
+		b := body.Stabilized
+		result.Result = &sessionpb.ActivationResult_Stabilized{
+			Stabilized: &sessionpb.Stabilized{
+				Target: b.Target, SourceRef: b.SourceRef, SourceName: b.SourceName,
+				Before: lifeStateToProto(b.Before), After: lifeStateToProto(b.After),
+				HitPoints: int32(b.HitPoints), Progress: deathSaveProgressToProto(&b.Progress),
+			},
+		}
+	}
 	if populated != 1 {
 		return nil
 	}
