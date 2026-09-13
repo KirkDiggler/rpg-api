@@ -61,6 +61,14 @@ func (h *Handler) Cast(
 		// them. Nothing here inspects the cell, exactly as nothing here
 		// inspects the path a Move carries.
 		Cell: positionPtrFromProto(req.GetCell()),
+		// THE WORD THE CASTER PICKED, copied and not read, for the cell's
+		// reason one field over. Whether this declaration offered a menu at
+		// all, and whether this id is on it, are rules session refuses on;
+		// what the word then does to a creature is resolution's. An empty
+		// string is the absence, and it is the right absence: every
+		// declaration but Command's offers no menu today and a word sent to
+		// one of those is refused.
+		Option: req.GetOption(),
 	})
 	if err != nil {
 		return nil, statusError(err)

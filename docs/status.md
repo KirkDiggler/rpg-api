@@ -11,6 +11,9 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Cleric/Bless API consumer (rpg-api#975)** — Published toolkit session v0.82.0 and root v0.165.0 expose Bless and Cleric acquisition. The API adds named CastMissed live/story translation, explicit host refusal with attempt configuration, and missing Cleric domain enum conversions. Existing ordered-target, healing, sourced-condition, and offer-reason mappings are reused. See [provider pins, boundary validation, and web handoff](how-to/cleric-bless-web-handoff.md). UI/deployment verification remains a follow-on.
+
+
 **Trusted guild-derived composition world (rpg-api#938, 2026-09-08)** —
 `CompositionService` is registered in production and development. Global auth still
 establishes only player identity. A second unary interceptor applies to exactly the four

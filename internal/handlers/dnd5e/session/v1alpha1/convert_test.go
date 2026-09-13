@@ -1132,8 +1132,26 @@ func TestStandingToProto(t *testing.T) {
 // grew alongside Position (rpg-toolkit#1137): Seen is sight-channel
 // knowledge, not a roster read, so Standing belongs here.
 func TestSeenToProto_CarriesStanding(t *testing.T) {
-	got := seenToProto(&sdk.Seen{Position: spatial.Position{X: 1, Y: 2}, Standing: sdk.StandingDowned})
-	require.Equal(t, sessionpb.Standing_STANDING_DOWNED, got.GetStanding())
+	for _, tc := range []struct {
+		standing sdk.Standing
+		want     sessionpb.Standing
+	}{
+		{sdk.StandingUp, sessionpb.Standing_STANDING_UP},
+		{sdk.StandingDowned, sessionpb.Standing_STANDING_DOWNED},
+	} {
+		t.Run(string(tc.standing), func(t *testing.T) {
+			got := seenToProto(&sdk.Seen{Position: spatial.Position{X: 1, Y: 2}, Standing: &tc.standing})
+			require.Equal(t, tc.want, got.GetStanding())
+		})
+	}
+}
+
+func TestSeenToProto_UnobservedStandingIsNotGuessed(t *testing.T) {
+	got := seenToProto(&sdk.Seen{Position: spatial.Position{X: 1, Y: 2}})
+	require.NotNil(t, got)
+	require.Equal(t, sessionpb.Standing_STANDING_UNSPECIFIED, got.GetStanding())
+	require.Equal(t, 1.0, got.GetPosition().GetX())
+	require.Equal(t, 2.0, got.GetPosition().GetY())
 }
 
 // TestSightingToProto_CarriesName pins rpg-dnd5e-web#564: names, not ids --
@@ -2093,4 +2111,132 @@ func TestACaughtMemberCrossesTheSeamWhole(t *testing.T) {
 func TestCatchingNobodyIsNilRatherThanEmpty(t *testing.T) {
 	require.Nil(t, caughtMembersToProto(nil))
 	require.Nil(t, caughtMembersToProto([]sdk.CaughtMember{}))
+}
+
+// TestDeclarationToProto_CarriesTheMenuInContentOrder covers Command's cast
+// menu (rpg-project#442). The words are an input the request brings back, not
+// a row per word, so one offer lists what may be chosen and the client draws
+// that list.
+//
+// ORDER IS THE CONTENT'S. Approach, Flee, Grovel is how the spell authored
+// them, and a converter that sorted or regrouped would be editing a spell's
+// own presentation from four layers away.
+func TestDeclarationToProto_CarriesTheMenuInContentOrder(t *testing.T) {
+	out := declarationToProto(sdk.Declaration{
+		Verb:       sdk.VerbCast,
+		Slot:       sdk.SlotAction,
+		Available:  true,
+		ID:         "decl-command-1",
+		TargetKind: sdk.TargetMember,
+		Spell:      &sdk.SpellRef{Ref: "dnd5e:spells:command", Name: "Command"},
+		Options: []sdk.CastOption{
+			{ID: "approach", Label: "Approach"},
+			{ID: "flee", Label: "Flee"},
+			{ID: "grovel", Label: "Grovel"},
+		},
+	})
+
+	require.Equal(t, []*sessionpb.CastOption{
+		{Id: "approach", Label: "Approach"},
+		{Id: "flee", Label: "Flee"},
+		{Id: "grovel", Label: "Grovel"},
+	}, out.GetOptions(), "the whole menu crosses in the order the spell authored")
+}
+
+// The other half, and the one that makes the menu mean something: a row that
+// offers no choice lists nothing.
+//
+// A row listing options REQUIRES one back and a row listing none REFUSES one,
+// so an invented entry here would make session refuse a cast this layer had
+// promised was answerable. Every verb but Cast and every spell but Command is
+// on this side of the law today.
+func TestDeclarationToProto_CarriesNoMenuOnARowThatOffersNoChoice(t *testing.T) {
+	out := declarationToProto(sdk.Declaration{
+		Verb:       sdk.VerbCast,
+		Slot:       sdk.SlotAction,
+		Available:  true,
+		ID:         "decl-cast-2",
+		TargetKind: sdk.TargetMember,
+		Spell:      &sdk.SpellRef{Ref: "dnd5e:spells:vicious-mockery", Name: "Vicious Mockery"},
+	})
+	require.Empty(t, out.GetOptions(), "a spell with no menu offers no word to choose")
+}
+
+// TestConditionAppliedToProto_NamesWhoIsResponsible is the walk finding of
+// 2026-09-12: the raw activation-result payload carried source_id and the
+// typed conditionApplied.sourceId beside it was empty, because this converter
+// copied three of the body's four fields.
+//
+// THE SOURCE IS PART OF THE CONDITION'S ADDRESS, not decoration. Two casters
+// can each land Bane on the same fighter, and target+ref alone cannot tell
+// those instances apart -- which is exactly what a client needs to say whose
+// Command holds a creature, and which of two Banes ended when one caster's
+// concentration broke.
+func TestConditionAppliedToProto_NamesWhoIsResponsible(t *testing.T) {
+	got := eventToProto(sdk.Event{
+		Kind: sdk.EventActivationResult,
+		Body: sdk.ActivationResultBody{
+			Actor: "char_bard",
+			ConditionApplied: &sdk.ConditionAppliedBody{
+				Target:   "zombie-1",
+				Ref:      "dnd5e:conditions:commanded",
+				Name:     "the commanded condition",
+				SourceID: "char_bard",
+			},
+		},
+	})
+
+	condition := got.GetActivationResult().GetConditionApplied()
+	require.NotNil(t, condition)
+	require.Equal(t, "char_bard", condition.GetSourceId(),
+		"the typed field must say what the raw payload already said")
+	require.Equal(t, "zombie-1", condition.GetTarget())
+	require.Equal(t, "dnd5e:conditions:commanded", condition.GetRef())
+	require.Equal(t, "the commanded condition", condition.GetName())
+}
+
+// The half that keeps the field honest: a body with no source leaves the wire
+// field empty rather than borrowing the actor beside it.
+//
+// The actor is who ACTED and the source is who the condition answers to, and
+// they are the same id often enough that filling one from the other would look
+// right for a long time. A condition applied by no one -- terrain, a trap the
+// rulebook does not attribute -- would then be blamed on whoever was standing
+// there.
+func TestConditionAppliedToProto_LeavesAnUnattributedConditionUnattributed(t *testing.T) {
+	got := eventToProto(sdk.Event{
+		Kind: sdk.EventActivationResult,
+		Body: sdk.ActivationResultBody{
+			Actor: "char_bard",
+			ConditionApplied: &sdk.ConditionAppliedBody{
+				Target: "zombie-1", Ref: "dnd5e:conditions:prone", Name: "Prone",
+			},
+		},
+	})
+	require.Empty(t, got.GetActivationResult().GetConditionApplied().GetSourceId())
+}
+
+// The removal beat carries the same address for the same reason, and dropped
+// it in the same way. Without it "a Bane ended on the fighter" cannot say
+// WHICH Bane, so a client holding two would have to guess which row to strike.
+func TestConditionRemovedToProto_NamesWhoIsResponsible(t *testing.T) {
+	got := eventToProto(sdk.Event{
+		Kind: sdk.EventActivationResult,
+		Body: sdk.ActivationResultBody{
+			Actor: "char_bard",
+			ConditionRemoved: &sdk.ConditionRemovedBody{
+				Target:   "fighter",
+				Ref:      "dnd5e:conditions:baned",
+				Name:     "Bane",
+				Reason:   "concentration ended",
+				SourceID: "char_bard",
+			},
+		},
+	})
+
+	condition := got.GetActivationResult().GetConditionRemoved()
+	require.NotNil(t, condition)
+	require.Equal(t, "char_bard", condition.GetSourceId(),
+		"which instance ended is the source plus the target plus the ref")
+	require.Equal(t, "concentration ended", condition.GetReason())
 }

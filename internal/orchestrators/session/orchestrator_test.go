@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
@@ -92,4 +94,16 @@ func (s *OrchestratorTestSuite) TestNew_MissingCharacters_Errors() {
 		TTL:   24 * time.Hour,
 	})
 	s.Require().Error(err)
+}
+
+func (s *OrchestratorTestSuite) TestNew_InvalidStaleTargetPolicyFailsConstruction() {
+	ctrl := gomock.NewController(s.T())
+	client := goredis.NewClient(&goredis.Options{Addr: s.miniredis.Addr()})
+	defer func() { _ = client.Close() }()
+	orch, err := sessionorch.New(sessionorch.Config{
+		Redis: client, Characters: charactermock.NewMockRepository(ctrl), StaleTargetPolicy: "typo",
+	})
+	s.Nil(orch)
+	s.ErrorIs(err, sdk.ErrIncompleteConfig)
+	s.ErrorContains(err, "StaleTargetPolicy")
 }
