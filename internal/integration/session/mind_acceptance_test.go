@@ -64,8 +64,17 @@ func (r *mindRecorder) viewOf(t *testing.T, member string) sdk.MonsterView {
 // it, or the MonsterView the composition fills before it asks.
 //
 // BOTH ANSWERS ARE PINNED, because "retaliator" alone would also pass if the
-// seam hardcoded it. The goblin names no mind, and an empty Mind is what
+// seam hardcoded it. The ghoul names no mind, and an empty Mind is what
 // tells the shipped driver to fall back to the basic brain.
+//
+// It used to be the goblin, until rpg-toolkit#1745 cast the goblin as a
+// coward and this test caught it. The control has to be a definition that
+// names NOTHING, so it moved to one that still does: same DEX modifier, so
+// the initiative tie still breaks by arrival and the order below is
+// unchanged. Every monster the toolkit casts is one fewer candidate, which
+// is a thing to notice rather than a problem -- the day none is left, an
+// empty Mind is no longer a shipped monster's answer and this half of the
+// proof needs a definition of its own.
 func TestAcceptance_SpawnedMonsterCarriesTheMindItsSheetNames(t *testing.T) {
 	const sessionID = "mind-run"
 
@@ -98,7 +107,7 @@ func TestAcceptance_SpawnedMonsterCarriesTheMindItsSheetNames(t *testing.T) {
 		at  spatial.Position
 	}{
 		{"skel-1", refs.Monsters.Skeleton().String(), at(4, 0)},
-		{"gob-1", refs.Monsters.Goblin().String(), at(5, 0)},
+		{"ghoul-1", refs.Monsters.Ghoul().String(), at(5, 0)},
 	} {
 		_, serr := h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
 			Session: sessionID, ID: spawn.id, Ref: spawn.ref, Position: spawn.at,
@@ -108,7 +117,7 @@ func TestAcceptance_SpawnedMonsterCarriesTheMindItsSheetNames(t *testing.T) {
 
 	turn, err := h.handler.Turn(ctx, &sessionpb.TurnRequest{Session: sessionID, Member: "alice"})
 	require.NoError(t, err)
-	require.Equal(t, []string{"alice", "skel-1", "gob-1"}, turn.GetOrder(),
+	require.Equal(t, []string{"alice", "skel-1", "ghoul-1"}, turn.GetOrder(),
 		"geometry gate: alice acts first and both monsters follow, so ending her turn asks each of them once")
 
 	// Alice passes, the clock walks onto each monster in turn, and each one
@@ -121,7 +130,7 @@ func TestAcceptance_SpawnedMonsterCarriesTheMindItsSheetNames(t *testing.T) {
 
 	require.Equal(t, tkmonster.MindRetaliator.String(), recorder.viewOf(t, "skel-1").Mind,
 		"the skeleton definition names the retaliator mind and the whole spawn path carries that word")
-	require.Equal(t, tkmonster.MindUnspecified.String(), recorder.viewOf(t, "gob-1").Mind,
+	require.Equal(t, tkmonster.MindUnspecified.String(), recorder.viewOf(t, "ghoul-1").Mind,
 		"a monster whose definition names no mind crosses empty, which is what selects the basic brain")
 }
 
