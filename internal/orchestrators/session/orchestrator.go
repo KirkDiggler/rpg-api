@@ -100,13 +100,18 @@ type Config struct {
 // member is driven by the mind ITS OWN SHEET NAMES (rule A5), and a member
 // whose sheet names none gets exactly sdk.Behavior()'s answer -- attack the
 // closest standing player if one is in reach, otherwise close the distance,
-// otherwise pass. Only the skeleton names a mind today ("retaliator": it
-// turns on whoever attacked it while the deed is fresh, and otherwise goes
-// for the closest), so every other monster's turn is unchanged. Passing nil
-// takes the rulebook's own Patience, the feel number the first walk tunes;
-// this package never names it, because a host naming a rules number is the
-// smell CLAUDE.md opens with. It wraps rulebooks/dnd5e/behavior entirely
-// inside the toolkit; this package never imports encounter or behavior.
+// otherwise pass. Three monsters name a mind as of rpg-toolkit#1745 -- the
+// skeleton a "retaliator", the thug a "berserker", the goblin a "coward" --
+// and every other monster's turn is unchanged.
+//
+// Nil is the whole input, and there is nothing left to pass: how long a mind
+// holds a grudge and how much room it keeps are the MIND's, named by the
+// word on a monster's sheet and held by the rulebook's preset for that word.
+// The Patience this package used to leave unset is gone from the SDK
+// entirely, which is the same principle stated better -- a host naming a
+// rules number is the smell CLAUDE.md opens with, and now there is no number
+// here to leave alone. It wraps rulebooks/dnd5e/behavior entirely inside the
+// toolkit; this package never imports encounter or behavior.
 //
 // # Why the cache is HERE and not in the SDK
 //
