@@ -7,6 +7,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	dnd5epb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
@@ -19,17 +23,23 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	dicesession "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
 
 const (
-	baneSpellRef        = "dnd5e:spells:bane"
-	thunderwaveSpellRef = "dnd5e:spells:thunderwave"
+	baneSpellRef              = "dnd5e:spells:bane"
+	thunderwaveSpellRef       = "dnd5e:spells:thunderwave"
+	dissonantWhispersSpellRef = "dnd5e:spells:dissonant-whispers"
+	commandSpellRef           = "dnd5e:spells:command"
 )
 
 func newCharacterCreationHandler(t *testing.T, h *acceptanceHarness) *characterhandler.Handler {
+	t.Helper()
+	handler, err := characterhandler.NewHandler(&characterhandler.HandlerConfig{CharacterService: newAcceptanceCharacterService(t, h)})
+	require.NoError(t, err)
+	return handler
+}
+
+func newAcceptanceCharacterService(t *testing.T, h *acceptanceHarness) characterorch.Service {
 	t.Helper()
 
 	drafts, err := characterdraft.NewRedis(&characterdraft.Config{
@@ -51,9 +61,7 @@ func newCharacterCreationHandler(t *testing.T, h *acceptanceHarness) *characterh
 		AppearanceNotifier: characterorch.NoAppearanceNotifier{},
 	})
 	require.NoError(t, err)
-	handler, err := characterhandler.NewHandler(&characterhandler.HandlerConfig{CharacterService: characters})
-	require.NoError(t, err)
-	return handler
+	return characters
 }
 
 func createFinalizedBaneBard(t *testing.T, h *acceptanceHarness, playerID string) string {
@@ -121,12 +129,13 @@ func createFinalizedBaneBard(t *testing.T, h *acceptanceHarness, playerID string
 			{
 				Category: dnd5epb.ChoiceCategory_CHOICE_CATEGORY_SPELLS, Source: dnd5epb.ChoiceSource_CHOICE_SOURCE_CLASS,
 				ChoiceId: "bard-spells-1",
-				// BOTH, because the level-1 pick takes two (rpg-toolkit#1661)
-				// and validates the count exactly. This test is about Bane,
-				// and Thunderwave rides along only because the pick refuses a
-				// bard who left the second slot empty.
+				// ALL OF THEM, because the level-1 pick takes every
+				// supported spell (rpg-toolkit#1661) and validates the count
+				// exactly. This test is about Bane; the other three ride
+				// along only because the pick refuses a bard who left a slot
+				// empty.
 				Selection: &dnd5epb.ChoiceData_Spells{Spells: &dnd5epb.SpellSelection{SpellRefs: []string{
-					baneSpellRef, thunderwaveSpellRef,
+					baneSpellRef, thunderwaveSpellRef, dissonantWhispersSpellRef, commandSpellRef,
 				}}},
 			},
 		},
@@ -232,12 +241,18 @@ func TestAcceptance_BaneCreationCastPaymentAndAffectedRoll(t *testing.T) {
 	require.NoError(t, err)
 	var castEvent *sessionpb.Cast
 	var saveEvent *sessionpb.Saved
+	var baned *sessionpb.ConditionApplied
 	for _, event := range story.GetEntries() {
 		switch event.GetKind() {
 		case sessionpb.EventKind_EVENT_KIND_CAST:
 			castEvent = event.GetCast()
 		case sessionpb.EventKind_EVENT_KIND_SAVED:
 			saveEvent = event.GetSaved()
+		case sessionpb.EventKind_EVENT_KIND_ACTIVATION_RESULT:
+			if applied := event.GetActivationResult().GetConditionApplied(); applied != nil &&
+				applied.GetRef() == refs.Conditions.Baned().String() {
+				baned = applied
+			}
 		}
 	}
 	require.NotNil(t, castEvent)
@@ -246,6 +261,17 @@ func TestAcceptance_BaneCreationCastPaymentAndAffectedRoll(t *testing.T) {
 	require.NotNil(t, saveEvent)
 	require.NotNil(t, saveEvent.GetCalculation(), "the Bane saving throw carries provider-authored calculation facts")
 	require.Equal(t, saveEvent.GetTotal(), saveEvent.GetCalculation().GetTotal())
+
+	// WHOSE BANE. Two casters can each land Bane on this fighter, and the
+	// condition's address is target plus ref plus source -- so the beat that
+	// announces one must name the caster, or a client holding two rows cannot
+	// say which is which, and cannot strike the right one when a removal beat
+	// arrives. Read here, end to end, because the walk found the typed field
+	// empty while the raw payload beside it carried the id (2026-09-12).
+	require.NotNil(t, baned, "the failed save attached Bane, and the beat says so")
+	require.Equal(t, "fighter", baned.GetTarget())
+	require.Equal(t, bardID, baned.GetSourceId(),
+		"the caster who spent the slot is the source the beat names")
 
 	_, err = h.handler.EndTurn(bardCtx, &sessionpb.EndTurnRequest{
 		Session: "bane-playthrough", Member: bardID,

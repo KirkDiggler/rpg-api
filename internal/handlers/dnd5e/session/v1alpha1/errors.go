@@ -399,6 +399,21 @@ func statusError(err error) error {
 		errors.Is(err, sdk.ErrInvalidSession),
 		errors.Is(err, sdk.ErrNilConfig),
 		errors.Is(err, sdk.ErrIncompleteConfig),
+		// ErrAmbiguousConfig (rpg-toolkit#1734) is ErrIncompleteConfig's twin
+		// one fault over: this server wired both of the SDK's turn-driver
+		// doors at once. It is raised by NewManager, so it never reaches a
+		// verb at all -- the process fails to start -- and it is mapped here
+		// for the reason every construction sentinel is, so that a leak
+		// reports server wiring rather than blaming a caller.
+		errors.Is(err, sdk.ErrAmbiguousConfig),
+		// ErrNoTurnDriver (rpg-toolkit#1734) IS reachable from a verb, unlike
+		// the three above: the SDK asks this server which driver serves a
+		// session, once per verb, and this reports that the answer was
+		// success with no driver. That is a broken contract in
+		// internal/orchestrators/session's own cache, which is why it sits
+		// with ErrBadRepository's family rather than anywhere a client can
+		// read as advice.
+		errors.Is(err, sdk.ErrNoTurnDriver),
 		errors.Is(err, sdk.ErrBadTurnOutcome),
 		// ErrNoIntel (rpg-project#372) is here for ErrBadCost's reason, and
 		// the bucket is the whole argument: NO SessionService RPC NAMES AN

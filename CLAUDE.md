@@ -276,12 +276,13 @@ Benefits:
 
 ### Development Workflow
 
-**Always work in branches:**
+**Always work in a worktree**, one per line of work — never a bare
+`git checkout -b` in the shared clone:
 ```bash
-git checkout -b feat/character-creation
-git checkout -b fix/session-timeout
-git checkout -b docs/api-examples
+git fetch origin
+git worktree add .worktrees/feat-character-creation -b feat/character-creation origin/dev
 ```
+New work bases off `origin/dev`. See `rpg-project/CLAUDE.md` for the rule.
 
 **Always run pre-commit:**
 ```bash

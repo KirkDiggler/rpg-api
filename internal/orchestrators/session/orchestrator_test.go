@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
@@ -92,4 +94,61 @@ func (s *OrchestratorTestSuite) TestNew_MissingCharacters_Errors() {
 		TTL:   24 * time.Hour,
 	})
 	s.Require().Error(err)
+}
+
+func (s *OrchestratorTestSuite) TestNew_InvalidStaleTargetPolicyFailsConstruction() {
+	ctrl := gomock.NewController(s.T())
+	client := goredis.NewClient(&goredis.Options{Addr: s.miniredis.Addr()})
+	defer func() { _ = client.Close() }()
+	orch, err := sessionorch.New(sessionorch.Config{
+		Redis: client, Characters: charactermock.NewMockRepository(ctrl), StaleTargetPolicy: "typo",
+	})
+	s.Nil(orch)
+	s.ErrorIs(err, sdk.ErrIncompleteConfig)
+	s.ErrorContains(err, "StaleTargetPolicy")
+}
+
+// passDriver is an every-session driver a test can hand Config.TurnDriver.
+type passDriver struct{}
+
+func (passDriver) Act(sdk.MonsterView) (sdk.TurnIntent, error) { return sdk.Pass{}, nil }
+
+// Exactly one of the SDK's two driver doors is taken, and which one depends on
+// whether a driver was supplied.
+//
+// THE SDK IS THE ASSERTION HERE, which is what makes these two rows worth
+// having rather than "New returns no error" twice. sdk.NewManager refuses a
+// config with both TurnDriver and TurnDrivers wired (ErrAmbiguousConfig,
+// rpg-toolkit#1734) and refuses one with neither (ErrIncompleteConfig). So a
+// Manager that exists at all is proof this package wired exactly one — and
+// wiring the per-session cache alongside a supplied driver, or forgetting to
+// wire either, fails right here rather than in a walk.
+func (s *OrchestratorTestSuite) TestNew_TakesExactlyOneDriverDoor() {
+	ctrl := gomock.NewController(s.T())
+	client := goredis.NewClient(&goredis.Options{Addr: s.miniredis.Addr()})
+	defer func() { _ = client.Close() }()
+
+	base := func() sessionorch.Config {
+		return sessionorch.Config{
+			Redis: client, Characters: charactermock.NewMockRepository(ctrl),
+			TTL: 24 * time.Hour, PresentationIDs: idgen.NewSequential("presentation"),
+		}
+	}
+
+	s.Run("no driver supplied takes the per-session door", func() {
+		orch, err := sessionorch.New(base())
+		s.Require().NoError(err)
+		s.Require().NotNil(orch)
+		s.NotNil(orch.Manager)
+	})
+
+	s.Run("a supplied driver takes the every-session door", func() {
+		cfg := base()
+		cfg.TurnDriver = passDriver{}
+
+		orch, err := sessionorch.New(cfg)
+		s.Require().NoError(err)
+		s.Require().NotNil(orch)
+		s.NotNil(orch.Manager)
+	})
 }

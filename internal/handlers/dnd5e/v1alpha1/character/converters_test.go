@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
-	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/armor"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -21,6 +20,8 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/tools"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
+
+	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 )
 
 type ConvertersTestSuite struct {
@@ -29,6 +30,60 @@ type ConvertersTestSuite struct {
 
 func TestConvertersTestSuite(t *testing.T) {
 	suite.Run(t, new(ConvertersTestSuite))
+}
+
+func (s *ConvertersTestSuite) TestClericCatalogUsesProviderDomainsAndSpellcasting() {
+	data := classes.ClassData[classes.Cleric]
+	got := convertClassDataToProto(data)
+	s.Require().Len(got.GetSubclasses(), len(data.Subclasses))
+	for i, domain := range data.Subclasses {
+		s.Equal(convertSubclassToProtoEnum(domain), got.Subclasses[i].GetSubclassId())
+		s.Equal(classes.SubClassName(domain), got.Subclasses[i].GetName())
+		s.Equal(classes.SubClassDescription(domain), got.Subclasses[i].GetDescription())
+		s.Equal(int32(data.SubclassLevel), got.Subclasses[i].GetLevel())
+		resolved := choices.GetClassRequirementsWithSubclass(data.ID, data.SubclassLevel, domain)
+		byID := make(map[string]*dnd5ev1alpha1.Choice)
+		for _, choice := range got.Subclasses[i].GetAdditionalChoices() {
+			byID[choice.GetId()] = choice
+		}
+		// A base-only projection loses domain equipment and Nature's cantrip overlay.
+		for _, equipment := range resolved.Equipment {
+			s.Require().NotNil(byID[string(equipment.ID)])
+			s.Len(byID[string(equipment.ID)].GetEquipmentOptions().GetBundles(), len(equipment.Options))
+		}
+		s.Equal(int32(resolved.Cantrips.Count), byID[string(resolved.Cantrips.ID)].GetChooseCount())
+		// Keep additional requirements visible even when acquisition needs provider work.
+		for _, skill := range resolved.AdditionalSkills {
+			s.Equal(int32(skill.Count), byID[string(skill.ID)].GetChooseCount())
+		}
+		for _, language := range resolved.Languages {
+			s.Equal(int32(language.Count), byID[string(language.ID)].GetChooseCount())
+			s.Equal(dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES, byID[string(language.ID)].GetChoiceType())
+		}
+	}
+	s.Require().NotNil(got.GetSpellcasting())
+	s.Equal(string(data.SpellcastingAbility), got.Spellcasting.GetSpellcastingAbility())
+	s.Equal(int32(data.CantripsKnown), got.Spellcasting.GetCantripsKnown())
+	s.Equal(int32(data.SpellsKnown), got.Spellcasting.GetSpellsKnown())
+	s.Equal(int32(data.SpellSlots[0]), got.Spellcasting.GetSpellSlotsLevel_1())
+	s.Equal(dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS, convertChoiceCategoryToProto(shared.ChoiceSpells))
+	s.Equal(dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS, convertChoiceCategoryToProto(shared.ChoiceCantrips))
+}
+
+func (s *ConvertersTestSuite) TestClericDomainMappings() {
+	for wire, domain := range map[dnd5ev1alpha1.Subclass]classes.Subclass{
+		dnd5ev1alpha1.Subclass_SUBCLASS_LIFE_DOMAIN:      classes.LifeDomain,
+		dnd5ev1alpha1.Subclass_SUBCLASS_DEATH_DOMAIN:     classes.DeathDomain,
+		dnd5ev1alpha1.Subclass_SUBCLASS_TRICKERY_DOMAIN:  classes.TrickeryDomain,
+		dnd5ev1alpha1.Subclass_SUBCLASS_NATURE_DOMAIN:    classes.NatureDomain,
+		dnd5ev1alpha1.Subclass_SUBCLASS_WAR_DOMAIN:       classes.WarDomain,
+		dnd5ev1alpha1.Subclass_SUBCLASS_LIGHT_DOMAIN:     classes.LightDomain,
+		dnd5ev1alpha1.Subclass_SUBCLASS_TEMPEST_DOMAIN:   classes.TempestDomain,
+		dnd5ev1alpha1.Subclass_SUBCLASS_KNOWLEDGE_DOMAIN: classes.KnowledgeDomain,
+	} {
+		s.Equal(domain, convertProtoSubclassToToolkit(wire))
+		s.Equal(wire, convertSubclassToProtoEnum(domain))
+	}
 }
 
 func TestCreateSpellbookChoice_ProjectsBaneRequirementWithoutInventingSelectionMode(t *testing.T) {

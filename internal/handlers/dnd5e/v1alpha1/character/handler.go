@@ -9,16 +9,17 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/apierr"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
-	customizationconverter "github.com/KirkDiggler/rpg-api/internal/converters/customization"
-	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	"github.com/KirkDiggler/rpg-toolkit/rpgerr"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
+
+	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/auth"
+	customizationconverter "github.com/KirkDiggler/rpg-api/internal/converters/customization"
+	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 )
 
 const draftNotFoundMessage = "draft not found"
@@ -778,10 +779,22 @@ func (h *Handler) GetRaceDetails(
 
 // GetClassDetails returns detailed information about a specific class
 func (h *Handler) GetClassDetails(
-	_ context.Context,
-	_ *dnd5ev1alpha1.GetClassDetailsRequest,
+	ctx context.Context,
+	req *dnd5ev1alpha1.GetClassDetailsRequest,
 ) (*dnd5ev1alpha1.GetClassDetailsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	if req.GetClassId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "class_id is required")
+	}
+	result, err := h.characterService.ListClasses(ctx, &character.ListClassesInput{})
+	if err != nil {
+		return nil, err
+	}
+	for _, data := range result.Classes {
+		if data.ID == req.GetClassId() {
+			return &dnd5ev1alpha1.GetClassDetailsResponse{Class: convertClassDataToProto(data)}, nil
+		}
+	}
+	return nil, status.Error(codes.NotFound, "class not found")
 }
 
 // GetBackgroundDetails returns detailed information about a specific background
