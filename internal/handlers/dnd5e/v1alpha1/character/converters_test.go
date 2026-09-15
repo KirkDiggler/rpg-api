@@ -70,6 +70,34 @@ func (s *ConvertersTestSuite) TestClericCatalogUsesProviderDomainsAndSpellcastin
 	s.Equal(dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS, convertChoiceCategoryToProto(shared.ChoiceCantrips))
 }
 
+// TestSubclassesAreOmittedBeforeTheirLevel pins rpg-toolkit#1760: a class
+// whose subclass is not a level-1 choice must not project any Subclasses at
+// all, so the web form (which requires a selection whenever that list is
+// non-empty) never asks for one that does not exist yet. Cleric's Divine
+// Domain is the one level-1 exception today; every other supported class
+// with a subclass catalog waits until level 2 or 3, and there is no
+// level-up mechanic yet for a later level to become reachable.
+func (s *ConvertersTestSuite) TestSubclassesAreOmittedBeforeTheirLevel() {
+	for _, classID := range []classes.Class{
+		classes.Fighter, classes.Wizard, classes.Rogue, classes.Barbarian, classes.Bard, classes.Druid,
+	} {
+		data := classes.ClassData[classID]
+		s.Require().Greater(data.SubclassLevel, 1, "%s must actually be a level>1 case for this test to mean anything", classID)
+		got := convertClassDataToProto(data)
+		s.Empty(got.GetSubclasses(), "%s's subclass is a level %d choice, not offered at creation (level 1)",
+			classID, data.SubclassLevel)
+	}
+
+	// The control: Cleric's Divine Domain is a level-1 choice and must still
+	// be offered, exactly as TestClericCatalogUsesProviderDomainsAndSpellcasting
+	// already pins — asserted again here, briefly, so this test alone proves
+	// the gate discriminates rather than always emptying the list.
+	cleric := classes.ClassData[classes.Cleric]
+	s.Require().Equal(1, cleric.SubclassLevel)
+	got := convertClassDataToProto(cleric)
+	s.NotEmpty(got.GetSubclasses(), "Cleric's Divine Domain is a level-1 choice and must still be offered")
+}
+
 func (s *ConvertersTestSuite) TestClericDomainMappings() {
 	for wire, domain := range map[dnd5ev1alpha1.Subclass]classes.Subclass{
 		dnd5ev1alpha1.Subclass_SUBCLASS_LIFE_DOMAIN:      classes.LifeDomain,

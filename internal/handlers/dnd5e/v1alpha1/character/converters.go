@@ -920,18 +920,30 @@ func convertClassDataToProto(data *classes.Data) *dnd5ev1alpha1.ClassInfo {
 
 	// REQUIREMENTS - Load ALL choices from toolkit
 	allChoices := loadAllClassChoices(data.ID)
+	// Subclasses are populated only when this class's own SubclassLevel is
+	// reachable at creation (level 1) — classes.Data.Subclasses is a flat,
+	// level-blind catalog, but the web form requires a selection whenever
+	// this list is non-empty (rpg-dnd5e-web ClassSelectionModal.tsx). A
+	// level-3 class (Fighter, Rogue, Barbarian, Bard) or level-2 class
+	// (Wizard, Druid) offered here at level 1 would force a choice that
+	// doesn't exist yet — see rpg-toolkit#1760. Cleric is the only class
+	// whose subclass (Divine Domain) is a level-1 choice today; there is no
+	// level-up mechanic yet, so "reachable at level 1" is the only case that
+	// matters until one exists.
 	subclasses := make([]*dnd5ev1alpha1.SubclassInfo, 0, len(data.Subclasses))
-	for _, subclass := range data.Subclasses {
-		id := convertSubclassToProtoEnum(subclass)
-		if id == dnd5ev1alpha1.Subclass_SUBCLASS_UNSPECIFIED {
-			continue
+	if choices.GetClassRequirements(data.ID).Subclass != nil {
+		for _, subclass := range data.Subclasses {
+			id := convertSubclassToProtoEnum(subclass)
+			if id == dnd5ev1alpha1.Subclass_SUBCLASS_UNSPECIFIED {
+				continue
+			}
+			subclasses = append(subclasses, &dnd5ev1alpha1.SubclassInfo{
+				SubclassId: id, Name: classes.SubClassName(subclass),
+				Description: classes.SubClassDescription(subclass), Level: int32(data.SubclassLevel),
+				// Resolved requirements replace base choices with matching IDs.
+				AdditionalChoices: classRequirementsToProto(choices.GetClassRequirementsWithSubclass(data.ID, data.SubclassLevel, subclass)),
+			})
 		}
-		subclasses = append(subclasses, &dnd5ev1alpha1.SubclassInfo{
-			SubclassId: id, Name: classes.SubClassName(subclass),
-			Description: classes.SubClassDescription(subclass), Level: int32(data.SubclassLevel),
-			// Resolved requirements replace base choices with matching IDs.
-			AdditionalChoices: classRequirementsToProto(choices.GetClassRequirementsWithSubclass(data.ID, data.SubclassLevel, subclass)),
-		})
 	}
 
 	var spellcasting *dnd5ev1alpha1.SpellcastingInfo
