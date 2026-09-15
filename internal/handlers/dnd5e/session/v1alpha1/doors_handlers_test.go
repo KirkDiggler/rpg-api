@@ -168,6 +168,37 @@ func TestUnlock_HappyPath_CarriesTheAttempt(t *testing.T) {
 	require.Equal(t, sessionpb.DoorState_DOOR_STATE_LOCKED, resp.GetDoor().GetState(), "unchanged and retryable")
 }
 
+// TestUnlock_Paused_ReturnsRollAndTotalOnly pins rpg-api#985: an attempt
+// that stopped to ask the member something (Guidance) reaches the wire
+// with paused true and only Roll/Total as answers -- mirroring the
+// toolkit's own paused UnlockOutput field-for-field, including which
+// fields it leaves at their zero value, rather than this handler inventing
+// a shape of its own.
+func TestUnlock_Paused_ReturnsRollAndTotalOnly(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	roll := 11
+	mgr.EXPECT().Unlock(gomock.Any(), gomock.Any()).Return(&sdk.UnlockOutput{
+		Paused: true, Total: 15, Roll: &roll, Seq: 3,
+	}, nil)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	resp, err := h.Unlock(ctx, &sessionpb.UnlockRequest{Session: "sess-1", Member: "char-1", Door: "hall-tomb"})
+	require.NoError(t, err)
+
+	require.True(t, resp.GetPaused())
+	require.Equal(t, int32(11), resp.GetRoll())
+	require.Equal(t, int32(15), resp.GetTotal())
+
+	// No verdict yet, only a question -- the toolkit's own UnlockOutput
+	// leaves these at zero when Paused, and this handler must not fill
+	// them in.
+	require.False(t, resp.GetBeaten())
+	require.Zero(t, resp.GetDc())
+	require.Equal(t, sessionpb.DoorState_DOOR_STATE_UNSPECIFIED, resp.GetDoor().GetState())
+}
+
 func TestUnlock_MissingMember_Errors(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}

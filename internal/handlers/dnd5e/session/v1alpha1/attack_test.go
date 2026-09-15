@@ -62,6 +62,43 @@ func TestAttack_HappyPath(t *testing.T) {
 	require.Equal(t, "presentation_2f1c8b4a-0d6e-4a1b-9c3f-5e7a1b2c3d4e", resp.GetPresentationId())
 }
 
+// TestAttack_Paused_ReturnsRollAndTotalOnly pins rpg-api#985: a swing that
+// stopped to ask the attacker something (Bardic Inspiration) reaches the
+// wire with paused true and only Roll/Total as answers -- mirroring the
+// toolkit's own paused AttackOutput field-for-field, including which
+// fields it leaves at their zero value, rather than this handler inventing
+// a shape of its own.
+func TestAttack_Paused_ReturnsRollAndTotalOnly(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Attack(gomock.Any(), &sdk.AttackInput{
+		Session: "sess-1", Attacker: "char-1", Target: "goblin-1", DeclarationID: "decl-attack-1",
+	}).Return(&sdk.AttackOutput{
+		Paused: true, Roll: 14, Total: 17, Seq: 4,
+		Attack:         sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
+		PresentationID: "presentation_paused-1",
+	}, nil)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	resp, err := h.Attack(ctx, &sessionpb.AttackRequest{
+		Session: "sess-1", Attacker: "char-1", Target: "goblin-1", DeclarationId: "decl-attack-1",
+	})
+	require.NoError(t, err)
+
+	require.True(t, resp.GetPaused())
+	require.Equal(t, int32(14), resp.GetRoll())
+	require.Equal(t, int32(17), resp.GetTotal())
+
+	// Nothing has landed and the AC has deliberately not been shown -- the
+	// toolkit's own AttackOutput leaves these at zero when Paused, and this
+	// handler must not fill them in.
+	require.False(t, resp.GetHit())
+	require.False(t, resp.GetCritical())
+	require.Zero(t, resp.GetDamage())
+	require.Zero(t, resp.GetAgainst())
+}
+
 func TestAttack_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
