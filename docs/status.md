@@ -52,9 +52,15 @@ both recorded with the defect in `internal/integration/character`:
   menu is illegal. A client can only answer by intersecting with the skills it
   picked in the same submission.
 
-**Draft until `rulebooks/dnd5e` tags**:
-this branch builds on a pseudo-version of rpg-toolkit#1781 and the
-rpg-api-protos generated head `654b73a1` (v0.1.193).
+**Draft until `rulebooks/dnd5e/session` tags**: `rulebooks/dnd5e` is on the
+released **v0.175.0**; the one remaining pseudo-version is
+`rulebooks/dnd5e/session`, pending rpg-toolkit#1787. Protos are the generated
+head `654b73a1` (v0.1.193), and `rulebooks/dnd5e/resolution` is on its released
+v0.50.0.
+
+The expertise intersection above is tracked as **rpg-toolkit#1794**: the
+options belong on the character-aware next-level view, and closing it deletes
+the client-side workaround.
 
 **Spare the Dying stabilization (#982)** — Published session v0.86.1 and proto SDK v0.1.190 are adopted through the shared live/Story ActivationResult converter. API cast acceptance covers dying and already-stable recipients, action-only payment with no dice, owner-private refresh, per-recipient replay and stable turn advancement. Existing private fields and privacy checks are reused. Browser acceptance remains separate; see the [handoff](how-to/spare-the-dying-web-handoff.md).
 

@@ -66,6 +66,11 @@ func (h *Handler) GetNextLevel(
 		return nil, apierr.ToGRPCError(apierr.Internal("next level returned no output"))
 	}
 
+	choices, err := levelChoicesToProto(out.Choices)
+	if err != nil {
+		return nil, err
+	}
+
 	return &dnd5ev1alpha1.GetNextLevelResponse{
 		// CharacterLevel, NOT Level. The SDK's Level is what the sheet holds
 		// NOW; CharacterLevel is the one this level would take, which is what
@@ -75,7 +80,7 @@ func (h *Handler) GetNextLevel(
 		// integration test is what caught it.
 		Level:    int32(out.CharacterLevel),
 		Class:    classFromRef(out.Class),
-		Choices:  levelChoicesToProto(out.Choices),
+		Choices:  choices,
 		Features: featureInfosFromRefs(out.Features, out.CharacterLevel, out.ClassName),
 		HitDie:   int32(out.HitDie),
 	}, nil
@@ -182,18 +187,26 @@ func classFromRef(ref string) dnd5ev1alpha1.Class {
 // R4.13: the screen "MUST render whatever requirements the toolkit returns for
 // that level, and MUST contain no class-specific branch." There is no class in
 // this function either -- it walks what it was handed.
-func levelChoicesToProto(choices []sdk.LevelChoice) []*dnd5ev1alpha1.Choice {
+func levelChoicesToProto(choices []sdk.LevelChoice) ([]*dnd5ev1alpha1.Choice, error) {
 	if len(choices) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	out := make([]*dnd5ev1alpha1.Choice, 0, len(choices))
 	for _, choice := range choices {
+		category, err := levelChoiceCategory(choice.Kind)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, &dnd5ev1alpha1.Choice{
 			Id:          choice.ID,
 			Description: choice.Label,
 			ChooseCount: int32(choice.Count),
-			ChoiceType:  levelChoiceCategory(choice.Kind),
+			ChoiceType:  category,
+			// Every kind this function accepts is spell-shaped, which is what
+			// makes one options arm correct rather than lazy: the refusal
+			// above is what keeps a kind that is NOT spell-shaped from
+			// reaching here and being labeled as though it were.
 			Options: &dnd5ev1alpha1.Choice_SpellOptions{
 				SpellOptions: &dnd5ev1alpha1.SpellOptions{
 					// Canonical refs, never the deprecated closed enum: "the
@@ -205,24 +218,42 @@ func levelChoicesToProto(choices []sdk.LevelChoice) []*dnd5ev1alpha1.Choice {
 			},
 		})
 	}
-	return out
+	return out, nil
 }
 
 // levelChoiceCategory maps the SDK's kind onto the wire's category.
 //
 // The SDK names the KIND of question it asked; the category is how creation's
 // renderer already labels the same question, so a level-up choice arrives in
-// the vocabulary the screen speaks. An unknown kind is reported as unspecified
-// rather than guessed into one of the two: a mislabelled choice would be
-// rendered by the wrong control.
-func levelChoiceCategory(kind sdk.LevelChoiceKind) dnd5ev1alpha1.ChoiceCategory {
+// the vocabulary the screen speaks.
+//
+// AN UNKNOWN KIND REFUSES THE READ. It used to return UNSPECIFIED, which read
+// as caution and was the opposite: the choice was still projected, with its
+// options packed into SpellOptions, so the screen got a spell picker for a
+// question that is not about spells -- and levelChoiceSubmissions then REFUSED
+// that same category on the way back. The server would have offered a choice
+// its own write path rejects, and the player would have met the failure as a
+// malformed request after filling the form in.
+//
+// Design R6.1a is the rule: a requirement kind the seam cannot offer is
+// "refused at the read, so a client is never shown a confirmation the write
+// will refuse." The SDK takes the same posture in its own choiceCategoryOf,
+// which errors rather than returning a neutral value, and
+// levelChoiceSubmissions takes it for the mirror case ten lines down.
+//
+// Unreachable today, since LevelChoiceKind has two values. The named next one
+// is rpg-toolkit#1767's subclass-as-a-choice, which is exactly the kind most
+// likely to arrive carrying options that are not spells.
+func levelChoiceCategory(kind sdk.LevelChoiceKind) (dnd5ev1alpha1.ChoiceCategory, error) {
 	switch kind {
 	case sdk.LevelChoiceSpell:
-		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS, nil
 	case sdk.LevelChoiceCantrip:
-		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS, nil
 	default:
-		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_UNSPECIFIED
+		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_UNSPECIFIED,
+			apierr.ToGRPCError(apierr.InvalidArgumentf(
+				"level choice kind %q is not one this build can offer", kind))
 	}
 }
 

@@ -76,6 +76,12 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// below), a deliberate choice this table follows rather than
 		// pattern-matches.
 		{"ErrInvalidUnpackRequest", sdk.ErrInvalidUnpackRequest, codes.InvalidArgument},
+		// The level-up submission's own malformed-request sentinel: a choice
+		// id the level never asked for, a count that does not match, an option
+		// off the list. Its bucket was pinned by NOTHING until now -- moving
+		// it into FAILED_PRECONDITION passed the entire suite, integration
+		// included, because the sibling static test only proves a case exists.
+		{"ErrBadLevelRequest", sdk.ErrBadLevelRequest, codes.InvalidArgument},
 
 		// FAILED_PRECONDITION -- well-formed request, world state refuses it.
 		{"ErrInBubble", sdk.ErrInBubble, codes.FailedPrecondition},
@@ -186,6 +192,18 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// says locked (with the DC), a merely-shut one says shut. World
 		// state refusing, never a malformed request.
 		{"ErrDoorShut", sdk.ErrDoorShut, codes.FailedPrecondition},
+		// The other two advancement sentinels (rpg-project#452). Pinned HERE
+		// as well as through the handler and integration tests that exercise
+		// them, because those prove a code reaches a client down one PATH,
+		// while this proves the sentinel sits in the right BUCKET -- which is
+		// exactly what the sibling static test cannot see.
+		//
+		// The split is the request versus the situation. A malformed
+		// submission (ErrBadLevelRequest, above) can succeed if rebuilt. A
+		// level not earned or not describable cannot: only waiting, or content
+		// landing, changes the answer.
+		{"ErrCannotAdvance", sdk.ErrCannotAdvance, codes.FailedPrecondition},
+		{"ErrLevelNotOffered", sdk.ErrLevelNotOffered, codes.FailedPrecondition},
 		// Already in the pinned SDK before this feature (v0.21.4) and unmapped
 		// until this audit: this package's OWN adapter vocabulary going stale
 		// against itself, not a caller mistake.

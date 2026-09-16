@@ -281,9 +281,15 @@ func satisfyClassChoices(
 // is temporary by intent. The seam that ends it is a character-aware view on
 // the toolkit side -- the same shape Character.NextLevelRequirements already
 // took for spells, which removes what the character knows from what it is
-// offered. When expertise gets that view, this intersection deletes itself and
-// the offered list becomes the legal list. Until then it is the only answer a
-// client can compute, here or on the level-up screen.
+// offered (design R4.4e). When expertise gets that view, this intersection
+// deletes itself and the offered list becomes the legal list. Until then it is
+// the only answer a client can compute, here or on the level-up screen.
+//
+// TRACKED AS rpg-toolkit#1794, which names this function as what closing it
+// deletes -- along with the two-pass ordering above, which exists only so the
+// skill choice is answered before this one. An undated workaround with a good
+// comment is how a stopgap becomes permanent; the issue is what makes it
+// visibly removable instead.
 func satisfyExpertiseChoice(
 	choice *dnd5ev1alpha1.Choice,
 	chosenSkills map[dnd5ev1alpha1.Skill]bool,

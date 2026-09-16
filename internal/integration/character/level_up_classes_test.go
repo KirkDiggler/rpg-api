@@ -201,6 +201,14 @@ func (s *LevelUpClassesSuite) TestEveryClassCanBeAskedForItsNextLevel() {
 	s.Require().NotNil(out)
 	s.Require().NotEmpty(out.Classes)
 
+	// Every refused class must actually be VISITED below. The loop walks what
+	// seeded, and this test deliberately drops the seed error -- which class
+	// creates is the sibling test's claim. Without this, a refused class that
+	// failed to seed would simply never be checked, and its entry in the map
+	// would sit unexercised while the suite stayed green. NotEmpty above is
+	// far too weak on its own: one seeded class satisfies it.
+	visited := map[string]bool{}
+
 	for _, seeded := range out.Classes {
 		s.Run(seeded.Class, func() {
 			character := s.listExactlyOne(seeded.Identity)
@@ -208,6 +216,7 @@ func (s *LevelUpClassesSuite) TestEveryClassCanBeAskedForItsNextLevel() {
 				s.authCtx(seeded.Identity),
 				&dnd5ev1alpha1.GetNextLevelRequest{CharacterId: character.GetId()},
 			)
+			visited[seeded.Class] = true
 			if why, blocked := classesWithNoOfferableLevelTwo[seeded.Class]; blocked {
 				require.Error(s.T(), nextErr,
 					"%s answered, so its level 2 IS offerable now (%s): remove it from "+
@@ -236,5 +245,12 @@ func (s *LevelUpClassesSuite) TestEveryClassCanBeAskedForItsNextLevel() {
 			s.T().Logf("%s level 2: choices=%v features=%v hit_die=d%d",
 				seeded.Class, ids, features, next.GetHitDie())
 		})
+	}
+
+	for class, why := range classesWithNoOfferableLevelTwo {
+		s.True(visited[class],
+			"%s is in classesWithNoOfferableLevelTwo (%s) but never seeded, so its "+
+				"refusal went unchecked. A claim nothing exercises is worse than no "+
+				"claim: fix the seeding or remove the entry.", class, why)
 	}
 }

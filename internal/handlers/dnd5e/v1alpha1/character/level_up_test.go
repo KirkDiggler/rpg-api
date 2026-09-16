@@ -369,6 +369,97 @@ func (s *LevelUpHandlerTestSuite) TestLevelUp_CarriesTheSDKRefusalWithItsOwnCode
 	s.Contains(status.Convert(err).Message(), "0 experience")
 }
 
+// TestLevelUp_GainedFeaturesReachTheWire is the write side of done-when 6: "a
+// fighter at 300 XP is offered a confirmation that names Action Surge, takes
+// it, and comes out with Action Surge."
+//
+// The READ side was pinned and the write side was not: replacing the gained
+// features projection with nil passed the entire suite, integration run
+// included. This asserts the ref, the name, the level and the class name, so
+// nil-ing it fails here — and the class name is the one field proving the
+// re-read sheet feeds the projection, since LevelGained carries no class.
+func (s *LevelUpHandlerTestSuite) TestLevelUp_GainedFeaturesReachTheWire() {
+	s.expectOwned(classes.Fighter)
+	s.mockService.EXPECT().
+		GetCharacter(gomock.Any(), &character.GetCharacterInput{CharacterID: levelUpCharacterID}).
+		Return(s.ownedCharacter(classes.Fighter, 2), nil)
+	s.sessions.levelUp = func(*sdk.LevelUpInput) (*sdk.LevelUpOutput, error) {
+		return &sdk.LevelUpOutput{Gained: sdk.LevelGained{
+			CharacterLevel: 2,
+			HitPointGain:   7,
+			Features:       []string{refs.Features.ActionSurge().String()},
+		}}, nil
+	}
+
+	got, err := s.handler.LevelUp(s.ctx, &dnd5ev1alpha1.LevelUpRequest{
+		CharacterId:    levelUpCharacterID,
+		HitPointMethod: dnd5ev1alpha1.HitPointMethod_HIT_POINT_METHOD_ROLLED,
+	})
+
+	s.Require().NoError(err)
+	s.Require().Len(got.GetGained().GetFeatures(), 1,
+		"the level granted a feature and the response must name it")
+	feature := got.GetGained().GetFeatures()[0]
+	s.Equal(refs.Features.ActionSurge().String(), feature.GetId())
+	s.Equal("Action Surge", feature.GetName())
+	s.Equal(int32(2), feature.GetLevel())
+	s.Equal("Fighter", feature.GetClassName(),
+		"from the re-read sheet, since LevelGained carries no class")
+}
+
+// TestGetNextLevel_AnUnknownChoiceKindRefusesTheRead pins R6.1a: a requirement
+// kind the seam cannot offer is refused at the read, "so a client is never
+// shown a confirmation the write will refuse."
+//
+// Before this, an unknown kind was projected as UNSPECIFIED with its options
+// still packed into SpellOptions — a spell picker for a question that is not
+// about spells — and levelChoiceSubmissions refused that same category coming
+// back. The server offered a choice its own write path rejects.
+//
+// The kind here is deliberately out of range rather than a real constant:
+// LevelChoiceKind has two values today, and the case this guards is the third
+// one arriving (rpg-toolkit#1767's subclass), which is precisely the kind most
+// likely to carry options that are not spells.
+func (s *LevelUpHandlerTestSuite) TestGetNextLevel_AnUnknownChoiceKindRefusesTheRead() {
+	s.expectOwned(classes.Wizard)
+	s.sessions.nextLevel = func(*sdk.NextLevelInput) (*sdk.NextLevelOutput, error) {
+		return &sdk.NextLevelOutput{
+			Level: 1, ClassLevel: 2, CharacterLevel: 2,
+			Class:     refs.Classes.Wizard().String(),
+			ClassName: "Wizard",
+			HitDie:    6,
+			Choices: []sdk.LevelChoice{{
+				ID:      "wizard-tradition-2",
+				Label:   "Choose your Arcane Tradition",
+				Kind:    sdk.LevelChoiceKind("subclass"),
+				Count:   1,
+				Options: []string{"dnd5e:subclasses:evocation"},
+			}},
+		}, nil
+	}
+
+	_, err := s.handler.GetNextLevel(s.ctx, &dnd5ev1alpha1.GetNextLevelRequest{
+		CharacterId: levelUpCharacterID,
+	})
+
+	s.Require().Error(err, "a kind this build cannot offer must not be projected")
+	s.Equal(codes.InvalidArgument, status.Code(err))
+	s.Contains(status.Convert(err).Message(), "subclass",
+		"the refusal names the kind, so the gap is diagnosable from the wire")
+}
+
+// TestLevelChoiceCategory_MapsTheKindsThisBuildOffers is the positive half, so
+// the refusal above cannot be satisfied by refusing everything.
+func (s *LevelUpHandlerTestSuite) TestLevelChoiceCategory_MapsTheKindsThisBuildOffers() {
+	spells, err := levelChoiceCategory(sdk.LevelChoiceSpell)
+	s.Require().NoError(err)
+	s.Equal(dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS, spells)
+
+	cantrips, err := levelChoiceCategory(sdk.LevelChoiceCantrip)
+	s.Require().NoError(err)
+	s.Equal(dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS, cantrips)
+}
+
 // TestLevelUpSubmissions_RefuseACategoryThisPathCannotAnswer. A dropped answer
 // reaches the engine as a missing one, and the player is told they failed to
 // choose something they did choose -- so an unreadable choice is an error that
