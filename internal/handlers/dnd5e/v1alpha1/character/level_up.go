@@ -140,7 +140,7 @@ func (h *Handler) LevelUp(
 		// The class name comes from the sheet, because LevelGained does not
 		// carry one -- and the sheet is the better source anyway: it is the
 		// same stored character being projected one field above, so the two
-		// halves of this response cannot disagree about who levelled.
+		// halves of this response cannot disagree about who leveled.
 		Gained: levelGainedToProto(out.Gained, classes.Name(current.Character.Data.ClassID)),
 	}, nil
 }
@@ -173,7 +173,7 @@ func classFromRef(ref string) dnd5ev1alpha1.Class {
 	if id == "" {
 		return dnd5ev1alpha1.Class_CLASS_UNSPECIFIED
 	}
-	return convertClassToProtoEnum(classes.Class(id))
+	return convertClassToProtoEnum(id)
 }
 
 // levelChoicesToProto renders the SDK's level choices as the same Choice

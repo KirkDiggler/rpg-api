@@ -197,8 +197,8 @@ func (s *LevelUpHandlerTestSuite) TestGetNextLevel_AConfirmationNamesWhatItBring
 	s.Equal("Fighter", got.GetFeatures()[0].GetClassName())
 }
 
-// TestGetNextLevel_AForeignCharacterIsNotFoundAndNeverReachesTheSDK.
-// Ownership of the calling player is transport's, not the engine's: the SDK is
+// TestGetNextLevel_AForeignCharacterIsNotFoundAndNeverReachesTheSDK pins the
+// gate. Ownership of the calling player is transport's, not the engine's: the SDK is
 // handed a character id and has no notion of who holds the connection.
 func (s *LevelUpHandlerTestSuite) TestGetNextLevel_AForeignCharacterIsNotFoundAndNeverReachesTheSDK() {
 	s.mockService.EXPECT().
@@ -234,7 +234,7 @@ func (s *LevelUpHandlerTestSuite) TestLevelUp_AForeignCharacterIsNotFoundAndNeve
 	})
 
 	s.Equal(codes.NotFound, status.Code(err))
-	s.Zero(s.sessions.levelUpCalls, "nothing is levelled for a caller who does not own the sheet")
+	s.Zero(s.sessions.levelUpCalls, "nothing is leveled for a caller who does not own the sheet")
 }
 
 // TestLevelUp_UnspecifiedMethodNeverReachesTheSDK. Rolled and averaged write
@@ -287,7 +287,8 @@ func (s *LevelUpHandlerTestSuite) TestLevelUp_SendsTheChoiceIdAndRefsAndNoCatego
 	s.Equal([]string{refs.Spells.HealingWord().String()}, s.sessions.lastLevelUp.Choices[0].Selections)
 }
 
-// TestLevelUp_ReportsWhatTheLevelBroughtAndRereadsTheSheet.
+// TestLevelUp_ReportsWhatTheLevelBroughtAndRereadsTheSheet pins both halves of
+// the response.
 //
 // The SDK returns no character by its own boundary law -- it reports that it
 // saved -- so the projected sheet comes from a READ, which is also what makes
@@ -338,7 +339,8 @@ func (s *LevelUpHandlerTestSuite) TestLevelUp_ReportsWhatTheLevelBroughtAndRerea
 	s.Equal(int32(2), second.GetNewMaximum())
 }
 
-// TestLevelUp_CarriesTheSDKRefusalWithItsOwnCodeAndSentence.
+// TestLevelUp_CarriesTheSDKRefusalWithItsOwnCodeAndSentence pins what a refused
+// level tells the player.
 //
 // The engine names what it refused and why; the client shows that sentence.
 // The code comes from the one shared translation table, not from a second one
@@ -381,7 +383,7 @@ func (s *LevelUpHandlerTestSuite) TestLevelUpSubmissions_RefuseACategoryThisPath
 	s.Contains(status.Convert(err).Message(), "rogue-skills-2")
 }
 
-// TestLevelUpSubmissions_AcceptBothSpellShapes: cantrips and levelled spells
+// TestLevelUpSubmissions_AcceptBothSpellShapes: cantrips and leveled spells
 // are separate categories on the wire and both are level-up answers.
 func (s *LevelUpHandlerTestSuite) TestLevelUpSubmissions_AcceptBothSpellShapes() {
 	got, err := levelChoiceSubmissions([]*dnd5ev1alpha1.ChoiceData{
