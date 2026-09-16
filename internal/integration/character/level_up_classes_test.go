@@ -75,35 +75,26 @@ func (s *LevelUpClassesSuite) listExactlyOne(identity string) *dnd5ev1alpha1.Cha
 	return response.GetCharacters()[0]
 }
 
-// blockedClasses are the classes the generic path CANNOT create today, each
-// with the defect that blocks it.
+// blockedClasses are the classes the generic path CANNOT create, each with the
+// defect that blocks it.
 //
-// This map is the finding, written down where a test will police it. The
-// assertions below fail in BOTH directions: a class that starts working must be
-// removed from here, and a class that stops working is not absorbed silently.
-// Nothing in rpg-api can fix either entry -- they are rules-engine defects, and
-// working around one here would be exactly the "game logic in the API" smell
-// this repo refuses.
-var blockedClasses = map[string]string{
-	// rpg-toolkit rulebooks/dnd5e/character/draft.go, getClassSubmissions:
-	// the fighting-style submission is built with
-	// `ChoiceID: choices.FighterFightingStyle` and the comment "Would need
-	// mapping for other classes". A ranger records its style under
-	// ranger-fighting-style, the submission claims fighter-fighting-style, so
-	// the validator never sees ranger-fighting-style answered,
-	// Draft.IsClassComplete is false forever and the draft cannot be
-	// finalized. A RANGER CANNOT BE CREATED AT ALL, by any client, with any
-	// choices. Reproduced directly against the toolkit: every combination of
-	// ranger armor/weapon/pack options, with and without a fighting style,
-	// leaves IsClassComplete false while the same shape for a fighter is true.
-	//
-	// A FIX IS IN FLIGHT on rpg-toolkit#1781: the submission will carry the
-	// requirement's own id instead of the fighter constant. The day this
-	// branch pins that head, ranger starts creating and the assertions below
-	// go red until this entry is deleted. That is the intended sequence, not
-	// a regression -- see the failure messages, which say so.
-	"ranger": "toolkit getClassSubmissions hard-codes the fighter's fighting-style choice id",
-}
+// EMPTY, and that is the finding. It held "ranger" until rpg-toolkit#1781's
+// last commit: getClassSubmissions built the fighting-style submission with the
+// FIGHTER's choice id, its own comment reading "Would need mapping for other
+// classes", so a ranger's style was recorded under ranger-fighting-style while
+// the submission claimed fighter-fighting-style. The validator never saw it
+// answered, Draft.IsClassComplete was false forever, and a ranger could not be
+// created by any client with any choices. The fix routes the draft's choices
+// through choices.SubmissionsFrom, so each submission carries the requirement's
+// own id.
+//
+// This map is the record and the police. The assertions below fail in BOTH
+// directions: a class that starts working must be removed from here — which is
+// exactly how the ranger entry left — and a class that stops working is not
+// absorbed silently. Nothing in rpg-api may be added here as a workaround;
+// entries name rules-engine defects, and working around one in the API would be
+// the "game logic in the API" smell this repo refuses.
+var blockedClasses = map[string]string{}
 
 // TestEveryClassIsCreatedFromItsOwnCatalogEntry is the whole claim. Every class
 // the catalog offers is created by answering the choices that class itself

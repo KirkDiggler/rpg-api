@@ -30,11 +30,13 @@ per-class code, so every class can be walked through the real level-up screen.
 It is deliberately not in the default set. Two engine findings came out of it,
 both recorded with the defect in `internal/integration/character`:
 
-- **A ranger cannot be created at all, by any client.** rpg-toolkit's
-  `getClassSubmissions` builds the fighting-style submission with the
-  *fighter's* choice id (its own comment says "Would need mapping for other
-  classes"), so `ranger-fighting-style` never reads as answered,
-  `IsClassComplete` is false forever and the draft cannot be finalized.
+- **A ranger could not be created at all, by any client — FIXED.** rpg-toolkit's
+  `getClassSubmissions` built the fighting-style submission with the *fighter's*
+  choice id (its own comment read "Would need mapping for other classes"), so
+  `ranger-fighting-style` never read as answered, `IsClassComplete` was false
+  forever and the draft could not be finalized. rpg-toolkit#1781 routes the
+  draft's class choices through `choices.SubmissionsFrom`, so each submission
+  carries the requirement's own id. All twelve classes now seed.
 - **Expertise is offered as all eighteen skills.** The toolkit's
   `ExpertiseRequirement` is `{ID, Count, Label}` and names no options, so this
   repo's catalog converter fills the wire with `skills.List()`. The engine then
