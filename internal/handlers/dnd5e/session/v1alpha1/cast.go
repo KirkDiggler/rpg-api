@@ -37,6 +37,16 @@ import (
 // new arm. ErrBadCast (a target named on a self-cast, or omitted on one that
 // needs it) is INVALID_ARGUMENT; a target that drifted out of range is
 // ErrStaleDeclaration, FAILED_PRECONDITION, exactly as today.
+//
+// A GATED CAST CAN STOP PART-WAY THROUGH (rpg-toolkit's Resistance),
+// [Unlock]'s own shape applied to a target's saving throw instead of a lock
+// check: when a target holds something spendable on their own save, the
+// machine poses a window after the roll and before the save's verdict is
+// read, and out.Posed is true. Roll and Total are then the only answers;
+// Saved, Delivery and Caught all cross the wire as their zero value, because
+// CastOutput leaves them unset in this case -- nothing here has to
+// special-case them. Answering the window with the existing, already-generic
+// React verb finishes the cast and writes the beats this response did not.
 func (h *Handler) Cast(
 	ctx context.Context, req *sessionpb.CastRequest,
 ) (*sessionpb.CastResponse, error) {
@@ -82,5 +92,11 @@ func (h *Handler) Cast(
 		Saved:    saveReportToProto(out.Persisted),
 		Delivery: deliveryReportToProto(out.Delivery),
 		Caught:   caughtMembersToProto(out.Caught),
+		Paused:   out.Posed,
+		// unlockRollToProto's own conversion -- a *int meaningful only while
+		// Posed, onto the wire's optional int32 -- reused rather than
+		// duplicated, since Roll and Total need exactly the same presence law.
+		Roll:  unlockRollToProto(out.Roll),
+		Total: unlockRollToProto(out.Total),
 	}, nil
 }

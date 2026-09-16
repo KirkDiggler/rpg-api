@@ -38,6 +38,38 @@ func TestCast_ForwardsCanonicalTargetsWithoutAliasing(t *testing.T) {
 		"the handler must not expose the request's backing array to the provider")
 }
 
+// TestCast_Posed_ReturnsRollAndTotalOnly is [TestUnlock_Paused_ReturnsRollAndTotalOnly]'s
+// own shape, for a cast's saving throw instead of a lock check: a target
+// holding an offer against their own save (Resistance) stops the cast, and
+// the wire carries paused true with only Roll/Total as answers -- mirroring
+// CastOutput field-for-field, including which fields it leaves at their
+// zero value, rather than this handler inventing a shape of its own.
+func TestCast_Posed_ReturnsRollAndTotalOnly(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	roll, total := 11, 13
+	mgr.EXPECT().Cast(gomock.Any(), gomock.Any()).Return(&sdk.CastOutput{
+		Posed: true, Roll: &roll, Total: &total, Seqs: []uint64{3},
+	}, nil)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	resp, err := h.Cast(ctx, &sessionpb.CastRequest{
+		Session: "sess-1", Member: "bard-1", DeclarationId: "decl-bane-1", Targets: []string{"fighter-1"},
+	})
+	require.NoError(t, err)
+
+	require.True(t, resp.GetPaused())
+	require.Equal(t, int32(11), resp.GetRoll())
+	require.Equal(t, int32(13), resp.GetTotal())
+
+	// No verdict yet, only a question -- CastOutput leaves these at zero
+	// when Posed, and this handler must not fill them in.
+	require.Empty(t, resp.GetSaved().GetWritten())
+	require.Empty(t, resp.GetSaved().GetFailed())
+	require.Empty(t, resp.GetCaught())
+}
+
 func TestCast_ForwardsDeprecatedScalarForProviderNormalization(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
