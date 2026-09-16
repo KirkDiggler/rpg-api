@@ -119,7 +119,14 @@ func (s *HandlerSuite) expectCharacter(characterID, playerID, name string, hp, m
 					// back (rpg-toolkit#1261). This fake had always returned
 					// an ID-less sheet; nothing depended on it, which is
 					// exactly why nothing noticed.
-					ID:       characterID,
+					ID: characterID,
+					// Level 1, not the zero value. A sheet claiming a level with
+					// no record behind it is refused at load (rpg-toolkit#1766,
+					// R2.7), and level 0 is such a claim -- it says the character
+					// has taken no levels at all. Only level 1 predates the
+					// record and has its single entry synthesized (R2.6), which
+					// is what this minimal fake wants.
+					Level:    1,
 					PlayerID: playerID, Name: name, HitPoints: hp, MaxHitPoints: maxHP,
 				},
 			},
@@ -130,7 +137,7 @@ func (s *HandlerSuite) expectCharacter(characterID, playerID, name string, hp, m
 	// not a given test reaches StartEncounter.
 	s.charRepo.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
-		Return(&characterrepo.UpdateOutput{Character: &entities.Character{Data: &toolkitchar.Data{ID: characterID}}}, nil).
+		Return(&characterrepo.UpdateOutput{Character: &entities.Character{Data: &toolkitchar.Data{ID: characterID, Level: 1}}}, nil).
 		AnyTimes()
 }
 

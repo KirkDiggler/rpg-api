@@ -13,7 +13,9 @@ import (
 	"fmt"
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/scenarios"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 )
@@ -143,4 +145,109 @@ func (o *Orchestrator) ListScenarios(_ context.Context, in *ListScenariosInput) 
 	}
 
 	return &ListScenariosOutput{Scenarios: scenarios.All()}, nil
+}
+
+// ListWeaponsInput asks for the whole catalog. No fields, and none are
+// coming, for ListScenariosInput's reason: the set of weapons is a property
+// of the SERVER'S rulebook build, not of any one dungeon and not of any one
+// monster -- a builder that has placed nothing yet still needs the list to
+// show what a monster could be armed with. Kept as a type anyway, because
+// every verb at every layer of this repo takes one.
+type ListWeaponsInput struct{}
+
+// WeaponDescriptor is one weapon in the form the builder's action palette
+// needs: what the author writes, what the chip shows, and enough to group by
+// without reading the rulebook.
+//
+// AN rpg-api TYPE, where ListScenariosOutput deliberately carries the
+// toolkit's own -- and the one difference is the ref. A scenario descriptor
+// is one rulebook object's words handed through; a weapon descriptor is a
+// JOIN of two rulebook facts, the catalog entry and the refs namespace that
+// names it, and a join has a failure the objects do not (see ListWeapons).
+// Making the join here keeps the handler exactly what ListScenarios' handler
+// is -- a field-for-field copy with no lookup and no failure of its own.
+// Every word on this struct is still the rulebook's; none was written here.
+//
+// It is deliberately NOT the weapon: no dice, no range, no properties. The
+// palette does not compute an attack -- the toolkit assembles one at spawn
+// from the wielding monster's own scores (design rpg-project#448, decision
+// 1), which is why a skeleton shortbow and a goblin shortbow are the same
+// weapon. Numbers here would be a second copy of the rulebook's.
+type WeaponDescriptor struct {
+	// Ref is the FULL ref, e.g. "dnd5e:weapons:shortbow" -- the exact string
+	// a placement's `actions:` list carries, so the palette emits it verbatim
+	// and no client ever rebuilds an id from its parts.
+	Ref string
+
+	// Name is the rulebook's author-facing name, for the chip's label.
+	Name string
+
+	// Ranged is the rulebook's own predicate (weapons.Weapon.IsRanged), not a
+	// reading of Category. The day the rulebook spells a ranged category some
+	// other way, this stays true and a substring hunt would not.
+	Ranged bool
+
+	// Category is the rulebook's category word, verbatim and opaque, for
+	// grouping and for showing. Nothing branches on it.
+	Category string
+}
+
+// ListWeaponsOutput is every weapon this build's rulebook can arm a placed
+// monster with, in the rulebook's own presentation order.
+type ListWeaponsOutput struct {
+	Weapons []WeaponDescriptor
+}
+
+// ListWeapons reports the arming catalog for the builder's action palette
+// (rpg-project#448).
+//
+// UNGATED, on GetDungeon's precedent and for ListScenarios' reason: it reads
+// and mutates nothing, and never reaches the registry -- the answer is a
+// property of the binary.
+//
+// THE RULEBOOK'S OWN ACCESSORS DECIDE WHAT IS IN THE LIST. Simple then
+// martial, each in weapons.GetByCategory's registry order, which is why the
+// answer is grouped by category and stable across calls -- the catalog's own
+// map is never ranged over here. That also settles the special weapons: the
+// unarmed strike is excluded because the rulebook excludes it from its
+// category accessors as "not equippable", and arming a placement with it is
+// not a thing an author reaches the palette for. No filter is written here;
+// the exclusion is inherited, so a rulebook that decides otherwise changes
+// this list without changing this file.
+//
+// A weapon the catalog offers but the refs namespace cannot name FAILS THE
+// WHOLE CALL rather than traveling with a blank ref. It is a producer defect
+// by construction -- both halves are the rulebook's -- and a palette chip
+// that emitted an empty string would write a file the compiler refuses,
+// which is a worse thing to learn later.
+//
+// Empty is legal and means this build offers none; the builder shows no
+// weapon palette rather than an error, because a monster with no authored
+// actions falls back to its definition's own -- which is every monster
+// shipped before this one.
+func (o *Orchestrator) ListWeapons(_ context.Context, in *ListWeaponsInput) (*ListWeaponsOutput, error) {
+	if in == nil {
+		return nil, errors.New("authoring orchestrator: ListWeaponsInput is required")
+	}
+
+	simple := weapons.GetSimpleWeapons()
+	martial := weapons.GetMartialWeapons()
+
+	out := make([]WeaponDescriptor, 0, len(simple)+len(martial))
+	for _, w := range append(simple, martial...) {
+		ref := refs.Weapons.ByID(w.ID)
+		if ref == nil {
+			return nil, fmt.Errorf(
+				"list weapons: the rulebook's catalog offers %q but its refs namespace does not name it", w.ID)
+		}
+
+		out = append(out, WeaponDescriptor{
+			Ref:      ref.String(),
+			Name:     w.Name,
+			Ranged:   w.IsRanged(),
+			Category: string(w.Category),
+		})
+	}
+
+	return &ListWeaponsOutput{Weapons: out}, nil
 }

@@ -217,6 +217,21 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 			// presence means is the run's, and the session's own reads
 			// already leave a reserved member out.
 			Arrives: arrives,
+			// What the author armed this monster with
+			// (`place[].actions`, rpg-project#448), VERBATIM AND IN
+			// ORDER. Nil is the ordinary case and leaves the stat
+			// block's own arms alone; a list replaces them with the
+			// weapons named. The ORDER is the instruction — both
+			// drivers take the first action whose target is in reach,
+			// so a placement listing the blade first swings when you
+			// close on it and one listing only a bow shoots you point
+			// blank. Nothing here sorts or tidies it.
+			//
+			// The seam refuses a weapon the catalog does not have
+			// (session.ErrUnknownContent, naming the ref), so a bad
+			// file fails the launch rather than putting a monster on
+			// the board that cannot act.
+			Actions: monster.Actions,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("spawn %q into session %q on new stack: %w", monster.MemberID, encID, err)
