@@ -15,6 +15,7 @@ import (
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
+	charconv "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
@@ -245,11 +246,22 @@ func TestSeed_DefaultStillDeletesAndRecreatesToolkitFixtures(t *testing.T) {
 		{Characters: []*dnd5ev1alpha1.Character{{Id: "new-bard", Name: bardName}}},
 	}
 
-	err := Seed(context.Background(), client)
+	client.listResponses = append(client.listResponses,
+		&dnd5ev1alpha1.ListCharactersResponse{Characters: []*dnd5ev1alpha1.Character{{Id: "old-level-up-fighter", Name: levelUpFighterName}}},
+		&dnd5ev1alpha1.ListCharactersResponse{Characters: []*dnd5ev1alpha1.Character{{Id: "level-up-fighter-id", Name: levelUpFighterName}}},
+		&dnd5ev1alpha1.ListCharactersResponse{Characters: []*dnd5ev1alpha1.Character{{Id: "old-level-up-bard", Name: levelUpBardName}}},
+		&dnd5ev1alpha1.ListCharactersResponse{Characters: []*dnd5ev1alpha1.Character{{Id: "level-up-bard-id", Name: levelUpBardName}}},
+	)
+	store := newSeedFakeStore("level-up-fighter-id", "level-up-bard-id")
+	client.seedStore = store
+
+	err := Seed(context.Background(), &SeedInput{Client: client, Store: store})
 
 	require.NoError(t, err)
-	require.Equal(t, []string{"old-fighter", "old-barbarian", "old-bard"}, client.deletedIDs)
-	require.Equal(t, 3, client.createDrafts)
+	require.Equal(t, []string{
+		"old-fighter", "old-barbarian", "old-bard", "old-level-up-fighter", "old-level-up-bard",
+	}, client.deletedIDs)
+	require.Equal(t, 5, client.createDrafts)
 	require.Contains(t, client.authHeaders, "Dev "+fighterIdentity)
 	require.Contains(t, client.authHeaders, "Dev "+barbarianIdentity)
 	require.Contains(t, client.authHeaders, "Dev "+bardIdentity)
@@ -268,7 +280,16 @@ func TestSeed_BardAsksForBothCantripsAndBothSupportedLevelOneSpells(t *testing.T
 		{}, {Characters: []*dnd5ev1alpha1.Character{{Id: "new-bard", Name: bardName}}},
 	}
 
-	require.NoError(t, Seed(context.Background(), client))
+	client.listResponses = append(client.listResponses,
+		&dnd5ev1alpha1.ListCharactersResponse{},
+		&dnd5ev1alpha1.ListCharactersResponse{Characters: []*dnd5ev1alpha1.Character{{Id: "level-up-fighter-id", Name: levelUpFighterName}}},
+		&dnd5ev1alpha1.ListCharactersResponse{},
+		&dnd5ev1alpha1.ListCharactersResponse{Characters: []*dnd5ev1alpha1.Character{{Id: "level-up-bard-id", Name: levelUpBardName}}},
+	)
+	store := newSeedFakeStore("level-up-fighter-id", "level-up-bard-id")
+	client.seedStore = store
+
+	require.NoError(t, Seed(context.Background(), &SeedInput{Client: client, Store: store}))
 
 	var cantrips, leveled []string
 	for _, request := range client.updateClassRequests {
@@ -791,6 +812,7 @@ func (s *galleryFakeStore) Update(_ context.Context, input characterrepo.UpdateI
 }
 
 type galleryFakeClient struct {
+	seedStore                  *seedFakeStore
 	calls                      []string
 	authHeaders                []string
 	listResponses              []*dnd5ev1alpha1.ListCharactersResponse
@@ -892,6 +914,18 @@ func (c *galleryFakeClient) FinalizeDraft(ctx context.Context, request *dnd5ev1a
 
 func (c *galleryFakeClient) GetCharacter(ctx context.Context, request *dnd5ev1alpha1.GetCharacterRequest, _ ...grpc.CallOption) (*dnd5ev1alpha1.GetCharacterResponse, error) {
 	c.record(ctx, "GetCharacter")
+	// When a seed store is attached, answer the way the real server does: by
+	// running the stored sheet through the PRODUCTION converter. The level-up
+	// fixtures assert on experience_points, entitled_level and
+	// next_level_threshold, and a fake that simply returned the three numbers
+	// it was told would be a test that cannot fail on its own claim.
+	if c.seedStore != nil {
+		if stored, ok := c.seedStore.byID[request.GetCharacterId()]; ok {
+			return &dnd5ev1alpha1.GetCharacterResponse{
+				Character: charconv.ConvertCharacterDataToProto(stored.Data),
+			}, nil
+		}
+	}
 	character := &dnd5ev1alpha1.Character{
 		Id:             request.GetCharacterId(),
 		AbilityScores:  &dnd5ev1alpha1.AbilityScores{Strength: 15},
@@ -944,7 +978,10 @@ func TestSeed_RefusesABardThatFinalizedKnowingNothing(t *testing.T) {
 				{}, {Characters: []*dnd5ev1alpha1.Character{{Id: "new-bard", Name: bardName}}},
 			}
 
-			err := Seed(context.Background(), client)
+			store := newSeedFakeStore("level-up-fighter-id", "level-up-bard-id")
+			client.seedStore = store
+
+			err := Seed(context.Background(), &SeedInput{Client: client, Store: store})
 
 			require.ErrorContains(t, err, tc.want)
 		})

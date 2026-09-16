@@ -49,7 +49,7 @@ type galleryStoreHandle interface {
 type commandDeps struct {
 	connect          func(address string) (*grpc.ClientConn, error)
 	characterClient  func(*grpc.ClientConn) sandboxseed.CharacterRPC
-	seedDefault      func(context.Context, sandboxseed.CharacterRPC) error
+	seedDefault      func(context.Context, *sandboxseed.SeedInput) error
 	seedGallery      func(context.Context, *sandboxseed.SeedWeaponGalleryInput) (*sandboxseed.SeedWeaponGalleryOutput, error)
 	openGalleryStore func(context.Context, string) (galleryStoreHandle, error)
 	checkHealth      func(context.Context, *grpc.ClientConn) error
@@ -91,7 +91,16 @@ func runWithDeps(args []string, deps commandDeps) error {
 	client := deps.characterClient(conn)
 	switch config.fixture {
 	case fixtureDefault:
-		if err := deps.seedDefault(ctx, client); err != nil {
+		// The default fixture set now needs the repository as well as the
+		// RPCs: the two level-up fixtures hold experience, and no service call
+		// writes experience (design R4.12). -redis-address is the address it
+		// uses, the same one the weapon gallery already opens.
+		store, storeErr := deps.openGalleryStore(ctx, config.redisAddress)
+		if storeErr != nil {
+			return storeErr
+		}
+		defer func() { _ = store.Close() }()
+		if err := deps.seedDefault(ctx, &sandboxseed.SeedInput{Client: client, Store: store}); err != nil {
 			return fmt.Errorf("seed: %w", err)
 		}
 		return nil
@@ -170,8 +179,8 @@ func parseConfig(args []string) (*config, error) {
 	if result.fixture != fixtureDefault && result.fixture != fixtureWeaponGallery {
 		return nil, errors.New("fixture must be default or weapon-gallery")
 	}
-	if result.fixture == fixtureWeaponGallery && !result.health && result.redisAddress == "" {
-		return nil, errors.New("redis address is required for weapon-gallery fixture")
+	if !result.health && result.redisAddress == "" {
+		return nil, errors.New("redis address is required to seed fixtures")
 	}
 	return result, nil
 }
