@@ -241,6 +241,18 @@ func levelChoicesToProto(choices []sdk.LevelChoice) ([]*dnd5ev1alpha1.Choice, er
 // which errors rather than returning a neutral value, and
 // levelChoiceSubmissions takes it for the mirror case ten lines down.
 //
+// FAILED_PRECONDITION, NOT INVALID_ARGUMENT, and the difference is who was
+// wrong. A kind this build cannot read arrived from the ENGINE; the caller
+// asked a well-formed question and nothing they could change would help, so
+// telling them their request was invalid would be a lie that sends them
+// looking in the wrong place. It is the same bucket and the same sentence
+// shape as the SDK's own ErrLevelNotOffered -- "this build cannot offer this
+// level" -- which is what this is, one requirement down.
+//
+// That is the opposite of levelChoiceSubmissions below, which IS
+// INVALID_ARGUMENT: there the client sent the category, so rebuilding the
+// request can succeed.
+//
 // Unreachable today, since LevelChoiceKind has two values. The named next one
 // is rpg-toolkit#1767's subclass-as-a-choice, which is exactly the kind most
 // likely to arrive carrying options that are not spells.
@@ -252,7 +264,7 @@ func levelChoiceCategory(kind sdk.LevelChoiceKind) (dnd5ev1alpha1.ChoiceCategory
 		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS, nil
 	default:
 		return dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_UNSPECIFIED,
-			apierr.ToGRPCError(apierr.InvalidArgumentf(
+			apierr.ToGRPCError(apierr.FailedPreconditionf(
 				"level choice kind %q is not one this build can offer", kind))
 	}
 }

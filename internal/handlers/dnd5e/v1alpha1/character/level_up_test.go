@@ -443,7 +443,10 @@ func (s *LevelUpHandlerTestSuite) TestGetNextLevel_AnUnknownChoiceKindRefusesThe
 	})
 
 	s.Require().Error(err, "a kind this build cannot offer must not be projected")
-	s.Equal(codes.InvalidArgument, status.Code(err))
+	s.Equal(codes.FailedPrecondition, status.Code(err),
+		"the ENGINE sent a kind this build cannot read; the caller asked a "+
+			"well-formed question and nothing they change would help, so this is "+
+			"not their invalid argument")
 	s.Contains(status.Convert(err).Message(), "subclass",
 		"the refusal names the kind, so the gap is diagnosable from the wire")
 }
