@@ -216,11 +216,20 @@ func (s *LevelUpTestSuite) TestGetNextLevel_FighterConfirmsWithoutAsking() {
 	s.Equal(10, out.HitDice)
 }
 
-// TestGetNextLevel_BardAsksForExactlyOneSpell pins R4.13 and the design's
-// proof case: the bard "is offered its spell choice on a screen with no bard
-// in it". The choice id is the toolkit's, not one this layer invents.
-func (s *LevelUpTestSuite) TestGetNextLevel_BardAsksForExactlyOneSpell() {
+// TestGetNextLevel_BardIsNotOfferedTheSpellsItAlreadyKnows is the walk finding,
+// pinned.
+//
+// The bard fixture learned bane, thunderwave, dissonant-whispers and command at
+// creation. The class table's level-2 row offers all five castable first-level
+// spells, because a class function takes a class and a level and cannot know
+// what THIS character knows -- so the screen offered four picks the engine
+// would refuse and one it would accept. rpg-toolkit#1781 answered it with
+// Character.NextLevelRequirements, and this asserts the exact remaining option
+// rather than "not empty": a menu that came back with five entries would pass
+// a non-empty check and still be the bug.
+func (s *LevelUpTestSuite) TestGetNextLevel_BardIsNotOfferedTheSpellsItAlreadyKnows() {
 	data := s.bardData("char-bard", 300)
+	s.Require().Len(data.KnownSpells, 4, "the fixture must already know four for this to mean anything")
 	s.expectGet(data)
 
 	out, err := s.orchestrator.GetNextLevel(s.ctx, &GetNextLevelInput{CharacterID: data.ID})
@@ -232,7 +241,8 @@ func (s *LevelUpTestSuite) TestGetNextLevel_BardAsksForExactlyOneSpell() {
 		"the spell is the only thing level 2 asks a bard for")
 	s.Require().NotNil(out.Requirements.Spellbook)
 	s.Equal(1, out.Requirements.Spellbook.Count, "five known minus four known")
-	s.NotEmpty(out.Requirements.Spellbook.Options, "a choice with no options cannot be made")
+	s.Equal([]spells.Spell{spells.HealingWord}, out.Requirements.Spellbook.Options,
+		"the four it already knows are gone; healing word is the only legal pick left")
 	s.Empty(out.FeatureRefs, "bard's level-2 features are not in the repository yet, and that is not a gate")
 }
 
@@ -359,6 +369,36 @@ func (s *LevelUpTestSuite) TestLevelUp_RefusesAnUnearnedLevel() {
 	s.True(apierr.IsFailedPrecondition(err), "a level the state forbids, not a malformed request")
 	s.ErrorContains(err, "300", "the refusal names the threshold the level needs")
 	s.ErrorContains(err, "0 experience")
+}
+
+// TestLevelUp_RefusesASpellTheCharacterAlreadyKnows is the other half of the
+// walk finding. Before rpg-toolkit#1781 this succeeded and wrote bane onto the
+// sheet a SECOND time, and the duplicate reached a record that can never be
+// corrected. The toolkit's message names the spell, and this asserts that,
+// because "invalid choice" would leave the player guessing which of their five
+// picks was the problem.
+func (s *LevelUpTestSuite) TestLevelUp_RefusesASpellTheCharacterAlreadyKnows() {
+	data := s.bardData("char-bard", 300)
+	s.Require().Contains(data.KnownSpells, refs.Spells.Bane().String())
+	s.expectGet(data)
+
+	// No Update expectation: a refused level must write nothing.
+	out, err := s.orchestrator.LevelUp(s.ctx, &LevelUpInput{
+		CharacterID:    data.ID,
+		HitPointMethod: tkcharacter.HitPointMethodAverage,
+		Choices: []choices.ChoiceData{{
+			Category:       shared.ChoiceSpells,
+			Source:         shared.SourceClass,
+			ChoiceID:       "bard-spells-2",
+			SpellSelection: []spells.Spell{spells.Bane},
+		}},
+	})
+
+	s.Require().Error(err)
+	s.Nil(out)
+	s.ErrorContains(err, "bane", "the refusal names the spell the player picked")
+	s.Equal(1, data.Level, "the sheet is untouched")
+	s.Len(data.KnownSpells, 4, "and still knows exactly what it knew")
 }
 
 // TestLevelUp_RefusesAChoiceTheLevelDidNotAsk pins R4.15 -- validation is the

@@ -10,7 +10,6 @@ import (
 
 	"github.com/KirkDiggler/rpg-toolkit/rpgerr"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
@@ -83,9 +82,17 @@ func (o *Orchestrator) GetNextLevel(ctx context.Context, input *GetNextLevelInpu
 		CharacterLevel: characterLevel,
 		ClassID:        classID,
 		ClassLevel:     classLevel,
-		// GAINED AT, not cumulative. The cumulative set would re-offer every
-		// level-1 choice the character already made (toolkit R3.2).
-		Requirements: choices.GetClassRequirementsGainedAtLevel(classID, classLevel),
+		// THE CHARACTER'S OWN NEXT LEVEL, not its class's.
+		//
+		// GAINED AT, not cumulative: the cumulative set would re-offer every
+		// level-1 choice the character already made (toolkit R3.2). And asked
+		// of the SHEET, not of the class table, because the class table cannot
+		// know what this character already knows -- a bard who learned four
+		// spells at creation was offered all four again at level 2, and the
+		// engine would have taught it one of them twice. The walk found that;
+		// rpg-toolkit#1781 answered it with this method plus a refusal inside
+		// Advance, so the menu and the rule agree.
+		Requirements: char.NextLevelRequirements(),
 		FeatureRefs:  featureRefs,
 		HitDice:      classData.HitDice,
 	}, nil

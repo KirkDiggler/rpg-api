@@ -106,11 +106,16 @@ func (s *LevelUpHandlerTestSuite) TestGetNextLevel_FighterIsAConfirmationThatNam
 	s.Equal("Fighter", got.GetFeatures()[0].GetClassName())
 }
 
-// TestGetNextLevel_BardAsksOneSpellQuestion is the design's proof case on the
-// wire: the requirement row becomes the same Choice message creation renders,
-// so the screen is generic (R4.13). The options list is asserted non-empty
-// because a choice with no options cannot be made.
-func (s *LevelUpHandlerTestSuite) TestGetNextLevel_BardAsksOneSpellQuestion() {
+// TestGetNextLevel_ProjectsTheRequirementItIsHanded is the wire half of R4.13:
+// whatever requirement row arrives becomes the same Choice message creation
+// renders, so the screen stays generic.
+//
+// The row here is WRITTEN OUT rather than fetched from the class table. Which
+// options a bard should be offered is the orchestrator's claim, tested there
+// against a real sheet; if this built its input from the same table the
+// projection reads, it could not fail when the projection dropped or mangled
+// an option. One spell in, one spell out, named.
+func (s *LevelUpHandlerTestSuite) TestGetNextLevel_ProjectsTheRequirementItIsHanded() {
 	s.expectOwned(classes.Bard)
 	s.mockService.EXPECT().
 		GetNextLevel(gomock.Any(), &character.GetNextLevelInput{CharacterID: levelUpCharacterID}).
@@ -118,8 +123,16 @@ func (s *LevelUpHandlerTestSuite) TestGetNextLevel_BardAsksOneSpellQuestion() {
 			CharacterLevel: 2,
 			ClassID:        classes.Bard,
 			ClassLevel:     2,
-			Requirements:   choices.GetClassRequirementsGainedAtLevel(classes.Bard, 2),
-			HitDice:        8,
+			Requirements: &choices.Requirements{
+				Spellbook: &choices.SpellbookRequirement{
+					ID:         "bard-spells-2",
+					Count:      1,
+					SpellLevel: 1,
+					Options:    []spells.Spell{spells.HealingWord},
+					Label:      "Choose 1 spell",
+				},
+			},
+			HitDice: 8,
 		}, nil)
 
 	got, err := s.handler.GetNextLevel(s.ctx, &dnd5ev1alpha1.GetNextLevelRequest{
@@ -127,13 +140,13 @@ func (s *LevelUpHandlerTestSuite) TestGetNextLevel_BardAsksOneSpellQuestion() {
 	})
 
 	s.Require().NoError(err)
-	s.Require().Len(got.GetChoices(), 1, "the spell is the only thing bard level 2 asks for")
+	s.Require().Len(got.GetChoices(), 1, "the spell is the only thing this row asks for")
 	choice := got.GetChoices()[0]
 	s.Equal("bard-spells-2", choice.GetId())
 	s.Equal(int32(1), choice.GetChooseCount())
 	s.Equal(dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS, choice.GetChoiceType())
-	s.NotEmpty(choice.GetSpellOptions().GetAvailableRefs(),
-		"canonical refs, the vocabulary the rest of the spell wire speaks")
+	s.Equal([]string{refs.Spells.HealingWord().String()}, choice.GetSpellOptions().GetAvailableRefs(),
+		"canonical refs, the vocabulary the rest of the spell wire speaks, and exactly the one offered")
 	s.Empty(got.GetFeatures())
 }
 
