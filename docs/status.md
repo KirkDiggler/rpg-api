@@ -57,9 +57,11 @@ both recorded with the defect in `internal/integration/character`:
 `rulebooks/dnd5e/resolution` v0.50.0. No toolkit pseudo-version remains, so
 this is no longer a draft on an unreleased engine.
 
-Protos stay on the generated-branch head `654b73a1` (v0.1.193), which is how
-this repo consumes them by design rather than a pin awaiting a tag — see
-"Proto Updates" in `CLAUDE.md`.
+Protos are on the generated-branch head `4915e3ed`, taken from `dev` when this
+branch merged it — newer than the `654b73a1` this branch had pinned, and kept
+because a merge must not walk either side's pin backwards. A generated-branch
+head is how this repo consumes protos by design rather than a pin awaiting a
+tag; see "Proto Updates" in `CLAUDE.md`.
 
 The expertise intersection above is tracked as **rpg-toolkit#1794**: the
 options belong on the character-aware next-level view, and closing it deletes
