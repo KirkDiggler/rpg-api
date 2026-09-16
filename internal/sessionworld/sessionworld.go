@@ -234,6 +234,41 @@ type Monster struct {
 	// it would spawn a reserved monster as PLACED -- three zombies standing
 	// at the gate from frame one -- which is what scene A4 exists to catch.
 	Arrives tkencounter.Trigger
+
+	// Intimidate is the author's priced check for frightening this monster
+	// (`place[].intimidate`, rpg-project#454): the same approach list a lock
+	// carries, one entry per route through. Nil when the author priced none,
+	// which is the ordinary case and means DERIVED, not ungated -- the
+	// rulebook rolls Intimidation against the stat block's own passive
+	// Insight (goblin 9, thug 10).
+	//
+	// UNLIKE Targeting ABOVE, THIS ONE CROSSES, as of rpg-toolkit#1790:
+	// session.SpawnInput grew a field for it, so the launch forwards it
+	// verbatim and an authored difficulty reaches the live monster. Until
+	// that field existed the value was carried here and stopped, on the
+	// Targeting precedent -- keep the fact at the seam that has it rather
+	// than drop it in the package that threw it away -- and two tests
+	// pinned the gap so its closing would be noticed. It closed; they are
+	// deleted.
+	//
+	// NIL STAYS NIL ALL THE WAY DOWN. Nothing here defaults it, because
+	// absent is not "no check" but "derive one": the rulebook rolls
+	// Intimidation against the stat block's own passive Insight at threat
+	// time. A zero value invented on this side would be a DC nobody chose.
+	Intimidate []tkencounter.CheckApproach
+
+	// OnIntimidated is the world fact every witness learns when a threat
+	// against this monster lands (`place[].on.intimidated.fact`,
+	// rpg-project#454 decision 7), as the COMPILED fact id dungeonspec
+	// minted. Empty when the author wrote no `on:` -- the ordinary case,
+	// meaning a cowed monster changes nobody's mind about anything outside
+	// the fight.
+	//
+	// FORWARDED by the launch beside Intimidate above, and empty stays empty
+	// for the same reason nil does: a monster nobody planted a fact on
+	// teaches the world nothing when it is cowed, which is the ordinary
+	// case rather than a value to fill in.
+	OnIntimidated string
 }
 
 // Compile turns one authored dungeon file into a [Dungeon].
@@ -291,6 +326,13 @@ func Compile(raw []byte) (*Dungeon, error) {
 			Boss: m.Boss, Targeting: m.Targeting, Actions: m.Actions,
 			PlacementID: m.ID, Holds: m.Holds, Faction: m.Faction,
 			Arrives: m.Arrives,
+			// The shenanigan facts (rpg-project#454), read off the
+			// compiler's own keyed map rather than flattened there: the
+			// composition takes one fact per verb as its own field, and the
+			// second shenanigan adds a key beside `intimidated` instead of
+			// breaking this type. Absent means absent -- no defaulting here.
+			Intimidate:    m.Intimidate,
+			OnIntimidated: m.On[tkdungeonspec.OnIntimidated],
 		}
 	}
 

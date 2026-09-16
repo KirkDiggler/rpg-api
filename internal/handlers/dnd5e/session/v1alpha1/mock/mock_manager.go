@@ -236,6 +236,21 @@ func (mr *MockManagerMockRecorder) Interact(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Interact", reflect.TypeOf((*MockManager)(nil).Interact), ctx, in)
 }
 
+// Intimidate mocks base method.
+func (m *MockManager) Intimidate(ctx context.Context, in *session.IntimidateInput) (*session.IntimidateOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Intimidate", ctx, in)
+	ret0, _ := ret[0].(*session.IntimidateOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Intimidate indicates an expected call of Intimidate.
+func (mr *MockManagerMockRecorder) Intimidate(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Intimidate", reflect.TypeOf((*MockManager)(nil).Intimidate), ctx, in)
+}
+
 // Join mocks base method.
 func (m *MockManager) Join(ctx context.Context, in *session.JoinInput) (*session.JoinOutput, error) {
 	m.ctrl.T.Helper()

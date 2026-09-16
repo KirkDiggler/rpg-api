@@ -232,6 +232,25 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 			// file fails the launch rather than putting a monster on
 			// the board that cannot act.
 			Actions: monster.Actions,
+			// What it takes to frighten this monster, and what the
+			// world learns if somebody does (`place[].intimidate` and
+			// `place[].on.intimidated.fact`, rpg-project#454) --
+			// forwarded verbatim beside Actions, and converted at this
+			// boundary and nowhere else: the compiler speaks the
+			// composition's CheckApproach and the seam takes the
+			// session's own DoorApproach, so the route crosses here in
+			// the SDK's vocabulary rather than the composition's.
+			//
+			// NIL MEANS DERIVED, NOT UNGATED, and nothing here defaults
+			// it. An unpriced monster is checked against its own stat
+			// block's passive Insight at threat time -- a goblin is DC
+			// 9 and a thug DC 10 -- so a zero invented on this side
+			// would be a difficulty nobody chose sitting where the
+			// rulebook's own answer belongs. Empty OnIntimidated is the
+			// same statement one field over: cowing this monster
+			// teaches the world nothing.
+			Intimidate:    intimidateApproachesOf(monster.Intimidate),
+			OnIntimidated: monster.OnIntimidated,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("spawn %q into session %q on new stack: %w", monster.MemberID, encID, err)
@@ -315,6 +334,32 @@ func refuseSharedMemberIDs(members []*lobbyrepo.Member, monsters []sessionworld.
 		}
 	}
 	return nil
+}
+
+// intimidateApproachesOf spells the author's priced routes for frightening a
+// monster (`place[].intimidate`, rpg-project#454) from the composition's own
+// CheckApproach into the session seam's DoorApproach.
+//
+// THE TRANSLATION IS SPELLING ONLY, like arrivalOf below it: the two structs
+// carry the same three fields and neither side is interpreted here. It exists
+// because the two modules own their own vocabulary at this boundary (S2), not
+// because anything is being decided -- what an ability ref or a tool ref
+// MEANS is the rulebook's, and what a DC is worth is the resolver's.
+//
+// NIL IN, NIL OUT, and that is the load-bearing case rather than an edge:
+// absent does not mean "no check", it means the rulebook derives one from the
+// monster's own passive Insight at threat time. Returning an empty non-nil
+// slice would hand the seam a monster priced with no way through, which is a
+// different and much worse claim.
+func intimidateApproachesOf(approaches []tkencounter.CheckApproach) []sdk.DoorApproach {
+	if approaches == nil {
+		return nil
+	}
+	out := make([]sdk.DoorApproach, len(approaches))
+	for i, approach := range approaches {
+		out[i] = sdk.DoorApproach{Ability: approach.Ability, Tool: approach.Tool, DC: approach.DC}
+	}
+	return out
 }
 
 // arrivalOf translates a placement's compiled arrival predicate -- the

@@ -111,6 +111,13 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// the same shape as ErrOutOfReach above.
 		{"ErrOutOfRange", sdk.ErrOutOfRange, codes.FailedPrecondition},
 		{"ErrNotVisible", sdk.ErrNotVisible, codes.FailedPrecondition},
+		// Intimidate's own refusal (rpg-project#454): the threatened member
+		// cannot see who is threatening them. FAILED_PRECONDITION like the
+		// rows around it, and DELIBERATELY NOT folded into ErrOutOfReach --
+		// reach is a distance and this is a sightline, so a client that read
+		// the two as one would tell the player to step closer when what they
+		// need is to be seen.
+		{"ErrUnwitnessed", sdk.ErrUnwitnessed, codes.FailedPrecondition},
 		// Holdings (rpg-project#368): Loot's and Hold's own state refusals,
 		// each reachable only about a body or prop the member can SEE --
 		// for anything they cannot, the composition collapses the refusal

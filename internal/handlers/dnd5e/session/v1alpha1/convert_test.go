@@ -93,6 +93,12 @@ func TestVerbToProto(t *testing.T) {
 	// client can act on while the fight waits -- would arrive UNSPECIFIED,
 	// and the panel would have nothing to draw but a dead table.
 	require.Equal(t, sessionpb.Verb_VERB_REACT, verbToProto(sdk.VerbReact))
+	// The first shenanigan (rpg-project#454). Afford emits this row on the
+	// turn clock unconditionally, the way it emits VerbMove, so unmapped it
+	// would not be one wrong label but the whole Intimidate affordance
+	// missing: a client drops a verb it cannot name rather than drawing it
+	// wrong.
+	require.Equal(t, sessionpb.Verb_VERB_INTIMIDATE, verbToProto(sdk.VerbIntimidate))
 	require.Equal(t, sessionpb.Verb_VERB_UNSPECIFIED, verbToProto(sdk.Verb("bogus")))
 }
 
@@ -2239,4 +2245,65 @@ func TestConditionRemovedToProto_NamesWhoIsResponsible(t *testing.T) {
 	require.Equal(t, "char_bard", condition.GetSourceId(),
 		"which instance ended is the source plus the target plus the ref")
 	require.Equal(t, "concentration ended", condition.GetReason())
+}
+
+// TestIntimidatedBodyToProto_CarriesTheWholeRollBothWays is the beat half of
+// the first shenanigan (rpg-project#454), and the missed case is the one that
+// matters most: IntimidateResponse carries no beaten, total or dc, so this
+// beat is the ONLY account of the roll and the actor reads it here like every
+// other witness. A body that failed to cross would leave the person who threw
+// the die with nothing at all.
+//
+// FALSE IS AN ANSWER. The SDK writes beaten, dc and total with no omitempty
+// precisely because `beaten: false` is the whole content of a missed threat,
+// and this converter must not reintroduce the absence its author removed.
+func TestIntimidatedBodyToProto_CarriesTheWholeRollBothWays(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		beaten bool
+		total  int
+	}{
+		{name: "beaten", beaten: true, total: 14},
+		{name: "missed", beaten: false, total: 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			event := &sessionpb.Event{}
+			setEventBody(event, sdk.IntimidatedBody{
+				Actor: "char-alice", Target: "goblin-2", DC: 9, Total: tc.total, Beaten: tc.beaten,
+			})
+
+			got := event.GetIntimidated()
+			require.NotNil(t, got, "a threat that reached this seam must reach the wire")
+			require.Equal(t, "char-alice", got.GetActor())
+			require.Equal(t, "goblin-2", got.GetTarget())
+			require.Equal(t, int32(9), got.GetDc())
+			require.Equal(t, int32(tc.total), got.GetTotal())
+			require.Equal(t, tc.beaten, got.GetBeaten())
+		})
+	}
+}
+
+// TestIntimidatedBodyToProto_BeatenIsCopiedNeverDerived pins the reading as
+// the provider's. A 20 the rulebook says did not beat a DC 9 crosses as
+// beaten=false, because the day a rule changes what beating a DC means, every
+// reader that compared total against dc would be wrong at once -- the law
+// Saved.succeeded and DoorChanged.beaten already keep.
+func TestIntimidatedBodyToProto_BeatenIsCopiedNeverDerived(t *testing.T) {
+	event := &sessionpb.Event{}
+	setEventBody(event, sdk.IntimidatedBody{
+		Actor: "char-alice", Target: "goblin-2", DC: 9, Total: 20, Beaten: false,
+	})
+	require.False(t, event.GetIntimidated().GetBeaten())
+	require.Equal(t, int32(20), event.GetIntimidated().GetTotal())
+	require.Equal(t, int32(9), event.GetIntimidated().GetDc())
+}
+
+// TestEventIntimidatedKindToProto is the kind half. An unmapped kind does not
+// fail -- it demotes to EVENT_KIND_UNKNOWN and the body stays nil -- so a
+// missing arm here would lose the die for the whole table rather than degrade
+// one field of it.
+func TestEventIntimidatedKindToProto(t *testing.T) {
+	require.Equal(t,
+		sessionpb.EventKind_EVENT_KIND_INTIMIDATED,
+		eventKindToProto(sdk.EventIntimidated))
 }

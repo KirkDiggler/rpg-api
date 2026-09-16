@@ -648,6 +648,15 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_STRUCK
 	case sdk.EventDoor:
 		return sessionpb.EventKind_EVENT_KIND_DOOR
+	// The first shenanigan (rpg-project#454). BOTH ARMS LAND IN THE SAME
+	// CHANGE as the body below, for the cast door's stated reason: an
+	// unmapped kind does not fail, it demotes to EVENT_KIND_UNKNOWN and its
+	// body stays nil -- and this beat is the ONLY account of its roll, since
+	// IntimidateResponse deliberately carries no beaten, total or dc. A
+	// demoted arm would lose the die for the whole table, the actor
+	// included, rather than degrade one field of it.
+	case sdk.EventIntimidated:
+		return sessionpb.EventKind_EVENT_KIND_INTIMIDATED
 	case sdk.EventMissed:
 		return sessionpb.EventKind_EVENT_KIND_MISSED
 	case sdk.EventCastMissed:
@@ -933,6 +942,31 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		}}
 	case sdk.EndedBody:
 		evt.Body = &sessionpb.Event_Ended{Ended: &sessionpb.Ended{Ending: b.Ending}}
+	case sdk.IntimidatedBody:
+		// A threat, landed or missed (rpg-project#454). VERBATIM, and
+		// BEATEN IS COPIED rather than derived here from total against dc --
+		// the law Saved.succeeded and DoorChanged.beaten already keep, for
+		// the same reason: the day a rule changes what beating a DC means,
+		// every reader that derived it would be wrong at once.
+		//
+		// EVERY FIELD CROSSES ON A MISS TOO. The SDK writes beaten, dc and
+		// total with no omitempty precisely because `beaten: false` is the
+		// whole content of a missed threat, and this seam must not
+		// reintroduce the absence its author removed.
+		//
+		// NOTHING ABOUT THE CONSEQUENCE, and the wire has no field for one.
+		// A beaten threat lands a deed on the witnesses and what it is worth
+		// is the threatened creature's mind's to decide; a client narrates
+		// that from the creature's next turn. Deliberately unlike
+		// DoorChanged below, which can report the state its own check
+		// produced -- there is no state here to report yet.
+		evt.Body = &sessionpb.Event_Intimidated{Intimidated: &sessionpb.Intimidated{
+			Actor:  b.Actor,
+			Target: b.Target,
+			Dc:     int32(b.DC),
+			Total:  int32(b.Total),
+			Beaten: b.Beaten,
+		}}
 	case sdk.DoorBody:
 		evt.Body = &sessionpb.Event_Door{Door: &sessionpb.DoorChanged{
 			Door:   b.Door,
@@ -1518,6 +1552,14 @@ func verbToProto(v sdk.Verb) sessionpb.Verb {
 	// showing it wrong. That is the whole panel this slice exists to fill.
 	case sdk.VerbCast:
 		return sessionpb.Verb_VERB_CAST
+	// VerbIntimidate (rpg-project#454). LOAD-BEARING FOR THE DOCK, not a
+	// completeness sweep: Afford emits a VerbIntimidate declaration on the
+	// turn clock unconditionally, the way it emits VerbMove, so leaving it
+	// unmapped would label every threat a member can make VERB_UNSPECIFIED
+	// -- and a client drops a verb it cannot name rather than showing it
+	// wrong, so the row would simply never appear.
+	case sdk.VerbIntimidate:
+		return sessionpb.Verb_VERB_INTIMIDATE
 	default:
 		return sessionpb.Verb_VERB_UNSPECIFIED
 	}

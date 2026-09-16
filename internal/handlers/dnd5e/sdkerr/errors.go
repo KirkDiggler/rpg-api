@@ -217,6 +217,22 @@ func StatusError(err error) error {
 		errors.Is(err, sdk.ErrStaleDeclaration),
 		errors.Is(err, sdk.ErrOutOfRange),
 		errors.Is(err, sdk.ErrNotVisible),
+		// ErrUnwitnessed (rpg-project#454, Intimidate) -- the threatened
+		// member cannot see who is threatening them, so there is nobody to
+		// threaten. Same family as every row above it: a well-formed call
+		// naming real members that the world's present state refuses.
+		//
+		// NOT ErrOutOfReach, AND THE DISTINCTION IS THE VERB'S WHOLE SHAPE.
+		// Reach is a distance, and a client that mapped this to the reach
+		// refusal would tell the player to get closer -- which is exactly
+		// the wrong instruction. A threat has no distance cap at all; it
+		// carries as far as the threatened can see who is making it, so the
+		// remedy is a SIGHTLINE (step out from behind the pillar, open the
+		// door, put down the light) and never a step. The toolkit split this
+		// off its own sentinel for that reason rather than reusing
+		// ErrOutOfReach, and collapsing them here would undo the split one
+		// seam out.
+		errors.Is(err, sdk.ErrUnwitnessed),
 		// Three more arrive with the holdings verbs (rpg-project#368), and
 		// all three are this bucket by the same test every row above meets:
 		// the request is well-formed and names real things, and it is the
