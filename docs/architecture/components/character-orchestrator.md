@@ -40,9 +40,6 @@ type Service interface {
     GetCharacter / ListCharacters / DeleteCharacter
     EquipItem / UnequipItem
 
-    // Advancement
-    GetNextLevel(ctx, *GetNextLevelInput) (*GetNextLevelOutput, error)
-    LevelUp(ctx, *LevelUpInput) (*LevelUpOutput, error)
 
     // Data loading for UI
     ListRaces / ListClasses / ListBackgrounds / ListEquipmentByType
@@ -58,8 +55,6 @@ Orchestrator
     ├── characterdraftrepo.Repository     — get/save CharacterDraft (Redis)
     ├── dicesessionrepo.Repository        — read dice roll results
     ├── dice.Roller                        — ability score rolling
-    ├── tkdice.Roller (Config.Roller)      — rolled hit points on level-up;
-    │                                        REQUIRED and never defaulted
     ├── clock.Clock                        — timestamps (injectable for testing)
     └── rpg-toolkit packages:
          ├── character                     — character.Data type, FinalizeDraft
@@ -91,40 +86,25 @@ and present-zero tests prove the complete Appearance shape, including outfit cha
 carry `Data.Appearance` naturally; no sibling envelope or API-side preservation merge is
 used.
 
-## Advancement (rpg-project#452)
+## Advancement lives in the session SDK, not here (rpg-project#452)
 
-`GetNextLevel` and `LevelUp` are the read and the write of the level-up system.
-Every rule in both is the toolkit's; the orchestrator loads, calls, and saves.
+**This orchestrator holds nothing about level-up, deliberately.** Kirk's ruling
+after the wave walked: *"the API is dumb... we added the session package to act
+as the SDK to the API. So we should not need an orchestrator in API anymore and
+our level up should be contained in our session package."* (design R6.1/R6.2).
 
-`GetNextLevel` loads the sheet, then reads three toolkit tables indexed by the
-character's next CLASS level: the requirement row
-(`choices.GetClassRequirementsGainedAtLevel`), the grants
-(`classes.GetGrantsGainedAtLevel`), and the hit die. It answers regardless of
-entitlement -- the refusal lives on the write, so a screen can show a player the
-level they are working toward.
+The first build put the verb here — load the sheet, call `Character.Advance`,
+save — with a `Config.Roller` for rolled hit points and the next level computed
+locally to look up grants. Every rule in it was the toolkit's even then; the
+ORCHESTRATION of those rules was not, and that is what moved. `level_up.go`,
+both service methods, their IO types and `Config.Roller` were deleted rather
+than deprecated.
 
-`LevelUp` follows the `EquipItem` shape (load, toolkit verb, project, save) with
-one deliberate difference: the write is `characterRepo.Update` on the whole
-sheet, not `PatchEquipment`. A level moves `Level`, `Levels`, `MaxHitPoints`,
-`ProficiencyBonus`, features, conditions, class resources and known spells at
-once, and `PatchEquipment` is contractually permitted to write only slots and
-armor class. `Update` carries no version, so this path is a load-modify-write
-without optimistic concurrency, the same as finalization's `Create`.
-
-`Character.Advance` is atomic and validates everything before mutating, so a
-refusal leaves the loaded copy untouched and nothing is written. Refusals are
-carried out with the toolkit's own code and message: prerequisite-not-met,
-timing, invalid-state and not-allowed become FAILED_PRECONDITION, invalid
-argument becomes INVALID_ARGUMENT.
-
-`Config.Roller` is a toolkit `dice.Roller`, REQUIRED and never defaulted, the
-law the session orchestrator states for the same capability. Production wires
-`&dice.CryptoRoller{}`; tests substitute a fixed roller.
-
-Experience itself has no write path on the served API (design R4.12). It is
-projected read-only onto the v1alpha1 `Character` along with the entitled level
-and next threshold, both derived by the toolkit's threshold table. Fixtures
-write it through the repository; see `internal/sandboxseed`.
+Advancement is now two verbs on the toolkit session Manager, called directly by
+the v1alpha1 character handler. See `character-handler.md`. This orchestrator
+is still involved in exactly one way: the handler reads through `GetCharacter`
+to bind the calling player, and again after a successful level to project the
+stored sheet, because the SDK returns no character by its own boundary law.
 
 ## Equipment (rpg-api#680/#844)
 

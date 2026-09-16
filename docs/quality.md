@@ -101,10 +101,13 @@ specific gap is closed even though the surrounding stub/TODO debt isn't.
 
 **Update (rpg-project#452, 2026-09-16):** the advancement RPCs live in their own
 `level_up.go` rather than growing `handler.go`, with their own ownership gate
-(NOT_FOUND, never PERMISSION_DENIED) and their own tests. They add a
-proto-to-toolkit `ChoiceData` reader, the reverse of `convertChoiceToProto`,
-which refuses an unreadable category instead of dropping it. Grade remains C:
-the converter/TODO debt above is untouched.
+(NOT_FOUND, never PERMISSION_DENIED) and their own tests. They are the
+cleanest thing in this package: each binds the caller, calls exactly one
+session SDK verb, and projects — no loading, no decisions, no ordering of
+toolkit steps. The proto-to-toolkit `ChoiceData` reader an earlier draft needed
+is deleted; knowing a toolkit choice's shape is no longer this layer's job.
+Grade remains C, because the converter/TODO debt above is untouched and is
+what earns the C.
 
 **Update (rpg-api#897, 2026-09-03):** complete Appearance now converts field-for-field
 to toolkit customization data. `UpdateAppearance` delegates once and returns the
@@ -156,16 +159,13 @@ updates with `draft.ToData()`, and returns stored DraftData. Redis and session-s
 paths use nested toolkit state without a sibling envelope. The grade remains B- because
 older draft/catalog TODO debt below is unchanged.
 
-**Update (rpg-project#452, 2026-09-16):** `GetNextLevel` and `LevelUp` land in
-`level_up.go`. Both read the toolkit's per-level tables rather than holding any
-per-level fact of their own; `LevelUp` calls `Character.Advance` and carries its
-refusal out with the toolkit's own code and message. `Config.Roller` is a
-required, never-defaulted toolkit `dice.Roller`. The write uses the
-repository's whole-sheet `Update`, which carries no version — a deliberate
-narrowing from the equipment path's optimistic patch, because a level moves
-most of the sheet and `PatchEquipment` may write only two fields. Grade held at
-B- because the draft/catalog TODO debt below is unchanged and that
-version-less write is a known rough edge, not a solved one.
+**Update (rpg-project#452, 2026-09-16):** advancement was BUILT here and then
+REMOVED, and the removal is the improvement. `level_up.go`, both service
+methods, their IO types and `Config.Roller` are gone; the toolkit session SDK
+owns the verb and the handler calls it (design R6.1). Nothing about level-up
+remains in this orchestrator. The grade is unchanged at B- because the
+draft/catalog TODO debt below is untouched, but the surface this orchestrator
+is responsible for got smaller, which is the direction it should move.
 
 **Update (rpg-api#680/#844, 2026-08-25):** `EquipItem`/`UnequipItem` strictly
 load/attach, call the toolkit's rules-aware verbs, precompose complete post-views, and

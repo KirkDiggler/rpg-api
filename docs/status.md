@@ -15,9 +15,17 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 and the next threshold are projected read-only onto the v1alpha1 `Character`;
 nothing on the served API writes experience, by design (R4.12). `GetNextLevel`
 and `LevelUp` are implemented on the v1alpha1 `CharacterService`, both gated by
-an ownership check that returns NOT_FOUND rather than PERMISSION_DENIED. The
-character orchestrator gained a required toolkit `dice.Roller` in its `Config`,
-supplied explicitly at wiring time. `cmd/sandboxseed`'s default fixture set adds
+an ownership check that returns NOT_FOUND rather than PERMISSION_DENIED.
+
+**They call the session SDK; there is no advancement orchestrator.** Kirk's
+ruling after the walk (design R6.1): *"the API is dumb... we should not need an
+orchestrator in API anymore and our level up should be contained in our session
+package."* The first build put the verb in
+`internal/orchestrators/character/level_up.go` with a `Config.Roller`; all of
+it was deleted, not deprecated, and the handler now calls two Manager verbs and
+projects. The SDK error table moved out of the session handler into
+`internal/handlers/dnd5e/sdkerr` so both callers share one table rather than
+keeping two free to disagree. `cmd/sandboxseed`'s default fixture set adds
 `level-up-fighter` (Arthur) and `level-up-bard` (Scanlan), created through the
 production RPCs and then seeded to 300 experience through the character
 repository — the only place experience can be written. Seeding requires a
