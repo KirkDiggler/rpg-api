@@ -1396,3 +1396,46 @@ func (s *ConvertersTestSuite) TestLoadAllClassChoices_Bard_OffersTheEighteenSkil
 	assert.Contains(s.T(), available, dnd5ev1alpha1.Skill_SKILL_PERSUASION)
 	assert.Contains(s.T(), available, dnd5ev1alpha1.Skill_SKILL_SURVIVAL)
 }
+
+// TestConvertCharacterDataToProto_ProjectsExperienceReadOnly pins design R4.10
+// and R4.12: "Experience is read-only over the wire: it reaches the client as
+// the total plus the derived entitled level, and no service call writes it."
+//
+// The three rows are the three readings that mean different things. A fresh
+// character shows the true state of a game that awards no experience yet
+// (done-when 7: "shows 0 of 300 and no prompt"). At 300 the gap between
+// entitled_level 2 and level 1 opens, and that gap IS the level-up signal
+// (R4.10) -- there is no flag to assert instead. At the top of the table the
+// next threshold is 0, meaning there is no next level rather than a free one.
+//
+// Every expected number is written out rather than computed from the same
+// toolkit call the converter makes: a test that re-derives cannot fail when
+// the derivation is wrong.
+func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ProjectsExperienceReadOnly() {
+	for _, tc := range []struct {
+		name               string
+		experience         int
+		entitledLevel      int32
+		nextLevelThreshold int32
+	}{
+		{"a fresh character owes the first 300", 0, 1, 300},
+		{"the level-2 threshold entitles and points at 900", 300, 2, 900},
+		{"the top of the table has no next level", 355000, 20, 0},
+	} {
+		s.Run(tc.name, func() {
+			got := ConvertCharacterDataToProto(&toolkitchar.Data{
+				ID:         "char-xp",
+				Name:       "Arthur",
+				Level:      1,
+				Levels:     []toolkitchar.LevelEntry{{Level: 1, ClassID: classes.Fighter}},
+				ClassID:    classes.Fighter,
+				Experience: tc.experience,
+			})
+
+			s.Require().NotNil(got)
+			s.Equal(int32(tc.experience), got.GetExperiencePoints())
+			s.Equal(tc.entitledLevel, got.GetEntitledLevel())
+			s.Equal(tc.nextLevelThreshold, got.GetNextLevelThreshold())
+		})
+	}
+}

@@ -1196,6 +1196,28 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 		Name:       data.Name,
 		Level:      int32(data.Level),
 		Appearance: customizationconverter.ToolkitToProto(data.Appearance),
+		// Experience, READ-ONLY (design R4.12): "Experience is read-only over
+		// the wire: it reaches the client as the total plus the derived
+		// entitled level, and no service call writes it." This is the only
+		// place any of the three is written, and it is a projection of the
+		// stored sheet -- there is no code path on the served API that puts a
+		// number back into character.Data.Experience.
+		//
+		// The two derived numbers come from the toolkit's own threshold table
+		// (2014 PHB p.15), never from arithmetic here: "Level entitlement is
+		// derived from the total by a threshold table the toolkit owns"
+		// (R4.9). An API that could compute entitlement is an API that has an
+		// opinion about when a level is earned.
+		//
+		// ENTITLEMENT IS NOT LEVEL. The gap between EntitledLevel and Level is
+		// the whole "level up available" signal (R4.10): no flag, nothing
+		// stored, nothing to keep in sync. A NextLevelThreshold of 0 means
+		// there is no next level, which is the truth at level 20 and cannot be
+		// confused with a threshold, because the only level that costs 0 is
+		// the one every character already has.
+		ExperiencePoints:   int32(data.Experience),
+		EntitledLevel:      int32(toolkitchar.EntitledLevelForExperience(data.Experience)),
+		NextLevelThreshold: int32(toolkitchar.NextExperienceThreshold(data.Experience)),
 	}
 
 	// Convert race and subrace
