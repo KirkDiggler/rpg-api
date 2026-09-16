@@ -948,12 +948,19 @@ func convertClassDataToProto(data *classes.Data) *dnd5ev1alpha1.ClassInfo {
 
 	var spellcasting *dnd5ev1alpha1.SpellcastingInfo
 	if data.SpellcastingAbility != "" {
+		// ClassInfo describes a class as character creation offers it, so the
+		// row it reports is level 1. rpg-toolkit#1781 moved cantrips known,
+		// spells known and slots off classes.Data -- three level-1 scalars
+		// that could not say what level 2 held -- onto a per-level
+		// progression table; row 1 is the same three numbers this read
+		// before, now with a level attached to them.
+		progression := classes.SpellProgressionAtLevel(data.ID, 1)
 		spellcasting = &dnd5ev1alpha1.SpellcastingInfo{
 			SpellcastingAbility: string(data.SpellcastingAbility),
-			CantripsKnown:       int32(data.CantripsKnown), SpellsKnown: int32(data.SpellsKnown),
+			CantripsKnown:       int32(progression.CantripsKnown), SpellsKnown: int32(progression.SpellsKnown),
 		}
-		if len(data.SpellSlots) > 0 {
-			spellcasting.SpellSlotsLevel_1 = int32(data.SpellSlots[0])
+		if len(progression.SpellSlots) > 0 {
+			spellcasting.SpellSlotsLevel_1 = int32(progression.SpellSlots[0])
 		}
 	}
 

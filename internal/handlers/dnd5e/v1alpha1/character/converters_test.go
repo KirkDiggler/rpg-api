@@ -63,9 +63,15 @@ func (s *ConvertersTestSuite) TestClericCatalogUsesProviderDomainsAndSpellcastin
 	}
 	s.Require().NotNil(got.GetSpellcasting())
 	s.Equal(string(data.SpellcastingAbility), got.Spellcasting.GetSpellcastingAbility())
-	s.Equal(int32(data.CantripsKnown), got.Spellcasting.GetCantripsKnown())
-	s.Equal(int32(data.SpellsKnown), got.Spellcasting.GetSpellsKnown())
-	s.Equal(int32(data.SpellSlots[0]), got.Spellcasting.GetSpellSlotsLevel_1())
+	// Level 1's progression row is what ClassInfo describes (rpg-toolkit#1781
+	// moved these three numbers off classes.Data). Reading row 1 here rather
+	// than the class's own level keeps the assertion falsifiable: projecting
+	// any other row would fail it.
+	progression := classes.SpellProgressionAtLevel(data.ID, 1)
+	s.Require().NotEmpty(progression.SpellSlots, "%s must have level-1 slots for this assertion to mean anything", data.ID)
+	s.Equal(int32(progression.CantripsKnown), got.Spellcasting.GetCantripsKnown())
+	s.Equal(int32(progression.SpellsKnown), got.Spellcasting.GetSpellsKnown())
+	s.Equal(int32(progression.SpellSlots[0]), got.Spellcasting.GetSpellSlotsLevel_1())
 	s.Equal(dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS, convertChoiceCategoryToProto(shared.ChoiceSpells))
 	s.Equal(dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS, convertChoiceCategoryToProto(shared.ChoiceCantrips))
 }

@@ -194,7 +194,13 @@ func (o *Orchestrator) GetRequirements(_ context.Context, input *GetRequirements
 		if input.Subclass != "" {
 			requirements = choices.GetClassRequirementsWithSubclass(input.Class, level, input.Subclass)
 		} else {
-			requirements = choices.GetClassRequirementsAtLevel(input.Class, level)
+			// The level's own requirement row. rpg-toolkit#1781 replaced the
+			// level-blind base-plus-subclass read with a per-level table, so
+			// this asks for the row and gets what that level actually adds;
+			// at level 1 -- this path's default and the only level any
+			// caller has ever asked for -- the row is byte-identical to what
+			// GetClassRequirements returns for creation.
+			requirements = choices.GetClassRequirementsGainedAtLevel(input.Class, level)
 		}
 	}
 
