@@ -275,9 +275,15 @@ func satisfyClassChoices(
 // carries all eighteen skills, because the toolkit's ExpertiseRequirement is
 // {ID, Count, Label} and names no options at all, so rpg-api's catalog
 // converter fills the field with skills.List(). The engine then refuses any
-// expertise skill the character is not proficient in. Intersecting with what
-// was just picked is the only answer a client can compute, and it is what a
-// real screen would have to do too.
+// expertise skill the character is not proficient in.
+//
+// THIS IS THE CLIENT COMPUTING A RULE THE TOOLKIT DOES NOT YET EXPOSE, and it
+// is temporary by intent. The seam that ends it is a character-aware view on
+// the toolkit side -- the same shape Character.NextLevelRequirements already
+// took for spells, which removes what the character knows from what it is
+// offered. When expertise gets that view, this intersection deletes itself and
+// the offered list becomes the legal list. Until then it is the only answer a
+// client can compute, here or on the level-up screen.
 func satisfyExpertiseChoice(
 	choice *dnd5ev1alpha1.Choice,
 	chosenSkills map[dnd5ev1alpha1.Skill]bool,

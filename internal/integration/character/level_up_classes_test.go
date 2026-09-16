@@ -96,6 +96,12 @@ var blockedClasses = map[string]string{
 	// choices. Reproduced directly against the toolkit: every combination of
 	// ranger armor/weapon/pack options, with and without a fighting style,
 	// leaves IsClassComplete false while the same shape for a fighter is true.
+	//
+	// A FIX IS IN FLIGHT on rpg-toolkit#1781: the submission will carry the
+	// requirement's own id instead of the fighter constant. The day this
+	// branch pins that head, ranger starts creating and the assertions below
+	// go red until this entry is deleted. That is the intended sequence, not
+	// a regression -- see the failure messages, which say so.
 	"ranger": "toolkit getClassSubmissions hard-codes the fighter's fighting-style choice id",
 }
 
@@ -121,14 +127,21 @@ func (s *LevelUpClassesSuite) TestEveryClassIsCreatedFromItsOwnCatalogEntry() {
 	if len(blockedClasses) == 0 {
 		s.Require().NoError(err, "no class is blocked, so every class must seed")
 	} else {
-		s.Require().Error(err, "a blocked class must make the fixture set fail, not pass quietly")
+		s.Require().Error(err,
+			"every class seeded, so nothing is blocked any more: DELETE the entries from "+
+				"blockedClasses above. This assertion is how a fixed engine defect gets "+
+				"noticed instead of being carried forever.")
 		for class, why := range blockedClasses {
 			s.Contains(err.Error(), "level-up-"+class,
-				"the failure must name %s (%s)", class, why)
+				"blockedClasses says %s is blocked by %q, but the run did not fail on it. "+
+					"If that defect is fixed, delete the entry; if a different class failed, "+
+					"that is a NEW finding and belongs in its own entry.", class, why)
 			s.False(seeded[class], "%s is blocked and must not report as seeded", class)
 		}
 		s.Contains(err.Error(), fmt.Sprintf("%d of 12", len(blockedClasses)),
-			"exactly the blocked classes fail; a twelfth failure is new and must not hide here")
+			"exactly %d class(es) must fail. A different count means a class outside "+
+				"blockedClasses broke, and it must not hide behind the known ones.",
+			len(blockedClasses))
 	}
 
 	s.Len(out.Classes, 12-len(blockedClasses),
