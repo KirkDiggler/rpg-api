@@ -53,8 +53,18 @@ const (
 	// created character shows 0 of 300 and no prompt -- the true state of a
 	// game that awards no experience yet", and the sandbox fighter is that
 	// character.
+	// levelUpIdentityPrefix is shared with the per-class fixture set, which
+	// builds level-up-<class> for every class in the catalog. The two below
+	// are spelled out rather than composed so a grep for either identity finds
+	// the constant that names it.
+	levelUpIdentityPrefix = "level-up-"
+
 	levelUpFighterIdentity = "level-up-fighter"
 	levelUpBardIdentity    = "level-up-bard"
+
+	// levelUpClassesFixtureName is the -fixture value that selects the
+	// per-class set, and the prefix on every error it raises.
+	levelUpClassesFixtureName = "level-up-classes"
 
 	levelUpFighterName = "Arthur"
 	levelUpBardName    = "Scanlan"
@@ -105,6 +115,10 @@ type CharacterRPC interface {
 	FinalizeDraft(context.Context, *dnd5ev1alpha1.FinalizeDraftRequest, ...grpc.CallOption) (*dnd5ev1alpha1.FinalizeDraftResponse, error)
 	GetCharacter(context.Context, *dnd5ev1alpha1.GetCharacterRequest, ...grpc.CallOption) (*dnd5ev1alpha1.GetCharacterResponse, error)
 	EquipItem(context.Context, *dnd5ev1alpha1.EquipItemRequest, ...grpc.CallOption) (*dnd5ev1alpha1.EquipItemResponse, error)
+	// ListClasses is what the per-class fixture set is driven from: it asks
+	// the catalog what every class requires rather than holding twelve
+	// hand-written answers.
+	ListClasses(context.Context, *dnd5ev1alpha1.ListClassesRequest, ...grpc.CallOption) (*dnd5ev1alpha1.ListClassesResponse, error)
 }
 
 // SeedInput carries the two capabilities the default fixture set needs.

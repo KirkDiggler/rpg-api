@@ -22,7 +22,27 @@ supplied explicitly at wiring time. `cmd/sandboxseed`'s default fixture set adds
 production RPCs and then seeded to 300 experience through the character
 repository — the only place experience can be written. Seeding requires a
 reachable Redis, so `sandboxseed` now needs `-redis-address` for the default
-fixture as well as the weapon gallery. **Draft until `rulebooks/dnd5e` tags**:
+fixture as well as the weapon gallery.
+
+A third fixture set, `-fixture level-up-classes`, creates one level-1 character
+per class at 300 experience, driven from `ListClasses` rather than from
+per-class code, so every class can be walked through the real level-up screen.
+It is deliberately not in the default set. Two engine findings came out of it,
+both recorded with the defect in `internal/integration/character`:
+
+- **A ranger cannot be created at all, by any client.** rpg-toolkit's
+  `getClassSubmissions` builds the fighting-style submission with the
+  *fighter's* choice id (its own comment says "Would need mapping for other
+  classes"), so `ranger-fighting-style` never reads as answered,
+  `IsClassComplete` is false forever and the draft cannot be finalized.
+- **Expertise is offered as all eighteen skills.** The toolkit's
+  `ExpertiseRequirement` is `{ID, Count, Label}` and names no options, so this
+  repo's catalog converter fills the wire with `skills.List()`. The engine then
+  refuses any skill the character is not proficient in, so most of the offered
+  menu is illegal. A client can only answer by intersecting with the skills it
+  picked in the same submission.
+
+**Draft until `rulebooks/dnd5e` tags**:
 this branch builds on a pseudo-version of rpg-toolkit#1781 and the
 rpg-api-protos generated head `654b73a1` (v0.1.193).
 

@@ -813,6 +813,7 @@ func (s *galleryFakeStore) Update(_ context.Context, input characterrepo.UpdateI
 
 type galleryFakeClient struct {
 	seedStore                  *seedFakeStore
+	classCatalog               []*dnd5ev1alpha1.ClassInfo
 	calls                      []string
 	authHeaders                []string
 	listResponses              []*dnd5ev1alpha1.ListCharactersResponse
@@ -855,6 +856,11 @@ func (c *galleryFakeClient) ListCharacters(ctx context.Context, _ *dnd5ev1alpha1
 	response := c.listResponses[0]
 	c.listResponses = c.listResponses[1:]
 	return response, nil
+}
+
+func (c *galleryFakeClient) ListClasses(ctx context.Context, _ *dnd5ev1alpha1.ListClassesRequest, _ ...grpc.CallOption) (*dnd5ev1alpha1.ListClassesResponse, error) {
+	c.record(ctx, "ListClasses")
+	return &dnd5ev1alpha1.ListClassesResponse{Classes: c.classCatalog}, nil
 }
 
 func (c *galleryFakeClient) DeleteCharacter(ctx context.Context, request *dnd5ev1alpha1.DeleteCharacterRequest, _ ...grpc.CallOption) (*dnd5ev1alpha1.DeleteCharacterResponse, error) {
