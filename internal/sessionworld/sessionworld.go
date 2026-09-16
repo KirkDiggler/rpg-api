@@ -137,6 +137,24 @@ type Monster struct {
 	// the package that threw it away.
 	Targeting string
 
+	// Actions is what this monster can do, in the author's order
+	// (`place[].actions`, rpg-project#448). Nil when the author armed it
+	// with nothing, which leaves the stat block's own arms alone.
+	//
+	// UNLIKE Targeting ABOVE, THIS ONE CROSSES. session.SpawnInput has a
+	// field for it, so the launch forwards it verbatim and a placement's
+	// weapons reach the live monster — which is the whole point of the
+	// slice: two goblins in one room, one with a blade for when you close
+	// and one without, and no Go between the file and the board.
+	//
+	// WEAPON REFS, `dnd5e:weapons:shortbow`, VERBATIM AND IN ORDER. Both
+	// drivers take the first action whose target is in reach, so the order
+	// is the instruction rather than a list to tidy: nothing here sorts it,
+	// deduplicates it, or reads it. Whether the catalog has a named weapon
+	// is the rulebook's question, answered at spawn, which refuses the
+	// launch by name rather than placing a monster that cannot act.
+	Actions []string
+
 	// PlacementID is the author's own name for this placement
 	// (`place[].id`), or empty when they gave it none (rpg-project#368,
 	// design P2).
@@ -270,7 +288,7 @@ func Compile(raw []byte) (*Dungeon, error) {
 		claimed[id] = i
 		monsters[i] = Monster{
 			Ref: m.Ref, MemberID: id, At: cellOf(orientation, m.At),
-			Boss: m.Boss, Targeting: m.Targeting,
+			Boss: m.Boss, Targeting: m.Targeting, Actions: m.Actions,
 			PlacementID: m.ID, Holds: m.Holds, Faction: m.Faction,
 			Arrives: m.Arrives,
 		}

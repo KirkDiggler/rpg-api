@@ -2,10 +2,25 @@
 # monster per chamber, each thinking with a different word from the mind
 # vocabulary, so a walk can meet each mind alone:
 #
-#   - the ENTRANCE holds a goblin, a COWARD: no grudge, it keeps its room and
-#     steps away from whatever walks up to it;
+#   - the ENTRANCE holds TWO goblins, both COWARDS: no grudge, each keeps its
+#     room and steps away from whatever walks up to it. They think the same
+#     and are armed differently (rpg-project#448), which is the second thing
+#     this file is now for: the one at [4,5] carries a scimitar AND a
+#     shortbow, the one at [4,2] carries the bow alone. Both back away and
+#     shoot while they have room. Corner the first and it SWINGS, because its
+#     placement lists the blade before the bow and a driver takes the first
+#     action whose target is in reach. Corner the second and it shoots you
+#     POINT BLANK, because nothing it carries says it cannot and that is the
+#     author's choice showing on the board. Neither one is a new stat block:
+#     the same `dnd5e:monsters:goblin` twice, with a different `actions:`
+#     list;
 #   - the HALL holds a thug, a BERSERKER: shoot it and it comes for you, and
-#     nothing you swap into your hands lets you off;
+#     nothing you swap into your hands lets you off. Note for walk 5: the
+#     thug now carries the heavy crossbow its SRD stat block always listed
+#     (rpg-project#448), so from across the hall it SHOOTS where walk 4 saw
+#     it walk. Its mace is still listed first, so it swings the moment you
+#     are in reach, and the mind is untouched — what changed is what it is
+#     holding, not what it wants;
 #   - the TOMB holds the skeleton, the RETALIATOR and the boss: it turns on a
 #     shooter it can see holding something ranged, and lets go the moment the
 #     bow goes away.
@@ -107,7 +122,10 @@ place:
   - { ref: "dnd5e:props:pillar", at: [12,5], blocks_movement: true, blocks_los: true }
   - { ref: "dnd5e:props:torch-ornate", at: [10,1], blocks_movement: false, blocks_los: false }
   - { ref: "dnd5e:props:bone-pile", at: [14,6], blocks_movement: false, blocks_los: false }
-  - { ref: "dnd5e:monsters:goblin", at: [4,5], targeting: closest }
+  - { ref: "dnd5e:monsters:goblin", at: [4,5], targeting: closest,
+      actions: ["dnd5e:weapons:scimitar", "dnd5e:weapons:shortbow"] }
+  - { ref: "dnd5e:monsters:goblin", at: [4,2], targeting: closest,
+      actions: ["dnd5e:weapons:shortbow"] }
   - { ref: "dnd5e:monsters:thug", at: [11,3], targeting: closest }
   - { ref: "dnd5e:props:coffin", at: [22,3], blocks_movement: true, blocks_los: false }
   - { ref: "dnd5e:props:altar", at: [25,3], blocks_movement: true, blocks_los: false }
