@@ -14,6 +14,8 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+
+	"github.com/KirkDiggler/rpg-api/internal/testsupport/levelfixture"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
@@ -405,6 +407,7 @@ func TestAcceptance_SecondWindActivationEventsAndHealingCrossTheWire(t *testing.
 	// two d20s and then returns face 6 for Second Wind's d10.
 	fighter := armedFighter("alice", "player-alice")
 	fighter.Level = 1
+	fighter.Levels = levelfixture.Synthetic(classes.Fighter, 1)
 	fighter.HitPoints = 8
 	fighter.MaxHitPoints = 10
 	fighter.Features = []json.RawMessage{json.RawMessage(

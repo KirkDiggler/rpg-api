@@ -19,6 +19,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	orchcharacter "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
+	"github.com/KirkDiggler/rpg-api/internal/testsupport/levelfixture"
 	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -88,6 +89,7 @@ func (s *HandlerTestSuite) fighterCharacterEntity() *entities.Character {
 			PlayerID:         s.testPlayerID,
 			Name:             "Test Fighter",
 			Level:            3,
+			Levels:           levelfixture.Synthetic(classes.Fighter, 3),
 			RaceID:           races.Human,
 			ClassID:          classes.Fighter,
 			ProficiencyBonus: 2,

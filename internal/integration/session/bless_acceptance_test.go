@@ -11,6 +11,8 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+
+	"github.com/KirkDiggler/rpg-api/internal/testsupport/levelfixture"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
@@ -30,7 +32,7 @@ func clericCastScene(t *testing.T) (*acceptanceHarness, context.Context) {
 	stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: "bella"})
 	require.NoError(t, err)
 	sheet := stored.Character.Data
-	sheet.ClassID = classes.Cleric
+	levelfixture.Reclass(sheet, classes.Cleric)
 	sheet.Features = nil
 	sheet.AbilityScores[abilities.WIS] = 16
 	sheet.KnownSpells = []string{"dnd5e:spells:bless", "dnd5e:spells:cure-wounds", "dnd5e:spells:healing-word"}
