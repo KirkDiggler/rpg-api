@@ -126,7 +126,24 @@ place:
       actions: ["dnd5e:weapons:scimitar", "dnd5e:weapons:shortbow"] }
   - { ref: "dnd5e:monsters:goblin", at: [4,2], targeting: closest,
       actions: ["dnd5e:weapons:shortbow"] }
-  - { ref: "dnd5e:monsters:thug", at: [11,3], targeting: closest }
+  # The ONE authored `intimidate:` in this file, so the key is exercised
+  # beside the derived default (rpg-project#454). The two goblins price
+  # nothing, which is what a threat against them is FOR on the walk: absent
+  # means derived, never ungated, so each is checked against its own passive
+  # Insight — 10 + a goblin's -1 Wisdom modifier, DC 9. The thug's own
+  # derived number would be 10; 12 is the author saying this one is harder
+  # to lean on than its stat block suggests, which is the whole point of
+  # letting them price it.
+  #
+  # DOES NOT REACH THE RUN YET, and it is written here anyway rather than
+  # left for later. session.SpawnInput has no field for it on the pinned
+  # toolkit branch, so the launch has nothing to forward and every threat —
+  # the thug's included — still resolves against the derived DC. The line is
+  # carried end to end on this side already (sessionworld.Monster.Intimidate)
+  # and the missing link is one field on SpawnInput plus one line in the
+  # launch (rpg-toolkit#1790). Read DC 10 on the walk until it lands.
+  - { ref: "dnd5e:monsters:thug", at: [11,3], targeting: closest,
+      intimidate: [{ ability: intimidation, dc: 12 }] }
   - { ref: "dnd5e:props:coffin", at: [22,3], blocks_movement: true, blocks_los: false }
   - { ref: "dnd5e:props:altar", at: [25,3], blocks_movement: true, blocks_los: false }
   - { ref: "dnd5e:props:statue-reaper", at: [17,1], blocks_movement: true, blocks_los: true }

@@ -234,6 +234,41 @@ type Monster struct {
 	// it would spawn a reserved monster as PLACED -- three zombies standing
 	// at the gate from frame one -- which is what scene A4 exists to catch.
 	Arrives tkencounter.Trigger
+
+	// Intimidate is the author's priced check for frightening this monster
+	// (`place[].intimidate`, rpg-project#454): the same approach list a lock
+	// carries, one entry per route through. Nil when the author priced none,
+	// which is the ordinary case and means DERIVED, not ungated -- the
+	// rulebook rolls Intimidation against the stat block's own passive
+	// Insight (goblin 9, thug 10).
+	//
+	// CARRIED AND NOT YET FORWARDED, exactly as Targeting above is, and for
+	// the same reason stated there: session.SpawnInput has no field for it,
+	// so it cannot cross the seam today even though both sides know it. The
+	// composition end is built -- encounter.MemberInput.Intimidate exists
+	// and session.Manager.Intimidate reads encounter.Member.Intimidate at
+	// roll time -- and the missing link is exactly one field on SpawnInput
+	// plus one line in session's own Join call (rpg-toolkit#1790).
+	//
+	// UNTIL THEN AN AUTHORED intimidate: IS A NUMBER THAT DOES NOT REACH THE
+	// RUN. It compiles, it validates, and every threat still resolves
+	// against the derived DC. Keeping the fact here rather than dropping it
+	// at the compile is what makes that gap visible at the seam that has it,
+	// instead of invisible in the package that threw it away; the day the
+	// SDK field lands, the launch forwards this the way it forwards Actions
+	// and the authored number starts winning with no change to the file.
+	Intimidate []tkencounter.CheckApproach
+
+	// OnIntimidated is the world fact every witness learns when a threat
+	// against this monster lands (`place[].on.intimidated.fact`,
+	// rpg-project#454 decision 7), as the COMPILED fact id dungeonspec
+	// minted. Empty when the author wrote no `on:` -- the ordinary case,
+	// meaning a cowed monster changes nobody's mind about anything outside
+	// the fight.
+	//
+	// CARRIED AND NOT YET FORWARDED, for Intimidate's reason directly above:
+	// it is the other half of the same missing SpawnInput field.
+	OnIntimidated string
 }
 
 // Compile turns one authored dungeon file into a [Dungeon].
@@ -291,6 +326,13 @@ func Compile(raw []byte) (*Dungeon, error) {
 			Boss: m.Boss, Targeting: m.Targeting, Actions: m.Actions,
 			PlacementID: m.ID, Holds: m.Holds, Faction: m.Faction,
 			Arrives: m.Arrives,
+			// The shenanigan facts (rpg-project#454), read off the
+			// compiler's own keyed map rather than flattened there: the
+			// composition takes one fact per verb as its own field, and the
+			// second shenanigan adds a key beside `intimidated` instead of
+			// breaking this type. Absent means absent -- no defaulting here.
+			Intimidate:    m.Intimidate,
+			OnIntimidated: m.On[tkdungeonspec.OnIntimidated],
 		}
 	}
 

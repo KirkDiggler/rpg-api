@@ -93,6 +93,12 @@ func TestVerbToProto(t *testing.T) {
 	// client can act on while the fight waits -- would arrive UNSPECIFIED,
 	// and the panel would have nothing to draw but a dead table.
 	require.Equal(t, sessionpb.Verb_VERB_REACT, verbToProto(sdk.VerbReact))
+	// The first shenanigan (rpg-project#454). Afford emits this row on the
+	// turn clock unconditionally, the way it emits VerbMove, so unmapped it
+	// would not be one wrong label but the whole Intimidate affordance
+	// missing: a client drops a verb it cannot name rather than drawing it
+	// wrong.
+	require.Equal(t, sessionpb.Verb_VERB_INTIMIDATE, verbToProto(sdk.VerbIntimidate))
 	require.Equal(t, sessionpb.Verb_VERB_UNSPECIFIED, verbToProto(sdk.Verb("bogus")))
 }
 

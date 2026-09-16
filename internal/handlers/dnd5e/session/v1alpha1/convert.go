@@ -1517,6 +1517,14 @@ func verbToProto(v sdk.Verb) sessionpb.Verb {
 	// showing it wrong. That is the whole panel this slice exists to fill.
 	case sdk.VerbCast:
 		return sessionpb.Verb_VERB_CAST
+	// VerbIntimidate (rpg-project#454). LOAD-BEARING FOR THE DOCK, not a
+	// completeness sweep: Afford emits a VerbIntimidate declaration on the
+	// turn clock unconditionally, the way it emits VerbMove, so leaving it
+	// unmapped would label every threat a member can make VERB_UNSPECIFIED
+	// -- and a client drops a verb it cannot name rather than showing it
+	// wrong, so the row would simply never appear.
+	case sdk.VerbIntimidate:
+		return sessionpb.Verb_VERB_INTIMIDATE
 	default:
 		return sessionpb.Verb_VERB_UNSPECIFIED
 	}
