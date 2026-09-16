@@ -1,0 +1,25 @@
+name: release-gate
+
+# Production only accepts release pull requests headed at dev.
+# This job is a required status check on the main ruleset, so a
+# pull request from any other branch fails here and cannot merge.
+on:
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  release-gate:
+    name: release-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the head branch to be dev
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [ "$HEAD_REF" != "dev" ]; then
+            echo "::error::Pull requests into main must be headed at dev (release only). Got: $HEAD_REF"
+            exit 1
+          fi
+          echo "Release pull request from dev: gate passed."
