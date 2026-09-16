@@ -155,7 +155,7 @@ func (o *Orchestrator) LevelUp(ctx context.Context, input *LevelUpInput) (*Level
 		Character: &entities.Character{Data: char.ToData()},
 	})
 	if updateErr != nil {
-		return nil, fmt.Errorf("failed to save levelled character: %w", updateErr)
+		return nil, fmt.Errorf("failed to save leveled character: %w", updateErr)
 	}
 	if updated == nil || updated.Character == nil || updated.Character.Data == nil {
 		return nil, characterDataUnavailable(errors.New("character repository returned no character after update"))

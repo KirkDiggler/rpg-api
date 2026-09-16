@@ -218,7 +218,7 @@ func (s *SandboxSeedSuite) TestSandboxSeed_ResetsThreeIdentitiesThroughRPCs() {
 }
 
 // TestSandboxSeed_LevelUpFixturesHoldTheLevelTwoThreshold is design done-when 8
-// end to end: "Seeding a levelled character means seeding experience on the
+// end to end: "Seeding a leveled character means seeding experience on the
 // persisted sheet, not writing a level and not calling anything."
 //
 // Both fixtures are LEVEL 1 holding 300 experience. That gap -- entitled to 2,

@@ -48,7 +48,7 @@ const (
 	// ?playerId=level-up-fighter lands on the character the walk is about.
 	//
 	// They are separate identities rather than experience written onto the
-	// three above, because a fixture that is ALWAYS one click from levelling
+	// three above, because a fixture that is ALWAYS one click from leveling
 	// is the wrong default for every other walk: done-when 7 is "a freshly
 	// created character shows 0 of 300 and no prompt -- the true state of a
 	// game that awards no experience yet", and the sandbox fighter is that

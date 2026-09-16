@@ -284,7 +284,7 @@ func (s *LevelUpTestSuite) TestLevelUp_BardLearnsTheSpellItChose() {
 	s.Equal(2, out.Gained.CharacterLevel)
 	s.Equal(2, out.Entry.Level)
 
-	s.Require().NotNil(stored, "the levelled sheet must reach the repository")
+	s.Require().NotNil(stored, "the leveled sheet must reach the repository")
 	s.Equal(2, stored.Level)
 	s.Len(stored.Levels, 2, "an append-only record, two entries deep")
 	s.Len(stored.KnownSpells, 5, "four known, one chosen")

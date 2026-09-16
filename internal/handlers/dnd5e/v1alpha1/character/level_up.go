@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 
-	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
@@ -15,6 +14,8 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/proficiencies"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+
+	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
@@ -35,7 +36,7 @@ func (h *Handler) GetNextLevel(
 	if req.GetCharacterId() == "" {
 		return nil, apierr.ToGRPCError(apierr.InvalidArgument("character_id is required"))
 	}
-	if _, err := h.verifyCallerOwnsCharacter(ctx, req.GetCharacterId()); err != nil {
+	if err := h.verifyCallerOwnsCharacter(ctx, req.GetCharacterId()); err != nil {
 		return nil, err
 	}
 
@@ -78,7 +79,7 @@ func (h *Handler) LevelUp(
 		return nil, err
 	}
 
-	if _, ownErr := h.verifyCallerOwnsCharacter(ctx, req.GetCharacterId()); ownErr != nil {
+	if ownErr := h.verifyCallerOwnsCharacter(ctx, req.GetCharacterId()); ownErr != nil {
 		return nil, ownErr
 	}
 
@@ -126,13 +127,15 @@ func (h *Handler) LevelUp(
 // This is a second copy of that gate rather than a shared one because the two
 // handlers speak different proto packages and hold different service
 // references; the behavior is what has to match, and the test asserts that.
-func (h *Handler) verifyCallerOwnsCharacter(
-	ctx context.Context,
-	characterID string,
-) (*toolkitchar.Data, error) {
+//
+// It returns only an error. The v2 gate hands its caller the loaded sheet
+// because that handler projects it; both RPCs here go on to call the
+// orchestrator, which reads the character itself, so returning the data would
+// invite a second, older copy of it into the request.
+func (h *Handler) verifyCallerOwnsCharacter(ctx context.Context, characterID string) error {
 	playerID := auth.GetPlayerID(ctx)
 	if playerID == "" {
-		return nil, apierr.ToGRPCError(apierr.Unauthenticated("player not authenticated"))
+		return apierr.ToGRPCError(apierr.Unauthenticated("player not authenticated"))
 	}
 
 	out, err := h.characterService.GetCharacter(ctx, &character.GetCharacterInput{
@@ -140,16 +143,16 @@ func (h *Handler) verifyCallerOwnsCharacter(
 	})
 	if err != nil {
 		if apierr.IsNotFound(err) {
-			return nil, apierr.ToGRPCError(notFoundCharacter(characterID))
+			return apierr.ToGRPCError(notFoundCharacter(characterID))
 		}
-		return nil, apierr.ToGRPCError(err)
+		return apierr.ToGRPCError(err)
 	}
 	if out == nil || out.Character == nil || out.Character.Data == nil ||
 		out.Character.Data.PlayerID != playerID {
-		return nil, apierr.ToGRPCError(notFoundCharacter(characterID))
+		return apierr.ToGRPCError(notFoundCharacter(characterID))
 	}
 
-	return out.Character.Data, nil
+	return nil
 }
 
 // notFoundCharacter is the ONE NOT_FOUND the gate above ever returns, for
