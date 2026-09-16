@@ -52,11 +52,14 @@ both recorded with the defect in `internal/integration/character`:
   menu is illegal. A client can only answer by intersecting with the skills it
   picked in the same submission.
 
-**Draft until `rulebooks/dnd5e/session` tags**: `rulebooks/dnd5e` is on the
-released **v0.175.0**; the one remaining pseudo-version is
-`rulebooks/dnd5e/session`, pending rpg-toolkit#1787. Protos are the generated
-head `654b73a1` (v0.1.193), and `rulebooks/dnd5e/resolution` is on its released
-v0.50.0.
+**Every toolkit pin is a released tag.** `rulebooks/dnd5e` v0.175.0,
+`rulebooks/dnd5e/session` v0.91.0 (rpg-toolkit#1787, merged), and
+`rulebooks/dnd5e/resolution` v0.50.0. No toolkit pseudo-version remains, so
+this is no longer a draft on an unreleased engine.
+
+Protos stay on the generated-branch head `654b73a1` (v0.1.193), which is how
+this repo consumes them by design rather than a pin awaiting a tag — see
+"Proto Updates" in `CLAUDE.md`.
 
 The expertise intersection above is tracked as **rpg-toolkit#1794**: the
 options belong on the character-aware next-level view, and closing it deletes
