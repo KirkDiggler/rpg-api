@@ -146,6 +146,21 @@ func (mr *MockServiceMockRecorder) GetDraft(ctx, input any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDraft", reflect.TypeOf((*MockService)(nil).GetDraft), ctx, input)
 }
 
+// GetNextLevel mocks base method.
+func (m *MockService) GetNextLevel(ctx context.Context, input *character.GetNextLevelInput) (*character.GetNextLevelOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetNextLevel", ctx, input)
+	ret0, _ := ret[0].(*character.GetNextLevelOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetNextLevel indicates an expected call of GetNextLevel.
+func (mr *MockServiceMockRecorder) GetNextLevel(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNextLevel", reflect.TypeOf((*MockService)(nil).GetNextLevel), ctx, input)
+}
+
 // GetRequirements mocks base method.
 func (m *MockService) GetRequirements(ctx context.Context, input *character.GetRequirementsInput) (*character.GetRequirementsOutput, error) {
 	m.ctrl.T.Helper()
@@ -159,6 +174,21 @@ func (m *MockService) GetRequirements(ctx context.Context, input *character.GetR
 func (mr *MockServiceMockRecorder) GetRequirements(ctx, input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRequirements", reflect.TypeOf((*MockService)(nil).GetRequirements), ctx, input)
+}
+
+// LevelUp mocks base method.
+func (m *MockService) LevelUp(ctx context.Context, input *character.LevelUpInput) (*character.LevelUpOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LevelUp", ctx, input)
+	ret0, _ := ret[0].(*character.LevelUpOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LevelUp indicates an expected call of LevelUp.
+func (mr *MockServiceMockRecorder) LevelUp(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LevelUp", reflect.TypeOf((*MockService)(nil).LevelUp), ctx, input)
 }
 
 // ListBackgrounds mocks base method.

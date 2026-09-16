@@ -51,6 +51,12 @@ type Service interface {
 	EquipItem(ctx context.Context, input *EquipItemInput) (*EquipItemOutput, error)
 	UnequipItem(ctx context.Context, input *UnequipItemInput) (*UnequipItemOutput, error)
 
+	// Advancement. One read that describes the next level and one write that
+	// takes it -- there is no draft between them, because a level is one
+	// atomic call (design R4.16).
+	GetNextLevel(ctx context.Context, input *GetNextLevelInput) (*GetNextLevelOutput, error)
+	LevelUp(ctx context.Context, input *LevelUpInput) (*LevelUpOutput, error)
+
 	// Data loading for UI
 	ListRaces(ctx context.Context, input *ListRacesInput) (*ListRacesOutput, error)
 	ListClasses(ctx context.Context, input *ListClassesInput) (*ListClassesOutput, error)
@@ -293,6 +299,67 @@ type EquipItemOutput struct {
 	PreviousItemID string              // Item that was previously in the slot, if any
 	Character      *entities.Character // Actual persisted post-equip entity for legacy conversion
 	View           *View               // Complete detached post-equip projection
+}
+
+// GetNextLevelInput names the character whose next level to describe.
+type GetNextLevelInput struct {
+	CharacterID string
+}
+
+// GetNextLevelOutput is everything the level-up screen needs to be either a
+// form or a confirmation, with no class in it (design R4.13, R4.14).
+type GetNextLevelOutput struct {
+	// CharacterLevel is the level the sheet would read afterwards.
+	CharacterLevel int
+
+	// ClassID is the class the level is taken in: the character's own, until
+	// multiclassing exists.
+	ClassID classes.Class
+
+	// ClassLevel is the level in that class, which is what indexes the tables
+	// below. It equals CharacterLevel while nobody multiclasses, and saying
+	// both out loud is what keeps the day they diverge from being a silent
+	// wrong answer.
+	ClassLevel int
+
+	// Requirements are the choices this level asks for and did not ask for
+	// before it. Empty for a level that asks nothing, which is a confirmation
+	// rather than a form.
+	Requirements *choices.Requirements
+
+	// FeatureRefs are the canonical refs of the features the level grants,
+	// e.g. "dnd5e:features:action_surge".
+	FeatureRefs []string
+
+	// HitDice is the class's hit die, the number the hit point method is
+	// applied to.
+	HitDice int
+}
+
+// LevelUpInput is the level-up itself: one call, atomic, no draft.
+type LevelUpInput struct {
+	CharacterID string
+
+	// HitPointMethod is rolled or average. The level-1-only "max" is not on
+	// the wire and Advance refuses it.
+	HitPointMethod character.HitPointMethod
+
+	// Choices are the selections GetNextLevel asked for, and nothing else. The
+	// toolkit validates them; nothing here does (R4.15).
+	Choices []choices.ChoiceData
+}
+
+// LevelUpOutput is the persisted post-level sheet and what the level brought.
+type LevelUpOutput struct {
+	// Character is the actual persisted post-level entity.
+	Character *entities.Character
+
+	// Entry is the record entry that was appended -- the level's INPUTS, which
+	// are what is stored (rung-1 design §7.1).
+	Entry character.LevelEntry
+
+	// Gained is what the level added, derived for display and never read back.
+	Gained character.GainedAtLevel
 }
 
 // UnequipItemInput unequips an item from a slot

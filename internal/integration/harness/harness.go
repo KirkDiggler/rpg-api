@@ -48,6 +48,7 @@ import (
 	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 	sessionpresentationrepo "github.com/KirkDiggler/rpg-api/internal/repositories/sessionpresentation"
+	tkdice "github.com/KirkDiggler/rpg-toolkit/dice"
 )
 
 const bufSize = 1024 * 1024
@@ -274,6 +275,10 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 		IDGenerator:        idgen.NewUUID("char"),
 		DraftIDGenerator:   idgen.NewUUID("draft"),
 		AppearanceNotifier: lobbyorch.NewAppearanceNotifier(ts.LobbyRepo, sessOrch.Manager),
+		// The harness runs the real stack, so it wires the real roller. A test
+		// that needs a reproducible level substitutes a fixed one at the
+		// orchestrator, not here.
+		Roller: &tkdice.CryptoRoller{},
 	})
 	if err != nil {
 		return fmt.Errorf("character service: %w", err)

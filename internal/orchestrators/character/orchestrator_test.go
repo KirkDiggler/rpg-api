@@ -87,6 +87,9 @@ func (s *OrchestratorTestSuite) SetupTest() {
 		// left nil — the capability is required precisely so that "nobody
 		// is told" is a choice somebody wrote down.
 		AppearanceNotifier: NoAppearanceNotifier{},
+		// Same reason, same law. Nothing in this suite rolls, and a fixed
+		// roller says that rather than leaving the orchestrator to pick.
+		Roller: fixedRoller(1),
 	}
 
 	var err error
@@ -298,6 +301,20 @@ func (s *OrchestratorTestSuite) TestNew_InvalidConfig() {
 				DraftRepo:   s.mockDraftRepo,
 				DiceService: s.mockDiceService,
 				IDGenerator: s.mockIDGen,
+			},
+		},
+		{
+			// A nil roller is refused rather than filled in. Defaulting it
+			// would put entropy nobody chose inside the one call whose
+			// result is written to the sheet forever.
+			name: "missing dice roller",
+			config: &Config{
+				DraftRepo:          s.mockDraftRepo,
+				CharacterRepo:      s.mockCharacterRepo,
+				DiceService:        s.mockDiceService,
+				IDGenerator:        s.mockIDGen,
+				DraftIDGenerator:   s.mockDraftIDGen,
+				AppearanceNotifier: NoAppearanceNotifier{},
 			},
 		},
 	}

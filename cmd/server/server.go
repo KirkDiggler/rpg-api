@@ -30,6 +30,10 @@ import (
 	grpc_logging "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 
+	tkdice "github.com/KirkDiggler/rpg-toolkit/dice"
+	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 	authoringv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/authoring/v1alpha1"
 	lobbyv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
@@ -37,8 +41,6 @@ import (
 	sessionv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	characterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
-	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
@@ -239,6 +241,10 @@ func runServer(_ *cobra.Command, _ []string) error {
 		// An equip changes what watchers can SEE, and the lobby is the only
 		// index from a player to the encounter they are standing in.
 		AppearanceNotifier: lobbyorch.NewAppearanceNotifier(lobbyRepo, sessionOrch.Manager),
+		// Rolled hit points on level-up. Named here rather than defaulted
+		// inside the orchestrator: the host supplies entropy, the toolkit
+		// decides what a die means.
+		Roller: &tkdice.CryptoRoller{},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create character service: %w", err)
