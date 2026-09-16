@@ -72,7 +72,6 @@ func (s *EquipItemTestSuite) SetupTest() {
 		IDGenerator:        idgenmock.NewMockGenerator(s.ctrl),
 		DraftIDGenerator:   idgenmock.NewMockGenerator(s.ctrl),
 		AppearanceNotifier: s.notified,
-		Roller:             fixedRoller(1),
 	})
 	s.Require().NoError(err)
 }

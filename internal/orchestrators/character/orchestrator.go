@@ -7,13 +7,6 @@ import (
 	"maps"
 	"strings"
 
-	"github.com/KirkDiggler/rpg-api/internal/apierr"
-	"github.com/KirkDiggler/rpg-api/internal/entities"
-	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
-	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
-	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
-	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
-	tkdice "github.com/KirkDiggler/rpg-toolkit/dice"
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	"github.com/KirkDiggler/rpg-toolkit/rpgerr"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
@@ -23,6 +16,13 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells"
+
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
+	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 )
 
 // Config holds dependencies for the orchestrator
@@ -41,24 +41,6 @@ type Config struct {
 	// encounters supplies one that does nothing, and says so by supplying
 	// it.
 	AppearanceNotifier AppearanceNotifier
-
-	// Roller is the toolkit's source of randomness for a rolled hit point
-	// gain on level-up. REQUIRED, and never defaulted here.
-	//
-	// SUPPLIED, NEVER DEFAULTED. It is the law the session orchestrator's
-	// New states for the same capability: "wiring every session.Config
-	// capability explicitly ... and a crypto-secure dice.CryptoRoller as the
-	// SDK's Roller -- the host supplies entropy only, never turn order"
-	// (orchestrators/session/orchestrator.go). Production wires
-	// &tkdice.CryptoRoller{}; a test substitutes a fixed roller and gets a
-	// reproducible level. A nil defaulted here would be entropy nobody chose,
-	// hidden inside the one call whose result is written to the sheet
-	// forever.
-	//
-	// It is a source of FACES, not of hit points. The rule that turns a die
-	// into a gain lives in Character.Advance (design R4.3), which is why this
-	// is a Roller and not a number.
-	Roller tkdice.Roller
 }
 
 // Validate ensures all required dependencies are present
@@ -74,9 +56,6 @@ func (c *Config) Validate() error {
 	}
 	if c.AppearanceNotifier == nil {
 		return apierr.InvalidArgument("appearance notifier is required")
-	}
-	if c.Roller == nil {
-		return apierr.InvalidArgument("dice roller is required")
 	}
 	if c.IDGenerator == nil {
 		return apierr.InvalidArgument("ID generator is required")
@@ -96,7 +75,6 @@ type Orchestrator struct {
 	draftIDGen    idgen.Generator
 	projectLoaded projectLoadedCharacterFunc
 	appearance    AppearanceNotifier
-	roller        tkdice.Roller
 }
 
 // New creates a new character orchestrator
@@ -116,7 +94,6 @@ func New(cfg *Config) (*Orchestrator, error) {
 		draftIDGen:    cfg.DraftIDGenerator,
 		projectLoaded: projectLoadedCharacter,
 		appearance:    cfg.AppearanceNotifier,
-		roller:        cfg.Roller,
 	}, nil
 }
 

@@ -30,7 +30,6 @@ import (
 	grpc_logging "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 
-	tkdice "github.com/KirkDiggler/rpg-toolkit/dice"
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
@@ -241,10 +240,6 @@ func runServer(_ *cobra.Command, _ []string) error {
 		// An equip changes what watchers can SEE, and the lobby is the only
 		// index from a player to the encounter they are standing in.
 		AppearanceNotifier: lobbyorch.NewAppearanceNotifier(lobbyRepo, sessionOrch.Manager),
-		// Rolled hit points on level-up. Named here rather than defaulted
-		// inside the orchestrator: the host supplies entropy, the toolkit
-		// decides what a die means.
-		Roller: &tkdice.CryptoRoller{},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create character service: %w", err)
@@ -253,6 +248,11 @@ func runServer(_ *cobra.Command, _ []string) error {
 	// Initialize handlers
 	characterHandler, err := character2.NewHandler(&character2.HandlerConfig{
 		CharacterService: characterService,
+		// Advancement is the SDK's, not this service's (design R6.1). The
+		// character handler calls the session Manager for it and projects
+		// the answer; the same Manager already flows into the character
+		// service's AppearanceNotifier above, so it is built by here.
+		Sessions: sessionOrch.Manager,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create character handler: %w", err)

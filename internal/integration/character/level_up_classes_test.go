@@ -11,7 +11,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/integration/harness"
@@ -153,6 +155,24 @@ func (s *LevelUpClassesSuite) TestEveryClassIsCreatedFromItsOwnCatalogEntry() {
 	}
 }
 
+// classesWithNoOfferableLevelTwo are the classes whose level 2 the engine
+// REFUSES to describe, with the reason.
+//
+// This is not a bug and not a gap in this service. Druid and wizard both take
+// their subclass at level 2, and a subclass is the one requirement the engine
+// can ask for and cannot yet receive (rpg-toolkit#1767, named in the design's
+// §9 as a known blocker gating level 3 for everyone else). The SDK refuses the
+// whole level rather than handing back a form with a hole in it, which is the
+// honest answer: an offered level whose real question is missing would be a
+// screen that cannot be completed.
+//
+// Same both-directions property as blockedClasses: when #1767 lands these two
+// start answering and the assertions below demand this map be emptied.
+var classesWithNoOfferableLevelTwo = map[string]string{
+	"druid":  "takes its Circle at level 2; subclass-as-a-choice is rpg-toolkit#1767",
+	"wizard": "takes its Tradition at level 2; subclass-as-a-choice is rpg-toolkit#1767",
+}
+
 // TestEveryClassCanBeAskedForItsNextLevel walks the read half for all twelve:
 // the level-up screen has to be able to describe level 2 for every class, not
 // only the two the wave was designed around. A class whose level 2 asks nothing
@@ -175,8 +195,19 @@ func (s *LevelUpClassesSuite) TestEveryClassCanBeAskedForItsNextLevel() {
 				s.authCtx(seeded.Identity),
 				&dnd5ev1alpha1.GetNextLevelRequest{CharacterId: character.GetId()},
 			)
+			if why, blocked := classesWithNoOfferableLevelTwo[seeded.Class]; blocked {
+				require.Error(s.T(), nextErr,
+					"%s answered, so its level 2 IS offerable now (%s): remove it from "+
+						"classesWithNoOfferableLevelTwo", seeded.Class, why)
+				s.Equal(codes.FailedPrecondition, status.Code(nextErr),
+					"a level this build cannot describe is the character's situation, "+
+						"not a malformed request")
+				s.T().Logf("%s level 2: refused, %s", seeded.Class, why)
+				return
+			}
+
 			require.NoError(s.T(), nextErr, "%s cannot be asked what level 2 brings", seeded.Class)
-			s.Equal(int32(2), next.GetLevel())
+			s.Equal(int32(2), next.GetLevel(), "the level being taken, not the one held")
 			s.Positive(next.GetHitDie(), "a class with no hit die cannot roll for hit points")
 
 			// Report shape, not a pass/fail: what each class's level 2
