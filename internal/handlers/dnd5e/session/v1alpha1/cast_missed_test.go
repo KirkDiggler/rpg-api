@@ -9,11 +9,12 @@ import (
 	"go.uber.org/mock/gomock"
 	"google.golang.org/protobuf/proto"
 
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionmock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
 
 // The same mixed target sequence must survive live delivery and catch-up.

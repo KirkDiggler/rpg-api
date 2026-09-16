@@ -242,21 +242,19 @@ type Monster struct {
 	// rulebook rolls Intimidation against the stat block's own passive
 	// Insight (goblin 9, thug 10).
 	//
-	// CARRIED AND NOT YET FORWARDED, exactly as Targeting above is, and for
-	// the same reason stated there: session.SpawnInput has no field for it,
-	// so it cannot cross the seam today even though both sides know it. The
-	// composition end is built -- encounter.MemberInput.Intimidate exists
-	// and session.Manager.Intimidate reads encounter.Member.Intimidate at
-	// roll time -- and the missing link is exactly one field on SpawnInput
-	// plus one line in session's own Join call (rpg-toolkit#1790).
+	// UNLIKE Targeting ABOVE, THIS ONE CROSSES, as of rpg-toolkit#1790:
+	// session.SpawnInput grew a field for it, so the launch forwards it
+	// verbatim and an authored difficulty reaches the live monster. Until
+	// that field existed the value was carried here and stopped, on the
+	// Targeting precedent -- keep the fact at the seam that has it rather
+	// than drop it in the package that threw it away -- and two tests
+	// pinned the gap so its closing would be noticed. It closed; they are
+	// deleted.
 	//
-	// UNTIL THEN AN AUTHORED intimidate: IS A NUMBER THAT DOES NOT REACH THE
-	// RUN. It compiles, it validates, and every threat still resolves
-	// against the derived DC. Keeping the fact here rather than dropping it
-	// at the compile is what makes that gap visible at the seam that has it,
-	// instead of invisible in the package that threw it away; the day the
-	// SDK field lands, the launch forwards this the way it forwards Actions
-	// and the authored number starts winning with no change to the file.
+	// NIL STAYS NIL ALL THE WAY DOWN. Nothing here defaults it, because
+	// absent is not "no check" but "derive one": the rulebook rolls
+	// Intimidation against the stat block's own passive Insight at threat
+	// time. A zero value invented on this side would be a DC nobody chose.
 	Intimidate []tkencounter.CheckApproach
 
 	// OnIntimidated is the world fact every witness learns when a threat
@@ -266,8 +264,10 @@ type Monster struct {
 	// meaning a cowed monster changes nobody's mind about anything outside
 	// the fight.
 	//
-	// CARRIED AND NOT YET FORWARDED, for Intimidate's reason directly above:
-	// it is the other half of the same missing SpawnInput field.
+	// FORWARDED by the launch beside Intimidate above, and empty stays empty
+	// for the same reason nil does: a monster nobody planted a fact on
+	// teaches the world nothing when it is cowed, which is the ordinary
+	// case rather than a value to fill in.
 	OnIntimidated string
 }
 

@@ -27,12 +27,25 @@ const draftNotFoundMessage = "draft not found"
 // HandlerConfig holds dependencies for the handler
 type HandlerConfig struct {
 	CharacterService character.Service
+
+	// Sessions is the toolkit session SDK, which owns advancement.
+	//
+	// REQUIRED. Design R6.1, from Kirk's ruling: "we added the session package
+	// to act as the SDK to the API. So we should not need an orchestrator in
+	// API anymore and our level up should be contained in our session
+	// package." A nil one would mean a handler that can serve every other RPC
+	// and answers the two advancement ones with a panic, which is a worse
+	// failure than refusing to build.
+	Sessions Sessions
 }
 
 // Validate ensures all required dependencies are present
 func (c *HandlerConfig) Validate() error {
 	if c.CharacterService == nil {
 		return apierr.InvalidArgument("character service is required")
+	}
+	if c.Sessions == nil {
+		return apierr.InvalidArgument("session SDK is required")
 	}
 	return nil
 }
@@ -41,6 +54,7 @@ func (c *HandlerConfig) Validate() error {
 type Handler struct {
 	dnd5ev1alpha1.UnimplementedCharacterServiceServer
 	characterService character.Service
+	sessions         Sessions
 }
 
 // NewHandler creates a new handler with the given configuration
@@ -51,6 +65,7 @@ func NewHandler(cfg *HandlerConfig) (*Handler, error) {
 
 	return &Handler{
 		characterService: cfg.CharacterService,
+		sessions:         cfg.Sessions,
 	}, nil
 }
 

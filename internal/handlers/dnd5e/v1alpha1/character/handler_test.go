@@ -41,6 +41,7 @@ func (s *HandlerTestSuite) SetupTest() {
 
 	config := &HandlerConfig{
 		CharacterService: s.mockService,
+		Sessions:         &fakeSessions{},
 	}
 
 	var err error

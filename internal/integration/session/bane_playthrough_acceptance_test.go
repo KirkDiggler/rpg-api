@@ -34,7 +34,14 @@ const (
 
 func newCharacterCreationHandler(t *testing.T, h *acceptanceHarness) *characterhandler.Handler {
 	t.Helper()
-	handler, err := characterhandler.NewHandler(&characterhandler.HandlerConfig{CharacterService: newAcceptanceCharacterService(t, h)})
+	// The real Manager, which this harness already stands up. These
+	// playthroughs never level anyone, but the handler requires the SDK
+	// because two of its RPCs are pure calls into it, and a handler that
+	// builds without one would only fail later and further away.
+	handler, err := characterhandler.NewHandler(&characterhandler.HandlerConfig{
+		CharacterService: newAcceptanceCharacterService(t, h),
+		Sessions:         h.manager.Manager,
+	})
 	require.NoError(t, err)
 	return handler
 }

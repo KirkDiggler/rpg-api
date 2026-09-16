@@ -27,7 +27,7 @@ import (
 func TestUpdateAppearance_UnauthenticatedRefusesBeforeService(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	service := charactermock.NewMockService(ctrl)
-	handler, err := NewHandler(&HandlerConfig{CharacterService: service})
+	handler, err := NewHandler(&HandlerConfig{CharacterService: service, Sessions: &fakeSessions{}})
 	require.NoError(t, err)
 
 	response, err := handler.UpdateAppearance(context.Background(), &dnd5ev1alpha1.UpdateAppearanceRequest{
@@ -43,7 +43,7 @@ func TestUpdateAppearance_UnauthenticatedRefusesBeforeService(t *testing.T) {
 func TestUpdateAppearance_DelegatesCompleteAppearanceAndReturnsServiceDraft(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	service := charactermock.NewMockService(ctrl)
-	handler, err := NewHandler(&HandlerConfig{CharacterService: service})
+	handler, err := NewHandler(&HandlerConfig{CharacterService: service, Sessions: &fakeSessions{}})
 	require.NoError(t, err)
 
 	const draftID = "draft-appearance"
@@ -84,7 +84,7 @@ func TestUpdateAppearance_DelegatesCompleteAppearanceAndReturnsServiceDraft(t *t
 func TestUpdateAppearance_DelegatesMalformedSemanticsToToolkit(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	service := charactermock.NewMockService(ctrl)
-	handler, err := NewHandler(&HandlerConfig{CharacterService: service})
+	handler, err := NewHandler(&HandlerConfig{CharacterService: service, Sessions: &fakeSessions{}})
 	require.NoError(t, err)
 
 	const draftID = "draft-malformed"
@@ -130,7 +130,7 @@ func TestUpdateAppearance_DelegatesMalformedSemanticsToToolkit(t *testing.T) {
 func TestUpdateAppearance_UsesReturnedDraftWithoutRefetch(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	service := charactermock.NewMockService(ctrl)
-	handler, err := NewHandler(&HandlerConfig{CharacterService: service})
+	handler, err := NewHandler(&HandlerConfig{CharacterService: service, Sessions: &fakeSessions{}})
 	require.NoError(t, err)
 
 	const draftID = "draft-no-refetch"
@@ -162,7 +162,7 @@ func TestUpdateAppearance_RejectsOnlyTransportEnvelopeFailures(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			service := charactermock.NewMockService(ctrl)
-			handler, err := NewHandler(&HandlerConfig{CharacterService: service})
+			handler, err := NewHandler(&HandlerConfig{CharacterService: service, Sessions: &fakeSessions{}})
 			require.NoError(t, err)
 
 			response, err := handler.UpdateAppearance(auth.WithPlayerID(context.Background(), "player-1"), tt.req)
@@ -176,7 +176,7 @@ func TestUpdateAppearance_RejectsOnlyTransportEnvelopeFailures(t *testing.T) {
 func TestUpdateAppearance_NotFoundUsesLegacyMessage(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	service := charactermock.NewMockService(ctrl)
-	handler, err := NewHandler(&HandlerConfig{CharacterService: service})
+	handler, err := NewHandler(&HandlerConfig{CharacterService: service, Sessions: &fakeSessions{}})
 	require.NoError(t, err)
 
 	service.EXPECT().SetAppearance(gomock.Any(), gomock.Any()).Return(nil,
@@ -194,7 +194,7 @@ func TestUpdateAppearance_NotFoundUsesLegacyMessage(t *testing.T) {
 func TestUpdateAppearance_TranslatesToolkitErrors(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	service := charactermock.NewMockService(ctrl)
-	handler, err := NewHandler(&HandlerConfig{CharacterService: service})
+	handler, err := NewHandler(&HandlerConfig{CharacterService: service, Sessions: &fakeSessions{}})
 	require.NoError(t, err)
 
 	service.EXPECT().SetAppearance(gomock.Any(), gomock.Any()).Return(nil,

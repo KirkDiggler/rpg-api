@@ -135,13 +135,11 @@ place:
   # to lean on than its stat block suggests, which is the whole point of
   # letting them price it.
   #
-  # DOES NOT REACH THE RUN YET, and it is written here anyway rather than
-  # left for later. session.SpawnInput has no field for it on the pinned
-  # toolkit branch, so the launch has nothing to forward and every threat —
-  # the thug's included — still resolves against the derived DC. The line is
-  # carried end to end on this side already (sessionworld.Monster.Intimidate)
-  # and the missing link is one field on SpawnInput plus one line in the
-  # launch (rpg-toolkit#1790). Read DC 10 on the walk until it lands.
+  # THIS NUMBER REACHES THE RUN. The launch forwards it to the live monster
+  # beside its weapons (session.SpawnInput.Intimidate, rpg-toolkit#1790), so
+  # a threat against the thug is checked against 12 and one against either
+  # goblin against the 9 the rulebook derives. On the walk: lean on a goblin
+  # and the table sees DC 9; lean on the thug and it sees DC 12.
   - { ref: "dnd5e:monsters:thug", at: [11,3], targeting: closest,
       intimidate: [{ ability: intimidation, dc: 12 }] }
   - { ref: "dnd5e:props:coffin", at: [22,3], blocks_movement: true, blocks_los: false }

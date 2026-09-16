@@ -1,4 +1,4 @@
-package sessionv1alpha1
+package sdkerr
 
 import (
 	"fmt"
@@ -76,6 +76,12 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// below), a deliberate choice this table follows rather than
 		// pattern-matches.
 		{"ErrInvalidUnpackRequest", sdk.ErrInvalidUnpackRequest, codes.InvalidArgument},
+		// The level-up submission's own malformed-request sentinel: a choice
+		// id the level never asked for, a count that does not match, an option
+		// off the list. Its bucket was pinned by NOTHING until now -- moving
+		// it into FAILED_PRECONDITION passed the entire suite, integration
+		// included, because the sibling static test only proves a case exists.
+		{"ErrBadLevelRequest", sdk.ErrBadLevelRequest, codes.InvalidArgument},
 
 		// FAILED_PRECONDITION -- well-formed request, world state refuses it.
 		{"ErrInBubble", sdk.ErrInBubble, codes.FailedPrecondition},
@@ -105,6 +111,13 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// the same shape as ErrOutOfReach above.
 		{"ErrOutOfRange", sdk.ErrOutOfRange, codes.FailedPrecondition},
 		{"ErrNotVisible", sdk.ErrNotVisible, codes.FailedPrecondition},
+		// Intimidate's own refusal (rpg-project#454): the threatened member
+		// cannot see who is threatening them. FAILED_PRECONDITION like the
+		// rows around it, and DELIBERATELY NOT folded into ErrOutOfReach --
+		// reach is a distance and this is a sightline, so a client that read
+		// the two as one would tell the player to step closer when what they
+		// need is to be seen.
+		{"ErrUnwitnessed", sdk.ErrUnwitnessed, codes.FailedPrecondition},
 		// Holdings (rpg-project#368): Loot's and Hold's own state refusals,
 		// each reachable only about a body or prop the member can SEE --
 		// for anything they cannot, the composition collapses the refusal
@@ -186,6 +199,18 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// says locked (with the DC), a merely-shut one says shut. World
 		// state refusing, never a malformed request.
 		{"ErrDoorShut", sdk.ErrDoorShut, codes.FailedPrecondition},
+		// The other two advancement sentinels (rpg-project#452). Pinned HERE
+		// as well as through the handler and integration tests that exercise
+		// them, because those prove a code reaches a client down one PATH,
+		// while this proves the sentinel sits in the right BUCKET -- which is
+		// exactly what the sibling static test cannot see.
+		//
+		// The split is the request versus the situation. A malformed
+		// submission (ErrBadLevelRequest, above) can succeed if rebuilt. A
+		// level not earned or not describable cannot: only waiting, or content
+		// landing, changes the answer.
+		{"ErrCannotAdvance", sdk.ErrCannotAdvance, codes.FailedPrecondition},
+		{"ErrLevelNotOffered", sdk.ErrLevelNotOffered, codes.FailedPrecondition},
 		// Already in the pinned SDK before this feature (v0.21.4) and unmapped
 		// until this audit: this package's OWN adapter vocabulary going stale
 		// against itself, not a caller mistake.
@@ -214,7 +239,7 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 			// ("verb: %w") so the table is proven against errors.Is chains,
 			// not bare sentinel identity.
 			wrapped := fmt.Errorf("move: step 1: %w", tt.err)
-			got := statusError(wrapped)
+			got := StatusError(wrapped)
 			st, ok := status.FromError(got)
 			require.True(t, ok, "statusError must always return a gRPC status error")
 			require.Equal(t, tt.want, st.Code(), "sentinel %s", tt.name)
@@ -334,12 +359,12 @@ func TestStatusError_MapsEverySDKSentinel(t *testing.T) {
 
 func TestStatusError_UnmappedSentinelFallsBackToInternal(t *testing.T) {
 	unrecognized := fmt.Errorf("some future sentinel the table has not been updated for")
-	got := statusError(unrecognized)
+	got := StatusError(unrecognized)
 	st, ok := status.FromError(got)
 	require.True(t, ok)
 	require.Equal(t, codes.Internal, st.Code())
 }
 
 func TestStatusError_Nil_ReturnsNil(t *testing.T) {
-	require.NoError(t, statusError(nil))
+	require.NoError(t, StatusError(nil))
 }

@@ -282,6 +282,9 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	// Create handlers
 	characterHandler, err := character2.NewHandler(&character2.HandlerConfig{
 		CharacterService: characterService,
+		// The real Manager, so the harness exercises the SDK's own
+		// advancement verbs rather than a fake of them.
+		Sessions: sessOrch.Manager,
 	})
 	if err != nil {
 		return fmt.Errorf("character handler: %w", err)

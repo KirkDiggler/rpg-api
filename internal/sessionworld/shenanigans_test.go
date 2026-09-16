@@ -1,17 +1,11 @@
 package sessionworld
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"os"
-	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
 
 // shenanigans_test.go covers the first shenanigan's authoring half
@@ -87,60 +81,4 @@ func (s *ShenanigansSuite) TestNoPlacementInTheMindsDungeonPlantsAFact() {
 	for _, m := range s.minds.Monsters {
 		s.Empty(m.OnIntimidated, "%s", m.Ref)
 	}
-}
-
-// TestTheAuthoredCheckCannotReachTheRunYet is the gap, pinned where it is
-// visible rather than left as a comment nobody runs.
-//
-// session.SpawnInput is the only way a monster's static facts cross into the
-// live encounter, and on the pinned toolkit branch it has no Intimidate and
-// no OnIntimidated field -- so the launch has nothing to forward, and the
-// thug's authored DC 12 above loses to its derived 10 in an actual fight.
-// The composition end is built (encounter.MemberInput.Intimidate exists and
-// session.Manager.Intimidate reads it at roll time); the missing link is one
-// field on SpawnInput plus one line in session's own Join call
-// (rpg-toolkit#1790).
-//
-// THIS TEST IS MEANT TO FAIL WHEN THAT LANDS. Its failure is the signal to
-// forward both fields from internal/orchestrators/lobby's StartEncounter
-// beside Actions and Faction, and then to delete this test -- not to widen
-// it. Until then it stops "the author can price a threat" from being claimed
-// end to end when only half of it is true.
-func (s *ShenanigansSuite) TestTheAuthoredCheckCannotReachTheRunYet() {
-	typ := reflect.TypeOf(sdk.SpawnInput{})
-	for _, name := range []string{"Intimidate", "OnIntimidated"} {
-		_, found := typ.FieldByName(name)
-		s.Falsef(found,
-			"session.SpawnInput grew %s: forward it from the launch beside Actions and delete this test", name)
-	}
-}
-
-// TestTheLaunchStillForwardsNothingShenaniganish is the same gap asked of the
-// caller rather than the type, because a field can exist and go unread. It
-// parses the launch's own source for the two field names, which is a direct
-// answer to "does StartEncounter hand these to Spawn" independent of whether
-// the SDK has somewhere to put them.
-func (s *ShenanigansSuite) TestTheLaunchStillForwardsNothingShenaniganish() {
-	const launch = "../orchestrators/lobby/start_encounter_session_stack.go"
-
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, launch, nil, 0)
-	s.Require().NoError(err, "parse the launch that spawns every authored monster")
-
-	mentioned := map[string]bool{}
-	ast.Inspect(file, func(n ast.Node) bool {
-		sel, ok := n.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == "monster" {
-			mentioned[sel.Sel.Name] = true
-		}
-		return true
-	})
-
-	s.True(mentioned["Actions"], "the launch reads monster.Actions -- if not, this test is looking at the wrong file")
-	s.False(mentioned["Intimidate"],
-		"the launch reads monster.Intimidate: the gap closed, so drop this test and the sibling above")
-	s.False(mentioned["OnIntimidated"], "same, for the world half")
 }

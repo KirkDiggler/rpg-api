@@ -3,6 +3,8 @@ package sessionv1alpha1
 import (
 	"context"
 
+	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sdkerr"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -27,7 +29,7 @@ func (h *Handler) Interact(ctx context.Context, req *sessionpb.InteractRequest) 
 		Range:   int(req.GetRange()),
 	})
 	if err != nil {
-		return nil, statusError(err)
+		return nil, sdkerr.StatusError(err)
 	}
 
 	descriptor, err := worldNPCDescriptorToProto(out.Descriptor)

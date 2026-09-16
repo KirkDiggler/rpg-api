@@ -198,6 +198,34 @@ func TestIntimidate_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	requireCode(t, err, codes.FailedPrecondition)
 }
 
+// TestIntimidate_Unwitnessed_IsAWorldRefusalNotAnInternalError pins the
+// refusal this verb owns: the target cannot see who is threatening them.
+//
+// FAILED_PRECONDITION, AND THE CODE IS THE POINT. The threat is well-formed
+// and names two real members; it is the sightline between them that refuses
+// it. Internal would tell a client this server broke, and a dock that showed
+// "something went wrong" for an ordinary tactical fact is how a player stops
+// trusting the panel.
+//
+// SEPARATE FROM ErrOutOfReach ON PURPOSE. Reach is a distance and this is a
+// sightline: a threat has no distance cap at all, so the remedy is to be SEEN
+// -- step out from behind the pillar, open the door -- and never to step
+// closer. The toolkit split this onto its own sentinel for that reason
+// (rpg-toolkit#1790) and this test is what stops the two being folded back
+// together at this seam.
+func TestIntimidate_Unwitnessed_IsAWorldRefusalNotAnInternalError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Intimidate(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrUnwitnessed)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	_, err := h.Intimidate(ctx, &sessionpb.IntimidateRequest{
+		Session: "sess-1", Member: "char-1", Target: "goblin-2",
+	})
+	requireCode(t, err, codes.FailedPrecondition)
+}
+
 // TestIntimidate_ResponseCarriesNoVerdict makes the ruling mechanical at the
 // wire type itself rather than only at today's handler code: the message has
 // exactly four fields, and none of them is beaten, total or dc. A `beaten`
