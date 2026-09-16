@@ -1,4 +1,4 @@
-package sessionv1alpha1
+package sdkerr
 
 import (
 	"fmt"
@@ -214,7 +214,7 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 			// ("verb: %w") so the table is proven against errors.Is chains,
 			// not bare sentinel identity.
 			wrapped := fmt.Errorf("move: step 1: %w", tt.err)
-			got := statusError(wrapped)
+			got := StatusError(wrapped)
 			st, ok := status.FromError(got)
 			require.True(t, ok, "statusError must always return a gRPC status error")
 			require.Equal(t, tt.want, st.Code(), "sentinel %s", tt.name)
@@ -334,12 +334,12 @@ func TestStatusError_MapsEverySDKSentinel(t *testing.T) {
 
 func TestStatusError_UnmappedSentinelFallsBackToInternal(t *testing.T) {
 	unrecognized := fmt.Errorf("some future sentinel the table has not been updated for")
-	got := statusError(unrecognized)
+	got := StatusError(unrecognized)
 	st, ok := status.FromError(got)
 	require.True(t, ok)
 	require.Equal(t, codes.Internal, st.Code())
 }
 
 func TestStatusError_Nil_ReturnsNil(t *testing.T) {
-	require.NoError(t, statusError(nil))
+	require.NoError(t, StatusError(nil))
 }

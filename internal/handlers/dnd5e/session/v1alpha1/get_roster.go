@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sdkerr"
+
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -23,7 +25,7 @@ func (h *Handler) GetRoster(ctx context.Context, req *sessionpb.GetRosterRequest
 		return nil, err
 	}
 	if req.GetSession() == "" {
-		return nil, statusError(sdk.ErrNoSessionID)
+		return nil, sdkerr.StatusError(sdk.ErrNoSessionID)
 	}
 
 	out, err := h.manager.Roster(ctx, &sdk.RosterInput{
@@ -31,10 +33,10 @@ func (h *Handler) GetRoster(ctx context.Context, req *sessionpb.GetRosterRequest
 		Player:  playerID,
 	})
 	if err != nil {
-		return nil, statusError(err)
+		return nil, sdkerr.StatusError(err)
 	}
 	if out == nil {
-		return nil, statusError(errRosterOutputRequired)
+		return nil, sdkerr.StatusError(errRosterOutputRequired)
 	}
 	return rosterToProto(out), nil
 }

@@ -1,9 +1,12 @@
-// Package sessionv1alpha1 is the wire form of the toolkit's
-// rulebooks/dnd5e/session SDK: pure proto <-> SDK translation, per
-// rpg-project/ideas/session-api/design.md §3. No rule lives here (design
-// rule 8, the Boundary Rule) -- every handler loads nothing, decides
-// nothing, and calls exactly one Manager verb.
-package sessionv1alpha1
+// Package sdkerr is the one place a rulebooks/dnd5e/session sentinel becomes a
+// gRPC status code.
+//
+// Design rule 7 asks for ONE tested translation table for the SDK's error
+// vocabulary. It sits in its own package rather than inside a handler because
+// it has more than one caller: the session handler and the character handler's
+// advancement verbs both speak to the same SDK, and two copies of this table
+// would be two opinions about what one sentinel means.
+package sdkerr
 
 import (
 	"errors"
@@ -14,11 +17,20 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
 
-// statusError is the ONE tested error-translation table design rule 7
-// requires: every exported sentinel in rulebooks/dnd5e/session/errors.go
-// maps to a gRPC code here, and nowhere else in this service. See
-// errors_test.go for the sentinel-by-sentinel proof and the count that pins
-// this table to the SDK's actual vocabulary.
+// StatusError is THE ONE error-translation table design rule 7 requires:
+// every exported sentinel in rulebooks/dnd5e/session/errors.go maps to a
+// gRPC code here, and nowhere else. See errors_test.go for the
+// sentinel-by-sentinel proof and the count that pins this table to the SDK's
+// actual vocabulary.
+//
+// IT LIVES IN ITS OWN PACKAGE because it has more than one caller. It was
+// born inside the session handler, whose own doc said "and nowhere else in
+// THIS SERVICE" -- true while that handler was the only thing speaking to
+// the SDK. The character handler's advancement verbs made it a second
+// caller (design R6.1), and the choice then was to copy the table or to move
+// it. A copy is two tables free to disagree about what one sentinel means,
+// which is the exact failure the original doc existed to prevent, so it
+// moved and both callers share it. Its test moved with it.
 //
 // sdk.ErrNotFound is deliberately handled by the default case rather than
 // its own: it is the SDK's REPOSITORY-facing contract sentinel (what a
@@ -31,7 +43,7 @@ import (
 // as Internal is correct -- it signals a storage-layer bug, not a caller
 // mistake -- and matches the same-bucket sentinels below rather than
 // requiring a distinct case that implies it is expected here.
-func statusError(err error) error {
+func StatusError(err error) error {
 	if err == nil {
 		return nil
 	}
@@ -119,7 +131,13 @@ func statusError(err error) error {
 		// that named it went stale, so it arrives as ErrStaleDeclaration in
 		// FAILED_PRECONDITION below. The split is what lets a client tell a
 		// request it built wrong from a world that moved.
-		errors.Is(err, sdk.ErrBadCast):
+		errors.Is(err, sdk.ErrBadCast),
+		// A malformed level-up submission: a choice id the level never
+		// asked for, a count that does not match, an option that is not on
+		// the list. The request itself is wrong, which is what separates it
+		// from ErrCannotAdvance above -- rebuilding this request can succeed
+		// where waiting cannot.
+		errors.Is(err, sdk.ErrBadLevelRequest):
 		return status.Error(codes.InvalidArgument, err.Error())
 
 	// FAILED_PRECONDITION -- the request is well-formed but the world's
@@ -320,7 +338,22 @@ func statusError(err error) error {
 		//   disagree, the failure needs a name that is not a lie.
 		errors.Is(err, sdk.ErrWindowOpen),
 		errors.Is(err, sdk.ErrNoWindow),
-		errors.Is(err, sdk.ErrNotOffered):
+		errors.Is(err, sdk.ErrNotOffered),
+		// The two advancement refusals about the character's SITUATION
+		// rather than the request (rpg-project#452). ErrCannotAdvance is the
+		// level it has not earned, or cannot take yet -- the engine's
+		// sentence names the experience total and the threshold, which is
+		// the whole of what the player needs. ErrLevelNotOffered is the
+		// level this BUILD cannot describe: a row whose subclass or option
+		// the content does not yet express, so the honest answer is to
+		// refuse the level rather than offer a form with a hole in it.
+		//
+		// Both are FAILED_PRECONDITION rather than NOT_FOUND: the character
+		// and the level both exist, and nothing about the request would
+		// change the answer. The same request becomes legal once the
+		// situation does -- experience arrives, or the content lands.
+		errors.Is(err, sdk.ErrCannotAdvance),
+		errors.Is(err, sdk.ErrLevelNotOffered):
 		return status.Error(codes.FailedPrecondition, err.Error())
 
 	// PERMISSION_DENIED -- the authenticated principal is real but owns no
