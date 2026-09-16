@@ -32,6 +32,11 @@ const (
 
 	fixtureDefault       = "default"
 	fixtureWeaponGallery = "weapon-gallery"
+	// fixtureLevelUpClasses creates one level-1 character per class, each at
+	// the level-2 threshold. Selected explicitly and never part of the
+	// default set: twelve characters on every `up` of every environment is a
+	// cost no other walk should pay.
+	fixtureLevelUpClasses = "level-up-classes"
 )
 
 type config struct {
@@ -49,8 +54,9 @@ type galleryStoreHandle interface {
 type commandDeps struct {
 	connect          func(address string) (*grpc.ClientConn, error)
 	characterClient  func(*grpc.ClientConn) sandboxseed.CharacterRPC
-	seedDefault      func(context.Context, sandboxseed.CharacterRPC) error
+	seedDefault      func(context.Context, *sandboxseed.SeedInput) error
 	seedGallery      func(context.Context, *sandboxseed.SeedWeaponGalleryInput) (*sandboxseed.SeedWeaponGalleryOutput, error)
+	seedClasses      func(context.Context, *sandboxseed.SeedLevelUpClassesInput) (*sandboxseed.SeedLevelUpClassesOutput, error)
 	openGalleryStore func(context.Context, string) (galleryStoreHandle, error)
 	checkHealth      func(context.Context, *grpc.ClientConn) error
 	stdout           io.Writer
@@ -91,8 +97,41 @@ func runWithDeps(args []string, deps commandDeps) error {
 	client := deps.characterClient(conn)
 	switch config.fixture {
 	case fixtureDefault:
-		if err := deps.seedDefault(ctx, client); err != nil {
+		// The default fixture set now needs the repository as well as the
+		// RPCs: the two level-up fixtures hold experience, and no service call
+		// writes experience (design R4.12). -redis-address is the address it
+		// uses, the same one the weapon gallery already opens.
+		store, storeErr := deps.openGalleryStore(ctx, config.redisAddress)
+		if storeErr != nil {
+			return storeErr
+		}
+		defer func() { _ = store.Close() }()
+		if err := deps.seedDefault(ctx, &sandboxseed.SeedInput{Client: client, Store: store}); err != nil {
 			return fmt.Errorf("seed: %w", err)
+		}
+		return nil
+	case fixtureLevelUpClasses:
+		store, storeErr := deps.openGalleryStore(ctx, config.redisAddress)
+		if storeErr != nil {
+			return storeErr
+		}
+		defer func() { _ = store.Close() }()
+		out, err := deps.seedClasses(ctx, &sandboxseed.SeedLevelUpClassesInput{Client: client, Store: store})
+		// The output is printed even on error: a run that failed on three
+		// classes still seeded the other nine, and naming what DID work is
+		// what makes the failure a per-class finding rather than a dead run.
+		if out != nil {
+			if _, writeErr := fmt.Fprintf(
+				deps.stdout,
+				"sandboxseed: fixture=%s seeded=%d\n",
+				fixtureLevelUpClasses,
+				len(out.Classes),
+			); writeErr != nil {
+				return fmt.Errorf("write seed result: %w", writeErr)
+			}
+		}
+		if err != nil {
+			return fmt.Errorf("seed %s: %w", fixtureLevelUpClasses, err)
 		}
 		return nil
 	case fixtureWeaponGallery:
@@ -137,6 +176,9 @@ func (d commandDeps) withDefaults() commandDeps {
 	if d.seedGallery == nil {
 		d.seedGallery = sandboxseed.SeedWeaponGallery
 	}
+	if d.seedClasses == nil {
+		d.seedClasses = sandboxseed.SeedLevelUpClasses
+	}
 	if d.openGalleryStore == nil {
 		d.openGalleryStore = openRedisGalleryStore
 	}
@@ -156,7 +198,8 @@ func parseConfig(args []string) (*config, error) {
 	result := &config{}
 	flags.StringVar(&result.address, "address", defaultAddress, "gRPC address for Envoy")
 	flags.StringVar(&result.redisAddress, "redis-address", defaultRedisAddress, "Redis address for repository-backed fixtures")
-	flags.StringVar(&result.fixture, "fixture", fixtureDefault, "fixture to seed: default or weapon-gallery")
+	flags.StringVar(&result.fixture, "fixture", fixtureDefault,
+		"fixture to seed: default, weapon-gallery, or level-up-classes")
 	flags.BoolVar(&result.health, "health", false, "check Envoy gRPC health only")
 	if err := flags.Parse(args); err != nil {
 		return nil, err
@@ -167,11 +210,13 @@ func parseConfig(args []string) (*config, error) {
 	if result.address == "" {
 		return nil, errors.New("address is required")
 	}
-	if result.fixture != fixtureDefault && result.fixture != fixtureWeaponGallery {
-		return nil, errors.New("fixture must be default or weapon-gallery")
+	switch result.fixture {
+	case fixtureDefault, fixtureWeaponGallery, fixtureLevelUpClasses:
+	default:
+		return nil, errors.New("fixture must be default, weapon-gallery, or level-up-classes")
 	}
-	if result.fixture == fixtureWeaponGallery && !result.health && result.redisAddress == "" {
-		return nil, errors.New("redis address is required for weapon-gallery fixture")
+	if !result.health && result.redisAddress == "" {
+		return nil, errors.New("redis address is required to seed fixtures")
 	}
 	return result, nil
 }

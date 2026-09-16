@@ -1,7 +1,7 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-09-08
+updated: 2026-09-16
 confidence: high — #938 trusted guild-derived composition world context is verified through auth/provider/cache/interceptor/handler/registration tests, race detection, and real miniredis stored-world checks; #921 local-dev composition Create/Get/List/Delete remains covered; #895 explicit Death Save RPC/progress projection verified through handler, owner-view, adapter, and real released-provider acceptance; #891 activation/result event passthrough verified through converter RED/GREEN and real SessionService live/catch-up acceptance; #882 first-admission normal-rest ownership verified through Lobby StartEncounter against released providers; #870 Martial Arts Quarterstaff→bonus Unarmed Strike handler journey verified against released providers and focused RED/GREEN acceptance; #897 complete Appearance ownership/conversion/delegation verified through focused RED/GREEN and Docker-backed integration tests; #852 shared dice presentation wiring verified against RED/GREEN cross-instance Redis integration, focused lint, and race-stressed package gate; #844 field-complete owner projection and atomic equipment patch verified against focused handler/orchestrator/repository tests and lint; Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #687 region/theme wire projection verified against passing unit (-race) + a real-RPC integration gate proving connect-time AND incremental-reveal zone_id/zones/theme projection against the real Redis harness, full `go test`/`golangci-lint` green against the published `rpg-api-protos` generated branch + `rpg-toolkit/encounter v0.35.0`; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`; #694 crypt dungeon-key consumes the toolkit's own `CryptDungeonParams` (obstacles included) verified against passing unit (-race) against published `rpg-toolkit/encounter v0.38.0`; #689 deterministic crypt monster composition verified against passing unit (-race, 1000-seed x 4-party-size zero-error matrix against the real production registry) + real-Redis integration (composition + seed-determinism + party-size-invariance) + the updated dungeon_crypt_test.go gate, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.38.0` + `rulebooks/dnd5e v0.68.0`, zero new lint issues versus main — **#694 and #689 merged together (this doc's own "Deterministic crypt monster composition, integrated with toolkit CryptDungeonParams" entry, 2026-07-23) close out rpg-api#696** (the out-of-sight goblin-placement collision #694 alone surfaced): #689's deterministic `FixedPositions` composition retires the search path that could fail, so the merged 1..1000-seed x party-1..4 matrix is 0/4000 errors, not a tuned-down failure rate
 ---
 
@@ -10,6 +10,62 @@ confidence: high — #938 trusted guild-derived composition world context is ver
 This is a living doc. Edit it in the same PR that invalidates a line. Don't let it rot.
 
 ## Active work
+
+**Level-up system, API leg (rpg-project#452)** — Experience, the entitled level
+and the next threshold are projected read-only onto the v1alpha1 `Character`;
+nothing on the served API writes experience, by design (R4.12). `GetNextLevel`
+and `LevelUp` are implemented on the v1alpha1 `CharacterService`, both gated by
+an ownership check that returns NOT_FOUND rather than PERMISSION_DENIED.
+
+**They call the session SDK; there is no advancement orchestrator.** Kirk's
+ruling after the walk (design R6.1): *"the API is dumb... we should not need an
+orchestrator in API anymore and our level up should be contained in our session
+package."* The first build put the verb in
+`internal/orchestrators/character/level_up.go` with a `Config.Roller`; all of
+it was deleted, not deprecated, and the handler now calls two Manager verbs and
+projects. The SDK error table moved out of the session handler into
+`internal/handlers/dnd5e/sdkerr` so both callers share one table rather than
+keeping two free to disagree. `cmd/sandboxseed`'s default fixture set adds
+`level-up-fighter` (Arthur) and `level-up-bard` (Scanlan), created through the
+production RPCs and then seeded to 300 experience through the character
+repository — the only place experience can be written. Seeding requires a
+reachable Redis, so `sandboxseed` now needs `-redis-address` for the default
+fixture as well as the weapon gallery.
+
+A third fixture set, `-fixture level-up-classes`, creates one level-1 character
+per class at 300 experience, driven from `ListClasses` rather than from
+per-class code, so every class can be walked through the real level-up screen.
+It is deliberately not in the default set. Two engine findings came out of it,
+both recorded with the defect in `internal/integration/character`:
+
+- **A ranger could not be created at all, by any client — FIXED.** rpg-toolkit's
+  `getClassSubmissions` built the fighting-style submission with the *fighter's*
+  choice id (its own comment read "Would need mapping for other classes"), so
+  `ranger-fighting-style` never read as answered, `IsClassComplete` was false
+  forever and the draft could not be finalized. rpg-toolkit#1781 routes the
+  draft's class choices through `choices.SubmissionsFrom`, so each submission
+  carries the requirement's own id. All twelve classes now seed.
+- **Expertise is offered as all eighteen skills.** The toolkit's
+  `ExpertiseRequirement` is `{ID, Count, Label}` and names no options, so this
+  repo's catalog converter fills the wire with `skills.List()`. The engine then
+  refuses any skill the character is not proficient in, so most of the offered
+  menu is illegal. A client can only answer by intersecting with the skills it
+  picked in the same submission.
+
+**Every toolkit pin is a released tag.** `rulebooks/dnd5e` v0.175.0,
+`rulebooks/dnd5e/session` v0.91.0 (rpg-toolkit#1787, merged), and
+`rulebooks/dnd5e/resolution` v0.50.0. No toolkit pseudo-version remains, so
+this is no longer a draft on an unreleased engine.
+
+Protos are on the generated-branch head `4915e3ed`, taken from `dev` when this
+branch merged it — newer than the `654b73a1` this branch had pinned, and kept
+because a merge must not walk either side's pin backwards. A generated-branch
+head is how this repo consumes protos by design rather than a pin awaiting a
+tag; see "Proto Updates" in `CLAUDE.md`.
+
+The expertise intersection above is tracked as **rpg-toolkit#1794**: the
+options belong on the character-aware next-level view, and closing it deletes
+the client-side workaround.
 
 **Spare the Dying stabilization (#982)** — Published session v0.86.1 and proto SDK v0.1.190 are adopted through the shared live/Story ActivationResult converter. API cast acceptance covers dying and already-stable recipients, action-only payment with no dice, owner-private refresh, per-recipient replay and stable turn advancement. Existing private fields and privacy checks are reused. Browser acceptance remains separate; see the [handoff](how-to/spare-the-dying-web-handoff.md).
 

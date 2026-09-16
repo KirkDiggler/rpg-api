@@ -24,6 +24,9 @@ import (
 const (
 	sandboxFighterID   = "toolkit-sandbox-fighter"
 	sandboxBarbarianID = "toolkit-sandbox-barbarian"
+
+	levelUpFighterID = "level-up-fighter"
+	levelUpBardID    = "level-up-bard"
 )
 
 // SandboxSeedSuite exercises the fixed production-RPC seed path over the
@@ -81,12 +84,23 @@ func (s *SandboxSeedSuite) listExactlyOne(identity string) *dnd5ev1alpha1.Charac
 	return response.GetCharacters()[0]
 }
 
+func (s *SandboxSeedSuite) seed(client sandboxseed.CharacterRPC) error {
+	return sandboxseed.Seed(s.ctx, &sandboxseed.SeedInput{
+		Client: client,
+		// The real repository over the harness's real Redis. Experience has
+		// no service call that writes it (design R4.12), so the fixture tool
+		// reaches the store directly -- and this test proves the number it
+		// wrote comes back out of the served API.
+		Store: s.server.CharacterRepo,
+	})
+}
+
 func (s *SandboxSeedSuite) TestSandboxSeed_ResetsThreeIdentitiesThroughRPCs() {
-	require.NoError(s.T(), sandboxseed.Seed(s.ctx, s.server.CharacterClient))
-	require.NoError(s.T(), sandboxseed.Seed(s.ctx, s.server.CharacterClient))
+	require.NoError(s.T(), s.seed(s.server.CharacterClient))
+	require.NoError(s.T(), s.seed(s.server.CharacterClient))
 
 	recordingClient := &recordingCharacterClient{CharacterRPC: s.server.CharacterClient}
-	require.NoError(s.T(), sandboxseed.Seed(s.ctx, recordingClient))
+	require.NoError(s.T(), s.seed(recordingClient))
 	require.Equal(s.T(), []string{
 		"toolkit-sandbox-fighter:ListCharacters",
 		"toolkit-sandbox-fighter:DeleteCharacter",
@@ -129,6 +143,33 @@ func (s *SandboxSeedSuite) TestSandboxSeed_ResetsThreeIdentitiesThroughRPCs() {
 		"toolkit-sandbox-bard:FinalizeDraft",
 		"toolkit-sandbox-bard:ListCharacters",
 		"toolkit-sandbox-bard:GetCharacter",
+		// The two level-up fixtures: created the same way, then read back
+		// once each to confirm the experience the repository wrote is what
+		// the wire reports.
+		"level-up-fighter:ListCharacters",
+		"level-up-fighter:DeleteCharacter",
+		"level-up-fighter:CreateDraft",
+		"level-up-fighter:UpdateName",
+		"level-up-fighter:UpdateRace",
+		"level-up-fighter:UpdateClass",
+		"level-up-fighter:UpdateBackground",
+		"level-up-fighter:UpdateAbilityScores",
+		"level-up-fighter:GetDraft",
+		"level-up-fighter:FinalizeDraft",
+		"level-up-fighter:ListCharacters",
+		"level-up-fighter:GetCharacter",
+		"level-up-bard:ListCharacters",
+		"level-up-bard:DeleteCharacter",
+		"level-up-bard:CreateDraft",
+		"level-up-bard:UpdateName",
+		"level-up-bard:UpdateRace",
+		"level-up-bard:UpdateClass",
+		"level-up-bard:UpdateBackground",
+		"level-up-bard:UpdateAbilityScores",
+		"level-up-bard:GetDraft",
+		"level-up-bard:FinalizeDraft",
+		"level-up-bard:ListCharacters",
+		"level-up-bard:GetCharacter",
 	}, recordingClient.calls)
 
 	fighter := s.listExactlyOne("toolkit-sandbox-fighter")
@@ -174,6 +215,43 @@ func (s *SandboxSeedSuite) TestSandboxSeed_ResetsThreeIdentitiesThroughRPCs() {
 
 	s.assertPartyOrder("toolkit-sandbox-fighter-then-barbarian", sandboxFighterID, fighter.GetId(), sandboxBarbarianID, barbarian.GetId())
 	s.assertPartyOrder("toolkit-sandbox-barbarian-then-fighter", sandboxBarbarianID, barbarian.GetId(), sandboxFighterID, fighter.GetId())
+}
+
+// TestSandboxSeed_LevelUpFixturesHoldTheLevelTwoThreshold is design done-when 8
+// end to end: "Seeding a leveled character means seeding experience on the
+// persisted sheet, not writing a level and not calling anything."
+//
+// Both fixtures are LEVEL 1 holding 300 experience. That gap -- entitled to 2,
+// standing at 1 -- is the whole level-up signal (R4.10), and a fixture that had
+// been written straight to level 2 would have nothing left to walk.
+func (s *SandboxSeedSuite) TestSandboxSeed_LevelUpFixturesHoldTheLevelTwoThreshold() {
+	require.NoError(s.T(), s.seed(s.server.CharacterClient))
+
+	for _, tc := range []struct {
+		identity string
+		name     string
+		class    dnd5ev1alpha1.Class
+	}{
+		{levelUpFighterID, "Arthur", dnd5ev1alpha1.Class_CLASS_FIGHTER},
+		{levelUpBardID, "Scanlan", dnd5ev1alpha1.Class_CLASS_BARD},
+	} {
+		s.Run(tc.identity, func() {
+			character := s.listExactlyOne(tc.identity)
+			require.Equal(s.T(), tc.name, character.GetName())
+			require.Equal(s.T(), tc.class, character.GetClass())
+			require.Equal(s.T(), int32(1), character.GetLevel())
+			require.Equal(s.T(), int32(300), character.GetExperiencePoints())
+			require.Equal(s.T(), int32(2), character.GetEntitledLevel())
+			require.Equal(s.T(), int32(900), character.GetNextLevelThreshold())
+		})
+	}
+
+	// And the fixtures that were NOT seeded still read as a game that awards
+	// no experience yet (done-when 7).
+	sandboxFighter := s.listExactlyOne(sandboxFighterID)
+	require.Equal(s.T(), int32(0), sandboxFighter.GetExperiencePoints())
+	require.Equal(s.T(), int32(1), sandboxFighter.GetEntitledLevel())
+	require.Equal(s.T(), int32(300), sandboxFighter.GetNextLevelThreshold())
 }
 
 // recordingCharacterClient proves Seed keeps each call under its fixed Dev

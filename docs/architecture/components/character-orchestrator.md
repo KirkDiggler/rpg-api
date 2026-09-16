@@ -40,6 +40,7 @@ type Service interface {
     GetCharacter / ListCharacters / DeleteCharacter
     EquipItem / UnequipItem
 
+
     // Data loading for UI
     ListRaces / ListClasses / ListBackgrounds / ListEquipmentByType
     RollAbilityScores / ListSpells
@@ -84,6 +85,26 @@ and present-zero tests prove the complete Appearance shape, including outfit cha
 `GetCharacter`, `ListCharacters`, finalization, equipment patches, and Session SDK saves
 carry `Data.Appearance` naturally; no sibling envelope or API-side preservation merge is
 used.
+
+## Advancement lives in the session SDK, not here (rpg-project#452)
+
+**This orchestrator holds nothing about level-up, deliberately.** Kirk's ruling
+after the wave walked: *"the API is dumb... we added the session package to act
+as the SDK to the API. So we should not need an orchestrator in API anymore and
+our level up should be contained in our session package."* (design R6.1/R6.2).
+
+The first build put the verb here — load the sheet, call `Character.Advance`,
+save — with a `Config.Roller` for rolled hit points and the next level computed
+locally to look up grants. Every rule in it was the toolkit's even then; the
+ORCHESTRATION of those rules was not, and that is what moved. `level_up.go`,
+both service methods, their IO types and `Config.Roller` were deleted rather
+than deprecated.
+
+Advancement is now two verbs on the toolkit session Manager, called directly by
+the v1alpha1 character handler. See `character-handler.md`. This orchestrator
+is still involved in exactly one way: the handler reads through `GetCharacter`
+to bind the calling player, and again after a successful level to project the
+stored sheet, because the SDK returns no character by its own boundary law.
 
 ## Equipment (rpg-api#680/#844)
 

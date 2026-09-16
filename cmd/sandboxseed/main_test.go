@@ -31,16 +31,27 @@ func TestParseConfig_DefaultsToEnvoyAddressAndDefaultFixture(t *testing.T) {
 
 func TestParseConfig_RejectsUnknownFixture(t *testing.T) {
 	_, err := parseConfig([]string{"--fixture", "wave-2-monk"})
-	require.ErrorContains(t, err, "fixture must be default or weapon-gallery")
+	require.ErrorContains(t, err, "fixture must be default, weapon-gallery, or level-up-classes")
 }
 
-func TestParseConfig_GalleryRequiresRedisAddressUnlessHealthOnly(t *testing.T) {
-	_, err := parseConfig([]string{"--fixture", fixtureWeaponGallery, "--redis-address", ""})
-	require.ErrorContains(t, err, "redis address is required")
-
-	config, err := parseConfig([]string{"--health", "--fixture", fixtureWeaponGallery, "--redis-address", ""})
+func TestParseConfig_AcceptsTheLevelUpClassesFixture(t *testing.T) {
+	config, err := parseConfig([]string{"--fixture", fixtureLevelUpClasses})
 	require.NoError(t, err)
-	require.True(t, config.health)
+	require.Equal(t, fixtureLevelUpClasses, config.fixture)
+}
+
+// TestParseConfig_EveryFixtureRequiresRedisAddressUnlessHealthOnly: the default
+// set needs the repository too now, because it seeds experience and no service
+// call writes experience.
+func TestParseConfig_EveryFixtureRequiresRedisAddressUnlessHealthOnly(t *testing.T) {
+	for _, fixture := range []string{fixtureDefault, fixtureWeaponGallery, fixtureLevelUpClasses} {
+		_, err := parseConfig([]string{"--fixture", fixture, "--redis-address", ""})
+		require.ErrorContains(t, err, "redis address is required", "fixture %s", fixture)
+
+		config, err := parseConfig([]string{"--health", "--fixture", fixture, "--redis-address", ""})
+		require.NoError(t, err, "fixture %s", fixture)
+		require.True(t, config.health)
+	}
 }
 
 func TestRunWithDeps_GalleryWiresRedisBackedStoreWithoutNetworkInUnitTest(t *testing.T) {

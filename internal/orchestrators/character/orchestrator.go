@@ -7,12 +7,6 @@ import (
 	"maps"
 	"strings"
 
-	"github.com/KirkDiggler/rpg-api/internal/apierr"
-	"github.com/KirkDiggler/rpg-api/internal/entities"
-	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
-	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
-	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
-	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 	"github.com/KirkDiggler/rpg-toolkit/events"
 	"github.com/KirkDiggler/rpg-toolkit/rpgerr"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
@@ -22,6 +16,13 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells"
+
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
+	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	characterdraft "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft"
 )
 
 // Config holds dependencies for the orchestrator
@@ -194,7 +195,13 @@ func (o *Orchestrator) GetRequirements(_ context.Context, input *GetRequirements
 		if input.Subclass != "" {
 			requirements = choices.GetClassRequirementsWithSubclass(input.Class, level, input.Subclass)
 		} else {
-			requirements = choices.GetClassRequirementsAtLevel(input.Class, level)
+			// The level's own requirement row. rpg-toolkit#1781 replaced the
+			// level-blind base-plus-subclass read with a per-level table, so
+			// this asks for the row and gets what that level actually adds;
+			// at level 1 -- this path's default and the only level any
+			// caller has ever asked for -- the row is byte-identical to what
+			// GetClassRequirements returns for creation.
+			requirements = choices.GetClassRequirementsGainedAtLevel(input.Class, level)
 		}
 	}
 

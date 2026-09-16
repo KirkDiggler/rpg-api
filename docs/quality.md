@@ -99,6 +99,16 @@ its size. Its `EquipItem`/`UnequipItem` RPCs now delegate to the rules-correct
 orchestrator method (rpg-api#680, see "Character orchestrator" below) — that
 specific gap is closed even though the surrounding stub/TODO debt isn't.
 
+**Update (rpg-project#452, 2026-09-16):** the advancement RPCs live in their own
+`level_up.go` rather than growing `handler.go`, with their own ownership gate
+(NOT_FOUND, never PERMISSION_DENIED) and their own tests. They are the
+cleanest thing in this package: each binds the caller, calls exactly one
+session SDK verb, and projects — no loading, no decisions, no ordering of
+toolkit steps. The proto-to-toolkit `ChoiceData` reader an earlier draft needed
+is deleted; knowing a toolkit choice's shape is no longer this layer's job.
+Grade remains C, because the converter/TODO debt above is untouched and is
+what earns the C.
+
 **Update (rpg-api#897, 2026-09-03):** complete Appearance now converts field-for-field
 to toolkit customization data. `UpdateAppearance` delegates once and returns the
 service's complete DraftData without a second Get; malformed semantics reach
@@ -148,6 +158,14 @@ equipment path.
 updates with `draft.ToData()`, and returns stored DraftData. Redis and session-save
 paths use nested toolkit state without a sibling envelope. The grade remains B- because
 older draft/catalog TODO debt below is unchanged.
+
+**Update (rpg-project#452, 2026-09-16):** advancement was BUILT here and then
+REMOVED, and the removal is the improvement. `level_up.go`, both service
+methods, their IO types and `Config.Roller` are gone; the toolkit session SDK
+owns the verb and the handler calls it (design R6.1). Nothing about level-up
+remains in this orchestrator. The grade is unchanged at B- because the
+draft/catalog TODO debt below is untouched, but the surface this orchestrator
+is responsible for got smaller, which is the direction it should move.
 
 **Update (rpg-api#680/#844, 2026-08-25):** `EquipItem`/`UnequipItem` strictly
 load/attach, call the toolkit's rules-aware verbs, precompose complete post-views, and

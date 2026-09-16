@@ -61,6 +61,7 @@ separate `SessionService` handler.
 |---|---|
 | `handlers/dnd5e/v1alpha1/character/handler.go` | gRPC handler |
 | `handlers/dnd5e/v1alpha1/character/converters.go` | Proto ↔ domain entity conversion |
+| `handlers/dnd5e/v1alpha1/character/level_up.go` | The two advancement verbs: proto ↔ session SDK, nothing else |
 
 ## gRPC methods handled
 
@@ -77,6 +78,7 @@ separate `SessionService` handler.
 - `ListEquipmentByType` / `ListSpells` — equipment and spell catalog
 - `RollAbilityScores` — rolls 4d6-drop-lowest ability scores
 - `StartDiceSession` — creates a dice session for ability score rolling
+- `GetNextLevel` / `LevelUp` — advancement; see below
 
 ## Converter surface
 
@@ -93,6 +95,46 @@ separate `SessionService` handler.
 - Equipment data incomplete for armor and tools
 
 These stubs silently return zero/unspecified values without errors, meaning the character API returns structurally valid but semantically incomplete data for these fields.
+
+## Advancement calls the session SDK (rpg-project#452)
+
+`GetNextLevel` and `LevelUp` are **pure translation**, and this is the one place
+in this service that talks to the toolkit's session SDK besides the session
+handler. Kirk's ruling: *"the API is dumb... we should not need an orchestrator
+in API anymore and our level up should be contained in our session package"*
+(design R6.1).
+
+Each method binds the calling player, calls exactly ONE Manager verb, and
+projects the answer. It loads no sheet, decides nothing, and orders no toolkit
+steps. There is no character orchestrator involvement beyond the reads named
+below.
+
+The Manager arrives as `HandlerConfig.Sessions`, a two-method interface
+declared at the point of use (`Sessions` in `level_up.go`) rather than the
+SDK's concrete `*session.Manager` — the same shape and the same reason as the
+session handler's own `Manager` interface: it is what lets these tests fake a
+verb's outcome without a real Manager, Redis and roller behind them.
+`*session.Manager` satisfies it structurally.
+
+Three things stay on this side of the seam, because they are transport's:
+
+1. **Ownership of the calling player.** The SDK is handed a character id and
+   has no notion of who holds the connection. The gate answers NOT_FOUND, never
+   PERMISSION_DENIED, so a foreign character is indistinguishable from a
+   missing one.
+2. **Refusing `HIT_POINT_METHOD_UNSPECIFIED`** before the SDK is touched.
+   Rolled and averaged write different numbers into a record that is never
+   corrected, so there is no defensible default. `MAX` is level-1 only and is
+   not on the wire at all.
+3. **Re-reading the sheet after a successful level.** The SDK returns no
+   `character.Data` by its own boundary law — it reports that it saved — so the
+   projected `Character` comes from `GetCharacter`, which also means the client
+   is shown what is actually stored.
+
+Error codes come from `handlers/dnd5e/sdkerr`, the one shared SDK translation
+table (design rule 7), not from a second table here. The toolkit's own sentence
+is preserved: it names the experience total and the threshold, or the spell
+already known, and that is what the player reads.
 
 ## Known issues
 
