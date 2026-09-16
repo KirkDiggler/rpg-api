@@ -171,6 +171,19 @@ func (s *LevelUpClassesSuite) TestEveryClassIsCreatedFromItsOwnCatalogEntry() {
 var classesWithNoOfferableLevelTwo = map[string]string{
 	"druid":  "takes its Circle at level 2; subclass-as-a-choice is rpg-toolkit#1767",
 	"wizard": "takes its Tradition at level 2; subclass-as-a-choice is rpg-toolkit#1767",
+	// A different reason from the other two, and worth stating precisely
+	// rather than as "no spells". Verified against the pinned rulebook:
+	// GetClassRequirementsGainedAtLevel(Ranger, 2).Spellbook asks for a COUNT
+	// OF 2 and carries ZERO options, because no ranger spell is castable in
+	// this build. Bard's row offers 5 for 1 and sorcerer's 15 for 1, so this
+	// is ranger content, not a spell-choice bug.
+	//
+	// A choice that cannot satisfy its own count is unanswerable, and the
+	// engine now refuses the level rather than offering it (design R4.4f).
+	// That is the right end of the seam: before the rule, this reached the
+	// screen as a form demanding two picks from an empty list, which no
+	// client could submit and no error explained.
+	"ranger": "level 2 asks for 2 spells and offers 0; no castable ranger spells in this build",
 }
 
 // TestEveryClassCanBeAskedForItsNextLevel walks the read half for all twelve:
