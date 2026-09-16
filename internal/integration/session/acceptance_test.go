@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/KirkDiggler/rpg-api/internal/testsupport/levelfixture"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
@@ -318,6 +319,7 @@ func armedFighter(id, playerID string) *tkcharacter.Data {
 		PlayerID: playerID,
 		Name:     id,
 		Level:    3,
+		Levels:   levelfixture.Synthetic(classes.Fighter, 3),
 		ClassID:  classes.Fighter,
 		RaceID:   races.Human,
 		AbilityScores: shared.AbilityScores{

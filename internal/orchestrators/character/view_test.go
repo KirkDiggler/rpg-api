@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/KirkDiggler/rpg-api/internal/testsupport/levelfixture"
 	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -150,6 +151,7 @@ func level3FighterData(t *testing.T, id string) *tkcharacter.Data {
 		PlayerID:         "player-1",
 		Name:             "Arthur",
 		Level:            3,
+		Levels:           levelfixture.Synthetic(classes.Fighter, 3),
 		ProficiencyBonus: 2,
 		RaceID:           races.Human,
 		ClassID:          classes.Fighter,

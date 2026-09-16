@@ -15,6 +15,7 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/KirkDiggler/rpg-api/internal/testsupport/levelfixture"
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
 	"github.com/KirkDiggler/rpg-toolkit/dice"
@@ -936,6 +937,7 @@ func (s *SessionStackSuite) spentFighter(id, playerID string) (*entities.Charact
 	return &entities.Character{Data: &tkcharacter.Data{
 		ID: id, PlayerID: playerID, Name: "Spent Fighter",
 		Level: 4, ProficiencyBonus: 2, RaceID: races.Human, ClassID: classes.Fighter,
+		Levels:       levelfixture.Synthetic(classes.Fighter, 4),
 		BackgroundID: backgrounds.Soldier,
 		AbilityScores: shared.AbilityScores{
 			abilities.STR: 16, abilities.DEX: 14, abilities.CON: 14,
@@ -984,6 +986,7 @@ func (s *SessionStackSuite) spentBarbarian(id, playerID string) (*entities.Chara
 	return &entities.Character{Data: &tkcharacter.Data{
 		ID: id, PlayerID: playerID, Name: "Spent Barbarian",
 		Level: 4, ProficiencyBonus: 2, RaceID: races.Dwarf, ClassID: classes.Barbarian,
+		Levels:       levelfixture.Synthetic(classes.Barbarian, 4),
 		BackgroundID: backgrounds.Outlander,
 		AbilityScores: shared.AbilityScores{
 			abilities.STR: 16, abilities.DEX: 14, abilities.CON: 16,
