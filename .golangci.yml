@@ -110,6 +110,14 @@ linters:
       # this linter wants would not compile. The word names the rule that
       # recorded advantage and disadvantage meeting over one die, and it is
       # spelled the same in the design, the toolkit and the client.
+      #
+      # ONE MECHANISM, NOT TWO. An exclusions.rules entry keyed on the rendered
+      # message text also silences this, and for a while both were here. Two
+      # ways to spell one policy is the same defect this whole slice is about:
+      # they can disagree. This one is the linter's OWN setting for "the word
+      # is correct here", it covers the lowercase spelling the design and the
+      # comments use as well as the enum's uppercase, and a real typo anywhere
+      # else still fails.
       ignore-rules:
         - cancelled
 
@@ -182,16 +190,6 @@ linters:
           - staticcheck
         text: "SA1019:"
         path: "cmd/client/"
-
-      # misspell: KEEP_RULE_CANCELLED is a GENERATED identifier, minted by
-      # protoc from the merged contract (rpg-api-protos, rpg-project#462).
-      # "cancelled" is the British spelling and the US locale is right to flag
-      # the word — but this repo cannot rename a wire enum value, and renaming
-      # it upstream would be a breaking proto change for a spelling. Scoped to
-      # the one identifier by text so a real typo elsewhere still fails.
-      - linters:
-          - misspell
-        text: "`CANCELLED` is a misspelling"
 
       # SA1019: Allow deprecated field usage in test assertions
       - linters:
