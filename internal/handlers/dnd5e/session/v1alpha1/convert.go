@@ -478,32 +478,34 @@ func discoveriesToProto(d map[string]sdk.Discovery) map[string]*sessionpb.Discov
 // a client routes a player subject to a player model instead of guessing a
 // monster ref from the subject id (rpg-dnd5e-web#792).
 //
-// # Stance is on the wire and NOT FILLED, and that is a gap, not a decision
+// # Stance, per viewer, carried and never derived
 //
-// `Sighting.stance` merged with rpg-api-protos#340 (rpg-project#458): what
-// THIS VIEWER believes a creature's stance toward the party to be, per
-// observer, so the ring under a token can eventually be a belief rather than
-// the roster's truth. The composition can answer it —
-// `encounter.BelievedStance(viewer, subject)` is built and exported at
-// encounter v0.85.1 — but the SESSION SEAM DOES NOT CARRY IT: `session.Sighting`
-// has no stance field and neither does the `Seen` sub-struct, and this seam
-// only ever sees `Manager.View`'s output. There is no path from here to the
-// composition, and inventing one would be rpg-api reading the world directly.
+// `Sighting.stance` (rpg-api-protos#340, rpg-project#458) is what THIS VIEWER
+// believes the subject's stance toward them to be, so the ring under a token
+// is a belief rather than the roster's truth. The composition answers it
+// through `encounter.BelievedStance`; the session seam carries it beside Name
+// and Kind, and this converter copies it.
 //
-// SO IT CROSSES EMPTY, which the wire's own doc defines as "the observer has
-// no word" — the one honest value available. It is deliberately NOT filled
-// from the roster's faction: that would make a per-viewer belief field carry
-// shared truth, and the first `pretend` would then have to UNDO a lie this
-// converter told rather than simply start telling a different truth.
+// EMPTY CROSSES AS EMPTY, and that is the load-bearing case rather than an
+// edge. The seam leaves it empty when the run cannot answer — a subject who is
+// not a member, or one in no faction at all, which a world NPC is — and the
+// wire's own doc defines empty as "the observer has no word for it". Mapping
+// that to "neutral" would be this seam inventing a belief nobody holds, and a
+// client would draw a confident ring around a creature whose side is simply
+// unknown. The fallback belongs to the client, which has the roster's faction
+// color to fall back TO; this seam has nothing to fall back to and must not
+// pretend otherwise.
 //
-// TestSightingStanceIsStillNotCarriedBySession pins the gap so its closing is
-// noticed: when session grows the field, that test fails, this comment goes,
-// and one line is added below.
+// NOTHING IS DERIVED HERE EITHER. Filling it from the roster's faction would
+// make a per-viewer belief field carry shared truth, and the first `pretend`
+// would have to UNDO a lie this converter told rather than simply start
+// telling a different truth.
 func sightingToProto(s sdk.Sighting) *sessionpb.Sighting {
 	return &sessionpb.Sighting{
 		Subject:    s.Subject,
 		Name:       s.Name,
 		Kind:       memberKindToProto(s.Kind),
+		Stance:     s.Stance,
 		Payload:    s.Payload,
 		Channel:    s.Channel,
 		At:         s.At,
@@ -1081,7 +1083,22 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			Entry:  int32(b.Entry),
 			Word:   word,
 			Say:    b.Say,
-			Fact:   b.Fact,
+			// `fact` IS DELIBERATELY NOT SET, ruled by Kirk on rpg-project#458
+			// after the contract had already made room for it.
+			//
+			// A FACT IS PER-OBSERVER KNOWLEDGE AND THIS BEAT IS BROADCAST. It
+			// goes to every witness of the creature, and what any one of them
+			// then KNOWS is the intel log's answer, held per observer and
+			// reachable only through a read that is entitled to it. Putting the
+			// id on a broadcast beat would hand the whole table a fact the
+			// world may have taught only some of them, and there is no second
+			// field that could take it back.
+			//
+			// NOTHING IS LOST. The story has the author's `say` line, which is
+			// what a player actually receives; the consequence arrives on its
+			// own terms as a STANCE_CHANGED or an arrival. `b.Fact` is read
+			// and dropped here exactly as the verdict fields are on the
+			// response one file over.
 		}}
 	case sdk.DoorBody:
 		evt.Body = &sessionpb.Event_Door{Door: &sessionpb.DoorChanged{

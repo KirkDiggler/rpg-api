@@ -1,8 +1,6 @@
 package sessionv1alpha1
 
 import (
-	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -112,7 +110,40 @@ func TestAnsweredBodyToProto_CarriesTheAuthorsLineAndTheWorldsDie(t *testing.T) 
 	require.Equal(t, sessionpb.AnswerWord_ANSWER_WORD_FACT, got.GetWord())
 	require.Equal(t, "Fine! FINE. The cellar door is behind the barrels. Just don't.", got.GetSay(),
 		"the author's line VERBATIM; this seam never composes, trims or re-cases one")
-	require.Equal(t, "goblin-cowed", got.GetFact())
+	require.Empty(t, got.GetFact(),
+		"a fact is per-observer knowledge and never rides a broadcast beat (rpg-project#458)")
+}
+
+// TestAnsweredBodyToProto_TheFactNeverRidesTheBeat is the ruling made
+// mechanical (Kirk, rpg-project#458), and it is asserted on the word that
+// TEACHES one, because that is the only case where a fact exists to leak.
+//
+// THE BEAT IS BROADCAST AND A FACT IS NOT. Every witness of the creature gets
+// this beat; what any one of them then knows is the intel log's answer, held
+// per observer. An id on the beat would hand the whole table a fact the world
+// may have taught only some of them, and no second field could take it back.
+//
+// The SDK still carries it, and that is the point of testing here rather than
+// trusting the absence: this seam reads a populated field and deliberately
+// drops it, so a future edit that "fixes the missing mapping" fails this.
+func TestAnsweredBodyToProto_TheFactNeverRidesTheBeat(t *testing.T) {
+	event := &sessionpb.Event{}
+	require.NoError(t, setEventBody(event, sdk.AnsweredBody{
+		Creature: "front-goblin", Verb: "persuade", Beaten: false,
+		Roll: 40, Of: 100, Entry: 0, Word: "fact",
+		Say:  "Cellar's empty, friend.",
+		Fact: "cellar-is-clear",
+	}))
+
+	got := event.GetAnswered()
+	require.NotNil(t, got)
+	require.Empty(t, got.GetFact(), "the id the SDK carried must not reach the wire")
+	// EVERYTHING ELSE STILL CROSSES, so this is a dropped field and not a
+	// dropped beat: the word still says the creature taught something, and the
+	// line the player actually receives is untouched.
+	require.Equal(t, sessionpb.AnswerWord_ANSWER_WORD_FACT, got.GetWord())
+	require.Equal(t, "Cellar's empty, friend.", got.GetSay())
+	require.Equal(t, int32(40), got.GetRoll())
 }
 
 // TestAnsweredBodyToProto_FleeAndTheFailureTable is the other half of the
@@ -209,39 +240,23 @@ func TestEventsToProto_OneBadBeatFailsTheWholeRead(t *testing.T) {
 	require.Contains(t, err.Error(), "pretend")
 }
 
-// TestSightingStanceIsStillNotCarriedBySession PINS A GAP so that its closing
-// is noticed (rpg-project#458).
+// TestSightingStanceIsCarriedPerViewer is the ring's own seam
+// (rpg-project#458). `session.Sighting` gained a believed stance beside Name
+// and Kind, filled from `encounter.BelievedStance` per viewer, and this
+// converter copies it verbatim.
 //
-// The wire has `Sighting.stance` as of rpg-api-protos#340 and the composition
-// can answer it -- `encounter.BelievedStance(viewer, subject)` exists and is
-// exported -- but the session seam carries neither a stance on Sighting nor
-// one inside Seen, and this handler only ever sees Manager.View's output. So
-// the field crosses EMPTY, which the wire defines as "this observer has no
-// word", and the believed-stance ring cannot be colored from a belief yet.
-//
-// THIS TEST FAILS THE DAY SESSION GROWS THE FIELD, which is the point: the
-// wiring is one line in sightingToProto and nothing else would make anybody go
-// and write it. Delete this test and the comment above that function when it
-// does -- it is a gap marker, not a law.
-func TestSightingStanceIsStillNotCarriedBySession(t *testing.T) {
-	seamFields := map[string]bool{}
-	for _, typ := range []reflect.Type{
-		reflect.TypeOf(sdk.Sighting{}),
-		reflect.TypeOf(sdk.Seen{}),
-	} {
-		for i := 0; i < typ.NumField(); i++ {
-			seamFields[strings.ToLower(typ.Field(i).Name)] = true
-		}
+// IT REPLACED A GAP MARKER. Until the seam carried the field this test asserted
+// its ABSENCE, so that its arrival would be noticed rather than sit unwired.
+// It arrived; the marker is gone and this is what took its place.
+func TestSightingStanceIsCarriedPerViewer(t *testing.T) {
+	for _, word := range []string{"hostile", "neutral", "allied"} {
+		got := sightingToProto(sdk.Sighting{
+			Subject: "front-goblin", Name: "Goblin", Kind: sdk.KindMonster,
+			Status: "current", Stance: word,
+		})
+		require.Equal(t, word, got.GetStance(),
+			"the seam's own word crosses verbatim; this converter knows no vocabulary")
 	}
-
-	require.False(t, seamFields["stance"],
-		"session now carries a believed stance: fill Sighting.stance in sightingToProto, "+
-			"drop the gap comment above it, and delete this test")
-
-	// The control, so this test cannot silently pass because the reflection
-	// stopped seeing anything at all.
-	require.True(t, seamFields["subject"], "the seam's Sighting must still have a Subject")
-	require.True(t, seamFields["position"], "the seam's Seen must still have a Position")
 }
 
 // TestSightingStanceCrossesEmptyRatherThanBorrowingTheFaction pins the value
@@ -250,14 +265,17 @@ func TestSightingStanceIsStillNotCarriedBySession(t *testing.T) {
 // wire says empty means the observer has no word; a faction color smuggled in
 // here would be shared truth wearing a per-viewer field's clothes, and the
 // first authored `pretend` would have to undo it.
-func TestSightingStanceCrossesEmptyRatherThanBorrowingTheFaction(t *testing.T) {
+func TestSightingStanceEmptyStaysEmptyForACreatureInNoFaction(t *testing.T) {
 	got := sightingToProto(sdk.Sighting{
-		Subject: "front-goblin",
-		Name:    "front-goblin",
-		Kind:    sdk.KindMonster,
+		Subject: "world-npc-1",
+		Name:    "Merchant",
+		Kind:    sdk.KindWorld,
 		Status:  "current",
+		// The seam leaves it empty when the run cannot answer: a subject who
+		// is not a member, or one in NO FACTION AT ALL, which a world NPC is.
 	})
-	require.Equal(t, "front-goblin", got.GetSubject(), "the fields that DO cross still cross")
+	require.Equal(t, "world-npc-1", got.GetSubject(), "the fields that DO cross still cross")
 	require.Empty(t, got.GetStance(),
-		"no word is the honest answer while the seam cannot supply one")
+		"empty is the wire's own \"no word for it\"; mapping it to neutral would "+
+			"invent a belief nobody holds, and the client has a roster color to fall back to")
 }
