@@ -218,8 +218,13 @@ test pins that placements are projected by the composition, not copied: the
 entrance literal moved from `(1,-4)` to `(0,-3)` when rpg-toolkit#1141
 corrected the hex convention, with no code change here (rpg-api#802). The borrowed-projection step (a throwaway encounter) is gone
 with dungeonspec v2 (rpg-project#256): the one conversion is
-`encounter.HexCellAt`, asked for, not reimplemented. Below A only until the
-toolkit pins are real tags rather than pseudo-versions.
+`encounter.HexCellAt`, asked for, not reimplemented. Since rpg-api#1003 the
+compile dispatches on the file's version — legacy v2 unchanged (its nil scene
+pinned), single-room v3 adopted via `dungeonspec.Load`, with every monster
+ref resolved against the rulebook registry before acceptance; the workshop
+suite pins the authored axial cells (a negative odd row included), the full
+retained scene, and the refusals. Below A until an authored room is walked
+in a real browser.
 
 ### Dungeon content registry + authoring — B+ (new, 2026-08-23)
 
@@ -230,7 +235,12 @@ writes, per-key serialization proven under `-race`, verbatim bytes back — and
 the handler's transport rules (status for a malformed request, body for a file
 that does not compile) are unit-tested; the lobby suite pins that a `Put`
 dungeon starts and its `GetAtlas` is cell-for-cell the atlas `Put` answered.
-Held below A until Kirk's walk and the toolkit tags. See
+Since rpg-api#1003 the single-room suite pins the whole v3 loop: exact-byte
+save/Get/List and a fresh registry's full decoded scene, a failing real save
+keeping the prior bytes and entry, an unknown monster ref refused before any
+entry, and the scene riding both `PutDungeonResponse.atlas` and `GetAtlas`
+through the shared converter. Held below A until Kirk's walk and a real
+browser launch of an authored room. See
 `docs/architecture/components/authoring-service.md`.
 
 ## Components

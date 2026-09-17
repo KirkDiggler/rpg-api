@@ -34,6 +34,7 @@ import (
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 	tkscenarios "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/scenarios"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster/monsters"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
@@ -295,16 +296,9 @@ type Monster struct {
 // apart (the authoring RPC answers the first as a body and the second as a
 // status) use errors.Is / errors.As.
 func Compile(raw []byte) (*Dungeon, error) {
-	decoded, err := tkdungeonspec.Decode(raw)
+	spec, err := tkdungeonspec.Load(raw)
 	if err != nil {
-		return nil, fmt.Errorf("decode spec: %w", err)
-	}
-	if defects := tkdungeonspec.Validate(decoded); len(defects) > 0 {
-		return nil, fmt.Errorf("validate spec: %w", &tkdungeonspec.ValidationError{Errors: defects})
-	}
-	spec, err := tkdungeonspec.Compile(decoded)
-	if err != nil {
-		return nil, fmt.Errorf("compile spec: %w", err)
+		return nil, fmt.Errorf("load spec: %w", err)
 	}
 	if len(spec.PartyStart) == 0 {
 		// Unreachable for a spec that compiled -- dungeonspec documents
@@ -318,6 +312,20 @@ func Compile(raw []byte) (*Dungeon, error) {
 	seats := make([]spatial.Position, len(spec.PartyStart))
 	for i, seat := range spec.PartyStart {
 		seats[i] = cellOf(orientation, seat.At)
+	}
+
+	// Resolve every content reference before accepting the dungeon. This is
+	// deliberately a lookup only: the SDK owns construction and all rules.
+	for _, m := range spec.Monsters {
+		if _, known := monsters.ByRef(m.Ref); !known {
+			id := m.ID
+			if id == "" {
+				id = m.Ref
+			}
+			return nil, &tkdungeonspec.ValidationError{Errors: []tkdungeonspec.FieldError{{
+				Message: fmt.Sprintf("monster %q references unknown monster %q", id, m.Ref),
+			}}}
+		}
 	}
 
 	monsters := make([]Monster, len(spec.Monsters))
@@ -373,7 +381,7 @@ func Compile(raw []byte) (*Dungeon, error) {
 		if bossID != "" {
 			return nil, fmt.Errorf(
 				"dungeon %q authors more than one boss (%q and %q): one death ends things, and it cannot be two",
-				decoded.Key,
+				spec.Key,
 				bossID,
 				m.MemberID,
 			)
@@ -397,7 +405,7 @@ func Compile(raw []byte) (*Dungeon, error) {
 	}
 
 	return &Dungeon{
-		Key: decoded.Key, Name: decoded.Name,
+		Key: spec.Key, Name: spec.Name,
 		World: world, PartySeats: seats, Monsters: monsters,
 	}, nil
 }

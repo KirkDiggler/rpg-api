@@ -447,6 +447,36 @@ func TestAtlasToProto_Populated(t *testing.T) {
 	require.Equal(t, 0.0, pit.GetLighting().GetIntensity())
 }
 
+// TestAtlasToProto_RoomSceneJSONCarriesTheSceneVerbatim pins the one
+// carriage rpg-api#1003 adds: the SDK's canonical room-scene string crosses
+// as that exact string — a v3 room's fractional/negative doubles ride inside
+// the JSON text and must not be narrowed, re-marshaled or re-encoded on the
+// way to the wire — while a legacy atlas without one stays EMPTY rather than
+// growing a placeholder.
+func TestAtlasToProto_RoomSceneJSONCarriesTheSceneVerbatim(t *testing.T) {
+	// One authored line from the workshop fixture: the doubles are the
+	// contract (fractions, a negative, a rotation), the rest is dressing.
+	scene := `{"version":1,"coordinateFrame":{"horizontalPlane":"world-xz",` +
+		`"verticalAxis":"world-y-up","distanceUnit":"world-scene-unit","hexRadius":1,` +
+		`"footprintFrame":"owner-local-xz"},"workspace":{"hexRadius":6,"horizontalLimit":12},` +
+		`"scene":{"version":1,"id":"scene-1","name":"Workshop","items":[{` +
+		`"kind":"prop","id":"table","label":"Table","assetRef":"dnd5e:props:torture-table",` +
+		`"transform":{"x":-2.25,"y":0,"z":1.3,"rotationY":0.37},"heightScale":1.5,` +
+		`"parentId":"furniture"}],"groups":[]}}`
+
+	got := AtlasToProto(&sdk.Atlas{
+		Grid:          sdk.GridHex,
+		Cells:         []spatial.Position{{X: 0, Y: 0}},
+		RoomSceneJSON: scene,
+	})
+	require.Equal(t, scene, got.GetRoomSceneJson(),
+		"the canonical string crosses byte for byte, doubles included")
+
+	legacy := AtlasToProto(&sdk.Atlas{Grid: sdk.GridHex, Cells: []spatial.Position{{X: 0, Y: 0}}})
+	require.Empty(t, legacy.GetRoomSceneJson(),
+		"a world authored before room scenes stays empty on the wire")
+}
+
 func TestWhereToProto_Nil(t *testing.T) {
 	got := whereToProto(nil)
 	require.NotNil(t, got)

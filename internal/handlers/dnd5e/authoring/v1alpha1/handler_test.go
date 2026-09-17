@@ -127,6 +127,45 @@ func (s *HandlerSuite) TestPutDungeon_TheRequestReachesTheRegistryVerbatim() {
 	s.InDelta(0.5, resp.GetAtlas().GetRegions()[0].GetLighting().GetIntensity(), 1e-9)
 }
 
+// TestPutDungeon_AtlasCarriesTheRoomScene is the authoring side of the one
+// carriage: PutDungeon's answer and GetAtlas share AtlasToProto (the same
+// producer), so the compiled v3 room's canonical scene reaches the builder
+// too — the exact string with its fractional/negative doubles — while an
+// atlas without a room scene stays empty rather than growing a placeholder.
+func (s *HandlerSuite) TestPutDungeon_AtlasCarriesTheRoomScene() {
+	scene := `{"scene":{"version":1,"id":"scene-1","name":"Workshop",` +
+		`"items":[{"id":"table","transform":{"x":-2.25,"z":1.3,"rotationY":0.37}}],` +
+		`"groups":[{"id":"furniture","transform":{"x":-2.175,"y":0.6,"z":1.275}}]}}`
+	s.registry.EXPECT().
+		Put(gomock.Any(), gomock.Any()).
+		Return(&dungeons.PutResult{Entry: &dungeons.Entry{
+			Key: "workshop-room",
+			Atlas: &sdk.Atlas{
+				Grid:          sdk.GridHex,
+				Cells:         []spatial.Position{{X: 0, Y: 0}},
+				RoomSceneJSON: scene,
+			},
+		}}, nil)
+
+	resp, err := s.handler.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{Key: "workshop-room", Yaml: "version: 3\n"})
+	s.Require().NoError(err)
+	s.Require().NotNil(resp.GetAtlas())
+	s.Equal(scene, resp.GetAtlas().GetRoomSceneJson(),
+		"PutDungeon's atlas is the body the builder plays from, scene included")
+
+	// Legacy absence stays absent.
+	s.registry.EXPECT().
+		Put(gomock.Any(), gomock.Any()).
+		Return(&dungeons.PutResult{Entry: &dungeons.Entry{
+			Key:   "crypt",
+			Atlas: &sdk.Atlas{Grid: sdk.GridHex, Cells: []spatial.Position{{X: 0, Y: 0}}},
+		}}, nil)
+	legacy, err := s.handler.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{Key: "crypt", Yaml: "version: 2\n"})
+	s.Require().NoError(err)
+	s.Require().NotNil(legacy.GetAtlas())
+	s.Empty(legacy.GetAtlas().GetRoomSceneJson(), "a v2 room's atlas carries no room scene")
+}
+
 func (s *HandlerSuite) TestPutDungeon_RegistryFailureIsInternal() {
 	s.registry.EXPECT().Put(gomock.Any(), gomock.Any()).Return(nil, errors.New("disk full"))
 	_, err := s.handler.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{Key: "crypt", Yaml: "x"})

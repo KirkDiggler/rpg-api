@@ -1,7 +1,7 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-09-16
+updated: 2026-09-17
 confidence: high — #938 trusted guild-derived composition world context is verified through auth/provider/cache/interceptor/handler/registration tests, race detection, and real miniredis stored-world checks; #921 local-dev composition Create/Get/List/Delete remains covered; #895 explicit Death Save RPC/progress projection verified through handler, owner-view, adapter, and real released-provider acceptance; #891 activation/result event passthrough verified through converter RED/GREEN and real SessionService live/catch-up acceptance; #882 first-admission normal-rest ownership verified through Lobby StartEncounter against released providers; #870 Martial Arts Quarterstaff→bonus Unarmed Strike handler journey verified against released providers and focused RED/GREEN acceptance; #897 complete Appearance ownership/conversion/delegation verified through focused RED/GREEN and Docker-backed integration tests; #852 shared dice presentation wiring verified against RED/GREEN cross-instance Redis integration, focused lint, and race-stressed package gate; #844 field-complete owner projection and atomic equipment patch verified against focused handler/orchestrator/repository tests and lint; Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #687 region/theme wire projection verified against passing unit (-race) + a real-RPC integration gate proving connect-time AND incremental-reveal zone_id/zones/theme projection against the real Redis harness, full `go test`/`golangci-lint` green against the published `rpg-api-protos` generated branch + `rpg-toolkit/encounter v0.35.0`; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`; #694 crypt dungeon-key consumes the toolkit's own `CryptDungeonParams` (obstacles included) verified against passing unit (-race) against published `rpg-toolkit/encounter v0.38.0`; #689 deterministic crypt monster composition verified against passing unit (-race, 1000-seed x 4-party-size zero-error matrix against the real production registry) + real-Redis integration (composition + seed-determinism + party-size-invariance) + the updated dungeon_crypt_test.go gate, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.38.0` + `rulebooks/dnd5e v0.68.0`, zero new lint issues versus main — **#694 and #689 merged together (this doc's own "Deterministic crypt monster composition, integrated with toolkit CryptDungeonParams" entry, 2026-07-23) close out rpg-api#696** (the out-of-sight goblin-placement collision #694 alone surfaced): #689's deterministic `FixedPositions` composition retires the search path that could fail, so the merged 1..1000-seed x party-1..4 matrix is 0/4000 errors, not a tuned-down failure rate
 ---
 
@@ -10,6 +10,29 @@ confidence: high — #938 trusted guild-derived composition world context is ver
 This is a living doc. Edit it in the same PR that invalidates a line. Don't let it rot.
 
 ## Active work
+
+**Single-room World Builder adoption (rpg-api#1003)** — the API leg of one
+playable authored room. On released provider tags only — encounter v0.87.0,
+session v0.94.0, protos generated at `6ea2b2e6` — `sessionworld.Compile`
+dispatches through `dungeonspec.Load`: legacy v2 files compile exactly as
+before (their absent room scene pinned nil), a v3 single-room file lowers
+whole (scene, workspace/frame declarations, prop declarations, placements)
+into the existing field contract, and every monster ref is resolved against
+the rulebook registry before the dungeon is accepted, so an unknown ref
+cannot become an entry or a launch. The atlas carries the canonical room
+scene: `AtlasToProto` copies `sdk.Atlas.RoomSceneJSON` verbatim into
+`GetAtlasResponse.room_scene_json` — the shared producer for `PutDungeon`'s
+preview and `GetAtlas` — with legacy atlases staying empty. Semantic suites
+prove the real loop end to end on miniredis-backed stores: registry
+byte/metadata/full-scene preservation (including across a fresh registry), a
+failing real save keeping the prior bytes and entry, launch with member
+atlas and per-actor cells — a negative odd axial row included — SDK-owned
+monster defaults on the persisted sheet, a fresh-manager reload of the
+persisted snapshot, author-edit isolation (a republished room reaches only
+future launches), and the seat-capacity refusal writing nothing (no session,
+no world, no character bytes, no `EncounterStarted`). Browser rendering and
+the real Save/Play walk remain explicitly pending; API success is not
+browser acceptance.
 
 **Level-up system, API leg (rpg-project#452)** — Experience, the entitled level
 and the next threshold are projected read-only onto the v1alpha1 `Character`;

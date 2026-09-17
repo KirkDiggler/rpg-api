@@ -89,7 +89,9 @@ func SeedShipped(dir, shipped string) ([]string, error) {
 		}
 	}
 
-	var written []string
+	// Reserve space for the shipped entries; restore the original nil result
+	// below when every entry was skipped.
+	written := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != yamlExt {
 			continue
@@ -115,6 +117,9 @@ func SeedShipped(dir, shipped string) ([]string, error) {
 		written = append(written, key)
 	}
 	sort.Strings(written)
+	if len(written) == 0 {
+		written = nil
+	}
 
 	return written, nil
 }

@@ -4,6 +4,32 @@
 # checker at the caller's working tree.
 set -euo pipefail
 
+# The hermeticity above is only true if the disposable git calls below
+# resolve INSIDE the disposable repository. Git exports its complete
+# repository-local environment (GIT_DIR, GIT_INDEX_FILE, GIT_COMMON_DIR,
+# GIT_CONFIG*, GIT_OBJECT_DIRECTORY and the rest of
+# `git rev-parse --local-env-vars`) to hooks, so when this test runs from a
+# pre-commit hook in a linked worktree, inheriting them pointed every
+# "git -C $root" call at the CALLER's repository: the fixture was committed
+# to the caller's branch, the caller's index was replaced and the caller's
+# COMMON config corrupted (the API1003 hook incident, 2026-09-17). Unset the
+# COMPLETE repository-local list — plus the numbered GIT_CONFIG_KEY_n/
+# GIT_CONFIG_VALUE_n entries the count-based mechanism reads, which no
+# static list can spell — inside this subprocess only, BEFORE any fixture
+# init/config/add/commit, so $root is genuinely disposable no matter where
+# the test was invoked from. The caller's own environment is not touched:
+# these unsets live in this script's process and its children only.
+# Assignment propagates discovery failure under set -e; a process substitution
+# would hide it and could leave a redirecting Git context active.
+git_local_env_vars="$(git rev-parse --local-env-vars)"
+while IFS= read -r var; do
+	[ -n "$var" ] && unset "$var"
+done <<<"$git_local_env_vars"
+unset GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+while IFS= read -r var; do
+	unset "$var"
+done < <(env | sed -n 's/^\(GIT_CONFIG_KEY_[0-9]*\|GIT_CONFIG_VALUE_[0-9]*\)=.*/\1/p')
+
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CHECKER_SOURCE="$SOURCE_DIR/scripts/ci-checks.sh"
 MAKEFILE_SOURCE="$SOURCE_DIR/Makefile"
@@ -187,5 +213,141 @@ make_fixture "$repo"
 )
 grep -Fq 'go generate ./...' "$CHECK_COMMAND_LOG" || fail 'make mocks did not explicitly invoke go generate'
 grep -Fq 'generated' "$repo/generated/mock.go" || fail 'explicit generation did not update generated output'
+
+# The API1003 hook incident (2026-09-17), as a permanent regression. This
+# test ran from a pre-commit hook in a LINKED WORKTREE and inherited git's
+# repository-local environment (GIT_DIR, GIT_INDEX_FILE, GIT_COMMON_DIR,
+# GIT_CONFIG*, ...); the fixture git calls above then resolved into the
+# CALLER's repository — the fixture was committed to the caller's branch,
+# the caller's index was replaced and the caller's COMMON config corrupted.
+# The sanitization at the top of this file is the fix; this scenario is its
+# durable proof: it re-invokes the WHOLE test the way a linked-worktree hook
+# sees it — repository-local environment pointed at a disposable caller that
+# carries HEAD/ref, index, working bytes, COMMON config and an existing
+# stash — and asserts the caller is untouched and the test still passes.
+#
+# BOUNDED SELF-INVOCATION: the nested run is marked CI_CHECKS_TEST_DEPTH=1
+# and skips this scenario, so the recursion cannot go deeper than one level.
+scenario_inherited_hook_context() {
+	[ "${CI_CHECKS_TEST_DEPTH:-0}" -ge 1 ] && return 0
+
+	local caller="$WORK/hook-caller"
+	local wt="$WORK/hook-wt"
+	"$REAL_GIT" init -q -b main "$caller"
+	"$REAL_GIT" -C "$caller" config user.name ci-check-test
+	"$REAL_GIT" -C "$caller" config user.email test@example.com
+	printf 'caller base\n' >"$caller/caller.txt"
+	printf 'baseline unstaged\n' >"$caller/unstaged.txt"
+	"$REAL_GIT" -C "$caller" add caller.txt unstaged.txt
+	"$REAL_GIT" -C "$caller" commit -qm caller-base
+
+	# A linked worktree: the shape that makes a hook export the hostile
+	# environment in the first place.
+	"$REAL_GIT" -C "$caller" worktree add -q "$WORK/hook-wt" -b wtbranch
+
+	# An EXISTING stash, so a repeat of the escape is caught even when every
+	# other datum happens to survive.
+	printf 'stash payload\n' >"$caller/stashme.txt"
+	"$REAL_GIT" -C "$caller" add stashme.txt
+	"$REAL_GIT" -C "$caller" stash push -q -m incident-signal
+
+	# State the escape would have hit: staged, unstaged and untracked bytes.
+	printf 'staged edit\n' >"$caller/staged.txt"
+	"$REAL_GIT" -C "$caller" add staged.txt
+	printf 'unstaged edit\n' >"$caller/unstaged.txt"
+	printf 'untracked sentinel\n' >"$caller/untracked.txt"
+
+	local caller_gitdir wt_gitdir
+	caller_gitdir="$($REAL_GIT -C "$caller" rev-parse --absolute-git-dir)"
+	wt_gitdir="$($REAL_GIT -C "$wt" rev-parse --absolute-git-dir)"
+
+	# The exported index belongs to the linked worktree, not the primary
+	# checkout. Give that exact target its own nonempty state to preserve.
+	printf 'worktree staged\n' >"$wt/staged.txt"
+	"$REAL_GIT" -C "$wt" add staged.txt
+	printf 'worktree unstaged\n' >"$wt/unstaged.txt"
+	printf 'worktree untracked\n' >"$wt/untracked.txt"
+	"$REAL_GIT" -C "$wt" rev-parse HEAD >"$WORK/wt-head.before"
+	"$REAL_GIT" -C "$wt" diff --cached --binary >"$WORK/wt-index.before"
+	"$REAL_GIT" -C "$wt" status --porcelain=v1 >"$WORK/wt-status.before"
+	sha256sum "$wt/staged.txt" "$wt/unstaged.txt" "$wt/untracked.txt" >"$WORK/wt-bytes.before"
+
+	"$REAL_GIT" -C "$caller" rev-parse HEAD >"$WORK/hook-head.before"
+	"$REAL_GIT" -C "$caller" for-each-ref >"$WORK/hook-refs.before"
+	"$REAL_GIT" -C "$caller" diff --cached --binary >"$WORK/hook-index.before"
+	"$REAL_GIT" -C "$caller" status --porcelain=v1 >"$WORK/hook-status.before"
+	"$REAL_GIT" -C "$caller" stash list >"$WORK/hook-stashlist.before"
+	cp "$caller/caller.txt" "$WORK/hook-bytes.before"
+	cp "$caller/untracked.txt" "$WORK/hook-untracked.before"
+	cp "$caller_gitdir/config" "$WORK/hook-commonconfig.before"
+
+	# The hostile context, as a linked-worktree hook exports it (GIT_DIR and
+	# GIT_INDEX_FILE) plus the COMPLETE repository-local list pointed at the
+	# caller — the strongest form the fix has to survive.
+	export GIT_DIR="$wt_gitdir"
+	export GIT_INDEX_FILE="$wt_gitdir/index"
+	export GIT_COMMON_DIR="$caller_gitdir"
+	export GIT_OBJECT_DIRECTORY="$caller_gitdir/objects"
+	export GIT_ALTERNATE_OBJECT_DIRECTORIES="$caller_gitdir/objects"
+	export GIT_CONFIG="$caller_gitdir/config"
+	export GIT_WORK_TREE="$WORK/hook-wt"
+	export GIT_CONFIG_COUNT=1
+	export GIT_CONFIG_KEY_0=caller.safety
+	export GIT_CONFIG_VALUE_0=hostile
+
+	if ! CI_CHECKS_TEST_DEPTH=1 bash "$SOURCE_DIR/scripts/ci-checks.test.sh" \
+		>"$WORK/hook-context.out" 2>&1; then
+		cat "$WORK/hook-context.out" >&2
+		fail 'the test did not pass under inherited linked-worktree hook context'
+	fi
+
+	# The after-snapshots run in a SANITIZED subshell: reading the caller
+	# back while the hostile variables are still exported would read through
+	# them (GIT_INDEX_FILE would answer with the worktree's index, not the
+	# caller's) — the same redirection this scenario exists to catch.
+	(
+		unset GIT_DIR GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY \
+			GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_WORK_TREE \
+			GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+		while IFS= read -r var; do
+			unset "$var"
+		done < <(env | sed -n 's/^\(GIT_CONFIG_KEY_[0-9]*\|GIT_CONFIG_VALUE_[0-9]*\)=.*/\1/p')
+		"$REAL_GIT" -C "$caller" rev-parse HEAD >"$WORK/hook-head.after"
+		"$REAL_GIT" -C "$caller" for-each-ref >"$WORK/hook-refs.after"
+		"$REAL_GIT" -C "$caller" diff --cached --binary >"$WORK/hook-index.after"
+		"$REAL_GIT" -C "$caller" status --porcelain=v1 >"$WORK/hook-status.after"
+		"$REAL_GIT" -C "$caller" stash list >"$WORK/hook-stashlist.after"
+		"$REAL_GIT" -C "$wt" rev-parse HEAD >"$WORK/wt-head.after"
+		"$REAL_GIT" -C "$wt" diff --cached --binary >"$WORK/wt-index.after"
+		"$REAL_GIT" -C "$wt" status --porcelain=v1 >"$WORK/wt-status.after"
+		sha256sum "$wt/staged.txt" "$wt/unstaged.txt" "$wt/untracked.txt" >"$WORK/wt-bytes.after"
+	)
+	cmp -s "$WORK/hook-head.before" "$WORK/hook-head.after" \
+		|| fail 'hook-context run moved the caller HEAD'
+	cmp -s "$WORK/hook-refs.before" "$WORK/hook-refs.after" \
+		|| fail 'hook-context run changed the caller refs'
+	cmp -s "$WORK/hook-index.before" "$WORK/hook-index.after" \
+		|| fail 'hook-context run changed the caller index'
+	cmp -s "$WORK/hook-status.before" "$WORK/hook-status.after" \
+		|| fail 'hook-context run changed the caller status'
+	cmp -s "$WORK/hook-stashlist.before" "$WORK/hook-stashlist.after" \
+		|| fail 'hook-context run changed the caller stash identity'
+	cmp -s "$WORK/hook-bytes.before" "$caller/caller.txt" \
+		|| fail 'hook-context run changed the caller working bytes'
+	cmp -s "$WORK/hook-untracked.before" "$caller/untracked.txt" \
+		|| fail 'hook-context run changed the caller untracked bytes'
+	cmp -s "$WORK/hook-commonconfig.before" "$caller_gitdir/config" \
+		|| fail 'hook-context run changed the caller COMMON git config'
+	for datum in head index status bytes; do
+		cmp -s "$WORK/wt-$datum.before" "$WORK/wt-$datum.after" \
+			|| fail "hook-context run changed linked-worktree $datum"
+	done
+
+	unset GIT_DIR GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY \
+		GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_WORK_TREE \
+		GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+}
+
+scenario_inherited_hook_context
 
 echo 'ci-check safety contract tests: PASS'
