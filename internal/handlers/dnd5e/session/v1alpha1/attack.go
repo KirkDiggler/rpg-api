@@ -3,6 +3,9 @@ package sessionv1alpha1
 import (
 	"context"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sdkerr"
 
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
@@ -39,6 +42,13 @@ func (h *Handler) Attack(ctx context.Context, req *sessionpb.AttackRequest) (*se
 		return nil, sdkerr.StatusError(err)
 	}
 
+	// The keep record can name a rule this build has never heard of, and the
+	// converter refuses rather than dropping it. See keepRuleToProto.
+	calculation, err := rollCalculationToProto(out.Calculation)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
 	return &sessionpb.AttackResponse{
 		Roll:        int32(out.Roll),
 		Total:       int32(out.Total),
@@ -51,7 +61,7 @@ func (h *Handler) Attack(ctx context.Context, req *sessionpb.AttackRequest) (*se
 		Saved:       saveReportToProto(out.Saved),
 		Delivery:    deliveryReportToProto(out.Delivery),
 		Attack:      attackRefToProto(out.Attack),
-		Calculation: rollCalculationToProto(out.Calculation),
+		Calculation: calculation,
 		// The opaque token this swing was minted with. The same value reaches
 		// every other member on the Struck/Missed beat, and it is the only
 		// thing the attacker and a witness can both name this roll by: seq is

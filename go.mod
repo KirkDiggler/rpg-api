@@ -3,15 +3,15 @@ module github.com/KirkDiggler/rpg-api
 go 1.25.14
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260917032631-9397f13c2af9
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260917065041-00b7e03c08e9
 	github.com/KirkDiggler/rpg-toolkit/core v0.12.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.3
 	github.com/KirkDiggler/rpg-toolkit/npc v0.2.0
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.179.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.86.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.93.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.179.1-0.20260917064900-cb69f1e349ff
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.87.1-0.20260917070233-47af6678b909
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.93.1-0.20260917072230-d57ffe121657
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.15.0
 	github.com/KirkDiggler/rpg-toolkit/world v0.4.1
 	github.com/alicebob/miniredis/v2 v2.35.0
@@ -40,7 +40,7 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/play/interrupt v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/play/record v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/behavior v0.6.0 // indirect
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.52.0 // indirect
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.52.1-0.20260917071022-6798a5783409 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
