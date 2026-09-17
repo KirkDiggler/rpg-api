@@ -257,18 +257,33 @@ type Monster struct {
 	// time. A zero value invented on this side would be a DC nobody chose.
 	Intimidate []tkencounter.CheckApproach
 
-	// OnIntimidated is the world fact every witness learns when a threat
-	// against this monster lands (`place[].on.intimidated.fact`,
-	// rpg-project#454 decision 7), as the COMPILED fact id dungeonspec
-	// minted. Empty when the author wrote no `on:` -- the ordinary case,
-	// meaning a cowed monster changes nobody's mind about anything outside
-	// the fight.
+	// Persuade is the author's priced check for talking this monster round
+	// (`place[].persuade`, rpg-project#458). Intimidate's twin above, with
+	// Intimidate's contracts: nil means DERIVED, not ungated, and the
+	// rulebook rolls Persuasion against the same passive Insight a threat is
+	// read by -- a creature reads a liar and a flatterer with one sense.
+	Persuade []tkencounter.CheckApproach
+
+	// Answers is what this monster DOES about a social verb's verdict, keyed
+	// by outcome (`place[].on`, rpg-project#458), as the COMPILED entries
+	// dungeonspec produced -- weights resolved, fact ids minted, the author's
+	// lines verbatim.
 	//
-	// FORWARDED by the launch beside Intimidate above, and empty stays empty
-	// for the same reason nil does: a monster nobody planted a fact on
-	// teaches the world nothing when it is cowed, which is the ordinary
-	// case rather than a value to fill in.
-	OnIntimidated string
+	// IT REPLACED `OnIntimidated string`, which named one fact on one
+	// outcome and had nowhere to put a line of speech, a failed attempt, or
+	// a creature that runs. There is no second spelling beside it: two
+	// representations of one authored table is what this workspace bans, and
+	// the old field is gone rather than kept in step.
+	//
+	// THE MAP CROSSES WHOLE, keyed as the composition keys it
+	// (`intimidated`, `intimidate_failed`, `persuaded`, `persuade_failed`).
+	// Nothing here reads a key or picks an entry -- which entry fires is the
+	// world's die, rolled inside the encounter, and a package that peeked at
+	// the table here would be a second reader of an authored fact.
+	//
+	// NIL STAYS NIL: a creature the author wrote no `on:` for answers
+	// nothing, and the world rolls no die at all.
+	Answers map[string][]tkencounter.Answer
 }
 
 // Compile turns one authored dungeon file into a [Dungeon].
@@ -326,13 +341,21 @@ func Compile(raw []byte) (*Dungeon, error) {
 			Boss: m.Boss, Targeting: m.Targeting, Actions: m.Actions,
 			PlacementID: m.ID, Holds: m.Holds, Faction: m.Faction,
 			Arrives: m.Arrives,
-			// The shenanigan facts (rpg-project#454), read off the
-			// compiler's own keyed map rather than flattened there: the
-			// composition takes one fact per verb as its own field, and the
-			// second shenanigan adds a key beside `intimidated` instead of
-			// breaking this type. Absent means absent -- no defaulting here.
-			Intimidate:    m.Intimidate,
-			OnIntimidated: m.On[tkdungeonspec.OnIntimidated],
+			// The shenanigan half (rpg-project#454, rpg-project#458),
+			// carried whole rather than read: the author's two priced
+			// checks and the answer table keyed by outcome. Absent means
+			// absent -- no defaulting here, because nil is "derive the
+			// check" for the two lists and "answers nothing" for the
+			// table, and both are the ordinary case.
+			//
+			// THE TABLE IS NO LONGER FLATTENED. This used to pull one fact
+			// out of one key (`m.On[OnIntimidated]`), which was all the
+			// composition had room for; `on:` is now four keys of weighted
+			// entries and the whole map crosses, so adding a fifth outcome
+			// is a dungeonspec change and not a line here.
+			Intimidate: m.Intimidate,
+			Persuade:   m.Persuade,
+			Answers:    m.Answers,
 		}
 	}
 

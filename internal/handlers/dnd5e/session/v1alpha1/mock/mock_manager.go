@@ -311,6 +311,21 @@ func (mr *MockManagerMockRecorder) OpenDoor(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OpenDoor", reflect.TypeOf((*MockManager)(nil).OpenDoor), ctx, in)
 }
 
+// Persuade mocks base method.
+func (m *MockManager) Persuade(ctx context.Context, in *session.PersuadeInput) (*session.PersuadeOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Persuade", ctx, in)
+	ret0, _ := ret[0].(*session.PersuadeOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Persuade indicates an expected call of Persuade.
+func (mr *MockManagerMockRecorder) Persuade(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Persuade", reflect.TypeOf((*MockManager)(nil).Persuade), ctx, in)
+}
+
 // React mocks base method.
 func (m *MockManager) React(ctx context.Context, in *session.ReactInput) (*session.ReactOutput, error) {
 	m.ctrl.T.Helper()
