@@ -3,6 +3,9 @@ package sessionv1alpha1
 import (
 	"context"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sdkerr"
 
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
@@ -34,5 +37,17 @@ func (h *Handler) GetStory(ctx context.Context, req *sessionpb.GetStoryRequest) 
 		return nil, sdkerr.StatusError(err)
 	}
 
-	return &sessionpb.GetStoryResponse{Entries: eventsToProto(entries)}, nil
+	// A beat whose body this build cannot spell on the wire fails the read
+	// rather than arriving with the unspellable value quietly replaced
+	// (rpg-project#458, answerWordToProto). INTERNAL is the honest code: the
+	// request is well-formed and the world is fine -- it is THIS BINARY that
+	// is behind the toolkit that wrote the beat, which is the pseudo-version
+	// wave's own failure mode and must be loud enough to send somebody to the
+	// pins.
+	converted, err := eventsToProto(entries)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "project story: %v", err)
+	}
+
+	return &sessionpb.GetStoryResponse{Entries: converted}, nil
 }

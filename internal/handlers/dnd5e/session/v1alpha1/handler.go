@@ -48,6 +48,7 @@ type Manager interface {
 	OpenDoor(ctx context.Context, in *sdk.OpenDoorInput) (*sdk.OpenDoorOutput, error)
 	Unlock(ctx context.Context, in *sdk.UnlockInput) (*sdk.UnlockOutput, error)
 	Intimidate(ctx context.Context, in *sdk.IntimidateInput) (*sdk.IntimidateOutput, error)
+	Persuade(ctx context.Context, in *sdk.PersuadeInput) (*sdk.PersuadeOutput, error)
 	Search(ctx context.Context, in *sdk.SearchInput) (*sdk.SearchOutput, error)
 	Interact(ctx context.Context, in *sdk.InteractInput) (*sdk.InteractOutput, error)
 	Loot(ctx context.Context, in *sdk.LootInput) (*sdk.LootOutput, error)

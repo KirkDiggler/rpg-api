@@ -766,7 +766,7 @@ func richStruckEvent() sdk.Event {
 // (rpg-api-protos#239's own ruling: live and catch-up must be byte-equal for
 // the same seq).
 func TestEventsToProto(t *testing.T) {
-	got := eventsToProto([]sdk.Event{
+	got := mustEventsToProto(t, []sdk.Event{
 		{
 			Session: "sess-1", Seq: 1, At: 10, Correlation: "corr-1", Recipient: "char-1",
 			Kind: sdk.EventTurnEnded, Payload: []byte("p"),
@@ -784,15 +784,15 @@ func TestEventsToProto(t *testing.T) {
 }
 
 func TestEventsToProto_Empty(t *testing.T) {
-	got := eventsToProto(nil)
+	got := mustEventsToProto(t, nil)
 	require.Empty(t, got)
 }
 
 func TestEventsToProto_RichStruckMatchesDirectConversion(t *testing.T) {
 	in := richStruckEvent()
-	caughtUp := eventsToProto([]sdk.Event{in})
+	caughtUp := mustEventsToProto(t, []sdk.Event{in})
 	require.Len(t, caughtUp, 1)
-	require.True(t, proto.Equal(eventToProto(in), caughtUp[0]),
+	require.True(t, proto.Equal(mustEventToProto(t, in), caughtUp[0]),
 		"GetStory's slice conversion and StreamEvents' direct conversion share one mapping")
 }
 
@@ -806,7 +806,7 @@ func TestActivationEventKindsToProto(t *testing.T) {
 // identity, arithmetic, or prose from any other field.
 func TestActivationEventBodiesToProto(t *testing.T) {
 	t.Run("Activated", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventActivated, Payload: []byte("activated-payload"),
 			Body: sdk.ActivatedBody{
 				Actor: "alice",
@@ -828,7 +828,7 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 
 	t.Run("HealingApplied", func(t *testing.T) {
 		fighterLevel := 1
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventActivationResult,
 			Body: sdk.ActivationResultBody{
 				Actor: "alice",
@@ -888,7 +888,7 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 	})
 
 	t.Run("ConditionApplied", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventActivationResult,
 			Body: sdk.ActivationResultBody{
 				Actor: "alice",
@@ -912,7 +912,7 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 	})
 
 	t.Run("ConditionRemoved", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventActivationResult,
 			Body: sdk.ActivationResultBody{
 				Actor: "alice",
@@ -937,7 +937,7 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 	})
 
 	t.Run("CapacityGranted", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventActivationResult,
 			Body: sdk.ActivationResultBody{
 				Actor: "alice",
@@ -968,7 +968,7 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 	// way, which a reader would otherwise have to reconstruct by correlating
 	// those beats by hand.
 	t.Run("MoveImposed", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventActivationResult,
 			Body: sdk.ActivationResultBody{
 				Actor: "bard-1",
@@ -998,7 +998,7 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 	// zero by proto3's own rules, so the arm itself has to be present for a
 	// client to tell "pushed nowhere" from "not pushed".
 	t.Run("MoveImposed pinned against the fold", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventActivationResult,
 			Body: sdk.ActivationResultBody{
 				Actor: "bard-1",
@@ -1053,7 +1053,7 @@ func TestActivationEventBody_NilOrMalformedStaysNil(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := eventToProto(sdk.Event{
+			got := mustEventToProto(t, sdk.Event{
 				Kind: sdk.EventActivationResult, Payload: []byte("passthrough"), Body: tt.body,
 			})
 			require.Equal(t, sessionpb.EventKind_EVENT_KIND_ACTIVATION_RESULT, got.GetKind())
@@ -1350,7 +1350,7 @@ func TestParticipantsToProto_Populated(t *testing.T) {
 // Body is an ADDITIONAL carrier, not a replacement for the passthrough law.
 func TestEventToProto_TypedBodies(t *testing.T) {
 	t.Run("TurnEnded", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventTurnEnded, Payload: []byte("x"),
 			Body: sdk.TurnEndedBody{Member: "char-1", Next: "goblin-1"},
 		})
@@ -1360,12 +1360,12 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	})
 
 	t.Run("Downed", func(t *testing.T) {
-		got := eventToProto(sdk.Event{Kind: sdk.EventDowned, Body: sdk.DownedBody{Member: "goblin-1"}})
+		got := mustEventToProto(t, sdk.Event{Kind: sdk.EventDowned, Body: sdk.DownedBody{Member: "goblin-1"}})
 		require.Equal(t, "goblin-1", got.GetDowned().GetMember())
 	})
 
 	t.Run("Struck", func(t *testing.T) {
-		s := eventToProto(richStruckEvent()).GetStruck()
+		s := mustEventToProto(t, richStruckEvent()).GetStruck()
 		require.NotNil(t, s)
 		require.Equal(t, "char-1", s.GetAttacker())
 		require.Equal(t, "goblin-1", s.GetTarget())
@@ -1410,7 +1410,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	})
 
 	t.Run("Missed", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventMissed,
 			Body: sdk.MissedBody{
 				Attacker: "char-1", Target: "goblin-1", Roll: 4, Total: 7, Against: 13,
@@ -1424,7 +1424,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	})
 
 	t.Run("FightStarted", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventFightStarted,
 			Body: sdk.FightStartedBody{Members: []string{"char-1", "goblin-1"}},
 		})
@@ -1432,7 +1432,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	})
 
 	t.Run("FightEnded", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventFightEnded,
 			Body: sdk.FightEndedBody{Cause: sdk.DissolveByDefeat},
 		})
@@ -1440,7 +1440,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	})
 
 	t.Run("FightEnded by stance", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventFightEnded,
 			Body: sdk.FightEndedBody{Cause: sdk.DissolveByStance},
 		})
@@ -1451,7 +1451,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	// entered the run, what it is -- a closed enum, mapped by name -- and
 	// the cell it stands on now.
 	t.Run("Arrived", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventArrived,
 			Body: sdk.ArrivedBody{ID: "reinforcement-1", Kind: sdk.PlacementMonster, Cell: spatial.Position{X: 1, Y: 4}},
 		})
@@ -1461,7 +1461,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 		require.Equal(t, 1.0, got.GetArrived().GetCell().GetX())
 		require.Equal(t, 4.0, got.GetArrived().GetCell().GetY())
 
-		prop := eventToProto(sdk.Event{
+		prop := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventArrived,
 			Body: sdk.ArrivedBody{ID: "letter", Kind: sdk.PlacementProp, Cell: spatial.Position{X: 0, Y: 3}},
 		})
@@ -1472,7 +1472,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	// The stance beat (rpg-project#375, design §6): kind and body, verbatim
 	// -- the pair as the session sorted it, the stance as the author's word.
 	t.Run("StanceChanged", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventStanceChanged,
 			Body: sdk.StanceChangedBody{Between: []string{"party", "raiders"}, Stance: "neutral"},
 		})
@@ -1482,7 +1482,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	})
 
 	t.Run("Moved", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventMoved,
 			Body: sdk.MovedBody{Member: "char-1", To: spatial.Position{X: 3, Y: 4}},
 		})
@@ -1492,7 +1492,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	})
 
 	t.Run("Joined", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventJoined,
 			Body: sdk.JoinedBody{Member: "char-1"},
 		})
@@ -1500,7 +1500,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	})
 
 	t.Run("Exited", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventExited,
 			Body: sdk.ExitedBody{Member: "char-1"},
 		})
@@ -1513,7 +1513,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	// atlas. A locked door's approaches list rides through; an unlocked one
 	// (see the RegionRevealed case below) carries no lock at all.
 	t.Run("DoorRevealed", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventDoorRevealed,
 			Body: sdk.DoorRevealedBody{
 				Door:  "hall-tomb",
@@ -1539,7 +1539,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	// presence law (Approaches empty means Lock unset), matching
 	// doorToProto's own convention field-for-field.
 	t.Run("DoorRevealed_Unlocked_CarriesNoLock", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventDoorRevealed,
 			Body: sdk.DoorRevealedBody{Door: "entrance-hall", State: "open"},
 		})
@@ -1551,7 +1551,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	// atlasRegionToProto and the shared atlasPropsToProto AtlasToProto itself
 	// uses, verbatim.
 	t.Run("RegionRevealed", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventRegionRevealed,
 			Body: sdk.RegionRevealedBody{
 				Region: sdk.AtlasRegion{
@@ -1585,7 +1585,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	// member-scoped, by GetView, and minting it here would be a second
 	// computation of that same answer.
 	t.Run("Sighted_CarriesNamesVerbatim", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventSighted,
 			Body: sdk.SightedBody{Gained: []string{"goblin-2", "orc-1"}, Lost: []string{"wolf-3"}},
 		})
@@ -1603,14 +1603,14 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	// whether the question was asked -- so this side must not turn an absent
 	// list into a present empty one, nor the reverse.
 	t.Run("Sighted_TheHalfThatDidNotHappenStaysAbsent", func(t *testing.T) {
-		arrived := eventToProto(sdk.Event{
+		arrived := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventSighted,
 			Body: sdk.SightedBody{Gained: []string{"goblin-2"}},
 		}).GetSighted()
 		require.Equal(t, []string{"goblin-2"}, arrived.GetGained())
 		require.Empty(t, arrived.GetLost(), "nobody left, so nothing is named as leaving")
 
-		departed := eventToProto(sdk.Event{
+		departed := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventSighted,
 			Body: sdk.SightedBody{Lost: []string{"wolf-3"}},
 		}).GetSighted()
@@ -1628,7 +1628,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	// recipient. It crosses beside the two transitions rather than instead of
 	// them, because one pass can carry all three.
 	t.Run("Sighted_CarriesTheChangedHalf", func(t *testing.T) {
-		sighted := eventToProto(sdk.Event{
+		sighted := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventSighted,
 			Body: sdk.SightedBody{Changed: []string{"goblin-2"}},
 		}).GetSighted()
@@ -1636,7 +1636,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 		require.Empty(t, sighted.GetGained(), "nobody arrived — it was already in view")
 		require.Empty(t, sighted.GetLost())
 
-		all := eventToProto(sdk.Event{
+		all := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventSighted,
 			Body: sdk.SightedBody{
 				Gained: []string{"orc-1"}, Lost: []string{"wolf-3"}, Changed: []string{"goblin-2"},
@@ -1655,7 +1655,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	// illusion must be able to lie about, and a fact on the wire is true for
 	// everybody by construction.
 	t.Run("Sighted_SaysWhoChangedAndNeverWhat", func(t *testing.T) {
-		sighted := eventToProto(sdk.Event{
+		sighted := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventSighted,
 			Body: sdk.SightedBody{Changed: []string{"goblin-2"}},
 		}).GetSighted()
@@ -1666,7 +1666,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	})
 
 	t.Run("Sighted_MemberIdsAreNotAssetRefs", func(t *testing.T) {
-		sighted := eventToProto(sdk.Event{
+		sighted := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventSighted,
 			Body: sdk.SightedBody{Gained: []string{"goblin-2"}},
 		}).GetSighted()
@@ -1683,7 +1683,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 // no typed session.EventBody at all, so this stays a clean "no arm claims
 // this kind" case rather than "the SDK happened to hand back a nil body".
 func TestEventToProto_UntypedKind_BodyStaysNilPayloadCarries(t *testing.T) {
-	got := eventToProto(sdk.Event{Kind: sdk.EventEnded, Payload: []byte("ended-payload"), Body: nil})
+	got := mustEventToProto(t, sdk.Event{Kind: sdk.EventEnded, Payload: []byte("ended-payload"), Body: nil})
 	require.Equal(t, []byte("ended-payload"), got.GetPayload())
 	require.Nil(t, got.GetTurnEnded())
 	require.Nil(t, got.GetDowned())
@@ -1838,7 +1838,7 @@ func TestDeclarationToProto_OmitsTheSpellOnAnOrdinaryRow(t *testing.T) {
 // the fight paused, and the log says whose step, between which cells, who is
 // being asked, and with what.
 func TestEventWindowOpened_ReachesTheWireTyped(t *testing.T) {
-	got := eventToProto(sdk.Event{
+	got := mustEventToProto(t, sdk.Event{
 		Session: "sess-1",
 		Kind:    sdk.EventWindowOpened,
 		Body: sdk.WindowOpenedBody{
@@ -1871,12 +1871,12 @@ func TestEventWindowOpened_ReachesTheWireTyped(t *testing.T) {
 func TestStruckAndMissedCarryThePresentationToken(t *testing.T) {
 	const token = "presentation_2f1c8b4a-0d6e-4a1b-9c3f-5e7a1b2c3d4e"
 
-	struck := eventToProto(sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
+	struck := mustEventToProto(t, sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
 		Attacker: "char-1", Target: "skel-1", PresentationID: token,
 	}}).GetStruck()
 	require.Equal(t, token, struck.GetPresentationId())
 
-	missed := eventToProto(sdk.Event{Kind: sdk.EventMissed, Body: sdk.MissedBody{
+	missed := mustEventToProto(t, sdk.Event{Kind: sdk.EventMissed, Body: sdk.MissedBody{
 		Attacker: "char-1", Target: "skel-1", PresentationID: token,
 	}}).GetMissed()
 	require.Equal(t, token, missed.GetPresentationId())
@@ -1884,7 +1884,7 @@ func TestStruckAndMissedCarryThePresentationToken(t *testing.T) {
 	// A beat recorded before the field existed carries nothing, and empty is
 	// the truth: the client reads it as "this roll has no shared presentation"
 	// and narrates the swing alone rather than treating it as an error.
-	old := eventToProto(sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
+	old := mustEventToProto(t, sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
 		Attacker: "char-1", Target: "skel-1",
 	}}).GetStruck()
 	require.Empty(t, old.GetPresentationId())
@@ -1893,19 +1893,19 @@ func TestStruckAndMissedCarryThePresentationToken(t *testing.T) {
 func TestStruckAndMissedCarryTheReaction(t *testing.T) {
 	oa := &sdk.ReactionRef{Ref: "dnd5e:conditions:opportunity_attack", Name: "Opportunity Attack"}
 
-	struck := eventToProto(sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
+	struck := mustEventToProto(t, sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
 		Attacker: "char-1", Target: "skel-1", Reaction: oa,
 	}}).GetStruck()
 	require.Equal(t, "Opportunity Attack", struck.GetReaction().GetName())
 
-	missed := eventToProto(sdk.Event{Kind: sdk.EventMissed, Body: sdk.MissedBody{
+	missed := mustEventToProto(t, sdk.Event{Kind: sdk.EventMissed, Body: sdk.MissedBody{
 		Attacker: "char-1", Target: "skel-1", Reaction: oa,
 	}}).GetMissed()
 	require.Equal(t, "Opportunity Attack", missed.GetReaction().GetName())
 
 	// An ordinary swing on the actor's own turn was taken as nothing, and
 	// absent is the truth. False-vs-absent is the whole point of the field.
-	plain := eventToProto(sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
+	plain := mustEventToProto(t, sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
 		Attacker: "char-1", Target: "skel-1",
 	}}).GetStruck()
 	require.Nil(t, plain.GetReaction())
@@ -1920,7 +1920,7 @@ func TestStruckAndMissedCarryTheReaction(t *testing.T) {
 // carries a mover and two cells; this one has neither, and the assertion that
 // the movement body is absent is what keeps the two from being conflated.
 func TestEventRollWindowOpened_ReachesTheWireTyped(t *testing.T) {
-	got := eventToProto(sdk.Event{
+	got := mustEventToProto(t, sdk.Event{
 		Session: "sess-1",
 		Kind:    sdk.EventRollWindowOpened,
 		Body: sdk.RollWindowOpenedBody{
@@ -1954,7 +1954,7 @@ func TestEventRollWindowOpened_ReachesTheWireTyped(t *testing.T) {
 // nil. A break that arrives as a beat the client cannot read is exactly the
 // silence the dedicated kind exists to prevent.
 func TestEventToProto_CarriesTheConcentrationBreak(t *testing.T) {
-	out := eventToProto(sdk.Event{
+	out := mustEventToProto(t, sdk.Event{
 		Session: "sess-1",
 		Seq:     7,
 		Kind:    sdk.EventConcentrationEnded,
@@ -2179,7 +2179,7 @@ func TestDeclarationToProto_CarriesNoMenuOnARowThatOffersNoChoice(t *testing.T) 
 // Command holds a creature, and which of two Banes ended when one caster's
 // concentration broke.
 func TestConditionAppliedToProto_NamesWhoIsResponsible(t *testing.T) {
-	got := eventToProto(sdk.Event{
+	got := mustEventToProto(t, sdk.Event{
 		Kind: sdk.EventActivationResult,
 		Body: sdk.ActivationResultBody{
 			Actor: "char_bard",
@@ -2210,7 +2210,7 @@ func TestConditionAppliedToProto_NamesWhoIsResponsible(t *testing.T) {
 // rulebook does not attribute -- would then be blamed on whoever was standing
 // there.
 func TestConditionAppliedToProto_LeavesAnUnattributedConditionUnattributed(t *testing.T) {
-	got := eventToProto(sdk.Event{
+	got := mustEventToProto(t, sdk.Event{
 		Kind: sdk.EventActivationResult,
 		Body: sdk.ActivationResultBody{
 			Actor: "char_bard",
@@ -2226,7 +2226,7 @@ func TestConditionAppliedToProto_LeavesAnUnattributedConditionUnattributed(t *te
 // it in the same way. Without it "a Bane ended on the fighter" cannot say
 // WHICH Bane, so a client holding two would have to guess which row to strike.
 func TestConditionRemovedToProto_NamesWhoIsResponsible(t *testing.T) {
-	got := eventToProto(sdk.Event{
+	got := mustEventToProto(t, sdk.Event{
 		Kind: sdk.EventActivationResult,
 		Body: sdk.ActivationResultBody{
 			Actor: "char_bard",
@@ -2306,4 +2306,30 @@ func TestEventIntimidatedKindToProto(t *testing.T) {
 	require.Equal(t,
 		sessionpb.EventKind_EVENT_KIND_INTIMIDATED,
 		eventKindToProto(sdk.EventIntimidated))
+}
+
+// mustEventToProto is eventToProto for a scene that pins a PROJECTION rather
+// than the refusal (rpg-project#458). The converter grew an error return when
+// the `answered` beat arrived, because an outcome word this build cannot spell
+// must not be demoted to ANSWER_WORD_UNSPECIFIED -- which is the wire's way of
+// saying "the creature only spoke", a positive and false claim.
+//
+// THE REFUSAL HAS ITS OWN SCENES and they call the converter directly. Every
+// other scene in this file is about a body that cannot fail, so it says so
+// here once instead of forty-eight times, and a body that starts failing
+// silently fails the scene that was not asking about it -- which is what a
+// t.Fatal here is for.
+func mustEventToProto(t *testing.T, e sdk.Event) *sessionpb.Event {
+	t.Helper()
+	evt, err := eventToProto(e)
+	require.NoError(t, err, "this scene pins a projection, not a refusal")
+	return evt
+}
+
+// mustEventsToProto is mustEventToProto's plural, for the catch-up read.
+func mustEventsToProto(t *testing.T, es []sdk.Event) []*sessionpb.Event {
+	t.Helper()
+	out, err := eventsToProto(es)
+	require.NoError(t, err, "this scene pins a projection, not a refusal")
+	return out
 }

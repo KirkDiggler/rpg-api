@@ -477,11 +477,35 @@ func discoveriesToProto(d map[string]sdk.Discovery) map[string]*sessionpb.Discov
 // (rpg-dnd5e-web#564) — and Kind (rpg-toolkit#1230), for the same reason:
 // a client routes a player subject to a player model instead of guessing a
 // monster ref from the subject id (rpg-dnd5e-web#792).
+//
+// # Stance, per viewer, carried and never derived
+//
+// `Sighting.stance` (rpg-api-protos#340, rpg-project#458) is what THIS VIEWER
+// believes the subject's stance toward them to be, so the ring under a token
+// is a belief rather than the roster's truth. The composition answers it
+// through `encounter.BelievedStance`; the session seam carries it beside Name
+// and Kind, and this converter copies it.
+//
+// EMPTY CROSSES AS EMPTY, and that is the load-bearing case rather than an
+// edge. The seam leaves it empty when the run cannot answer — a subject who is
+// not a member, or one in no faction at all, which a world NPC is — and the
+// wire's own doc defines empty as "the observer has no word for it". Mapping
+// that to "neutral" would be this seam inventing a belief nobody holds, and a
+// client would draw a confident ring around a creature whose side is simply
+// unknown. The fallback belongs to the client, which has the roster's faction
+// color to fall back TO; this seam has nothing to fall back to and must not
+// pretend otherwise.
+//
+// NOTHING IS DERIVED HERE EITHER. Filling it from the roster's faction would
+// make a per-viewer belief field carry shared truth, and the first `pretend`
+// would have to UNDO a lie this converter told rather than simply start
+// telling a different truth.
 func sightingToProto(s sdk.Sighting) *sessionpb.Sighting {
 	return &sessionpb.Sighting{
 		Subject:    s.Subject,
 		Name:       s.Name,
 		Kind:       memberKindToProto(s.Kind),
+		Stance:     s.Stance,
 		Payload:    s.Payload,
 		Channel:    s.Channel,
 		At:         s.At,
@@ -657,6 +681,16 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 	// included, rather than degrade one field of it.
 	case sdk.EventIntimidated:
 		return sessionpb.EventKind_EVENT_KIND_INTIMIDATED
+	// The front room goblin (rpg-project#458). EventPersuaded is the threat
+	// beat's twin and takes its reasoning whole. EventAnswered is the second
+	// roll -- the WORLD's, on the author's table -- and it is the arm that
+	// would be missed most quietly: the creature's line, the fact it taught
+	// and whether it bolted all ride this one body, so a demotion would leave
+	// a goblin running out of the room with nothing in the log saying why.
+	case sdk.EventPersuaded:
+		return sessionpb.EventKind_EVENT_KIND_PERSUADED
+	case sdk.EventAnswered:
+		return sessionpb.EventKind_EVENT_KIND_ANSWERED
 	case sdk.EventMissed:
 		return sessionpb.EventKind_EVENT_KIND_MISSED
 	case sdk.EventCastMissed:
@@ -741,7 +775,13 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 // its catch-up through (get_story.go, rpg-api-protos#239), so both paths
 // drop it identically; adding a wire `tags` field is a proto change, not
 // something this function can paper over on its own.
-func eventToProto(e sdk.Event) *sessionpb.Event {
+//
+// IT RETURNS AN ERROR AS OF rpg-project#458, from setEventBody's one refusing
+// arm. The spine above never fails -- it is field-for-field copying and a kind
+// lookup that demotes -- so an error here means one beat's BODY carries a
+// value this build cannot spell on the wire, and the caller's job is to say so
+// rather than to send the beat with that value quietly replaced.
+func eventToProto(e sdk.Event) (*sessionpb.Event, error) {
 	evt := &sessionpb.Event{
 		Session:     e.Session,
 		Seq:         e.Seq,
@@ -751,19 +791,30 @@ func eventToProto(e sdk.Event) *sessionpb.Event {
 		Kind:        eventKindToProto(e.Kind),
 		Payload:     e.Payload,
 	}
-	setEventBody(evt, e.Body)
-	return evt
+	if err := setEventBody(evt, e.Body); err != nil {
+		return nil, fmt.Errorf("event seq %d kind %q: %w", e.Seq, e.Kind, err)
+	}
+	return evt, nil
 }
 
 // eventsToProto mirrors a []sdk.Event slice -- GetStory's own use of the
 // same eventToProto StreamEvents sends through one at a time, so catch-up
 // and live delivery share one projection all the way to the wire.
-func eventsToProto(es []sdk.Event) []*sessionpb.Event {
+//
+// ONE BAD BEAT FAILS THE WHOLE READ, deliberately. A catch-up that silently
+// dropped the beat it could not spell would hand a client a story with a hole
+// in it and no seq gap to notice -- and this read exists precisely so a
+// reconnecting client can trust that what it got is what happened.
+func eventsToProto(es []sdk.Event) ([]*sessionpb.Event, error) {
 	out := make([]*sessionpb.Event, len(es))
 	for i, e := range es {
-		out[i] = eventToProto(e)
+		converted, err := eventToProto(e)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = converted
 	}
-	return out
+	return out, nil
 }
 
 // setEventBody projects the SDK's typed session.EventBody onto the proto
@@ -783,7 +834,14 @@ func eventsToProto(es []sdk.Event) []*sessionpb.Event {
 // slice 4) carry the arriving/departing member -- the same field the wire
 // Joined/Exited messages added at protos v0.1.136 (oneof tags 17/18), so
 // GetStory gets both free through this same converter.
-func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
+// IT RETURNS AN ERROR AS OF rpg-project#458, and exactly one arm can produce
+// one. An `answered` beat's WORD says what the creature did, and this build
+// knows two of them; the enum's own comment says it grows a value per slice.
+// The day the toolkit ships `alarm` against an api that was not rebuilt, the
+// choice here is between a wire value that says "the creature only spoke" --
+// a positive, false claim about a creature that in fact ran for the guards --
+// and a refusal. It refuses. See answerWordToProto.
+func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 	switch b := body.(type) {
 	case sdk.TurnEndedBody:
 		evt.Body = &sessionpb.Event_TurnEnded{TurnEnded: &sessionpb.TurnEnded{Member: b.Member, Next: b.Next}}
@@ -967,6 +1025,81 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			Total:  int32(b.Total),
 			Beaten: b.Beaten,
 		}}
+	case sdk.PersuadedBody:
+		// An appeal, landed or missed (rpg-project#458). The threat body's
+		// twin, field for field and law for law -- beaten is COPIED and never
+		// derived from total against dc, and every field crosses on a miss
+		// too, because `beaten: false` is the whole content of a failed
+		// appeal and the `persuade_failed` table fired on it.
+		//
+		// A SEPARATE ARM RATHER THAN ONE SHARED "SOCIAL CHECK" BODY, which is
+		// the wire's own decision (rpg-api-protos#340) and not this
+		// converter's to relitigate: a consumer switching on Event.body gets a
+		// typed verb out of the arm it matched, and a shared body would make
+		// it branch twice -- once to find the arm, once to read a
+		// discriminator.
+		evt.Body = &sessionpb.Event_Persuaded{Persuaded: &sessionpb.Persuaded{
+			Actor:  b.Actor,
+			Target: b.Target,
+			Dc:     int32(b.DC),
+			Total:  int32(b.Total),
+			Beaten: b.Beaten,
+		}}
+	case sdk.AnsweredBody:
+		// THE SECOND ROLL (rpg-project#458, R1): the player's check published
+		// `intimidated` or `persuaded`, and then the WORLD rolled one entry of
+		// the author's weighted table and this is that. The die, the summed
+		// weights and the entry index are on the beat so the debug log can
+		// show them; the creature's line and the outcome word are what the
+		// story log renders.
+		//
+		// EVERY FIELD CROSSES, none of them derived. `entry: 0` is an answer
+		// (the author's first line fired), `beaten: false` is an answer (the
+		// failure table was read), and an empty `say` is an answer (the author
+		// wrote the creature no line). The SDK writes all of them without
+		// omitempty for exactly that reason and this seam must not reintroduce
+		// the absence its author removed.
+		//
+		// BEATEN IS REPEATED FROM THE CHECK BEAT ON PURPOSE. It says which
+		// table `entry` indexes into, and pairing two beats to find out would
+		// assume an ordering the stream does not promise.
+		word, err := answerWordToProto(b.Word)
+		if err != nil {
+			return err
+		}
+		evt.Body = &sessionpb.Event_Answered{Answered: &sessionpb.Answered{
+			Creature: b.Creature,
+			// The seam's own Verb, mapped through the one table every other
+			// verb on the wire goes through. An unrecognized verb here
+			// DEGRADES to UNSPECIFIED rather than refusing, unlike the word
+			// above, and the difference is what each field claims: a client
+			// that cannot name the verb still reads the line, the fact and
+			// what the creature did, while a word demoted to UNSPECIFIED
+			// would assert that the creature merely spoke.
+			Verb:   verbToProto(sdk.Verb(b.Verb)),
+			Beaten: b.Beaten,
+			Roll:   int32(b.Roll),
+			Of:     int32(b.Of),
+			Entry:  int32(b.Entry),
+			Word:   word,
+			Say:    b.Say,
+			// `fact` IS DELIBERATELY NOT SET, ruled by Kirk on rpg-project#458
+			// after the contract had already made room for it.
+			//
+			// A FACT IS PER-OBSERVER KNOWLEDGE AND THIS BEAT IS BROADCAST. It
+			// goes to every witness of the creature, and what any one of them
+			// then KNOWS is the intel log's answer, held per observer and
+			// reachable only through a read that is entitled to it. Putting the
+			// id on a broadcast beat would hand the whole table a fact the
+			// world may have taught only some of them, and there is no second
+			// field that could take it back.
+			//
+			// NOTHING IS LOST. The story has the author's `say` line, which is
+			// what a player actually receives; the consequence arrives on its
+			// own terms as a STANCE_CHANGED or an arrival. `b.Fact` is read
+			// and dropped here exactly as the verdict fields are on the
+			// response one file over.
+		}}
 	case sdk.DoorBody:
 		evt.Body = &sessionpb.Event_Door{Door: &sessionpb.DoorChanged{
 			Door:   b.Door,
@@ -1129,6 +1262,7 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		// not recognize: leave evt.Body nil. payload stays the passthrough
 		// carrier.
 	}
+	return nil
 }
 
 // activatedBodyToProto trusts Session's bodyFor validation of the required
@@ -1553,15 +1687,58 @@ func verbToProto(v sdk.Verb) sessionpb.Verb {
 	case sdk.VerbCast:
 		return sessionpb.Verb_VERB_CAST
 	// VerbIntimidate (rpg-project#454). LOAD-BEARING FOR THE DOCK, not a
-	// completeness sweep: Afford emits a VerbIntimidate declaration on the
-	// turn clock unconditionally, the way it emits VerbMove, so leaving it
-	// unmapped would label every threat a member can make VERB_UNSPECIFIED
-	// -- and a client drops a verb it cannot name rather than showing it
-	// wrong, so the row would simply never appear.
+	// completeness sweep: leaving it unmapped would label every threat a
+	// member can make VERB_UNSPECIFIED -- and a client drops a verb it cannot
+	// name rather than showing it wrong, so the row would simply never appear.
+	//
+	// ON BOTH CLOCKS AS OF rpg-project#458 R3, which corrects what this
+	// comment used to say. Afford emitted this row on the TURN clock
+	// unconditionally, the way it emits VerbMove, and returned an empty list
+	// on the world clock. It now emits both social rows on the world clock
+	// too, at no cost -- not a discount, but Move's own rule: the world clock
+	// has no economy to fall short of. So this arm is what a player standing
+	// in a front room with no fight in it reads.
 	case sdk.VerbIntimidate:
 		return sessionpb.Verb_VERB_INTIMIDATE
+	// VerbPersuade (rpg-project#458). Intimidate's reason, and one more that
+	// is new with it: Afford emits BOTH social rows on the WORLD clock as well
+	// as the turn clock (R3), so this is the row a player sees standing in a
+	// front room where no fight exists. Unmapped, the one panel this slice
+	// exists to fill would come up empty.
+	case sdk.VerbPersuade:
+		return sessionpb.Verb_VERB_PERSUADE
 	default:
 		return sessionpb.Verb_VERB_UNSPECIFIED
+	}
+}
+
+// answerWordToProto names WHAT A CREATURE DID when the world rolled the
+// author's answer table (rpg-project#458).
+//
+// IT REFUSES AN UNKNOWN WORD RATHER THAN DEMOTING IT, and that is the whole
+// reason it returns an error at all. The enum ships two words and its own
+// comment says it grows one per slice: `alarm`, `lure` and `pretend` are
+// named in the design and deliberately absent from the wire. So a word this
+// build does not know is not a field it can degrade -- ANSWER_WORD_UNSPECIFIED
+// is the wire's way of saying "an entry that only speaks", which is a positive
+// claim, and sending it about a creature that actually ran for the guards
+// would have every client narrate the wrong scene with nothing anywhere saying
+// so. The refusal is loud, it names the word, and the fix is to rebuild this
+// seam against the toolkit that grew it.
+//
+// EMPTY IS NOT UNKNOWN. An author may write an entry that only speaks, and the
+// SDK carries that as an empty Word; UNSPECIFIED is its exact wire spelling.
+func answerWordToProto(word string) (sessionpb.AnswerWord, error) {
+	switch word {
+	case "":
+		return sessionpb.AnswerWord_ANSWER_WORD_UNSPECIFIED, nil
+	case "fact":
+		return sessionpb.AnswerWord_ANSWER_WORD_FACT, nil
+	case "flee":
+		return sessionpb.AnswerWord_ANSWER_WORD_FLEE, nil
+	default:
+		return sessionpb.AnswerWord_ANSWER_WORD_UNSPECIFIED,
+			fmt.Errorf("answered beat carries outcome word %q, which this build cannot name on the wire", word)
 	}
 }
 

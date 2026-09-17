@@ -232,25 +232,30 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 			// file fails the launch rather than putting a monster on
 			// the board that cannot act.
 			Actions: monster.Actions,
-			// What it takes to frighten this monster, and what the
-			// world learns if somebody does (`place[].intimidate` and
-			// `place[].on.intimidated.fact`, rpg-project#454) --
-			// forwarded verbatim beside Actions, and converted at this
-			// boundary and nowhere else: the compiler speaks the
-			// composition's CheckApproach and the seam takes the
-			// session's own DoorApproach, so the route crosses here in
+			// What it takes to lean on this monster or talk it round,
+			// and what it DOES about either (`place[].intimidate`,
+			// `place[].persuade` and `place[].on`, rpg-project#454 and
+			// rpg-project#458) -- forwarded verbatim beside Actions, and
+			// converted at this boundary and nowhere else: the compiler
+			// speaks the composition's CheckApproach and the seam takes
+			// the session's own DoorApproach, so a route crosses here in
 			// the SDK's vocabulary rather than the composition's.
 			//
 			// NIL MEANS DERIVED, NOT UNGATED, and nothing here defaults
-			// it. An unpriced monster is checked against its own stat
-			// block's passive Insight at threat time -- a goblin is DC
-			// 9 and a thug DC 10 -- so a zero invented on this side
-			// would be a difficulty nobody chose sitting where the
-			// rulebook's own answer belongs. Empty OnIntimidated is the
-			// same statement one field over: cowing this monster
-			// teaches the world nothing.
-			Intimidate:    intimidateApproachesOf(monster.Intimidate),
-			OnIntimidated: monster.OnIntimidated,
+			// either list. An unpriced monster is checked against its own
+			// stat block's passive Insight at verb time -- a goblin is DC
+			// 9 and a thug DC 10 -- so a zero invented on this side would
+			// be a difficulty nobody chose sitting where the rulebook's
+			// own answer belongs.
+			//
+			// A NIL TABLE IS THE SAME STATEMENT ONE FIELD OVER: a monster
+			// the author wrote no `on:` for answers nothing, and the
+			// world rolls no die at all. `OnIntimidated string` used to
+			// sit here and carried one fact on one outcome; the table
+			// replaced it rather than joining it.
+			Intimidate: socialApproachesOf(monster.Intimidate),
+			Persuade:   socialApproachesOf(monster.Persuade),
+			Answers:    answersOf(monster.Answers),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("spawn %q into session %q on new stack: %w", monster.MemberID, encID, err)
@@ -336,9 +341,17 @@ func refuseSharedMemberIDs(members []*lobbyrepo.Member, monsters []sessionworld.
 	return nil
 }
 
-// intimidateApproachesOf spells the author's priced routes for frightening a
-// monster (`place[].intimidate`, rpg-project#454) from the composition's own
-// CheckApproach into the session seam's DoorApproach.
+// socialApproachesOf spells the author's priced routes for a social verb
+// (`place[].intimidate` and `place[].persuade`, rpg-project#454 and
+// rpg-project#458) from the composition's own CheckApproach into the session
+// seam's DoorApproach.
+//
+// ONE FUNCTION FOR BOTH VERBS, unlike the two roll converters at the handler
+// seam. The distinction is what each function is named for: those keep a
+// PRESENCE LAW that belongs to one verb's output and could diverge, while this
+// one is a struct spelling that belongs to the two modules' vocabularies. A
+// third social verb reuses it without a decision; the day Persuade's routes
+// stop being CheckApproach, splitting it is a rename.
 //
 // THE TRANSLATION IS SPELLING ONLY, like arrivalOf below it: the two structs
 // carry the same three fields and neither side is interpreted here. It exists
@@ -348,16 +361,52 @@ func refuseSharedMemberIDs(members []*lobbyrepo.Member, monsters []sessionworld.
 //
 // NIL IN, NIL OUT, and that is the load-bearing case rather than an edge:
 // absent does not mean "no check", it means the rulebook derives one from the
-// monster's own passive Insight at threat time. Returning an empty non-nil
+// monster's own passive Insight at verb time. Returning an empty non-nil
 // slice would hand the seam a monster priced with no way through, which is a
 // different and much worse claim.
-func intimidateApproachesOf(approaches []tkencounter.CheckApproach) []sdk.DoorApproach {
+func socialApproachesOf(approaches []tkencounter.CheckApproach) []sdk.DoorApproach {
 	if approaches == nil {
 		return nil
 	}
 	out := make([]sdk.DoorApproach, len(approaches))
 	for i, approach := range approaches {
 		out[i] = sdk.DoorApproach{Ability: approach.Ability, Tool: approach.Tool, DC: approach.DC}
+	}
+	return out
+}
+
+// answersOf spells the author's answer table (`place[].on`, rpg-project#458)
+// from the composition's own Answer into the session seam's, key for key and
+// entry for entry, in the author's order.
+//
+// NOTHING IS READ AND NOTHING IS PICKED. Which entry fires is the WORLD's die,
+// rolled inside the encounter against the summed weights; a launch that
+// chose here would be a second reader of an authored fact and would make the
+// same table answer differently depending on who asked.
+//
+// ORDER IS THE AUTHOR'S, because `entry` on the beat is an index into the list
+// the author wrote and a builder highlights that line in the file they are
+// looking at. A converter that sorted would renumber every line of the log.
+//
+// NIL IN, NIL OUT. A creature the author wrote no `on:` for answers nothing
+// and no die is rolled at all -- distinct from an empty non-nil map, which
+// would claim a table exists with no way for anything to fire.
+func answersOf(answers map[string][]tkencounter.Answer) map[string][]sdk.Answer {
+	if answers == nil {
+		return nil
+	}
+	out := make(map[string][]sdk.Answer, len(answers))
+	for key, entries := range answers {
+		rows := make([]sdk.Answer, len(entries))
+		for i, entry := range entries {
+			rows[i] = sdk.Answer{
+				Weight: entry.Weight,
+				Say:    entry.Say,
+				Fact:   entry.Fact,
+				Flee:   entry.Flee,
+			}
+		}
+		out[key] = rows
 	}
 	return out
 }
