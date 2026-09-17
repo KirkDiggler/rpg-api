@@ -3,6 +3,9 @@ package sessionv1alpha1
 import (
 	"context"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sdkerr"
 
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
@@ -31,6 +34,13 @@ func (h *Handler) DeathSave(
 		return nil, sdkerr.StatusError(err)
 	}
 
+	// The keep record can name a rule this build has never heard of, and the
+	// converter refuses rather than dropping it. See keepRuleToProto.
+	calculation, err := rollCalculationToProto(out.Calculation)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
 	return &sessionpb.DeathSaveResponse{
 		Roll:              int32(out.Roll),
 		Outcome:           deathSaveOutcomeToProto(out.Outcome),
@@ -49,6 +59,6 @@ func (h *Handler) DeathSave(
 		Seq:               out.Seq,
 		Saved:             saveReportToProto(out.Saved),
 		Delivery:          deliveryReportToProto(out.Delivery),
-		Calculation:       rollCalculationToProto(out.Calculation),
+		Calculation:       calculation,
 	}, nil
 }

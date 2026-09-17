@@ -104,6 +104,22 @@ linters:
 
     misspell:
       locale: US
+      # "cancelled" is the WIRE'S OWN SPELLING and this repo cannot rename it:
+      # KeepRule.KEEP_RULE_CANCELLED is a generated protobuf identifier
+      # (rpg-api-protos v0.1.199, rpg-project#462), so the US-locale rewrite
+      # this linter wants would not compile. The word names the rule that
+      # recorded advantage and disadvantage meeting over one die, and it is
+      # spelled the same in the design, the toolkit and the client.
+      #
+      # ONE MECHANISM, NOT TWO. An exclusions.rules entry keyed on the rendered
+      # message text also silences this, and for a while both were here. Two
+      # ways to spell one policy is the same defect this whole slice is about:
+      # they can disagree. This one is the linter's OWN setting for "the word
+      # is correct here", it covers the lowercase spelling the design and the
+      # comments use as well as the enum's uppercase, and a real typo anywhere
+      # else still fails.
+      ignore-rules:
+        - cancelled
 
     nakedret:
       max-func-lines: 30

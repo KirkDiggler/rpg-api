@@ -501,18 +501,30 @@ func TestDeliveryReportToProto(t *testing.T) {
 }
 
 func TestStrikeDetailToProto_EmptyStaysNonNil(t *testing.T) {
-	require.NotNil(t, damageComponentsToProto(nil))
-	require.Empty(t, damageComponentsToProto(nil))
-	require.NotNil(t, attackModifierSourcesToProto(nil))
-	require.Empty(t, attackModifierSourcesToProto(nil))
+	components, err := damageComponentsToProto(nil)
+	require.NoError(t, err)
+	require.NotNil(t, components)
+	require.Empty(t, components)
 }
 
-func TestRollTraceConverters_NilSafe(t *testing.T) {
+// A CALCULATION IS OPTIONAL AND ITS ABSENCE IS THE ANSWER; a trace, a
+// component and a keep record are not, and asking this seam to convert one
+// that is not there is a caller defect it refuses rather than answering with
+// a nil nobody can tell from an unset field.
+func TestRollTraceConverters_NilHandling(t *testing.T) {
 	require.Nil(t, rollSourceToProto(nil))
 	require.Nil(t, diceRerollToProto(nil))
-	require.Nil(t, diceTraceToProto(nil))
-	require.Nil(t, rollComponentToProto(nil))
-	require.Nil(t, rollCalculationToProto(nil))
+
+	_, err := diceTraceToProto(nil)
+	require.Error(t, err)
+	_, err = rollComponentToProto(nil)
+	require.Error(t, err)
+	_, err = diceKeepToProto(nil)
+	require.Error(t, err)
+
+	calculation, err := rollCalculationToProto(nil)
+	require.NoError(t, err)
+	require.Nil(t, calculation, "a body that recorded no arithmetic leaves the wire field unset")
 }
 
 func TestRolledEventBodiesProjectCalculation(t *testing.T) {
@@ -543,6 +555,253 @@ func TestRolledEventBodiesProjectCalculation(t *testing.T) {
 		require.Equal(t, int32(11), got.GetTotal())
 		require.Equal(t, "bard-1", got.GetComponents()[0].GetSource().GetSourceId())
 	}
+}
+
+// d20WithKeep is one settled d20 pool carrying a keep record, the shape every
+// scene below is about. The faces are the argument: a rule that kept one of
+// two is the whole reason the record exists.
+func d20WithKeep(faces []int, kept []int, keep *sdk.DiceKeep) *sdk.RollCalculation {
+	subtotal := 0
+	for _, index := range kept {
+		subtotal = faces[index]
+	}
+	if len(kept) == 0 {
+		subtotal = faces[0]
+	}
+	notation := "1d20"
+	if len(faces) > 1 {
+		notation = "2d20"
+	}
+	return &sdk.RollCalculation{
+		Total: subtotal,
+		Components: []sdk.RollComponent{{
+			Source: sdk.RollSource{Ref: "dnd5e:skills:intimidation", Name: "Intimidation", SourceID: "char-1"},
+			Dice: &sdk.DiceTrace{
+				Notation: notation, DieSize: 20,
+				OriginalRolls: faces, FinalRolls: faces, KeptIndices: kept,
+				Subtotal: subtotal, Keep: keep,
+			},
+		}},
+	}
+}
+
+// THE KEEP RECORD IS WHY A FACE COUNTED, and every field of it crosses: the
+// rule as an enum this build knows, and both source lists with the entity
+// that brought each one. The web draws a die in its owner's style from
+// source_id, so dropping it would leave the client guessing from the beat's
+// actor -- which is the client calculating (rpg-project#462, R7).
+func TestDiceKeepToProto_CarriesEveryRuleAndBothSourceLists(t *testing.T) {
+	help := sdk.RollSource{
+		Ref: "dnd5e:actions:help", Name: "Help", Label: "ally", SourceID: "alice",
+	}
+	untrained := sdk.RollSource{
+		Ref: "dnd5e:rules:untrained", Name: "Untrained", Label: "skill", SourceID: "char-1",
+	}
+
+	for _, tc := range []struct {
+		name        string
+		keep        sdk.DiceKeep
+		wantRule    sessionpb.KeepRule
+		wantGranted int
+		wantImposed int
+	}{
+		{
+			name:        "advantage names who granted it",
+			keep:        sdk.DiceKeep{Rule: sdk.KeepAdvantage, Granted: []sdk.RollSource{help}},
+			wantRule:    sessionpb.KeepRule_KEEP_RULE_ADVANTAGE,
+			wantGranted: 1,
+		},
+		{
+			name:        "disadvantage names who imposed it",
+			keep:        sdk.DiceKeep{Rule: sdk.KeepDisadvantage, Imposed: []sdk.RollSource{untrained}},
+			wantRule:    sessionpb.KeepRule_KEEP_RULE_DISADVANTAGE,
+			wantImposed: 1,
+		},
+		{
+			name: "cancellation names both sides",
+			keep: sdk.DiceKeep{
+				Rule:    sdk.KeepCancelled,
+				Granted: []sdk.RollSource{help},
+				Imposed: []sdk.RollSource{untrained},
+			},
+			wantRule:    sessionpb.KeepRule_KEEP_RULE_CANCELLED,
+			wantGranted: 1,
+			wantImposed: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := diceKeepToProto(&tc.keep)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantRule, got.GetRule())
+			require.Len(t, got.GetGranted(), tc.wantGranted)
+			require.Len(t, got.GetImposed(), tc.wantImposed)
+
+			for i, want := range tc.keep.Granted {
+				require.Equal(t, want.Ref, got.GetGranted()[i].GetRef())
+				require.Equal(t, want.Name, got.GetGranted()[i].GetName())
+				require.Equal(t, want.Label, got.GetGranted()[i].GetLabel())
+				require.Equal(t, want.SourceID, got.GetGranted()[i].GetSourceId(),
+					"the entity whose rule threw the die is what a tray draws its style from")
+			}
+			for i, want := range tc.keep.Imposed {
+				require.Equal(t, want.Ref, got.GetImposed()[i].GetRef())
+				require.Equal(t, want.Name, got.GetImposed()[i].GetName())
+				require.Equal(t, want.Label, got.GetImposed()[i].GetLabel())
+				require.Equal(t, want.SourceID, got.GetImposed()[i].GetSourceId())
+			}
+		})
+	}
+}
+
+// A STRAIGHT ROLL CARRIES NO RECORD, and the unset field is the answer rather
+// than a defaulted one. UNSPECIFIED would be this seam claiming a rule exists
+// that it could not name.
+func TestDiceTraceToProto_StraightRollLeavesKeepUnset(t *testing.T) {
+	got, err := diceTraceToProto(&sdk.DiceTrace{
+		Notation: "1d20", DieSize: 20,
+		OriginalRolls: []int{11}, FinalRolls: []int{11}, Subtotal: 11,
+	})
+	require.NoError(t, err)
+	require.Nil(t, got.GetKeep(), "nobody touched this pool and the zero value says so")
+	require.Empty(t, got.GetKeptIndices())
+}
+
+// A RULE THIS BUILD CANNOT NAME IS REFUSED, never demoted to UNSPECIFIED.
+// Elven Accuracy and the reroll feats are named in the design and deliberately
+// absent from the wire; the day one ships against an api that was not rebuilt,
+// a client would otherwise draw three faces with no reason beside them.
+func TestKeepRuleToProto_RefusesARuleThisBuildCannotName(t *testing.T) {
+	for _, rule := range []sdk.KeepRule{sdk.KeepRule("elven-accuracy"), sdk.KeepRule("")} {
+		_, err := keepRuleToProto(rule)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), string(rule))
+	}
+
+	// The refusal reaches the caller rather than stopping at the helper: a
+	// beat carrying an unnameable rule does not become an event at all.
+	err := setEventBody(&sessionpb.Event{}, sdk.IntimidatedBody{
+		Actor: "char-1", Target: "goblin-1", DC: 13, Total: 7, Beaten: false,
+		Calculation: d20WithKeep([]int{7, 18}, []int{0}, &sdk.DiceKeep{
+			Rule:    sdk.KeepRule("elven-accuracy"),
+			Imposed: []sdk.RollSource{{Ref: "dnd5e:rules:untrained", Name: "Untrained", SourceID: "char-1"}},
+		}),
+	})
+	require.Error(t, err)
+}
+
+// THE CHECK BEATS CARRY THE WHOLE ROLL (rpg-project#462, R4 and R5). Each of
+// these used to reach the wire as {dc, total, beaten} or {roll, total}, so an
+// untrained character threw two dice and the table saw one number.
+func TestCheckBeatsCarryTheCalculation(t *testing.T) {
+	untrained := &sdk.DiceKeep{
+		Rule:    sdk.KeepDisadvantage,
+		Imposed: []sdk.RollSource{{Ref: "dnd5e:rules:untrained", Name: "Untrained", SourceID: "char-1"}},
+	}
+
+	for _, tc := range []struct {
+		name string
+		body sdk.EventBody
+		read func(*sessionpb.Event) *sessionpb.RollCalculation
+	}{
+		{
+			name: "intimidated",
+			body: sdk.IntimidatedBody{
+				Actor: "char-1", Target: "goblin-1", DC: 13, Total: 7,
+				Calculation: d20WithKeep([]int{7, 18}, []int{0}, untrained),
+			},
+			read: func(e *sessionpb.Event) *sessionpb.RollCalculation {
+				return e.GetIntimidated().GetCalculation()
+			},
+		},
+		{
+			name: "persuaded",
+			body: sdk.PersuadedBody{
+				Actor: "char-1", Target: "goblin-1", DC: 13, Total: 7,
+				Calculation: d20WithKeep([]int{7, 18}, []int{0}, untrained),
+			},
+			read: func(e *sessionpb.Event) *sessionpb.RollCalculation {
+				return e.GetPersuaded().GetCalculation()
+			},
+		},
+		{
+			name: "door changed by an unlock attempt",
+			body: sdk.DoorBody{
+				Door: "door-1", State: "locked", Actor: "char-1", DC: 15, Total: 7,
+				Calculation: d20WithKeep([]int{7, 18}, []int{0}, untrained),
+			},
+			read: func(e *sessionpb.Event) *sessionpb.RollCalculation {
+				return e.GetDoor().GetCalculation()
+			},
+		},
+		{
+			name: "the paused roll window",
+			body: sdk.RollWindowOpenedBody{
+				Audience: "char-1", Roll: 7, Total: 7,
+				Offer:       sdk.ReactionRef{Ref: "dnd5e:features:bardic_inspiration", Name: "Bardic Inspiration"},
+				Calculation: d20WithKeep([]int{7, 18}, []int{0}, untrained),
+			},
+			read: func(e *sessionpb.Event) *sessionpb.RollCalculation {
+				return e.GetRollWindowOpened().GetCalculation()
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			event := &sessionpb.Event{}
+			require.NoError(t, setEventBody(event, tc.body))
+
+			got := tc.read(event)
+			require.NotNil(t, got, "the beat carries the roll, not three numbers")
+
+			dice := got.GetComponents()[0].GetDice()
+			require.Equal(t, "2d20", dice.GetNotation())
+			require.Equal(t, []int32{7, 18}, dice.GetFinalRolls(), "both faces cross, not the settled one")
+			require.Equal(t, []int32{0}, dice.GetKeptIndices())
+			require.Equal(t, sessionpb.KeepRule_KEEP_RULE_DISADVANTAGE, dice.GetKeep().GetRule())
+			require.Equal(t, "Untrained", dice.GetKeep().GetImposed()[0].GetName(),
+				"the word the log prints comes down from the server")
+			require.Equal(t, "char-1", dice.GetKeep().GetImposed()[0].GetSourceId())
+			require.Empty(t, dice.GetKeep().GetGranted())
+		})
+	}
+}
+
+// A BEAT THAT RECORDED NO ARITHMETIC CARRIES NONE. A door somebody walked
+// through was not a check, and an older beat written before this slice has no
+// calculation to carry; both leave the field unset rather than crossing with
+// a zero-valued calculation a reader would have to tell apart from a real one.
+func TestBeatsWithoutArithmeticLeaveTheCalculationUnset(t *testing.T) {
+	event := &sessionpb.Event{}
+	require.NoError(t, setEventBody(event, sdk.DoorBody{Door: "door-1", State: "open"}))
+	require.Nil(t, event.GetDoor().GetCalculation())
+
+	event = &sessionpb.Event{}
+	require.NoError(t, setEventBody(event, sdk.IntimidatedBody{Actor: "char-1", Target: "goblin-1", DC: 13, Total: 7}))
+	require.Nil(t, event.GetIntimidated().GetCalculation())
+}
+
+// THE STRUCK BEAT WRITES NEITHER DEPRECATED LIST (rpg-project#462, R1), even
+// when the swing's d20 was decided by a rule. A reader that still consults
+// them finds nothing, which is the point: there is one place to read the
+// attribution and it is the pool the rule decided.
+func TestStruckBeatWritesNoParallelSourceLists(t *testing.T) {
+	event := &sessionpb.Event{}
+	require.NoError(t, setEventBody(event, sdk.StruckBody{
+		Attacker: "char-1", Target: "goblin-1", Roll: 18, Total: 21, Against: 13, Damage: 6,
+		Calculation: d20WithKeep([]int{7, 18}, []int{1}, &sdk.DiceKeep{
+			Rule: sdk.KeepAdvantage,
+			Granted: []sdk.RollSource{{
+				Ref: "dnd5e:features:reckless_attack", Name: "Reckless Attack", SourceID: "char-1",
+			}},
+		}),
+	}))
+
+	struck := event.GetStruck()
+	require.Empty(t, struck.GetAdvantageSources())    //nolint:staticcheck // Pins that the deprecated field stays empty.
+	require.Empty(t, struck.GetDisadvantageSources()) //nolint:staticcheck // Pins that the deprecated field stays empty.
+	require.Equal(t, sessionpb.KeepRule_KEEP_RULE_ADVANTAGE,
+		struck.GetCalculation().GetComponents()[0].GetDice().GetKeep().GetRule())
+	require.Equal(t, "Reckless Attack",
+		struck.GetCalculation().GetComponents()[0].GetDice().GetKeep().GetGranted()[0].GetName())
 }
 
 func TestCastBodyToProto_CanonicalTargetsAndFaithfulLegacyProjection(t *testing.T) {
@@ -641,7 +900,8 @@ func TestRollCalculationToProto_FieldForFieldOrderPresenceAndIsolation(t *testin
 		Total: 777,
 	}
 
-	got := rollCalculationToProto(in)
+	got, err := rollCalculationToProto(in)
+	require.NoError(t, err)
 	require.True(t, proto.Equal(want, got), "the converter copies every authored field without recomputing totals")
 	require.NotNil(t, got.GetComponents()[0].Modifier, "a present zero modifier stays present")
 	require.Equal(t, []int32{1, 0}, got.GetComponents()[0].GetDice().GetKeptIndices(), "producer order is preserved")
@@ -662,7 +922,7 @@ func TestRollDamageComponentToProto_NewAndLegacyRepresentationsNeverMix(t *testi
 	zeroModifier := 0
 	zeroMultiplier := 0.0
 
-	newComponent := damageComponentsToProto([]sdk.DamageComponent{{
+	newComponents, err := damageComponentsToProto([]sdk.DamageComponent{{
 		Source: "weapon",
 		Roll: sdk.RollComponent{
 			Source: sdk.RollSource{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword"},
@@ -683,7 +943,9 @@ func TestRollDamageComponentToProto_NewAndLegacyRepresentationsNeverMix(t *testi
 		// Session's decoder never creates one. The API still emits only the new
 		// representation when Roll is present; it does not merge or validate.
 		SourceRef: "legacy-ref", Dice: "legacy-dice", FinalRolls: []int{6}, FlatBonus: 6,
-	}})[0]
+	}})
+	require.NoError(t, err)
+	newComponent := newComponents[0]
 
 	require.NotNil(t, newComponent.GetRoll())
 	require.Equal(t, []int32{1, 5}, newComponent.GetRoll().GetDice().GetOriginalRolls())
@@ -697,10 +959,12 @@ func TestRollDamageComponentToProto_NewAndLegacyRepresentationsNeverMix(t *testi
 	require.Nil(t, newComponent.GetFinalRolls())
 	require.Zero(t, newComponent.GetFlatBonus())
 
-	legacyComponent := damageComponentsToProto([]sdk.DamageComponent{{
+	legacyComponents, err := damageComponentsToProto([]sdk.DamageComponent{{
 		Source: "weapon", SourceRef: "dnd5e:weapons:longsword", Dice: "1d8",
 		FinalRolls: []int{7, 2}, FlatBonus: 3, DamageType: sdk.DamageSlashing,
-	}})[0]
+	}})
+	require.NoError(t, err)
+	legacyComponent := legacyComponents[0]
 	require.Nil(t, legacyComponent.GetRoll())
 	require.Equal(t, "dnd5e:weapons:longsword", legacyComponent.GetSourceRef())
 	require.Equal(t, "1d8", legacyComponent.GetDice())
@@ -710,7 +974,7 @@ func TestRollDamageComponentToProto_NewAndLegacyRepresentationsNeverMix(t *testi
 
 func TestRollHealingAppliedToProto_NewAndLegacyRepresentationsNeverMix(t *testing.T) {
 	level := 1
-	newBody := healingAppliedBodyToProto(&sdk.HealingAppliedBody{
+	newBody, err := healingAppliedBodyToProto(&sdk.HealingAppliedBody{
 		Target: "alice", Amount: 2, Requested: 7, Roll: 99, Modifier: 98,
 		SourceRef: "dnd5e:features:second_wind", SourceName: "Second Wind",
 		HPBefore: 8, HPAfter: 10,
@@ -730,17 +994,19 @@ func TestRollHealingAppliedToProto_NewAndLegacyRepresentationsNeverMix(t *testin
 			Total: 7,
 		},
 	})
+	require.NoError(t, err)
 	require.NotNil(t, newBody.GetCalculation())
 	require.Equal(t, int32(7), newBody.GetCalculation().GetTotal())
 	require.Equal(t, "Fighter level", newBody.GetCalculation().GetComponents()[1].GetSource().GetLabel())
 	require.Zero(t, newBody.GetRoll(), "new events do not also populate deprecated roll")
 	require.Zero(t, newBody.GetModifier(), "new events do not also populate deprecated modifier")
 
-	legacyBody := healingAppliedBodyToProto(&sdk.HealingAppliedBody{
+	legacyBody, err := healingAppliedBodyToProto(&sdk.HealingAppliedBody{
 		Target: "alice", Amount: 2, Requested: 7, Roll: 6, Modifier: 1,
 		SourceRef: "dnd5e:features:second_wind", SourceName: "Second Wind",
 		HPBefore: 8, HPAfter: 10,
 	})
+	require.NoError(t, err)
 	require.Nil(t, legacyBody.GetCalculation())
 	require.Equal(t, int32(6), legacyBody.GetRoll())
 	require.Equal(t, int32(1), legacyBody.GetModifier())
@@ -779,11 +1045,33 @@ func richStruckEvent() sdk.Event {
 					DamageType: sdk.DamageSlashing, Multiplier: &immunity,
 				},
 			},
-			AdvantageSources: []sdk.AttackModifierSource{
-				{SourceRef: "dnd5e:conditions:hidden", SourceID: "char-1"},
-			},
-			DisadvantageSources: []sdk.AttackModifierSource{
-				{SourceRef: "dnd5e:conditions:dodging", SourceID: "goblin-1"},
+			// THE ATTRIBUTION IS ON THE D20 IT DECIDED (rpg-project#462, R1).
+			// The body's parallel AdvantageSources/DisadvantageSources are
+			// gone from the SDK; the rules that met over this swing ride the
+			// first component's own keep record, naming both the rule and the
+			// entity that brought it. Hidden granted and Dodging imposed, so
+			// the pool was rolled straight and the record says why -- the one
+			// case the older lists could not represent at all.
+			Calculation: &sdk.RollCalculation{
+				Total: 21,
+				Components: []sdk.RollComponent{{
+					Source: sdk.RollSource{
+						Ref: "dnd5e:weapons:longsword", Name: "Longsword", SourceID: "char-1",
+					},
+					Dice: &sdk.DiceTrace{
+						Notation: "1d20", DieSize: 20,
+						OriginalRolls: []int{18}, FinalRolls: []int{18}, Subtotal: 18,
+						Keep: &sdk.DiceKeep{
+							Rule: sdk.KeepCancelled,
+							Granted: []sdk.RollSource{{
+								Ref: "dnd5e:conditions:hidden", Name: "Hidden", SourceID: "char-1",
+							}},
+							Imposed: []sdk.RollSource{{
+								Ref: "dnd5e:conditions:dodging", Name: "Dodging", SourceID: "goblin-1",
+							}},
+						},
+					},
+				}},
 			},
 		},
 	}
@@ -1047,7 +1335,10 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 }
 
 func TestActivationResultVariantConverters_NilSafe(t *testing.T) {
-	require.Nil(t, healingAppliedBodyToProto(nil))
+	_, err := healingAppliedBodyToProto(nil)
+	require.Error(t, err, "a result arm that is not there is a caller defect, not an empty heal")
+	_, err = damageAppliedBodyToProto(nil)
+	require.Error(t, err)
 	require.Nil(t, conditionAppliedBodyToProto(nil))
 	require.Nil(t, conditionRemovedBodyToProto(nil))
 	require.Nil(t, capacityGrantedBodyToProto(nil))
@@ -1431,12 +1722,22 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 		require.NotNil(t, immunity.Multiplier)
 		require.Zero(t, immunity.GetMultiplier())
 
-		require.Len(t, s.GetAdvantageSources(), 1)
-		require.Equal(t, "dnd5e:conditions:hidden", s.GetAdvantageSources()[0].GetSourceRef())
-		require.Equal(t, "char-1", s.GetAdvantageSources()[0].GetSourceId())
-		require.Len(t, s.GetDisadvantageSources(), 1)
-		require.Equal(t, "dnd5e:conditions:dodging", s.GetDisadvantageSources()[0].GetSourceRef())
-		require.Equal(t, "goblin-1", s.GetDisadvantageSources()[0].GetSourceId())
+		// The deprecated lists are never written, even though the wire still
+		// carries the fields for payloads persisted before the keep record
+		// existed. Two places to read one fact is two places that can
+		// disagree (rpg-project#462, R1).
+		require.Empty(t, s.GetAdvantageSources())    //nolint:staticcheck // Pins that the deprecated field stays empty.
+		require.Empty(t, s.GetDisadvantageSources()) //nolint:staticcheck // Pins that the deprecated field stays empty.
+
+		keep := s.GetCalculation().GetComponents()[0].GetDice().GetKeep()
+		require.NotNil(t, keep, "the swing's attribution rides the pool it decided")
+		require.Equal(t, sessionpb.KeepRule_KEEP_RULE_CANCELLED, keep.GetRule())
+		require.Equal(t, "dnd5e:conditions:hidden", keep.GetGranted()[0].GetRef())
+		require.Equal(t, "Hidden", keep.GetGranted()[0].GetName())
+		require.Equal(t, "char-1", keep.GetGranted()[0].GetSourceId())
+		require.Equal(t, "dnd5e:conditions:dodging", keep.GetImposed()[0].GetRef())
+		require.Equal(t, "Dodging", keep.GetImposed()[0].GetName())
+		require.Equal(t, "goblin-1", keep.GetImposed()[0].GetSourceId())
 	})
 
 	t.Run("Missed", func(t *testing.T) {

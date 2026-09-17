@@ -1,6 +1,7 @@
 package sessionv1alpha1
 
 import (
+	"errors"
 	"fmt"
 	"math"
 
@@ -848,6 +849,10 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 	case sdk.DownedBody:
 		evt.Body = &sessionpb.Event_Downed{Downed: &sessionpb.Downed{Member: b.Member}}
 	case sdk.DeathSaveBody:
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
 		evt.Body = &sessionpb.Event_DeathSaveRolled{DeathSaveRolled: &sessionpb.DeathSaveRolled{
 			Actor: b.Actor, Roll: int32(b.Roll), Outcome: deathSaveOutcomeToProto(b.Outcome),
 			SuccessesAdded: int32(b.SuccessesAdded), FailuresAdded: int32(b.FailuresAdded),
@@ -856,21 +861,36 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			Stabilized: b.Stabilized, Dead: b.Dead, Recovered: b.Recovered,
 			HpRestored: int32(b.HPRestored), Continuation: deathSaveContinuationToProto(b.Continuation),
 			PresentationId: b.PresentationID,
-			Calculation:    rollCalculationToProto(b.Calculation),
+			Calculation:    calculation,
 		}}
 	case sdk.StruckBody:
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
+		damageComponents, err := damageComponentsToProto(b.DamageComponents)
+		if err != nil {
+			return err
+		}
 		evt.Body = &sessionpb.Event_Struck{Struck: &sessionpb.Struck{
-			Attacker:            b.Attacker,
-			Target:              b.Target,
-			Roll:                int32(b.Roll),
-			Total:               int32(b.Total),
-			Against:             int32(b.Against),
-			Damage:              int32(b.Damage),
-			Attack:              attackRefToProto(b.Attack),
-			Critical:            b.Critical,
-			DamageComponents:    damageComponentsToProto(b.DamageComponents),
-			AdvantageSources:    attackModifierSourcesToProto(b.AdvantageSources),
-			DisadvantageSources: attackModifierSourcesToProto(b.DisadvantageSources),
+			Attacker:         b.Attacker,
+			Target:           b.Target,
+			Roll:             int32(b.Roll),
+			Total:            int32(b.Total),
+			Against:          int32(b.Against),
+			Damage:           int32(b.Damage),
+			Attack:           attackRefToProto(b.Attack),
+			Critical:         b.Critical,
+			DamageComponents: damageComponents,
+			// advantage_sources and disadvantage_sources ARE DEPRECATED AND
+			// STAY EMPTY (rpg-project#462, R1). They were the older, narrower
+			// spelling of what the d20's own keep record now carries, refs and
+			// ids with no name and no cancellation; the SDK body dropped them
+			// outright. Filling both would give a client two places to read one
+			// fact and let them disagree with the dice they describe. The
+			// attribution is on Calculation's first component, on the pool it
+			// actually decided.
+			//
 			// Why this swing happened out of turn, when it did
 			// (rpg-project#316). The field has been on the wire since
 			// protos#258 and had nothing to copy until session's body
@@ -880,13 +900,17 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			// Same token the attacker got back on AttackResponse, so this
 			// recipient can name the same roll the attacker is presenting.
 			PresentationId: b.PresentationID,
-			Calculation:    rollCalculationToProto(b.Calculation),
+			Calculation:    calculation,
 		}}
 	case sdk.CastMissedBody:
 		evt.Body = &sessionpb.Event_CastMissed{CastMissed: &sessionpb.CastMissed{
 			Actor: b.Actor, Target: b.Target, Spell: spellRefToProto(b.Spell),
 		}}
 	case sdk.MissedBody:
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
 		evt.Body = &sessionpb.Event_Missed{Missed: &sessionpb.Missed{
 			Attacker: b.Attacker,
 			Target:   b.Target,
@@ -897,12 +921,16 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			Reaction: reactionRefToProto(b.Reaction),
 			// See the struck case: one shared token per swing.
 			PresentationId: b.PresentationID,
-			Calculation:    rollCalculationToProto(b.Calculation),
+			Calculation:    calculation,
 		}}
 	case sdk.ActivatedBody:
 		evt.Body = &sessionpb.Event_Activated{Activated: activatedBodyToProto(b)}
 	case sdk.ActivationResultBody:
-		if result := activationResultBodyToProto(b); result != nil {
+		result, err := activationResultBodyToProto(b)
+		if err != nil {
+			return err
+		}
+		if result != nil {
 			evt.Body = &sessionpb.Event_ActivationResult{ActivationResult: result}
 		}
 	case sdk.FightStartedBody:
@@ -1018,12 +1046,26 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 		// that from the creature's next turn. Deliberately unlike
 		// DoorChanged below, which can report the state its own check
 		// produced -- there is no state here to report yet.
+		//
+		// THE WHOLE ROLL RIDES WITH THE VERDICT (rpg-project#462). dc, total
+		// and beaten are the outcome; the calculation is what was thrown to
+		// get there -- both d20 faces when a rule decided between them, and
+		// the keep record naming the rule and who brought it. An untrained
+		// character threw two dice and this seam used to publish one number,
+		// so the house rule shipped applied and invisible. It is ABSENT on a
+		// beat that recorded no arithmetic, which is the truth rather than a
+		// zero-valued calculation a reader would have to tell apart.
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
 		evt.Body = &sessionpb.Event_Intimidated{Intimidated: &sessionpb.Intimidated{
-			Actor:  b.Actor,
-			Target: b.Target,
-			Dc:     int32(b.DC),
-			Total:  int32(b.Total),
-			Beaten: b.Beaten,
+			Actor:       b.Actor,
+			Target:      b.Target,
+			Dc:          int32(b.DC),
+			Total:       int32(b.Total),
+			Beaten:      b.Beaten,
+			Calculation: calculation,
 		}}
 	case sdk.PersuadedBody:
 		// An appeal, landed or missed (rpg-project#458). The threat body's
@@ -1038,12 +1080,19 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 		// typed verb out of the arm it matched, and a shared body would make
 		// it branch twice -- once to find the arm, once to read a
 		// discriminator.
+		//
+		// It carries the whole roll for the threat body's reason, above.
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
 		evt.Body = &sessionpb.Event_Persuaded{Persuaded: &sessionpb.Persuaded{
-			Actor:  b.Actor,
-			Target: b.Target,
-			Dc:     int32(b.DC),
-			Total:  int32(b.Total),
-			Beaten: b.Beaten,
+			Actor:       b.Actor,
+			Target:      b.Target,
+			Dc:          int32(b.DC),
+			Total:       int32(b.Total),
+			Beaten:      b.Beaten,
+			Calculation: calculation,
 		}}
 	case sdk.AnsweredBody:
 		// THE SECOND ROLL (rpg-project#458, R1): the player's check published
@@ -1101,13 +1150,24 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			// response one file over.
 		}}
 	case sdk.DoorBody:
+		// A DOOR THAT CHANGED BECAUSE SOMEBODY ROLLED is a check beat and
+		// carries the whole roll (rpg-project#462, R4). A door that opened
+		// because somebody walked through it recorded no arithmetic and
+		// carries none -- the SDK body leaves Calculation nil on every
+		// non-attempt beat and the wire field stays unset, exactly as dc,
+		// total and actor already do there.
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
 		evt.Body = &sessionpb.Event_Door{Door: &sessionpb.DoorChanged{
-			Door:   b.Door,
-			State:  doorStateToProto(b.State),
-			Actor:  b.Actor,
-			Dc:     int32(b.DC),
-			Total:  int32(b.Total),
-			Beaten: b.Beaten,
+			Door:        b.Door,
+			State:       doorStateToProto(b.State),
+			Actor:       b.Actor,
+			Dc:          int32(b.DC),
+			Total:       int32(b.Total),
+			Beaten:      b.Beaten,
+			Calculation: calculation,
 		}}
 	case sdk.DoorRevealedBody:
 		// No Boundaries here: DoorRevealedBody carries none (the masquerade-
@@ -1199,6 +1259,10 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			Targets: targets,
 		}}
 	case sdk.SavedBody:
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
 		// The whole of one saving throw. SUCCEEDED IS COPIED, never derived
 		// here from total against dc -- the rulebook classifies its own roll,
 		// the law DeathSaveRolled.outcome already keeps, so the day beating a
@@ -1211,7 +1275,7 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			Dc:          int32(b.DC),
 			Succeeded:   b.Succeeded,
 			Source:      spellRefToProto(b.Source),
-			Calculation: rollCalculationToProto(b.Calculation),
+			Calculation: calculation,
 		}}
 	case sdk.ConcentrationEndedBody:
 		// Who lost what, and why. THE REASON IS AN OPEN STRING and this
@@ -1250,12 +1314,25 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 		// Offer is a value on this body, not a pointer -- a window that
 		// named nothing to spend could not have been posed -- so it always
 		// converts to a non-nil message.
+		//
+		// THE PAUSED WINDOW IS WHERE AN UNTRAINED ROLL IS FIRST SEEN
+		// (rpg-project#462, R5). calculation has been on the wire since the
+		// window shipped and had nothing to copy, because the SDK body had no
+		// field for it; it does now. Roll and Total are the two scalars the
+		// player decides with, and the calculation is the pair of faces they
+		// are deciding ABOUT -- a player asked to spend a Bardic Inspiration
+		// die on a roll they can only see one face of is being asked blind.
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
 		evt.Body = &sessionpb.Event_RollWindowOpened{RollWindowOpened: &sessionpb.RollWindowOpened{
 			PresentationId: b.PresentationID,
 			Audience:       b.Audience,
 			Offer:          reactionRefToProto(&b.Offer),
 			Roll:           int32(b.Roll),
 			Total:          int32(b.Total),
+			Calculation:    calculation,
 		}}
 	default:
 		// nil (no typed body for this kind) or a body type this build does
@@ -1277,14 +1354,16 @@ func activatedBodyToProto(body sdk.ActivatedBody) *sessionpb.Activated {
 // activationResultBodyToProto preserves the SDK's one-result invariant. A
 // nil or malformed decoded SDK body has no wire body rather than an arbitrary
 // first arm; payload remains untouched on the enclosing Event.
-func activationResultBodyToProto(body sdk.ActivationResultBody) *sessionpb.ActivationResult {
+func activationResultBodyToProto(body sdk.ActivationResultBody) (*sessionpb.ActivationResult, error) {
 	result := &sessionpb.ActivationResult{Actor: body.Actor}
 	populated := 0
 	if body.HealingApplied != nil {
 		populated++
-		result.Result = &sessionpb.ActivationResult_HealingApplied{
-			HealingApplied: healingAppliedBodyToProto(body.HealingApplied),
+		healing, err := healingAppliedBodyToProto(body.HealingApplied)
+		if err != nil {
+			return nil, err
 		}
+		result.Result = &sessionpb.ActivationResult_HealingApplied{HealingApplied: healing}
 	}
 	if body.ConditionApplied != nil {
 		populated++
@@ -1311,9 +1390,11 @@ func activationResultBodyToProto(body sdk.ActivationResultBody) *sessionpb.Activ
 	// so a malformed body with two results still produces no wire body at all.
 	if body.DamageApplied != nil {
 		populated++
-		result.Result = &sessionpb.ActivationResult_DamageApplied{
-			DamageApplied: damageAppliedBodyToProto(body.DamageApplied),
+		damage, err := damageAppliedBodyToProto(body.DamageApplied)
+		if err != nil {
+			return nil, err
 		}
+		result.Result = &sessionpb.ActivationResult_DamageApplied{DamageApplied: damage}
 	}
 	// A creature the effect MOVED is a result arm for the same reason damage
 	// is one: a push is a thing an effect delivered, and ActivationResult is
@@ -1340,9 +1421,9 @@ func activationResultBodyToProto(body sdk.ActivationResultBody) *sessionpb.Activ
 		}
 	}
 	if populated != 1 {
-		return nil
+		return nil, nil
 	}
-	return result
+	return result, nil
 }
 
 // moveImposedBodyToProto mirrors an imposed move field-for-field.
@@ -1371,9 +1452,9 @@ func moveImposedBodyToProto(body *sdk.MoveImposedBody) *sessionpb.MoveImposed {
 // healingAppliedBodyToProto mirrors a heal onto the wire without deriving one
 // representation from the other. New bodies carry Calculation only; legacy
 // Story records retain their deprecated Roll and Modifier scalars.
-func healingAppliedBodyToProto(body *sdk.HealingAppliedBody) *sessionpb.HealingApplied {
+func healingAppliedBodyToProto(body *sdk.HealingAppliedBody) (*sessionpb.HealingApplied, error) {
 	if body == nil {
-		return nil
+		return nil, errors.New("healing applied body is required")
 	}
 	out := &sessionpb.HealingApplied{
 		Target: body.Target, Amount: int32(body.Amount), Requested: int32(body.Requested),
@@ -1383,14 +1464,18 @@ func healingAppliedBodyToProto(body *sdk.HealingAppliedBody) *sessionpb.HealingA
 	if body.Calculation != nil {
 		// New bodies populate only Calculation. Its total is authoritative;
 		// neither Requested nor the deprecated scalars are derived from it.
-		out.Calculation = rollCalculationToProto(body.Calculation)
+		calculation, err := rollCalculationToProto(body.Calculation)
+		if err != nil {
+			return nil, err
+		}
+		out.Calculation = calculation
 	} else {
 		// Legacy bodies retain exactly the two deprecated scalar fields and do
 		// not gain a fabricated calculation.
 		out.Roll = int32(body.Roll)         //nolint:staticcheck // Required read compatibility for pre-trace Story records.
 		out.Modifier = int32(body.Modifier) //nolint:staticcheck // Required read compatibility for pre-trace Story records.
 	}
-	return out
+	return out, nil
 }
 
 // damageAppliedBodyToProto mirrors damage HealingApplied's way, and the
@@ -1398,9 +1483,14 @@ func healingAppliedBodyToProto(body *sdk.HealingAppliedBody) *sessionpb.HealingA
 // Modifier scalars for Story records written before roll traces existed, and
 // NOTHING EVER WROTE A DAMAGE RESULT before them, so there is no legacy shape
 // to read and Calculation is the only representation of the dice.
-func damageAppliedBodyToProto(body *sdk.DamageAppliedBody) *sessionpb.DamageApplied {
+func damageAppliedBodyToProto(body *sdk.DamageAppliedBody) (*sessionpb.DamageApplied, error) {
 	if body == nil {
-		return nil
+		return nil, errors.New("damage applied body is required")
+	}
+
+	calculation, err := rollCalculationToProto(body.Calculation)
+	if err != nil {
+		return nil, err
 	}
 
 	return &sessionpb.DamageApplied{
@@ -1414,13 +1504,13 @@ func damageAppliedBodyToProto(body *sdk.DamageAppliedBody) *sessionpb.DamageAppl
 		HpAfter:    int32(body.HPAfter),
 		// The 1d4's own face, so a client can show the roll rather than only
 		// what it totalled.
-		Calculation: rollCalculationToProto(body.Calculation),
+		Calculation: calculation,
 		// COPIED FROM THE BODY, never derived from SourceRef. The rulebook
 		// authors what kind of damage a spell deals -- psychic, for Vicious
 		// Mockery -- and a client that read the spell's ref to decide would
 		// be deriving 5e, which is the whole thing content refs prevent. The
 		// same converter the strike path's components already run through.
-	}
+	}, nil
 }
 
 // spellRefToProto mirrors AbilityRef's shape one content type over: the full
@@ -2093,17 +2183,85 @@ func intsToInt32s(values []int) []int32 {
 	return out
 }
 
+// rollSourcesToProto copies a list of provider-authored identities in the
+// order the producer wrote them. Each entry is independently copied, never
+// aliased into the SDK's own slice.
+func rollSourcesToProto(sources []sdk.RollSource) []*sessionpb.RollSource {
+	out := make([]*sessionpb.RollSource, len(sources))
+	for i := range sources {
+		out[i] = rollSourceToProto(&sources[i])
+	}
+	return out
+}
+
+// keepRuleToProto names WHY one face of a pool counted and the others did not
+// (rpg-project#462, R1/R2).
+//
+// IT REFUSES A RULE THIS BUILD CANNOT NAME rather than demoting it, the same
+// law answerWordToProto keeps and for the same reason. KEEP_RULE_UNSPECIFIED
+// is not "some rule we could not read": a pool nothing touched carries no
+// DiceKeep at all, so UNSPECIFIED would be a positive claim that a keep record
+// exists and says nothing. Sending it about a pool a real rule decided would
+// have every client draw two faces with no reason beside them and nothing
+// anywhere saying the reason was dropped. The refusal is loud, it names the
+// rule, and the fix is to rebuild this seam against the toolkit that grew it.
+//
+// AN EMPTY RULE IS REFUSED TOO. Unlike the answered beat's word, where empty
+// is an authored answer, a keep record with no rule could not have decided
+// anything -- absence of a rule is spelled by the absence of the record.
+func keepRuleToProto(rule sdk.KeepRule) (sessionpb.KeepRule, error) {
+	switch rule {
+	case sdk.KeepAdvantage:
+		return sessionpb.KeepRule_KEEP_RULE_ADVANTAGE, nil
+	case sdk.KeepDisadvantage:
+		return sessionpb.KeepRule_KEEP_RULE_DISADVANTAGE, nil
+	case sdk.KeepCancelled:
+		return sessionpb.KeepRule_KEEP_RULE_CANCELLED, nil
+	default:
+		return sessionpb.KeepRule_KEEP_RULE_UNSPECIFIED,
+			fmt.Errorf("dice pool carries keep rule %q, which this build cannot name on the wire", string(rule))
+	}
+}
+
+// diceKeepToProto copies the record that decided KeptIndices, and who brought
+// it. Granted and imposed cross exactly as the producer listed them; this seam
+// never reads them to decide what the rule was, because the rule is its own
+// field (rpg-project#462, R1).
+//
+// It is called only for a pool that HAS a record -- diceTraceToProto keeps the
+// nil test, because a straight roll's unset field is the truth and not a
+// conversion this function has to invent an answer for.
+func diceKeepToProto(keep *sdk.DiceKeep) (*sessionpb.DiceKeep, error) {
+	if keep == nil {
+		return nil, errors.New("dice keep record is required")
+	}
+	rule, err := keepRuleToProto(keep.Rule)
+	if err != nil {
+		return nil, err
+	}
+	return &sessionpb.DiceKeep{
+		Rule:    rule,
+		Granted: rollSourcesToProto(keep.Granted),
+		Imposed: rollSourcesToProto(keep.Imposed),
+	}, nil
+}
+
 // diceTraceToProto copies the complete physical dice history field-for-field.
 // Subtotal is authoritative and is never recomputed from the face lists.
-func diceTraceToProto(trace *sdk.DiceTrace) *sessionpb.DiceTrace {
+//
+// KEEP IS UNSET WHEN NOTHING TOUCHED THE POOL, and that is the whole zero
+// value law of the record: a straight roll kept every face, nobody decided it,
+// and the absent field says exactly that. A client reading two faces and no
+// keep record is reading a producer defect, not advantage.
+func diceTraceToProto(trace *sdk.DiceTrace) (*sessionpb.DiceTrace, error) {
 	if trace == nil {
-		return nil
+		return nil, errors.New("dice trace is required")
 	}
 	rerolls := make([]*sessionpb.DiceReroll, len(trace.Rerolls))
 	for i := range trace.Rerolls {
 		rerolls[i] = diceRerollToProto(&trace.Rerolls[i])
 	}
-	return &sessionpb.DiceTrace{
+	out := &sessionpb.DiceTrace{
 		Notation:      trace.Notation,
 		DieSize:       int32(trace.DieSize),
 		OriginalRolls: intsToInt32s(trace.OriginalRolls),
@@ -2112,37 +2270,61 @@ func diceTraceToProto(trace *sdk.DiceTrace) *sessionpb.DiceTrace {
 		KeptIndices:   intsToInt32s(trace.KeptIndices),
 		Subtotal:      int32(trace.Subtotal),
 	}
+	if trace.Keep != nil {
+		keep, err := diceKeepToProto(trace.Keep)
+		if err != nil {
+			return nil, err
+		}
+		out.Keep = keep
+	}
+	return out, nil
 }
 
 // rollComponentToProto preserves optional modifier presence, including a
 // present zero. Dice and source are independently copied and never aliased.
-func rollComponentToProto(component *sdk.RollComponent) *sessionpb.RollComponent {
+// A component with no dice is a flat modifier and its wire Dice stays unset.
+func rollComponentToProto(component *sdk.RollComponent) (*sessionpb.RollComponent, error) {
 	if component == nil {
-		return nil
+		return nil, errors.New("roll component is required")
 	}
 	out := &sessionpb.RollComponent{
 		Source:       rollSourceToProto(&component.Source),
-		Dice:         diceTraceToProto(component.Dice),
 		SubtractDice: component.SubtractDice,
+	}
+	if component.Dice != nil {
+		dice, err := diceTraceToProto(component.Dice)
+		if err != nil {
+			return nil, err
+		}
+		out.Dice = dice
 	}
 	if component.Modifier != nil {
 		modifier := int32(*component.Modifier)
 		out.Modifier = &modifier
 	}
-	return out
+	return out, nil
 }
 
 // rollCalculationToProto preserves component production order and copies the
 // producer's authoritative total without validation or arithmetic.
-func rollCalculationToProto(calculation *sdk.RollCalculation) *sessionpb.RollCalculation {
+//
+// A NIL CALCULATION IS AN ANSWER, not a failure: a body that recorded no
+// arithmetic leaves the wire field unset, the same presence law every other
+// optional projection in this file keeps. The error channel reports exactly
+// one thing -- a keep rule this build cannot name.
+func rollCalculationToProto(calculation *sdk.RollCalculation) (*sessionpb.RollCalculation, error) {
 	if calculation == nil {
-		return nil
+		return nil, nil
 	}
 	components := make([]*sessionpb.RollComponent, len(calculation.Components))
 	for i := range calculation.Components {
-		components[i] = rollComponentToProto(&calculation.Components[i])
+		component, err := rollComponentToProto(&calculation.Components[i])
+		if err != nil {
+			return nil, err
+		}
+		components[i] = component
 	}
-	return &sessionpb.RollCalculation{Components: components, Total: int32(calculation.Total)}
+	return &sessionpb.RollCalculation{Components: components, Total: int32(calculation.Total)}, nil
 }
 
 // hasRollComponent reports which of DamageComponent's two SDK read shapes is
@@ -2156,7 +2338,7 @@ func hasRollComponent(component *sdk.RollComponent) bool {
 		component.Dice != nil || component.Modifier != nil
 }
 
-func damageComponentsToProto(in []sdk.DamageComponent) []*sessionpb.DamageComponent {
+func damageComponentsToProto(in []sdk.DamageComponent) ([]*sessionpb.DamageComponent, error) {
 	out := make([]*sessionpb.DamageComponent, len(in))
 	for i := range in {
 		component := &in[i]
@@ -2172,7 +2354,11 @@ func damageComponentsToProto(in []sdk.DamageComponent) []*sessionpb.DamageCompon
 		if hasRollComponent(&component.Roll) {
 			// New bodies populate only Roll. Deprecated scalar fields stay empty,
 			// even if a malformed in-memory value also happens to carry them.
-			converted.Roll = rollComponentToProto(&component.Roll)
+			roll, err := rollComponentToProto(&component.Roll)
+			if err != nil {
+				return nil, err
+			}
+			converted.Roll = roll
 		} else {
 			// Legacy bodies populate only their deprecated scalars. In
 			// particular, no roll trace is fabricated from final faces.
@@ -2183,18 +2369,7 @@ func damageComponentsToProto(in []sdk.DamageComponent) []*sessionpb.DamageCompon
 		}
 		out[i] = converted
 	}
-	return out
-}
-
-func attackModifierSourcesToProto(in []sdk.AttackModifierSource) []*sessionpb.AttackModifierSource {
-	out := make([]*sessionpb.AttackModifierSource, len(in))
-	for i, source := range in {
-		out[i] = &sessionpb.AttackModifierSource{
-			SourceRef: source.SourceRef,
-			SourceId:  source.SourceID,
-		}
-	}
-	return out
+	return out, nil
 }
 
 // abilityRefToProto mirrors the sole public identity of a compiled Activate

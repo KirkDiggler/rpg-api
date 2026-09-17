@@ -257,6 +257,27 @@ var errorsGoDefaultCaseSentinels = map[string]bool{
 	// any verb returns, so it should never reach a handler. See errors.go's
 	// own doc on statusError for the full reasoning.
 	"ErrNotFound": true,
+
+	// A PRODUCER DEFECT, AND INTERNAL IS THE HONEST CODE (rpg-project#462).
+	// ErrNoCalculation fires when a verb in THIS build rolled a d20 and then
+	// wrote the beat with no arithmetic behind the total — a seam that has
+	// quietly gone back to publishing one number, which is the exact failure
+	// that slice exists to end. The SDK refuses it loudly "where it is still a
+	// bug rather than a story" (its own doc).
+	//
+	// SO IT IS NOT FAILED_PRECONDITION, and the distinction is the whole
+	// point of the bucket above it. Every row there is a well-formed call that
+	// the world's present state refuses, and the player can do something about
+	// it: step into the light, wait for your turn, get closer. There is
+	// nothing a player or a client can do about this one. Telling them "that
+	// is not allowed right now" would send them looking for a game reason for
+	// a server bug, and a dock that blames the player for a producer defect is
+	// how somebody stops trusting the panel.
+	//
+	// It is NOT returned for a verb that rolled nothing — opening an unlocked
+	// door faces no DC and nil is the truth there — so reaching a handler at
+	// all means this build is broken, which is what Internal says.
+	"ErrNoCalculation": true,
 }
 
 // sdkSentinelNames reads every exported Err* sentinel declared in the PINNED
