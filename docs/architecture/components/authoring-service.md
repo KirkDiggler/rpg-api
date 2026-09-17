@@ -1,8 +1,11 @@
 ---
 name: authoring service + dungeon content registry
 description: internal/dungeons (the file registry every authored dungeon lives in) and AuthoringService v1alpha1 (PutDungeon / GetDungeon) on the session stack
-updated: 2026-08-23
-confidence: medium-high — rpg-api#806 branch on toolkit T1/T2/T3 tags (encounter v0.31.0, session v0.22.0); registry, handler and lobby contracts verified by passing unit + integration suites under -race; no browser walk yet
+updated: 2026-09-17
+confidence: medium-high — rpg-api#1003 single-room v3 adoption verified on released
+provider tags through registry byte/metadata/full-scene preservation, real-launch member-atlas,
+reload/author-edit snapshot isolation, seat-capacity and unknown-ref refusal suites; legacy v2
+compatibility pinned; no browser walk yet
 ---
 
 # authoring service + dungeon content registry
@@ -24,16 +27,25 @@ content/reference-tomb.yaml                  the shipped dungeon
 (`RPG_CONTENT_DIR`, default `./content`) and compiles each once through
 `internal/sessionworld.Compile` — the toolkit's
 `rulebooks/dnd5e/encounter/dungeonspec`, never a local copy of its geometry.
-Construction **fails** (naming the file) when a file does not compile, when a
+`Compile` dispatches on the file's own version: legacy v2 files compile as
+always, and a v3 single-room file (`dungeonspec.Load`, rpg-api#1003) lowers
+its complete room — scene, declarations, placements — into the same field
+contract, with the canonical presentation riding `Field.RoomScene` whole.
+Every compiled monster's ref is resolved against the rulebook's registry
+BEFORE the dungeon is accepted (a lookup, not a rule): a file whose monster
+names an unknown ref is refused with a validation error and never becomes an
+entry, shipped or Put. Construction **fails** (naming the file) when a file
+does not compile, when a
 file's `key:` line disagrees with its filename, when two files claim one key,
 or when `reference-tomb` is absent. A dungeon that silently vanished from the
 picker would be a worse failure than a server that refuses to boot and says
 why. Each entry's `Atlas` comes from the `AtlasProjector` — production wires
 `session.Manager.AtlasOf` (the same validation-load path as `StartSession`
 and the same projection `Manager.Atlas` uses), so `PutDungeon`'s atlas and
-the started game's `GetAtlas` have one producer. A world that compiled but
-will not load is a boot refusal / `Internal`, never a `FieldError`: the
-stack disagreed with itself, the author did nothing.
+the started game's `GetAtlas` have one producer. A v3 room's canonical scene
+rides that atlas as `RoomSceneJSON`; a legacy world's stays empty. A world
+that compiled but will not load is a boot refusal / `Internal`, never a
+`FieldError`: the stack disagreed with itself, the author did nothing.
 
 `Registry` is the interface the lobby and authoring orchestrators see:
 
@@ -99,8 +111,9 @@ is `GetDungeon("reference-tomb")`.
 - A well-formed request whose file does not compile is **OK** with
   `errors` populated and `atlas` unset. `validate_only` never refuses a
   half-drawn map.
-- `errors` empty ⇒ compiled; `atlas` set (see the gap below); stored unless
-  `validate_only`.
+- `errors` empty ⇒ compiled; `atlas` set, carrying `room_scene_json` for a
+  v3 room (the canonical scene string, verbatim) and nothing extra for a
+  legacy one; stored unless `validate_only`.
 - `GetDungeon` unknown key → `NotFound`.
 - Both RPCs require an authenticated caller; no per-player ownership exists on
   a dungeon yet (rpg-api#803 tracks verb authorization generally).
@@ -108,9 +121,19 @@ is `GetDungeon("reference-tomb")`.
 `PutDungeonResponse.atlas` is produced by the **same** `AtlasToProto` the
 session handler's `GetAtlas` uses (exported for exactly this reason): one
 producer of the wire atlas, so the builder has no second geometry to keep in
-step with the game.
+step with the game — and one carriage of the room scene (`GetAtlasResponse.room_scene_json`)
+both callers share, proven against the exact authored source values.
 
 ## Toolkit pins
+
+The single-room slice (rpg-api#1003) builds on released tags only:
+`rulebooks/dnd5e/encounter` v0.87.0 (dungeonspec v3 single-room decode,
+compile and `RoomScenePresentation`), `rulebooks/dnd5e/session` v0.94.0
+(the atlas carries the validated scene as `RoomSceneJSON`), and protos
+generated at commit `6ea2b2e6dffca16528a6eda491714381a8416a92`
+(`GetAtlasResponse.room_scene_json`). The earlier T1/T2/T3 wave notes below
+are that wave's record; the dispatch this component consumes is versioned
+inside dungeonspec, so v2 content needed no change.
 
 Built on plan items T1/T2 (`rpg-toolkit` `feat/256-regions-dungeonspec-v2`,
 encounter `v0.31.0`) and T3
@@ -142,6 +165,16 @@ three regions added.
   its regions and is **cell-for-cell the atlas `Put` answered** (one
   producer), with doors minted under the authored key; `ListDungeons` reads
   the registry.
+- `internal/dungeons/registry_single_room_test.go` — the authored single-room
+  v3 suite: validate-only writes nothing; save/Get/List and a fresh registry
+  over the saved directory preserve the exact bytes, metadata and the full
+  decoded scene graph; a failing REAL save (unknown monster ref) keeps the
+  prior bytes and entry on the registry and on disk; an unknown ref is
+  refused before any entry exists.
+- `internal/orchestrators/lobby/start_encounter_single_room_test.go` — the
+  authored room launches: the full scene, the member atlas, actor cells
+  including a negative odd axial row, SDK-owned monster defaults, reload and
+  author-edit snapshot isolation, and the seat-capacity no-write refusal.
 - `internal/integration/session/acceptance_test.go` — the session acceptance
   loop re-authored on regions (absolute offset cells, declared seam walls,
   open doors on the edges they leave out, `encounter.HexCellAt` for every

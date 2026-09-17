@@ -1,8 +1,8 @@
 ---
 name: lobby service
 description: LobbyService v1alpha1 — party assembly (join refs, membership, ready flags, lifecycle) and the sole session-construction path
-updated: 2026-09-02
-confidence: medium-high — first-admission recovery ownership verified through real miniredis-backed Lobby StartEncounter and failure-order acceptance (rpg-api#882); dungeon_key routing + ListDungeons verified against unit + integration suites; the lobby has no browser-verified walkthrough on the new stack yet
+updated: 2026-09-17
+confidence: medium-high — first-admission recovery ownership verified through real miniredis-backed Lobby StartEncounter and failure-order acceptance (rpg-api#882); dungeon_key routing + ListDungeons verified against unit + integration suites; rpg-api#1003 single-room launch verified through real registry/SDK/miniredis suites (scene, cells, snapshot isolation, capacity refusal); the lobby has no browser-verified walkthrough on the new stack yet
 ---
 
 # lobby service
@@ -22,6 +22,17 @@ rpg-api#806): `StartEncounterRequest.dungeon_key` picks a registered dungeon
 
 Design doc: `rpg-project/ideas/game-screen-rebuild/lobby-surface.md`. Umbrella:
 KirkDiggler/rpg-project#81. Implementation issue: rpg-api#629.
+
+Single-room authored content (rpg-api#1003) launches through this same path:
+a v3 room Put into the registry starts like any dungeon, its canonical scene
+reaches members as `GetAtlasResponse.room_scene_json`, and every actor stands
+on the authored axial cell — negative/odd rows included — through the one
+conversion `sessionworld` performs. Each run persists its compiled
+presentation, so a room republished after a launch reaches only future
+launches; and the existing seat-capacity refusal (party bigger than the
+derived seats) still fires before any session, world, character write or
+`EncounterStarted` event. Browser proof of the authored room remains
+pending.
 
 ## Boundary
 

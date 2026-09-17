@@ -1603,17 +1603,18 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 		sealed[i] = positionToProto(c)
 	}
 	return &sessionpb.GetAtlasResponse{
-		Grid:       gridKindToProto(a.Grid),
-		Layout:     hexLayoutToProto(a.Layout),
-		Cells:      cells,
-		Props:      props,
-		Boundaries: atlasBoundariesToProto(a.Boundaries),
-		Doorways:   atlasDoorwaysToProto(a.Doorways),
-		Regions:    atlasRegionsToProto(a.Regions),
-		Segments:   atlasSegmentsToProto(a.Segments),
-		Sealed:     sealed,
-		Exits:      atlasExitsToProto(a.Exits),
-		Start:      atlasStartToProto(a.Start),
+		Grid:          gridKindToProto(a.Grid),
+		Layout:        hexLayoutToProto(a.Layout),
+		Cells:         cells,
+		Props:         props,
+		Boundaries:    atlasBoundariesToProto(a.Boundaries),
+		Doorways:      atlasDoorwaysToProto(a.Doorways),
+		Regions:       atlasRegionsToProto(a.Regions),
+		Segments:      atlasSegmentsToProto(a.Segments),
+		Sealed:        sealed,
+		Exits:         atlasExitsToProto(a.Exits),
+		Start:         atlasStartToProto(a.Start),
+		RoomSceneJson: a.RoomSceneJSON,
 	}
 }
 

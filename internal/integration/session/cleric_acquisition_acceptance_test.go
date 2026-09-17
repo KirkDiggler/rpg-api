@@ -90,7 +90,7 @@ func createNativeCleric(t *testing.T, h *acceptanceHarness) string {
 	require.NoError(t, err)
 	require.Equal(t, pb.Subclass_SUBCLASS_LIFE_DOMAIN, draft.GetDraft().GetSubclass())
 	require.NotNil(t, draft.GetDraft().GetClassInfo().GetSpellcasting())
-	var resumedChoices []*pb.ChoiceData
+	resumedChoices := make([]*pb.ChoiceData, 0, len(draft.GetDraft().GetChoices()))
 	for _, choice := range draft.GetDraft().GetChoices() {
 		if choice.GetSource() != pb.ChoiceSource_CHOICE_SOURCE_CLASS {
 			continue

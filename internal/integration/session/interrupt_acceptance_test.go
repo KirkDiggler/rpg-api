@@ -389,7 +389,7 @@ func requireFrozenRows(ctx context.Context, t *testing.T, h *acceptanceHarness, 
 
 // movedCellsOf is every cell one member was seen stepping onto.
 func movedCellsOf(events []*sessionpb.Event, member string) []spatial.Position {
-	var out []spatial.Position
+	out := make([]spatial.Position, 0, len(events))
 	for _, evt := range events {
 		moved := evt.GetMoved()
 		if evt.GetKind() != sessionpb.EventKind_EVENT_KIND_MOVED || moved.GetMember() != member {

@@ -1,9 +1,9 @@
 // Copyright (C) 2024 Kirk Diggler
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Package character_integration provides integration tests for character creation.
+// Package characterintegration provides integration tests for character creation.
 // These tests verify the full character creation flow through the gRPC API.
-package character_integration
+package characterintegration
 
 import (
 	"context"

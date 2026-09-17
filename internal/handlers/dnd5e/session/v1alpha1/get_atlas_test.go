@@ -38,6 +38,28 @@ func TestGetAtlas_HappyPath(t *testing.T) {
 	require.Len(t, resp.GetCells(), 1)
 }
 
+// TestGetAtlas_RoomSceneJSONCarriesTheScene pins the atlas read's new
+// carriage: the SDK's canonical room-scene string reaches GetAtlasResponse
+// as that exact string, and a legacy world without one stays empty.
+func TestGetAtlas_RoomSceneJSONCarriesTheScene(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	scene := `{"scene":{"version":1,"id":"scene-1","name":"Workshop",` +
+		`"items":[{"id":"table","transform":{"x":-2.25,"z":1.3,"rotationY":0.37}}],"groups":[]}}`
+	mgr.EXPECT().Atlas(gomock.Any(), &sdk.AtlasInput{Session: "sess-1", Member: "char-1"}).Return(&sdk.Atlas{
+		Grid:          sdk.GridHex,
+		Cells:         []spatial.Position{{X: 0, Y: 0}},
+		RoomSceneJSON: scene,
+	}, nil)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	resp, err := h.GetAtlas(ctx, &sessionpb.GetAtlasRequest{Session: "sess-1", Member: "char-1"})
+	require.NoError(t, err)
+	require.Equal(t, scene, resp.GetRoomSceneJson(),
+		"the scene crosses verbatim, fractional doubles included")
+}
+
 func TestGetAtlas_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
