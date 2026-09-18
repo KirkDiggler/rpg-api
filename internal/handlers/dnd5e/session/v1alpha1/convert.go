@@ -692,6 +692,22 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_PERSUADED
 	case sdk.EventAnswered:
 		return sessionpb.EventKind_EVENT_KIND_ANSWERED
+	// The creature's table (rpg-project#465). EventTempered lands in the same
+	// change as its body below, on EventAnswered's argument: a dealt
+	// temperament is rolled ONCE, at the door, and this beat is the only
+	// account of that roll anyone ever gets. Demoted, the streamer would watch
+	// four goblins off one sheet behave differently with nothing in the log
+	// saying why.
+	case sdk.EventTempered:
+		return sessionpb.EventKind_EVENT_KIND_TEMPERED
+	// A ROUTED WALK THAT MOVED NOBODY (rpg-project#465, from Kirk's walk).
+	// Here for EventTempered's reason and one of its own: the world clock
+	// charges a round per driven creature whether or not anybody moves, so
+	// demoted this beat would leave a spent round narrated as nothing at all
+	// -- and a reader could not tell a creature nobody asked from one sent
+	// somewhere it could not reach.
+	case sdk.EventStayed:
+		return sessionpb.EventKind_EVENT_KIND_STAYED
 	case sdk.EventMissed:
 		return sessionpb.EventKind_EVENT_KIND_MISSED
 	case sdk.EventCastMissed:
@@ -1119,60 +1135,80 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			Calculation: calculation,
 		}}
 	case sdk.AnsweredBody:
-		// THE SECOND ROLL (rpg-project#458, R1): the player's check published
-		// `intimidated` or `persuaded`, and then the WORLD rolled one entry of
-		// the author's weighted table and this is that. The die, the summed
-		// weights and the entry index are on the beat so the debug log can
-		// show them; the creature's line and the outcome word are what the
-		// story log renders.
-		//
-		// EVERY FIELD CROSSES, none of them derived. `entry: 0` is an answer
-		// (the author's first line fired), `beaten: false` is an answer (the
-		// failure table was read), and an empty `say` is an answer (the author
-		// wrote the creature no line). The SDK writes all of them without
-		// omitempty for exactly that reason and this seam must not reintroduce
-		// the absence its author removed.
-		//
-		// BEATEN IS REPEATED FROM THE CHECK BEAT ON PURPOSE. It says which
-		// table `entry` indexes into, and pairing two beats to find out would
-		// assume an ordering the stream does not promise.
-		word, err := answerWordToProto(b.Word)
+		answered, err := answeredToProto(b)
 		if err != nil {
 			return err
 		}
-		evt.Body = &sessionpb.Event_Answered{Answered: &sessionpb.Answered{
-			Creature: b.Creature,
-			// The seam's own Verb, mapped through the one table every other
-			// verb on the wire goes through. An unrecognized verb here
-			// DEGRADES to UNSPECIFIED rather than refusing, unlike the word
-			// above, and the difference is what each field claims: a client
-			// that cannot name the verb still reads the line, the fact and
-			// what the creature did, while a word demoted to UNSPECIFIED
-			// would assert that the creature merely spoke.
-			Verb:   verbToProto(sdk.Verb(b.Verb)), //nolint:staticcheck // Preserve the current provider contract until creature-table adoption.
-			Beaten: b.Beaten,                      //nolint:staticcheck // Preserve the current provider contract until creature-table adoption.
-			Roll:   int32(b.Roll),
-			Of:     int32(b.Of),
-			Entry:  int32(b.Entry),
-			Word:   word,
-			Say:    b.Say,
-			// `fact` IS DELIBERATELY NOT SET, ruled by Kirk on rpg-project#458
-			// after the contract had already made room for it.
-			//
-			// A FACT IS PER-OBSERVER KNOWLEDGE AND THIS BEAT IS BROADCAST. It
-			// goes to every witness of the creature, and what any one of them
-			// then KNOWS is the intel log's answer, held per observer and
-			// reachable only through a read that is entitled to it. Putting the
-			// id on a broadcast beat would hand the whole table a fact the
-			// world may have taught only some of them, and there is no second
-			// field that could take it back.
-			//
-			// NOTHING IS LOST. The story has the author's `say` line, which is
-			// what a player actually receives; the consequence arrives on its
-			// own terms as a STANCE_CHANGED or an arrival. `b.Fact` is read
-			// and dropped here exactly as the verdict fields are on the
-			// response one file over.
+		evt.Body = &sessionpb.Event_Answered{Answered: answered}
+	case sdk.TemperedBody:
+		// WHICH TEMPERAMENT A FACTION'S MIX DEALT ONE CREATURE, at the door
+		// (rpg-project#465 §3, R5). Four goblins handed one table and one mix
+		// answer it four different ways, and this is the beat that lets the
+		// table see which one came out the coward.
+		//
+		// THE DIE NAMES ITS ENTITY, as every pool on this seam does: the mix
+		// belongs to the FACTION, so the faction threw, and `member` is who
+		// the word landed on. Both cross; neither is derived from the other.
+		//
+		// AN AUTHORED `temper:` RAISES NO BEAT AT ALL. Nothing was rolled, so
+		// there is nothing to show -- that creature's word still reaches every
+		// reader on Answered.temper, on every pick it makes.
+		temper, err := temperToProto(b.Temper)
+		if err != nil {
+			return err
+		}
+		evt.Body = &sessionpb.Event_Tempered{Tempered: &sessionpb.Tempered{
+			Member:  b.Member,
+			Temper:  temper,
+			Roll:    int32(b.Roll),
+			Of:      int32(b.Of),
+			Faction: b.Faction,
 		}}
+	case sdk.StayedBody:
+		// THE WHOLE ACCOUNT OF A SPENT ROUND IN WHICH NOTHING MOVED
+		// (rpg-project#465). The creature was sent somewhere -- by its own
+		// table, or by whatever else routes a walk -- and the route came back
+		// with no path, so the round ended on the cell it started on.
+		//
+		// EVERY FIELD CROSSES VERBATIM AND NOTHING IS DERIVED. `cause` is the
+		// engine's own `<module>:<type>:<id>` reference, so a creature walking
+		// under its own orders is distinguishable from one being shoved or
+		// commanded, and this seam neither parses it nor decides anything from
+		// it.
+		//
+		// AN EMPTY `why` IS AN ANSWER AND IS SENT AS ONE. The route had
+		// nowhere strictly nearer to offer, which is its own reason rather
+		// than a blocker it could name, and it is the commonest case. Nothing
+		// here substitutes a sentence for it: composing "no path" on this side
+		// would be the api narrating, and a client reading empty as "the
+		// producer forgot" would be reading a fact as a defect.
+		//
+		// NO CELLS, because nothing moved. Where the creature stands is what
+		// the roster and the atlas already answer, and a position here would
+		// be a second copy of a fact this beat did not change.
+		evt.Body = &sessionpb.Event_Stayed{Stayed: &sessionpb.Stayed{
+			Member: b.Member,
+			Cause:  b.Cause,
+			Why:    b.Why,
+		}}
+	default:
+		return setWorldEventBody(evt, body)
+	}
+	return nil
+}
+
+// setWorldEventBody carries the second half of the same type switch: the
+// world's own beats -- doors, regions, windows -- and the spell beats that
+// close a cast.
+//
+// THE SPLIT IS A COMPLEXITY BOUNDARY AND NOTHING ELSE. One switch over every
+// body kind outgrew the cyclomatic limit the day the creature's table and the
+// ward slice each brought their own arms, and no arm changed in the move. A
+// body kind is recognized here or in setEventBody and never in both, and one
+// this build does not recognize still leaves evt.Body nil so the payload
+// stays the passthrough carrier.
+func setWorldEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
+	switch b := body.(type) {
 	case sdk.DoorBody:
 		// A DOOR THAT CHANGED BECAUSE SOMEBODY ROLLED is a check beat and
 		// carries the whole roll (rpg-project#462, R4). A door that opened
@@ -1827,19 +1863,132 @@ func verbToProto(v sdk.Verb) sessionpb.Verb {
 	}
 }
 
+// answeredToProto projects one Answered beat: the world's own roll on the
+// author's table, with every number it was made of.
+//
+// SPLIT OUT OF setEventBody, which is one arm per body and nothing else. This
+// arm grew three refusing conversions and a conditional pair with the creature's
+// table (rpg-project#465), and a switch that big stops being readable as a list
+// of bodies — which is the one thing it has to stay.
+func answeredToProto(b sdk.AnsweredBody) (*sessionpb.Answered, error) {
+	// THE WORLD'S OWN ROLL ON THE AUTHOR'S TABLE (rpg-project#458 R1,
+	// rpg-project#465 §6). Two things reach this one body: a social
+	// verdict's answer -- the player's check published `intimidated` or
+	// `persuaded`, and then the world rolled -- and a creature spending
+	// one turn's worth of doing, on its turn in a fight or a round of the
+	// world clock. One table, one roll, one shape; `key` says which.
+	//
+	// EVERY FIELD CROSSES, none of them derived. `entry: 0` is an answer
+	// (the author's first line fired), `beaten: false` is an answer (the
+	// failure table was read), and an empty `say` is an answer (the author
+	// wrote the creature no line). The SDK writes all of them without
+	// omitempty for exactly that reason and this seam must not reintroduce
+	// the absence its author removed.
+	//
+	// THE ARITHMETIC RIDES ALONG, NOT THE RESULT ALONE. `candidates`
+	// carries every entry whose `when` held with its authored weight, its
+	// temperament factor and their product, so a debug log can redo the
+	// engine's sum rather than take `of` on trust. Empty is a real answer:
+	// nothing was eligible, the creature held, and the beat says so.
+	word, err := answerWordToProto(b.Word)
+	if err != nil {
+		return nil, err
+	}
+	key, err := answerKeyToProto(b.Key)
+	if err != nil {
+		return nil, err
+	}
+	temper, err := temperToProto(b.Temper)
+	if err != nil {
+		return nil, err
+	}
+	answered := &sessionpb.Answered{
+		Creature: b.Creature,
+		Roll:     int32(b.Roll),
+		Of:       int32(b.Of),
+		Entry:    int32(b.Entry),
+		Word:     word,
+		Say:      b.Say,
+		// WHICH KEY THE WORLD ROLLED ON -- the one field that replaces the
+		// deprecated `verb`/`beaten` pair, which between them could spell
+		// exactly the four social outcomes and had no way at all to say
+		// "it was this creature's turn".
+		Key: key,
+		// The loaded table as rolled, and the word that loaded it. Temper
+		// is on every pick deliberately: a reader holding one beat can say
+		// why the coward ran without joining back to the TEMPERED beat
+		// that dealt it, and a creature whose temperament was AUTHORED
+		// raised no such beat to join to.
+		Candidates: answerCandidatesToProto(b.Candidates),
+		Temper:     temper,
+		// `fact` IS DELIBERATELY NOT SET, ruled by Kirk on rpg-project#458
+		// after the contract had already made room for it.
+		//
+		// A FACT IS PER-OBSERVER KNOWLEDGE AND THIS BEAT IS BROADCAST. It
+		// goes to every witness of the creature, and what any one of them
+		// then KNOWS is the intel log's answer, held per observer and
+		// reachable only through a read that is entitled to it. Putting the
+		// id on a broadcast beat would hand the whole table a fact the
+		// world may have taught only some of them, and there is no second
+		// field that could take it back.
+		//
+		// NOTHING IS LOST. The story has the author's `say` line, which is
+		// what a player actually receives; the consequence arrives on its
+		// own terms as a STANCE_CHANGED or an arrival. `b.Fact` is read
+		// and dropped here exactly as the verdict fields are on the
+		// response one file over.
+	}
+	// THE DEPRECATED PAIR IS STILL FILLED, BUT ONLY WHERE IT CAN TELL THE
+	// TRUTH (rpg-project#465). A reader written against the shipped shape
+	// keeps working on all four social keys, and on `time` both stay unset
+	// -- because no verb spoke and no check was beaten, and a zero Verb
+	// beside `beaten: false` would read as a threat that failed. Leaving
+	// them out is the honest account of a turn; filling them in would be a
+	// sentence about an event that never happened.
+	//
+	// BEATEN IS REPEATED FROM THE CHECK BEAT ON PURPOSE where it applies.
+	// It says which table `entry` indexes into, and pairing two beats to
+	// find out would assume an ordering the stream does not promise.
+	if answerKeyIsSocial(key) {
+		// The seam's own Verb, mapped through the one table every other
+		// verb on the wire goes through. An unrecognized verb here
+		// DEGRADES to UNSPECIFIED rather than refusing, unlike the word
+		// and the key above, and the difference is what each field claims:
+		// this pair is deprecated and a client reads `key` instead, while
+		// a word demoted to UNSPECIFIED would assert that the creature
+		// merely spoke.
+		//nolint:staticcheck // Deprecated by `key`, and deliberately still
+		// written: the contract keeps both filled on every social key so a
+		// reader built against the shipped shape goes on working.
+		answered.Verb = verbToProto(sdk.Verb(b.Verb))
+		//nolint:staticcheck // Deprecated by `key`; see the line above.
+		answered.Beaten = b.Beaten
+	}
+
+	return answered, nil
+}
+
 // answerWordToProto names WHAT A CREATURE DID when the world rolled the
-// author's answer table (rpg-project#458).
+// author's table (rpg-project#458, extended by rpg-project#465).
 //
 // IT REFUSES AN UNKNOWN WORD RATHER THAN DEMOTING IT, and that is the whole
-// reason it returns an error at all. The enum ships two words and its own
-// comment says it grows one per slice: `alarm`, `lure` and `pretend` are
-// named in the design and deliberately absent from the wire. So a word this
-// build does not know is not a field it can degrade -- ANSWER_WORD_UNSPECIFIED
-// is the wire's way of saying "an entry that only speaks", which is a positive
-// claim, and sending it about a creature that actually ran for the guards
-// would have every client narrate the wrong scene with nothing anywhere saying
-// so. The refusal is loud, it names the word, and the fix is to rebuild this
-// seam against the toolkit that grew it.
+// reason it returns an error at all. The enum's own comment says it grows one
+// value per slice: `alarm`, `lure`, `pretend` and `patrol` are named in the
+// design and deliberately absent from the wire. So a word this build does not
+// know is not a field it can degrade -- ANSWER_WORD_UNSPECIFIED is the wire's
+// way of saying "an entry that only speaks", which is a positive claim, and
+// sending it about a creature that actually ran for the guards would have
+// every client narrate the wrong scene with nothing anywhere saying so. The
+// refusal is loud, it names the word, and the fix is to rebuild this seam
+// against the toolkit that grew it.
+//
+// SIX WORDS NOW, AND THE FOUR THAT ARRIVED ARE TIME WORDS. `fact` and `flee`
+// are what a creature does when a social verb resolves against it; `hold`,
+// `attack`, `toward` and `away` are what it does with one turn's worth of
+// doing, on its turn in a fight or a round of the world clock. WHICH WORD IS
+// LEGAL ON WHICH KEY IS NOT THIS FUNCTION'S QUESTION and deliberately not a
+// second enum: the table's compiler refuses `attack` under `intimidated`, so
+// a word on the wrong key never reaches this seam.
 //
 // EMPTY IS NOT UNKNOWN. An author may write an entry that only speaks, and the
 // SDK carries that as an empty Word; UNSPECIFIED is its exact wire spelling.
@@ -1851,10 +2000,137 @@ func answerWordToProto(word string) (sessionpb.AnswerWord, error) {
 		return sessionpb.AnswerWord_ANSWER_WORD_FACT, nil
 	case "flee":
 		return sessionpb.AnswerWord_ANSWER_WORD_FLEE, nil
+	case "hold":
+		return sessionpb.AnswerWord_ANSWER_WORD_HOLD, nil
+	case "attack":
+		return sessionpb.AnswerWord_ANSWER_WORD_ATTACK, nil
+	case "toward":
+		return sessionpb.AnswerWord_ANSWER_WORD_TOWARD, nil
+	case "away":
+		return sessionpb.AnswerWord_ANSWER_WORD_AWAY, nil
 	default:
 		return sessionpb.AnswerWord_ANSWER_WORD_UNSPECIFIED,
 			fmt.Errorf("answered beat carries outcome word %q, which this build cannot name on the wire", word)
 	}
+}
+
+// answerKeyToProto names WHICH TABLE the world rolled on (rpg-project#465 §2)
+// -- the author's own spelling under `on:`, carried so the beat stands alone.
+//
+// IT REFUSES ANYTHING BUT THE FIVE, answerWordToProto's law for
+// answerWordToProto's reason. The design seals the trigger vocabulary and says
+// it grows one word per use case, so a sixth key means this seam is older than
+// the toolkit that produced the beat. ANSWER_KEY_UNSPECIFIED is the zero this
+// file's every enum keeps for "the producer failed", and publishing it about a
+// creature that answered a real trigger would be exactly that claim.
+//
+// EMPTY REFUSES TOO, and this is the one place that differs from the word
+// above. An empty Word is an author's real choice -- an entry that only speaks
+// -- but there is no such thing as a pick on no key: the SDK fills this on
+// every beat it writes, and empty means a beat stored by the build BEFORE the
+// table existed, which this seam cannot honestly spell. Loud is the point:
+// pre-release, a run that old is a run nobody is playing.
+func answerKeyToProto(key string) (sessionpb.AnswerKey, error) {
+	switch key {
+	case "intimidated":
+		return sessionpb.AnswerKey_ANSWER_KEY_INTIMIDATED, nil
+	case "intimidate_failed":
+		return sessionpb.AnswerKey_ANSWER_KEY_INTIMIDATE_FAILED, nil
+	case "persuaded":
+		return sessionpb.AnswerKey_ANSWER_KEY_PERSUADED, nil
+	case "persuade_failed":
+		return sessionpb.AnswerKey_ANSWER_KEY_PERSUADE_FAILED, nil
+	case "time":
+		return sessionpb.AnswerKey_ANSWER_KEY_TIME, nil
+	default:
+		return sessionpb.AnswerKey_ANSWER_KEY_UNSPECIFIED,
+			fmt.Errorf("answered beat carries key %q, which this build cannot name on the wire", key)
+	}
+}
+
+// answerKeyIsSocial says whether a key had a VERB and a CHECK behind it --
+// which is the whole question `verb` and `beaten` answer, and the reason those
+// two are filled on four keys and left unset on the fifth (rpg-project#465).
+//
+// A `time` pick has neither: nothing spoke and nothing was beaten. Writing
+// VERB_UNSPECIFIED and `beaten: false` there would spell "a threat that
+// failed", a sentence about an event that never happened, which is precisely
+// what deprecated the pair.
+func answerKeyIsSocial(key sessionpb.AnswerKey) bool {
+	switch key {
+	case sessionpb.AnswerKey_ANSWER_KEY_INTIMIDATED,
+		sessionpb.AnswerKey_ANSWER_KEY_INTIMIDATE_FAILED,
+		sessionpb.AnswerKey_ANSWER_KEY_PERSUADED,
+		sessionpb.AnswerKey_ANSWER_KEY_PERSUADE_FAILED:
+		return true
+	case sessionpb.AnswerKey_ANSWER_KEY_UNSPECIFIED, sessionpb.AnswerKey_ANSWER_KEY_TIME:
+		return false
+	default:
+		return false
+	}
+}
+
+// temperToProto names A CREATURE'S TEMPERAMENT -- the weight profile loading
+// its die (rpg-project#465 §3).
+//
+// EMPTY IS TEMPER_NONE, EXPLICITLY, never left to fall through to
+// UNSPECIFIED. Having no temperament is a real answer about a creature, and
+// this is the law slotToProto keeps one screen down for the same reason: the
+// zero on this seam means the producer failed, so a creature nobody gave a
+// word to needs a word of its own.
+//
+// NONE IS NOT SOLDIER, and collapsing them would lose the only thing they do
+// not share. They multiply identically -- every factor 100 -- but SOLDIER
+// means a placement or a faction's mix NAMED that word and NONE means nobody
+// did, and a reader asking whether anybody chose it must be able to tell.
+//
+// AN UNKNOWN WORD REFUSES. Not UNSPECIFIED, which would confess this build's
+// failure in a field a client reads as the world's answer, and above all not
+// NONE, which would publish "this creature has no temperament" about a
+// creature whose author gave it one -- every pick it ever makes would read as
+// a soldier's, and nothing anywhere would say the word had been dropped.
+func temperToProto(word string) (sessionpb.Temper, error) {
+	switch word {
+	case "":
+		return sessionpb.Temper_TEMPER_NONE, nil
+	case "soldier":
+		return sessionpb.Temper_TEMPER_SOLDIER, nil
+	case "coward":
+		return sessionpb.Temper_TEMPER_COWARD, nil
+	case "aggressive":
+		return sessionpb.Temper_TEMPER_AGGRESSIVE, nil
+	default:
+		return sessionpb.Temper_TEMPER_UNSPECIFIED,
+			fmt.Errorf("beat carries temperament %q, which this build cannot name on the wire", word)
+	}
+}
+
+// answerCandidatesToProto mirrors THE LOADED TABLE AS ROLLED: every entry
+// whose `when` held, in the author's order, with the arithmetic that put it on
+// the die (rpg-project#465 §6).
+//
+// FIELD FOR FIELD, NOTHING DERIVED. `loaded` is weight x percent and this seam
+// copies the engine's own product rather than recomputing it -- a converter
+// that multiplied here could disagree with the sum on `of` and there would be
+// no way to tell which of the two was the roll that happened.
+//
+// EMPTY IN, EMPTY OUT, and empty is a real answer: a `time` roll where no
+// entry's `when` held put nothing on the table, so the creature held and the
+// beat says so with no candidates at all.
+func answerCandidatesToProto(cs []sdk.AnswerCandidate) []*sessionpb.AnswerCandidate {
+	if len(cs) == 0 {
+		return nil
+	}
+	out := make([]*sessionpb.AnswerCandidate, len(cs))
+	for i, c := range cs {
+		out[i] = &sessionpb.AnswerCandidate{
+			Entry:   int32(c.Entry),
+			Weight:  int32(c.Weight),
+			Percent: int32(c.Percent),
+			Loaded:  int32(c.Loaded),
+		}
+	}
+	return out
 }
 
 // slotToProto mirrors session.Slot onto the wire enum.

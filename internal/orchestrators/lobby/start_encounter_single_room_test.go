@@ -115,7 +115,12 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysCompleteSingleRoom() {
 		"authored axial (q=1, r=-1) is the member's cell — a negative odd row survives the API")
 
 	// THE SDK'S OWN DEFAULTS: the authored placement named only id and ref,
-	// so the spawned sheet is the stat block's own — arms and mind included.
+	// so the spawned sheet is the stat block's own, arms included.
+	//
+	// AND NOT A MIND: a sheet no longer names one (rpg-project#465). What a
+	// skeleton does is the rulebook's default TABLE for its kind, laid on
+	// inside Spawn and held with the member, so there is nothing about
+	// behavior on this record to assert here any more.
 	sessions := sessionorch.NewSessionRepository(s.redisClient, time.Hour)
 	stored, err := sessions.GetSession(s.ctx, out.EncounterID)
 	s.Require().NoError(err)
@@ -130,7 +135,6 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysCompleteSingleRoom() {
 		"the member is the ref the author named")
 	s.Equal(13, skeleton.HitPoints, "the stat block's own HP, not a default this side invented")
 	s.Equal(13, skeleton.MaxHitPoints)
-	s.Equal(monster.MindRetaliator, skeleton.Mind, "the definition's own mind, SDK-owned")
 	s.Require().Len(skeleton.Actions, 2, "the stat block's own arms")
 	s.True(skeleton.Actions[0].Ref.Equals(refs.Weapons.Shortsword()),
 		"melee first, as the definition arms it")

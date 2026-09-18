@@ -248,14 +248,31 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 			// be a difficulty nobody chose sitting where the rulebook's
 			// own answer belongs.
 			//
-			// A NIL TABLE IS THE SAME STATEMENT ONE FIELD OVER: a monster
-			// the author wrote no `on:` for answers nothing, and the
-			// world rolls no die at all. `OnIntimidated string` used to
-			// sit here and carried one fact on one outcome; the table
-			// replaced it rather than joining it.
 			Intimidate: socialApproachesOf(monster.Intimidate),
 			Persuade:   socialApproachesOf(monster.Persuade),
-			Answers:    answersOf(monster.Answers),
+			// THE CREATURE'S TABLE AND THE WORD THAT LOADS ITS DIE
+			// (rpg-project#465), HAND-CARRIED OFF THE COMPILED PLACEMENT
+			// AND NOT CONVERTED. Both are the composition's own types on
+			// both sides of this call -- dungeonspec compiled them and the
+			// SDK's SpawnInput takes them -- so there is nothing to
+			// translate, and inventing a converter here would be this
+			// package holding a second copy of the author's grammar.
+			//
+			// NOTHING IS FOLDED AND NO WORD IS RESOLVED HERE. The rulebook's
+			// default table for the monster's kind goes UNDER these orders
+			// inside Spawn, and what `coward` means in numbers is looked up
+			// there too: both need a ref resolved to a kind, which is a
+			// rulebook's job and never this one's. A nil table is therefore
+			// not a creature that does nothing -- it is a creature the
+			// author gave no orders, driven by its kind's default.
+			//
+			// A MIX CROSSES INTACT. `temper: { coward: 1, soldier: 2 }` on a
+			// faction is dealt per member inside the composition, through the
+			// world's dice with the FACTION as the die's entity, and the
+			// beat that says which goblin came out the coward is written
+			// there. Dealing one here would be the API rolling.
+			Table:  monster.Table,
+			Temper: monster.Temper,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("spawn %q into session %q on new stack: %w", monster.MemberID, encID, err)
@@ -371,42 +388,6 @@ func socialApproachesOf(approaches []tkencounter.CheckApproach) []sdk.DoorApproa
 	out := make([]sdk.DoorApproach, len(approaches))
 	for i, approach := range approaches {
 		out[i] = sdk.DoorApproach{Ability: approach.Ability, Tool: approach.Tool, DC: approach.DC}
-	}
-	return out
-}
-
-// answersOf spells the author's answer table (`place[].on`, rpg-project#458)
-// from the composition's own Answer into the session seam's, key for key and
-// entry for entry, in the author's order.
-//
-// NOTHING IS READ AND NOTHING IS PICKED. Which entry fires is the WORLD's die,
-// rolled inside the encounter against the summed weights; a launch that
-// chose here would be a second reader of an authored fact and would make the
-// same table answer differently depending on who asked.
-//
-// ORDER IS THE AUTHOR'S, because `entry` on the beat is an index into the list
-// the author wrote and a builder highlights that line in the file they are
-// looking at. A converter that sorted would renumber every line of the log.
-//
-// NIL IN, NIL OUT. A creature the author wrote no `on:` for answers nothing
-// and no die is rolled at all -- distinct from an empty non-nil map, which
-// would claim a table exists with no way for anything to fire.
-func answersOf(answers map[string][]tkencounter.Answer) map[string][]sdk.Answer {
-	if answers == nil {
-		return nil
-	}
-	out := make(map[string][]sdk.Answer, len(answers))
-	for key, entries := range answers {
-		rows := make([]sdk.Answer, len(entries))
-		for i, entry := range entries {
-			rows[i] = sdk.Answer{
-				Weight: entry.Weight,
-				Say:    entry.Say,
-				Fact:   entry.Fact,
-				Flee:   entry.Flee,
-			}
-		}
-		out[key] = rows
 	}
 	return out
 }

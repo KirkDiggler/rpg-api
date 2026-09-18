@@ -887,7 +887,7 @@ func (s *SessionStackSuite) TestStartEncounter_StartSessionFailureLeavesCharacte
 		PresentationIDs: idgen.NewSequential("presentation"),
 		Sessions:        failedStores, Encounters: failedStores,
 		Characters: sessionorch.NewCharacterRepository(countedCharacters),
-		Events:     sdk.DiscardEvents{}, Dice: &dice.CryptoRoller{}, TurnDriver: sdk.Behavior(),
+		Events:     sdk.DiscardEvents{}, Dice: &dice.CryptoRoller{}, TurnDriver: sdk.Driver(),
 	})
 	s.Require().NoError(err)
 	orch, err := lobbyorch.New(&lobbyorch.Config{

@@ -113,17 +113,21 @@ type passDriver struct{}
 
 func (passDriver) Act(sdk.MonsterView) (sdk.TurnIntent, error) { return sdk.Pass{}, nil }
 
-// Exactly one of the SDK's two driver doors is taken, and which one depends on
-// whether a driver was supplied.
+// A driver is wired either way: the production one when the caller supplies
+// none, the caller's when it does.
 //
 // THE SDK IS THE ASSERTION HERE, which is what makes these two rows worth
 // having rather than "New returns no error" twice. sdk.NewManager refuses a
-// config with both TurnDriver and TurnDrivers wired (ErrAmbiguousConfig,
-// rpg-toolkit#1734) and refuses one with neither (ErrIncompleteConfig). So a
-// Manager that exists at all is proof this package wired exactly one — and
-// wiring the per-session cache alongside a supplied driver, or forgetting to
-// wire either, fails right here rather than in a walk.
-func (s *OrchestratorTestSuite) TestNew_TakesExactlyOneDriverDoor() {
+// config with neither TurnDriver nor TurnDrivers wired (ErrIncompleteConfig),
+// and refuses one with both (ErrAmbiguousConfig, rpg-toolkit#1734). So a
+// Manager that exists at all is proof this package wired exactly one door —
+// forgetting the sdk.Driver() default, or leaving the per-session source wired
+// beside it, fails right here rather than in a walk.
+//
+// ONE DOOR IS ALL THERE IS NOW (rpg-project#465). The driver this package
+// wires is the creature's own table and holds nothing between turns, so the
+// per-session cache that sdk.Minded's state demanded is gone with it.
+func (s *OrchestratorTestSuite) TestNew_WiresADriverWithOrWithoutOne() {
 	ctrl := gomock.NewController(s.T())
 	client := goredis.NewClient(&goredis.Options{Addr: s.miniredis.Addr()})
 	defer func() { _ = client.Close() }()
@@ -135,14 +139,14 @@ func (s *OrchestratorTestSuite) TestNew_TakesExactlyOneDriverDoor() {
 		}
 	}
 
-	s.Run("no driver supplied takes the per-session door", func() {
+	s.Run("no driver supplied wires the production table driver", func() {
 		orch, err := sessionorch.New(base())
 		s.Require().NoError(err)
 		s.Require().NotNil(orch)
 		s.NotNil(orch.Manager)
 	})
 
-	s.Run("a supplied driver takes the every-session door", func() {
+	s.Run("a supplied driver is wired instead", func() {
 		cfg := base()
 		cfg.TurnDriver = passDriver{}
 
