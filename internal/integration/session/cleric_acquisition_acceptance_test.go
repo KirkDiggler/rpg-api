@@ -54,7 +54,7 @@ func createNativeCleric(t *testing.T, h *acceptanceHarness) string {
 		RaceChoices: []*pb.ChoiceData{{Category: pb.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES, Source: pb.ChoiceSource_CHOICE_SOURCE_RACE,
 			Selection: &pb.ChoiceData_Languages{Languages: &pb.LanguageSelection{Languages: []pb.Language{pb.Language_LANGUAGE_DWARVISH}}}}}})
 	require.NoError(t, err)
-	spellRefs := []string{"dnd5e:spells:bane", "dnd5e:spells:bless", "dnd5e:spells:command", "dnd5e:spells:cure-wounds", "dnd5e:spells:healing-word", "dnd5e:spells:sanctuary", "dnd5e:spells:guiding-bolt"}
+	spellRefs := []string{"dnd5e:spells:bane", "dnd5e:spells:bless", "dnd5e:spells:command", "dnd5e:spells:cure-wounds", "dnd5e:spells:healing-word", "dnd5e:spells:sanctuary", "dnd5e:spells:guiding-bolt", "dnd5e:spells:inflict-wounds"}
 	classChoices := make([]*pb.ChoiceData, 0, 8)
 	classChoices = append(classChoices, []*pb.ChoiceData{
 		{Category: pb.ChoiceCategory_CHOICE_CATEGORY_SKILLS, Source: pb.ChoiceSource_CHOICE_SOURCE_CLASS, ChoiceId: "cleric-skills",

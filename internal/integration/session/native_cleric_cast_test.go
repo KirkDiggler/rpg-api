@@ -20,6 +20,11 @@ import (
 
 func nativeClericCombatScene(t *testing.T) (*acceptanceHarness, context.Context, string) {
 	t.Helper()
+	return nativeClericCombatSceneAt(t, 4, 0)
+}
+
+func nativeClericCombatSceneAt(t *testing.T, targetX, targetY int) (*acceptanceHarness, context.Context, string) {
+	t.Helper()
 	h := newAcceptanceHarnessWith(t, failedSaveDice{}, sdk.Pass{})
 	id := createNativeCleric(t, h)
 	ctx := auth.WithPlayerID(context.Background(), "cleric-player")
@@ -37,7 +42,7 @@ func nativeClericCombatScene(t *testing.T) (*acceptanceHarness, context.Context,
 	for _, offer := range worldOffers.GetDeclarations() {
 		require.False(t, offer.GetVerb() == sessionpb.Verb_VERB_CAST && offer.GetAvailable(), "world-clock exploration does not imply a missing cast mapping")
 	}
-	_, err = h.manager.Manager.Spawn(ctx, &sdk.SpawnInput{Session: castSessionID, ID: "skel-1", Ref: refs.Monsters.Skeleton().String(), Position: at(4, 0)})
+	_, err = h.manager.Manager.Spawn(ctx, &sdk.SpawnInput{Session: castSessionID, ID: "skel-1", Ref: refs.Monsters.Skeleton().String(), Position: at(targetX, targetY)})
 	require.NoError(t, err)
 	turn, err := h.handler.Turn(ctx, &sessionpb.TurnRequest{Session: castSessionID, Member: id})
 	require.NoError(t, err)
