@@ -11,6 +11,8 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Sanctuary release adoption (#1006)** — Toolkit PRs #1811–#1814 are merged. Pins now use root v0.181.0, resolution v0.54.0, encounter v0.89.0, and session v0.96.0 with proto SDK v0.1.201. Ward response/event mappings and native creation/cast/live/Story tests cover the integration. The user confirmed recipient immunity and recast refusal in the earlier development build; manual timer expiry remains unverified. See [pins and local testing](how-to/sanctuary-test-build.md).
+
 **Single-room World Builder adoption (rpg-api#1003)** — the API leg of one
 playable authored room. On released provider tags only — encounter v0.87.0,
 session v0.94.0, protos generated at `6ea2b2e6` — `sessionworld.Compile`

@@ -9,9 +9,9 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.3
 	github.com/KirkDiggler/rpg-toolkit/npc v0.2.0
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.180.1-0.20260918033500-23d3360664fe
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.88.1-0.20260918065534-e91a5f000142
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.95.2-0.20260918070218-03e40ffc0a9a
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.181.1-0.20260918081412-41d96396ea7d
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.89.1-0.20260918081414-da9f8844deb3
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.96.1-0.20260918081056-dc56c240dfc0
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.15.0
 	github.com/KirkDiggler/rpg-toolkit/world v0.4.1
 	github.com/alicebob/miniredis/v2 v2.35.0
@@ -33,13 +33,13 @@ require (
 	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
 	github.com/KirkDiggler/rpg-toolkit/game v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1 // indirect
-	github.com/KirkDiggler/rpg-toolkit/mind/behavior v0.4.1-0.20260918064711-d17aee59675e // indirect
+	github.com/KirkDiggler/rpg-toolkit/mind/behavior v0.4.1-0.20260918074225-2f455bda49d1 // indirect
 	github.com/KirkDiggler/rpg-toolkit/mind/perception v0.3.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/play/clock v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/play/intel v0.4.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/play/interrupt v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/play/record v0.1.0 // indirect
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.53.1-0.20260918070047-11821d3099b7 // indirect
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.54.1-0.20260918080926-0f421ea7a262 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

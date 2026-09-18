@@ -712,6 +712,10 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_MISSED
 	case sdk.EventCastMissed:
 		return sessionpb.EventKind_EVENT_KIND_CAST_MISSED
+	case sdk.EventWarded:
+		return sessionpb.EventKind_EVENT_KIND_WARDED
+	case sdk.EventCastWarded:
+		return sessionpb.EventKind_EVENT_KIND_CAST_WARDED
 	case sdk.EventActivated:
 		return sessionpb.EventKind_EVENT_KIND_ACTIVATED
 	case sdk.EventActivationResult:
@@ -921,6 +925,26 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 	case sdk.CastMissedBody:
 		evt.Body = &sessionpb.Event_CastMissed{CastMissed: &sessionpb.CastMissed{
 			Actor: b.Actor, Target: b.Target, Spell: spellRefToProto(b.Spell),
+		}}
+	case sdk.WardedBody:
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
+		evt.Body = &sessionpb.Event_Warded{Warded: &sessionpb.Warded{
+			Attacker: b.Attacker, Target: b.Target, Attack: attackRefToProto(b.Attack),
+			Source: b.Source, Ability: b.Ability, Roll: int32(b.Roll), Total: int32(b.Total),
+			Dc: int32(b.DC), Calculation: calculation,
+		}}
+	case sdk.CastWardedBody:
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
+		evt.Body = &sessionpb.Event_CastWarded{CastWarded: &sessionpb.CastWarded{
+			Actor: b.Actor, Target: b.Target, Spell: spellRefToProto(b.Spell),
+			Source: b.Source, Ability: b.Ability, Roll: int32(b.Roll), Total: int32(b.Total),
+			Dc: int32(b.DC), Calculation: calculation,
 		}}
 	case sdk.MissedBody:
 		calculation, err := rollCalculationToProto(b.Calculation)
@@ -1167,6 +1191,24 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			Cause:  b.Cause,
 			Why:    b.Why,
 		}}
+	default:
+		return setWorldEventBody(evt, body)
+	}
+	return nil
+}
+
+// setWorldEventBody carries the second half of the same type switch: the
+// world's own beats -- doors, regions, windows -- and the spell beats that
+// close a cast.
+//
+// THE SPLIT IS A COMPLEXITY BOUNDARY AND NOTHING ELSE. One switch over every
+// body kind outgrew the cyclomatic limit the day the creature's table and the
+// ward slice each brought their own arms, and no arm changed in the move. A
+// body kind is recognized here or in setEventBody and never in both, and one
+// this build does not recognize still leaves evt.Body nil so the payload
+// stays the passthrough carrier.
+func setWorldEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
+	switch b := body.(type) {
 	case sdk.DoorBody:
 		// A DOOR THAT CHANGED BECAUSE SOMEBODY ROLLED is a check beat and
 		// carries the whole roll (rpg-project#462, R4). A door that opened
