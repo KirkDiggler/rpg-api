@@ -27,7 +27,8 @@ import (
 // would be deciding something Afford already decided, and the two would be
 // free to disagree. Exactly Activate's argument, one verb over.
 //
-// The response is an acknowledgement carrying only the two S6 reports. What
+// The response carries persistence/delivery and the contract's warded-target
+// summary. The detailed ward save belongs to the event stream. What
 // the cast DID reaches every client on the stream -- CAST, then SAVED when
 // the spell forced a roll, then one ACTIVATION_RESULT per delivered effect
 // -- and putting any of it here would make this a second, rival account of
@@ -91,10 +92,11 @@ func (h *Handler) Cast(
 	// -- the gate's saving throw -- and the wire's `saved` field is the
 	// persistence one in both responses.
 	return &sessionpb.CastResponse{
-		Saved:    saveReportToProto(out.Persisted),
-		Delivery: deliveryReportToProto(out.Delivery),
-		Caught:   caughtMembersToProto(out.Caught),
-		Paused:   out.Posed,
+		Saved:         saveReportToProto(out.Persisted),
+		Delivery:      deliveryReportToProto(out.Delivery),
+		Caught:        caughtMembersToProto(out.Caught),
+		WardedTargets: append([]string(nil), out.WardedTargets...),
+		Paused:        out.Posed,
 		// unlockRollToProto's own conversion -- a *int meaningful only while
 		// Posed, onto the wire's optional int32 -- reused rather than
 		// duplicated, since Roll and Total need exactly the same presence law.

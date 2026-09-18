@@ -11,6 +11,8 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Sanctuary development integration (#1006)** — Explicitly requested pseudo-version pins consume toolkit PRs #1811–#1814 with merged proto SDK v0.1.201. Ward response/event mappings and native creation/cast/live/Story tests make the provider changes locally testable. Providers remain unmerged; this is not released dependency adoption. See [pins and local testing](how-to/sanctuary-test-build.md).
+
 **Single-room World Builder adoption (rpg-api#1003)** — the API leg of one
 playable authored room. On released provider tags only — encounter v0.87.0,
 session v0.94.0, protos generated at `6ea2b2e6` — `sessionworld.Compile`

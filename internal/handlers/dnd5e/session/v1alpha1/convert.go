@@ -696,6 +696,10 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_MISSED
 	case sdk.EventCastMissed:
 		return sessionpb.EventKind_EVENT_KIND_CAST_MISSED
+	case sdk.EventWarded:
+		return sessionpb.EventKind_EVENT_KIND_WARDED
+	case sdk.EventCastWarded:
+		return sessionpb.EventKind_EVENT_KIND_CAST_WARDED
 	case sdk.EventActivated:
 		return sessionpb.EventKind_EVENT_KIND_ACTIVATED
 	case sdk.EventActivationResult:
@@ -905,6 +909,26 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 	case sdk.CastMissedBody:
 		evt.Body = &sessionpb.Event_CastMissed{CastMissed: &sessionpb.CastMissed{
 			Actor: b.Actor, Target: b.Target, Spell: spellRefToProto(b.Spell),
+		}}
+	case sdk.WardedBody:
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
+		evt.Body = &sessionpb.Event_Warded{Warded: &sessionpb.Warded{
+			Attacker: b.Attacker, Target: b.Target, Attack: attackRefToProto(b.Attack),
+			Source: b.Source, Ability: b.Ability, Roll: int32(b.Roll), Total: int32(b.Total),
+			Dc: int32(b.DC), Calculation: calculation,
+		}}
+	case sdk.CastWardedBody:
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
+		evt.Body = &sessionpb.Event_CastWarded{CastWarded: &sessionpb.CastWarded{
+			Actor: b.Actor, Target: b.Target, Spell: spellRefToProto(b.Spell),
+			Source: b.Source, Ability: b.Ability, Roll: int32(b.Roll), Total: int32(b.Total),
+			Dc: int32(b.DC), Calculation: calculation,
 		}}
 	case sdk.MissedBody:
 		calculation, err := rollCalculationToProto(b.Calculation)
@@ -1125,8 +1149,8 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			// that cannot name the verb still reads the line, the fact and
 			// what the creature did, while a word demoted to UNSPECIFIED
 			// would assert that the creature merely spoke.
-			Verb:   verbToProto(sdk.Verb(b.Verb)),
-			Beaten: b.Beaten,
+			Verb:   verbToProto(sdk.Verb(b.Verb)), //nolint:staticcheck // Preserve the current provider contract until creature-table adoption.
+			Beaten: b.Beaten,                      //nolint:staticcheck // Preserve the current provider contract until creature-table adoption.
 			Roll:   int32(b.Roll),
 			Of:     int32(b.Of),
 			Entry:  int32(b.Entry),
