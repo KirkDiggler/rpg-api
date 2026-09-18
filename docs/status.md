@@ -19,8 +19,9 @@ classes are unchanged. Light remains a selectable/granted cantrip without Cast
 until objects can be targeted and illuminated. Existing characters are not
 rewritten; long-rest re-preparation is future work. The API session integration
 suite covers native creation, persisted owner reads, grants reaching Cast,
-unselected spells excluded, and Bard creation isolation. Local browser acceptance
-is pending; the development pin must be replaced after provider release.
+unselected spells excluded, and Bard creation isolation. Local browser creation passed for Bard and Light Cleric; persisted records confirm
+four Bard spells and four Cleric preparations plus two grants and bonus Light.
+User manual acceptance remains; replace the development pin after provider release.
 
 **Sanctuary release adoption (#1006)** — Toolkit PRs #1811–#1814 are merged. Pins now use root v0.181.0, resolution v0.54.0, encounter v0.89.0, and session v0.96.0 with proto SDK v0.1.201. Ward response/event mappings and native creation/cast/live/Story tests cover the integration. The user confirmed recipient immunity and recast refusal in the earlier development build; manual timer expiry remains unverified. See [pins and local testing](how-to/sanctuary-test-build.md).
 
