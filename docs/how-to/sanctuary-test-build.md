@@ -6,10 +6,10 @@ released toolkit tags. No filesystem replacements or Go workspace are used.
 
 | Owning module | PR | Exact development version |
 | --- | --- | --- |
-| rulebooks/dnd5e | #1811 | v0.180.1-0.20260918033336-bd1fe77202b4 |
-| rulebooks/dnd5e/resolution | #1812 | v0.53.1-0.20260918033440-e3c885da0e7c |
+| rulebooks/dnd5e | #1811 | v0.180.1-0.20260918054201-ea82b1a90150 |
+| rulebooks/dnd5e/resolution | #1812 | v0.53.1-0.20260918054612-a6328167e795 |
 | rulebooks/dnd5e/encounter | #1813 | v0.88.1-0.20260917214116-6b4ac354edaf |
-| rulebooks/dnd5e/session | #1814 | v0.95.2-0.20260918033557-6566013f1070 |
+| rulebooks/dnd5e/session | #1814 | v0.95.2-0.20260918054826-049de41a9198 |
 
 The session PR's go.mod already names this same combination. Requirements are
 pinned together (using `go mod edit -require=...`, then `go mod tidy`) to avoid
@@ -24,6 +24,11 @@ Existing Answered verb/beaten fields remain populated for this provider's contra
 - Native Cleric creation includes the provider's new sixth spell, Sanctuary.
 - Cast Sanctuary through the existing Cast declaration; the provider spends
   the bonus action and slot and owns concentration.
+- Sanctuary immediately applies its anti-recast cooldown to the recipient. Any
+  caster is blocked from applying Sanctuary again for 20 recipient turn ends;
+  the cooldown survives ward loss and its countdown persists across reloads.
+  The target picker exposes the refusal, and a forced recast spends nothing.
+  Passing a ward save does not grant the attacker immunity.
 - Failed ward saves on attacks map to Warded events and AttackResponse's
   warded/warded_by fields. These are the attacker's saves, not attack rolls.
 - Failed ward saves on hostile casts map to CastWarded and CastResponse's
