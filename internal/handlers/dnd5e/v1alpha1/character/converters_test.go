@@ -1439,3 +1439,41 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ProjectsExperience
 		})
 	}
 }
+
+func (s *ConvertersTestSuite) TestDomainGrantsAreVisibleOutsideSelectableOptions() {
+	for _, test := range []struct {
+		domain   classes.Subclass
+		category dnd5ev1alpha1.ChoiceCategory
+		expected []string
+	}{
+		{classes.LifeDomain, dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS, []string{"dnd5e:spells:bless", "dnd5e:spells:cure-wounds"}},
+		{classes.LightDomain, dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS, []string{"dnd5e:spells:light"}},
+	} {
+		s.Run(test.domain, func() {
+			var found bool
+			for _, choice := range subclassChoicesToProto(classes.Cleric, 1, test.domain) {
+				if choice.GetChoiceType() != test.category {
+					continue
+				}
+				found = true
+				options := choice.GetSpellOptions()
+				got := make([]string, 0, len(options.GetGrants()))
+				for _, grant := range options.GetGrants() {
+					got = append(got, grant.GetSpellRef())
+					s.Equal(classes.SubClassName(test.domain), grant.GetSourceName())
+					s.NotContains(options.GetAvailableRefs(), grant.GetSpellRef())
+				}
+				s.ElementsMatch(test.expected, got)
+				if test.category == dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS {
+					s.Equal(int32(4), choice.GetChooseCount())
+				} else {
+					s.Equal(int32(3), choice.GetChooseCount())
+				}
+			}
+			s.True(found)
+		})
+	}
+	for _, choice := range loadAllClassChoices(classes.Bard) {
+		s.Empty(choice.GetSpellOptions().GetGrants())
+	}
+}
