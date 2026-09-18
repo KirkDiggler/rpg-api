@@ -119,10 +119,12 @@ factions:
   # ENTITY, and each throw is a `tempered` beat, so the table watches which
   # one came out the coward before anybody has said a word to it.
   #
-  # Weighted toward `coward` on purpose: the 30% `flee` below reads 30 against
-  # 90 for a coward and 30 against 7.5 for the aggressive one, so a threat
-  # that lands sends one goblin bolting and leaves another standing there
-  # saying the same line. That difference IS the walk.
+  # Weighted toward `coward` on purpose, and the design's own arithmetic says
+  # why. The authored 70-cower / 30-flee below is untouched for a soldier; a
+  # COWARD trebles `flee`, so it rolls 70 against 90 and runs 56% of the time,
+  # while the AGGRESSIVE one quarters it and rolls 70 against 7.5 and runs
+  # 10%. One threat, one line, one table — and one goblin bolts while the next
+  # stands there saying the same words. That difference IS the walk.
   - id: goblins
     temper: { coward: 2, soldier: 1, aggressive: 1 }
     # The author's orders for every goblin in the room. FOUR KEYS, one per
