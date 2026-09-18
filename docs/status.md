@@ -11,8 +11,8 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
-**Cleric preparation adoption (draft)** — Adopts toolkit #1833's pushed root
-commit: new Clerics choose four level-one preparations, with domain spell and
+**Cleric preparation adoption (#1012)** — Adopts toolkit #1833's released root
+v0.186.0: new Clerics choose four level-one preparations, with domain spell and
 cantrip grants additive. Creation/finalization/storage and live Cast offers use
 the provider's existing spell-access list. Bard keeps four known spells; other
 classes are unchanged. Light remains a selectable/granted cantrip without Cast
@@ -22,8 +22,8 @@ suite covers native creation, persisted owner reads, grants reaching Cast,
 unselected spells excluded, and Bard creation isolation. Local browser creation passed for Bard and Light Cleric; persisted records confirm
 four Bard spells and four Cleric preparations plus two grants and bonus Light.
 The creation catalog also projects toolkit domain grants separately from selectable
-refs, with source names for locked picker rows (protos#348). User manual acceptance
-remains; replace the development pin after provider release.
+refs, with source names for locked picker rows (protos#348). The user confirmed
+the grant display; provider #1833 is merged and its release pin is adopted.
 
 **Sanctuary release adoption (#1006)** — Toolkit PRs #1811–#1814 are merged. Pins now use root v0.181.0, resolution v0.54.0, encounter v0.89.0, and session v0.96.0 with proto SDK v0.1.201. Ward response/event mappings and native creation/cast/live/Story tests cover the integration. The user confirmed recipient immunity and recast refusal in the earlier development build; manual timer expiry remains unverified. See [pins and local testing](how-to/sanctuary-test-build.md).
 
