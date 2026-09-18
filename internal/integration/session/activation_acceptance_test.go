@@ -57,8 +57,8 @@ func ragingBarbarian(id, playerID string) *tkcharacter.Data {
 	}
 }
 
-// inAFightWith seeds one character, walks them into sight of a skeleton, and
-// leaves them on a turn clock — the only place activations exist.
+// inAFightWith seeds one character IN SIGHT of a skeleton and leaves them on a
+// turn clock — the only place activations exist.
 func inAFightWith(
 	t *testing.T, sheet *tkcharacter.Data,
 ) (*acceptanceHarness, context.Context) {
@@ -91,14 +91,24 @@ func inAFightWithDice(
 	})
 	require.NoError(t, err)
 
-	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{
-		Session: "acceptance-run", Member: sheet.ID, Position: pbAt(1, 1),
+	// STRAIGHT INTO SIGHT, ON THE PILLAR GAP ROW, so Join's own first-light
+	// contact check forms the fight — the shape TestAcceptance_GreatWeapon-
+	// FightingRollTraceCrossesLiveAndStory already proves.
+	//
+	// IT USED TO WALK THE TOMB ROUTE, and that stopped being free
+	// (rpg-project#465). Time now passes because the party acts: nineteen
+	// steps is nineteen rounds of the world clock, and every creature in the
+	// run is given time on each of them and rolls its own table. For a helper
+	// whose whole job is "leave them on a turn clock" that is nineteen rounds
+	// of unrelated simulation bought with it — and for the one caller that
+	// scripts its dice, nineteen rounds of unscripted world dice it has no
+	// business naming. The walk itself is exercised where it is the subject,
+	// in acceptance_test.go.
+	joined, err := h.handler.Join(ctx, &sessionpb.JoinRequest{
+		Session: "acceptance-run", Member: sheet.ID, Position: pbAt(18, 3),
 	})
 	require.NoError(t, err)
-	_, err = h.handler.Move(ctx, &sessionpb.MoveRequest{
-		Session: "acceptance-run", Member: sheet.ID, Path: tombRoute(),
-	})
-	require.NoError(t, err)
+	require.NotNil(t, joined.GetFormed(), "activations exist only on a turn clock, so the fight must form here")
 
 	return h, ctx
 }

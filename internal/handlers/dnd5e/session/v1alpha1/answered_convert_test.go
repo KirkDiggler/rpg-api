@@ -88,6 +88,7 @@ func TestAnsweredBodyToProto_CarriesTheAuthorsLineAndTheWorldsDie(t *testing.T) 
 	event := &sessionpb.Event{}
 	require.NoError(t, setEventBody(event, sdk.AnsweredBody{
 		Creature: "front-goblin",
+		Key:      "intimidated",
 		Verb:     "intimidate",
 		Beaten:   true,
 		Roll:     42,
@@ -129,7 +130,7 @@ func TestAnsweredBodyToProto_CarriesTheAuthorsLineAndTheWorldsDie(t *testing.T) 
 func TestAnsweredBodyToProto_TheFactNeverRidesTheBeat(t *testing.T) {
 	event := &sessionpb.Event{}
 	require.NoError(t, setEventBody(event, sdk.AnsweredBody{
-		Creature: "front-goblin", Verb: "persuade", Beaten: false,
+		Creature: "front-goblin", Key: "persuade_failed", Verb: "persuade", Beaten: false,
 		Roll: 40, Of: 100, Entry: 0, Word: "fact",
 		Say:  "Cellar's empty, friend.",
 		Fact: "cellar-is-clear",
@@ -153,7 +154,7 @@ func TestAnsweredBodyToProto_TheFactNeverRidesTheBeat(t *testing.T) {
 func TestAnsweredBodyToProto_FleeAndTheFailureTable(t *testing.T) {
 	event := &sessionpb.Event{}
 	require.NoError(t, setEventBody(event, sdk.AnsweredBody{
-		Creature: "front-goblin", Verb: "persuade", Beaten: false,
+		Creature: "front-goblin", Key: "persuade_failed", Verb: "persuade", Beaten: false,
 		Roll: 3, Of: 4, Entry: 1, Word: "flee", Say: "Boss! BOSS!",
 	}))
 
@@ -174,7 +175,7 @@ func TestAnsweredBodyToProto_FleeAndTheFailureTable(t *testing.T) {
 func TestAnsweredBodyToProto_AnEntryThatOnlySpeaks(t *testing.T) {
 	event := &sessionpb.Event{}
 	require.NoError(t, setEventBody(event, sdk.AnsweredBody{
-		Creature: "front-goblin", Verb: "intimidate", Beaten: false,
+		Creature: "front-goblin", Key: "intimidate_failed", Verb: "intimidate", Beaten: false,
 		Roll: 1, Of: 1, Entry: 0, Word: "",
 		Say: "Big talk, for someone standing in my doorway.",
 	}))
@@ -201,7 +202,7 @@ func TestAnsweredBodyToProto_AnEntryThatOnlySpeaks(t *testing.T) {
 func TestAnsweredBodyToProto_AnUnknownWordIsRefused(t *testing.T) {
 	event := &sessionpb.Event{}
 	err := setEventBody(event, sdk.AnsweredBody{
-		Creature: "front-goblin", Verb: "intimidate", Beaten: false,
+		Creature: "front-goblin", Key: "intimidated", Verb: "intimidate", Beaten: false,
 		Roll: 1, Of: 1, Word: "alarm", Say: "Boss! BOSS!",
 	})
 	require.Error(t, err, "a word this build cannot spell must not be demoted to UNSPECIFIED")
@@ -217,7 +218,7 @@ func TestEventToProto_AnUnknownWordFailsTheWholeEvent(t *testing.T) {
 	_, err := eventToProto(sdk.Event{
 		Session: "sess-1", Seq: 91, Kind: sdk.EventAnswered,
 		Body: sdk.AnsweredBody{
-			Creature: "front-goblin", Verb: "persuade", Roll: 1, Of: 1, Word: "lure",
+			Creature: "front-goblin", Key: "persuaded", Verb: "persuade", Roll: 1, Of: 1, Word: "lure",
 		},
 	})
 	require.Error(t, err)
@@ -233,7 +234,7 @@ func TestEventsToProto_OneBadBeatFailsTheWholeRead(t *testing.T) {
 	_, err := eventsToProto([]sdk.Event{
 		{Session: "sess-1", Seq: 1, Kind: sdk.EventDowned, Body: sdk.DownedBody{Member: "goblin-1"}},
 		{Session: "sess-1", Seq: 2, Kind: sdk.EventAnswered, Body: sdk.AnsweredBody{
-			Creature: "front-goblin", Verb: "persuade", Roll: 1, Of: 1, Word: "pretend",
+			Creature: "front-goblin", Key: "persuaded", Verb: "persuade", Roll: 1, Of: 1, Word: "pretend",
 		}},
 	})
 	require.Error(t, err)
@@ -278,4 +279,302 @@ func TestSightingStanceEmptyStaysEmptyForACreatureInNoFaction(t *testing.T) {
 	require.Empty(t, got.GetStance(),
 		"empty is the wire's own \"no word for it\"; mapping it to neutral would "+
 			"invent a belief nobody holds, and the client has a roster color to fall back to")
+}
+
+// TestAnswerWordToProto_EveryWordThisBuildShips is the vocabulary itself
+// (rpg-project#465). Six words and one empty, each pinned to its exact wire
+// value, because this is the only place the seam's spelling and the contract's
+// meet and a switch arm added to the wrong case is invisible everywhere else.
+//
+// THE FOUR TIME WORDS ARE WHY THIS IS TABLE-DRIVEN NOW. `hold`, `attack`,
+// `toward` and `away` all arrived in one slice, and a row per word is what
+// makes the next one's absence read as a missing row rather than as a passing
+// test.
+func TestAnswerWordToProto_EveryWordThisBuildShips(t *testing.T) {
+	for _, tc := range []struct {
+		word string
+		want sessionpb.AnswerWord
+	}{
+		// An entry that only speaks. UNSPECIFIED is its exact spelling and a
+		// positive claim, which is what makes demoting an unknown word a lie.
+		{"", sessionpb.AnswerWord_ANSWER_WORD_UNSPECIFIED},
+		{"fact", sessionpb.AnswerWord_ANSWER_WORD_FACT},
+		{"flee", sessionpb.AnswerWord_ANSWER_WORD_FLEE},
+		{"hold", sessionpb.AnswerWord_ANSWER_WORD_HOLD},
+		{"attack", sessionpb.AnswerWord_ANSWER_WORD_ATTACK},
+		{"toward", sessionpb.AnswerWord_ANSWER_WORD_TOWARD},
+		{"away", sessionpb.AnswerWord_ANSWER_WORD_AWAY},
+	} {
+		t.Run(tc.word, func(t *testing.T) {
+			got, err := answerWordToProto(tc.word)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// TestAnswerKeyToProto_TheFiveKeysAndNothingElse pins which table the world
+// rolled on (rpg-project#465 §2) — the one field that replaces `verb` plus
+// `beaten`, which between them could spell exactly four.
+//
+// EMPTY REFUSES, and it is in the table as a row rather than left out. There
+// is no such thing as a pick on no key: the SDK fills this on every beat it
+// writes, so an empty one is a beat stored by the build BEFORE the table
+// existed, and this seam cannot honestly spell it. That is a deliberate choice
+// and the row is where somebody reading this file finds it.
+func TestAnswerKeyToProto_TheFiveKeysAndNothingElse(t *testing.T) {
+	for _, tc := range []struct {
+		key     string
+		want    sessionpb.AnswerKey
+		refused bool
+	}{
+		{key: "intimidated", want: sessionpb.AnswerKey_ANSWER_KEY_INTIMIDATED},
+		{key: "intimidate_failed", want: sessionpb.AnswerKey_ANSWER_KEY_INTIMIDATE_FAILED},
+		{key: "persuaded", want: sessionpb.AnswerKey_ANSWER_KEY_PERSUADED},
+		{key: "persuade_failed", want: sessionpb.AnswerKey_ANSWER_KEY_PERSUADE_FAILED},
+		{key: "time", want: sessionpb.AnswerKey_ANSWER_KEY_TIME},
+		{key: "", refused: true},
+		// A trigger the design names and this build does not ship. The enum
+		// grows one value per use case, so an unknown key means this seam is
+		// older than the toolkit that wrote the beat.
+		{key: "attacked", refused: true},
+	} {
+		t.Run("key="+tc.key, func(t *testing.T) {
+			got, err := answerKeyToProto(tc.key)
+			if tc.refused {
+				require.Error(t, err, "an unknown key must not be demoted to UNSPECIFIED")
+				require.Equal(t, sessionpb.AnswerKey_ANSWER_KEY_UNSPECIFIED, got)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// TestTemperToProto_EmptyIsNoneAndAnUnknownWordRefuses is the law slotToProto
+// keeps, one enum over (rpg-project#465 §3).
+//
+// THREE DISTINCT OUTCOMES, and the distinctions are the whole test. Empty is
+// TEMPER_NONE — having no temperament is a real answer about a creature, not a
+// producer that forgot. `soldier` is TEMPER_SOLDIER, which multiplies
+// identically to NONE and is a DIFFERENT value, because somebody named it. And
+// a word this build cannot name REFUSES rather than degrading either way:
+// UNSPECIFIED would confess the build's failure in a field a client reads as
+// the world's answer, and NONE would publish "this creature has no
+// temperament" about one whose author gave it one.
+//
+// "solider" IS THE ROW THAT MATTERS. A typo in a dungeon file is the realistic
+// way an unknown word reaches this seam, and it is exactly the case where a
+// silent demotion would leave the placement playing perfectly well as a
+// soldier forever with nothing anywhere saying the word was dropped.
+func TestTemperToProto_EmptyIsNoneAndAnUnknownWordRefuses(t *testing.T) {
+	for _, tc := range []struct {
+		word    string
+		want    sessionpb.Temper
+		refused bool
+	}{
+		{word: "", want: sessionpb.Temper_TEMPER_NONE},
+		{word: "soldier", want: sessionpb.Temper_TEMPER_SOLDIER},
+		{word: "coward", want: sessionpb.Temper_TEMPER_COWARD},
+		{word: "aggressive", want: sessionpb.Temper_TEMPER_AGGRESSIVE},
+		{word: "solider", refused: true},
+		{word: "berserker", refused: true},
+	} {
+		t.Run("temper="+tc.word, func(t *testing.T) {
+			got, err := temperToProto(tc.word)
+			if tc.refused {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.word, "the refusal names the word that caused it")
+				require.Equal(t, sessionpb.Temper_TEMPER_UNSPECIFIED, got)
+				require.NotEqual(t, sessionpb.Temper_TEMPER_NONE, got,
+					"degrading to NONE would present an unknown word as a creature with no temperament")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// TestEventTemperedKindToProto is the dealt temperament's kind half. An
+// unmapped kind demotes to EVENT_KIND_UNKNOWN with a nil body, and this beat is
+// the ONLY account of the roll that dealt a creature its word — demoted, the
+// table would watch four goblins behave differently with nothing saying why.
+func TestEventTemperedKindToProto(t *testing.T) {
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_TEMPERED, eventKindToProto(sdk.EventTempered))
+}
+
+// TestAnsweredBodyToProto_ATimePickCarriesItsArithmeticAndLeavesTheOldPairUnset
+// is the `time` key's acceptance case (rpg-project#465 §6).
+//
+// THE UNSET PAIR IS THE CLAIM, not an omission. `verb` and `beaten` are
+// deprecated and still filled on the four social keys so a reader written
+// against the shipped shape keeps working; on `time` nothing spoke and nothing
+// was beaten, and VERB_UNSPECIFIED beside `beaten: false` reads as a threat
+// that failed — a sentence about an event that never happened.
+//
+// AND THE WHOLE LOADED TABLE CROSSES, line by line, because the beat has to be
+// replayable: add `loaded` across the candidates and you get `of`, and the face
+// lands in exactly one of them. A converter that carried the total alone would
+// leave a reader taking the engine's sum on trust.
+func TestAnsweredBodyToProto_ATimePickCarriesItsArithmeticAndLeavesTheOldPairUnset(t *testing.T) {
+	event := &sessionpb.Event{}
+	require.NoError(t, setEventBody(event, sdk.AnsweredBody{
+		Creature: "front-goblin",
+		Key:      "time",
+		// The SDK leaves both empty on a time pick, and so must the wire.
+		Verb: "", Beaten: false,
+		Roll: 900, Of: 1600, Entry: 3, Word: "away", Temper: "coward",
+		Candidates: []sdk.AnswerCandidate{
+			{Entry: 0, Weight: 3, Percent: 300, Loaded: 900},
+			{Entry: 3, Weight: 1, Percent: 700, Loaded: 700},
+		},
+	}))
+
+	got := event.GetAnswered()
+	require.NotNil(t, got)
+	require.Equal(t, sessionpb.AnswerKey_ANSWER_KEY_TIME, got.GetKey())
+	require.Equal(t, sessionpb.AnswerWord_ANSWER_WORD_AWAY, got.GetWord())
+	require.Equal(t, sessionpb.Temper_TEMPER_COWARD, got.GetTemper())
+	require.Equal(t, sessionpb.Verb_VERB_UNSPECIFIED, got.GetVerb(),
+		"no verb stands behind a time pick, and an unset one is the truth rather than a hole")
+	require.False(t, got.GetBeaten(),
+		"there was no check to have beaten, which is why `key` supersedes this pair")
+
+	require.Len(t, got.GetCandidates(), 2, "every eligible entry crosses, in the author's order")
+	require.Equal(t, int32(0), got.GetCandidates()[0].GetEntry())
+	require.Equal(t, int32(3), got.GetCandidates()[0].GetWeight(), "the author's own number, before loading")
+	require.Equal(t, int32(300), got.GetCandidates()[0].GetPercent(), "the temperament's multiplier, in percent")
+	require.Equal(t, int32(900), got.GetCandidates()[0].GetLoaded(), "weight x percent, copied and never recomputed")
+	require.Equal(t, int32(3), got.GetCandidates()[1].GetEntry(),
+		"indices are the AUTHOR'S and are not contiguous when a `when` filtered a line out")
+	require.Equal(t, int32(700), got.GetCandidates()[1].GetLoaded())
+
+	var summed int32
+	for _, c := range got.GetCandidates() {
+		summed += c.GetLoaded()
+	}
+	require.Equal(t, got.GetOf(), summed, "`of` is the sum of `loaded`, so a reader can redo the engine's arithmetic")
+}
+
+// TestAnsweredBodyToProto_ASocialPickStillFillsTheDeprecatedPair is the other
+// half of the same rule, and it is the compatibility claim: a reader written
+// before the table keeps working unchanged on all four social keys.
+func TestAnsweredBodyToProto_ASocialPickStillFillsTheDeprecatedPair(t *testing.T) {
+	for _, tc := range []struct {
+		key    string
+		verb   sessionpb.Verb
+		beaten bool
+	}{
+		{key: "intimidated", verb: sessionpb.Verb_VERB_INTIMIDATE, beaten: true},
+		{key: "intimidate_failed", verb: sessionpb.Verb_VERB_INTIMIDATE, beaten: false},
+		{key: "persuaded", verb: sessionpb.Verb_VERB_PERSUADE, beaten: true},
+		{key: "persuade_failed", verb: sessionpb.Verb_VERB_PERSUADE, beaten: false},
+	} {
+		t.Run(tc.key, func(t *testing.T) {
+			verbWord := "intimidate"
+			if tc.verb == sessionpb.Verb_VERB_PERSUADE {
+				verbWord = "persuade"
+			}
+			event := &sessionpb.Event{}
+			require.NoError(t, setEventBody(event, sdk.AnsweredBody{
+				Creature: "front-goblin", Key: tc.key, Verb: verbWord, Beaten: tc.beaten,
+				Roll: 4200, Of: 10000, Entry: 0, Word: "fact", Temper: "",
+				Candidates: []sdk.AnswerCandidate{{Entry: 0, Weight: 70, Percent: 100, Loaded: 7000}},
+			}))
+
+			got := event.GetAnswered()
+			require.NotNil(t, got)
+			require.Equal(t, tc.verb, got.GetVerb())
+			require.Equal(t, tc.beaten, got.GetBeaten())
+			require.Equal(t, sessionpb.Temper_TEMPER_NONE, got.GetTemper(),
+				"a creature nobody gave a word to is NONE, never UNSPECIFIED and never SOLDIER")
+		})
+	}
+}
+
+// TestAnsweredBodyToProto_NothingEligibleIsTheHoldShape pins the silent table
+// (design §2, "fail closed loudly"): a `time` roll where no entry's `when` held
+// has nothing on the die, the creature holds, and the beat SAYS SO.
+//
+// EMPTY CANDIDATES IS A REAL ANSWER, not a missing one — a reader must be able
+// to tell a creature with nothing to do apart from a creature that rolled and
+// chose to stand there.
+func TestAnsweredBodyToProto_NothingEligibleIsTheHoldShape(t *testing.T) {
+	event := &sessionpb.Event{}
+	require.NoError(t, setEventBody(event, sdk.AnsweredBody{
+		Creature: "front-goblin", Key: "time", Roll: 0, Of: 0, Entry: -1, Word: "hold",
+	}))
+
+	got := event.GetAnswered()
+	require.NotNil(t, got, "a creature that was asked and stood there still gets a beat")
+	require.Empty(t, got.GetCandidates())
+	require.Equal(t, sessionpb.AnswerWord_ANSWER_WORD_HOLD, got.GetWord())
+	require.Equal(t, int32(0), got.GetOf())
+}
+
+// TestAnsweredBodyToProto_AnUnknownKeyOrTemperIsRefused is the word refusal's
+// twin on the two fields that arrived with it. Each is asserted alone, so a
+// seam that started demoting one of them cannot hide behind the other.
+func TestAnsweredBodyToProto_AnUnknownKeyOrTemperIsRefused(t *testing.T) {
+	t.Run("key", func(t *testing.T) {
+		event := &sessionpb.Event{}
+		err := setEventBody(event, sdk.AnsweredBody{
+			Creature: "front-goblin", Key: "attacked", Roll: 1, Of: 1, Word: "hold",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "attacked")
+		require.Nil(t, event.GetAnswered(), "nothing half-built is left for a careless caller to send")
+	})
+
+	t.Run("temper", func(t *testing.T) {
+		event := &sessionpb.Event{}
+		err := setEventBody(event, sdk.AnsweredBody{
+			Creature: "front-goblin", Key: "time", Roll: 1, Of: 1, Word: "hold", Temper: "berserker",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "berserker")
+		require.Nil(t, event.GetAnswered())
+	})
+}
+
+// TestTemperedBodyToProto_CarriesTheDealAndWhoThrewIt is the dealt
+// temperament's body (rpg-project#465 §3, R5): which creature was dealt what,
+// and the roll that dealt it.
+//
+// THE FACTION IS THE DIE'S ENTITY and is asserted separately from the member,
+// because the thrower and the subject of a throw are different questions
+// (rpg-project#463). A converter that filled `faction` from the creature would
+// leave a reader unable to say which mix produced the roll or check the sum
+// against anything.
+func TestTemperedBodyToProto_CarriesTheDealAndWhoThrewIt(t *testing.T) {
+	event := &sessionpb.Event{}
+	require.NoError(t, setEventBody(event, sdk.TemperedBody{
+		Member: "front-goblin-3", Temper: "coward", Roll: 2, Of: 4, Faction: "goblins",
+	}))
+
+	got := event.GetTempered()
+	require.NotNil(t, got)
+	require.Equal(t, "front-goblin-3", got.GetMember(), "who the word landed on")
+	require.Equal(t, sessionpb.Temper_TEMPER_COWARD, got.GetTemper())
+	require.Equal(t, int32(2), got.GetRoll())
+	require.Equal(t, int32(4), got.GetOf(), "the summed shares of the mix, never assumed to be 100")
+	require.Equal(t, "goblins", got.GetFaction(), "the faction threw: the mix is its, not the creature's")
+	require.NotEqual(t, got.GetMember(), got.GetFaction(),
+		"thrower and subject are separate fields and this seam must not fill one from the other")
+}
+
+// TestTemperedBodyToProto_AnUnknownWordIsRefused. A deal always produces a word
+// the composition could apply, so an unknown one here means this seam is older
+// than the rulebook that grew a fourth temperament — and publishing NONE would
+// say the creature was dealt nothing, about a creature that was dealt something.
+func TestTemperedBodyToProto_AnUnknownWordIsRefused(t *testing.T) {
+	event := &sessionpb.Event{}
+	err := setEventBody(event, sdk.TemperedBody{
+		Member: "front-goblin-3", Temper: "reckless", Roll: 2, Of: 4, Faction: "goblins",
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "reckless")
+	require.Nil(t, event.GetTempered())
 }

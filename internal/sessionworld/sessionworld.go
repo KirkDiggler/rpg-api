@@ -265,26 +265,50 @@ type Monster struct {
 	// read by -- a creature reads a liar and a flatterer with one sense.
 	Persuade []tkencounter.CheckApproach
 
-	// Answers is what this monster DOES about a social verb's verdict, keyed
-	// by outcome (`place[].on`, rpg-project#458), as the COMPILED entries
-	// dungeonspec produced -- weights resolved, fact ids minted, the author's
-	// lines verbatim.
+	// Table is this monster's whole POLICY -- what it does, keyed by what
+	// happened (`place[].on` laid over its faction's, rpg-project#465), as the
+	// COMPILED entries dungeonspec produced: weights resolved, fact ids
+	// minted, the author's lines verbatim.
 	//
-	// IT REPLACED `OnIntimidated string`, which named one fact on one
-	// outcome and had nowhere to put a line of speech, a failed attempt, or
-	// a creature that runs. There is no second spelling beside it: two
-	// representations of one authored table is what this workspace bans, and
-	// the old field is gone rather than kept in step.
+	// IT REPLACED `Answers`, which was the same map under a narrower name
+	// while the four social verdicts were the only keys. `time` is a key of
+	// this same table now -- what a creature does when it is given time, its
+	// turn in a fight or a round of the world clock -- so a name about
+	// answering a verb stopped describing it. There is no second spelling
+	// beside this one: two representations of one authored table is what this
+	// workspace bans, and the old field is gone rather than kept in step.
 	//
-	// THE MAP CROSSES WHOLE, keyed as the composition keys it
-	// (`intimidated`, `intimidate_failed`, `persuaded`, `persuade_failed`).
-	// Nothing here reads a key or picks an entry -- which entry fires is the
-	// world's die, rolled inside the encounter, and a package that peeked at
-	// the table here would be a second reader of an authored fact.
+	// TWO OF THE THREE LAYERS (design §1). dungeonspec laid the placement's
+	// `on:` over its faction's; the RULEBOOK's default table for the monster's
+	// kind goes underneath, and that happens inside session.Spawn, which is
+	// the only side that can resolve a ref to a kind. Which is why a nil here
+	// does NOT mean a creature that does nothing: it means the author wrote no
+	// orders and the rulebook's default speaks alone.
 	//
-	// NIL STAYS NIL: a creature the author wrote no `on:` for answers
-	// nothing, and the world rolls no die at all.
-	Answers map[string][]tkencounter.Answer
+	// THE MAP CROSSES WHOLE. Nothing here reads a key or picks an entry --
+	// which entry fires is the world's die, rolled inside the encounter, and a
+	// package that peeked at the table here would be a second reader of an
+	// authored fact.
+	Table tkencounter.Table
+
+	// Temper is the temperament loading this monster's die: the word the
+	// author wrote on the placement, else its faction's word, else the
+	// faction's MIX for the composition to deal one from (`place[].temper`,
+	// `factions[].temper`, rpg-project#465 §3).
+	//
+	// A WEIGHT PROFILE AND NOTHING ELSE -- four goblins off one sheet with one
+	// table are four different creatures because their dice are loaded
+	// differently, not because they were given different orders.
+	//
+	// THE PROFILES ARE NOT FILLED HERE AND MUST NOT BE. What `coward` MEANS is
+	// rulebook content, and filling in numbers on this side would be this
+	// package naming a rules value -- the smell CLAUDE.md opens with.
+	// dungeonspec carries the word, session.Spawn looks the profile up, and
+	// this field crosses between them untouched.
+	//
+	// THE ZERO VALUE IS A SOLDIER: a monster nobody gave a temperament and one
+	// authored `temper: soldier` are the same creature, every factor 100.
+	Temper tkencounter.Temper
 }
 
 // Compile turns one authored dungeon file into a [Dungeon].
@@ -349,21 +373,24 @@ func Compile(raw []byte) (*Dungeon, error) {
 			Boss: m.Boss, Targeting: m.Targeting, Actions: m.Actions,
 			PlacementID: m.ID, Holds: m.Holds, Faction: m.Faction,
 			Arrives: m.Arrives,
-			// The shenanigan half (rpg-project#454, rpg-project#458),
-			// carried whole rather than read: the author's two priced
-			// checks and the answer table keyed by outcome. Absent means
-			// absent -- no defaulting here, because nil is "derive the
-			// check" for the two lists and "answers nothing" for the
-			// table, and both are the ordinary case.
+			// The shenanigan half (rpg-project#454, rpg-project#458) and
+			// the creature's table beside it (rpg-project#465), carried
+			// whole rather than read: the author's two priced checks, the
+			// policy keyed by what happened, and the word that loads its
+			// die. Absent means absent -- no defaulting here, because nil
+			// is "derive the check" for the two lists, "the rulebook's
+			// default speaks alone" for the table, and "a soldier" for the
+			// temperament, and each is the ordinary case.
 			//
 			// THE TABLE IS NO LONGER FLATTENED. This used to pull one fact
 			// out of one key (`m.On[OnIntimidated]`), which was all the
-			// composition had room for; `on:` is now four keys of weighted
-			// entries and the whole map crosses, so adding a fifth outcome
+			// composition had room for; `on:` is now five keys of weighted
+			// entries and the whole map crosses, so adding a sixth trigger
 			// is a dungeonspec change and not a line here.
 			Intimidate: m.Intimidate,
 			Persuade:   m.Persuade,
-			Answers:    m.Answers,
+			Table:      m.Table,
+			Temper:     m.Temper,
 		}
 	}
 

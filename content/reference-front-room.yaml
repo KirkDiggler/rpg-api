@@ -4,10 +4,13 @@
 #
 # Three rooms, west to east:
 #
-#   - the FRONT ROOM, where the party comes in, with ONE goblin standing in
-#     it. It is not hostile. No fight forms, nobody rolls initiative, and the
+#   - the FRONT ROOM, where the party comes in, with FOUR goblins standing in
+#     it. None is hostile. No fight forms, nobody rolls initiative, and the
 #     world clock is running — which is the entire point of the slice. Lean on
-#     it or talk it round and the AUTHOR'S OWN TABLE decides what it does;
+#     one or talk it round and the AUTHOR'S OWN TABLE decides what it does —
+#     the SAME table for all four, since it is written on their faction, and
+#     the only thing that differs between them is the temperament each was
+#     dealt from that faction's mix (rpg-project#465);
 #   - the PASSAGE, empty, so the bandits are genuinely two rooms away and a
 #     fleeing goblin has somewhere to run;
 #   - the BANDIT HALL, where two bandits wait. They are hostile from frame
@@ -101,9 +104,89 @@ doors:
 # what decides whether the faction knows a fact, and both of these turn on
 # facts the PARTY is present for, so there is nobody whose private knowledge
 # would gate it.
+#
+# BOTH NOW CARRY ORDERS AND A MIX (rpg-project#465, the creature's table).
+# A faction is layer two of a creature's policy — every placement in it
+# inherits its `on:`, and a placement that writes the same KEY replaces it
+# wholesale rather than adding to it. The goblins' answer table lives here
+# rather than on one placement precisely so all four of them share it: one
+# table, four creatures, four different answers, and the only thing that
+# differs is the die each was dealt.
 factions:
-  - { id: goblins }
-  - { id: bandits }
+  # FOUR GOBLINS, ONE TABLE, FOUR BEHAVIOURS — the slice's whole claim, and
+  # the mix is what makes it visible. `{ coward: 2, soldier: 1, aggressive: 1 }`
+  # is a d4 thrown once per goblin at spawn WITH THE FACTION AS THE DIE'S
+  # ENTITY, and each throw is a `tempered` beat, so the table watches which
+  # one came out the coward before anybody has said a word to it.
+  #
+  # Weighted toward `coward` on purpose: the 30% `flee` below reads 30 against
+  # 90 for a coward and 30 against 7.5 for the aggressive one, so a threat
+  # that lands sends one goblin bolting and leaves another standing there
+  # saying the same line. That difference IS the walk.
+  - id: goblins
+    temper: { coward: 2, soldier: 1, aggressive: 1 }
+    # The author's orders for every goblin in the room. FOUR KEYS, one per
+    # social outcome, and the WORLD rolls which entry fires against the summed
+    # weights — each one loaded by the roller's own temperament. Every entry is
+    # one word plus the author's line, carried verbatim onto the beat; the
+    # engine never composes speech.
+    #
+    # NO `time` KEY HERE, DELIBERATELY. A goblin that is given time falls
+    # through to the rulebook's default table for its kind, which is what makes
+    # a neutral goblin stand still (nothing it is opposed to is in sight, so no
+    # entry's `when` holds and it holds) and what makes a COWED one keep
+    # running: the default reads `fled: { within: 3 }` and walks it away from
+    # whoever frightened it, for three rounds of the party's own steps. Writing
+    # a `time` key here would replace that wholesale and cost both.
+    on:
+      # A LANDED THREAT, 70/30. Seven times in ten it folds and teaches the
+      # party `goblin-cowed`; three times in ten it panics and BOLTS. The
+      # flee word lands a `fled` deed at now and does NOT step here — the
+      # verb pays its round on the world clock and the goblin's own `time`
+      # table does the running, which is why the party sees it go on their
+      # steps rather than instantly.
+      #
+      # The 30 is what makes the threat a gamble rather than a button: the
+      # goblin you frightened away is a goblin you can no longer talk to.
+      # And it is 30 only for a soldier — a coward runs on a 56% share and
+      # the aggressive one on 10%, off this same line.
+      intimidated:
+        - { weight: 70, say: "Fine! FINE. The cellar door is behind the barrels. Just don't.", fact: goblin-cowed }
+        - { weight: 30, say: "Boss! BOSS!", flee: {} }
+
+      # A MISSED THREAT. One entry, so it always fires: the goblin is not
+      # impressed and says so, and nothing else happens. Failure that costs
+      # nothing is deliberate HERE and not everywhere — the failed APPEAL
+      # below is the one with teeth.
+      intimidate_failed:
+        - { say: "Big talk, for someone standing in my doorway." }
+
+      # A LANDED APPEAL. It tells the truth and teaches nothing: the party
+      # walks away knowing where to go, and the goblin is still a goblin.
+      # NOT `goblin-cowed` — talking somebody round is not frightening them,
+      # and the disposition flips on the threat's fact alone.
+      persuaded:
+        - { say: "Bandits took the cellar. Go left at the rope, and mind the third step." }
+
+      # A FAILED APPEAL, AND THE TRAP. The goblin lies, and the lie is a
+      # FACT like any other — `cellar-is-clear`, an id and nothing else. The
+      # bandits' `arrives` below reads it. There is no truth bit anywhere on
+      # the wire, by ruling: a false fact has to look exactly like a true one
+      # to whoever received it, or the client hands the player the answer to
+      # the bad directions the author wrote.
+      #
+      # This is what "a failed persuade teaches the false fact and the bandits
+      # arrive" means mechanically, and it is authorable with the two words
+      # this slice ships. `lure` is not needed and is not used.
+      persuade_failed:
+        - { weight: 100, say: "Cellar's empty, friend. Nothing down there but rats. Straight on through.", fact: cellar-is-clear }
+
+  # The bandits are dealt from a mix too, weighted the other way: they are
+  # what walked in because you were lied to, and a band of them should mostly
+  # come at you. The one coward in four is the point — the same orders
+  # produce a bandit that holds back, and nobody authored it.
+  - id: bandits
+    temper: { coward: 1, soldier: 2, aggressive: 1 }
 
 # The whole shape of the scene, in two lines.
 #
@@ -139,8 +222,8 @@ dispositions:
   - { between: [bandits, party], stance: hostile }
 
 place:
-  # THE FRONT ROOM GOBLIN. One creature, and every half of this slice is on
-  # its placement.
+  # THE FRONT ROOM GOBLIN. One creature the party talks to, and every half of
+  # the conversation is on its placement.
   #
   # `intimidate:` at DC 12 is the author saying this one is harder to lean on
   # than its stat block suggests — its derived number would be 9 (10 plus a
@@ -152,10 +235,11 @@ place:
   # 10 the party's face and the party's barbarian are playing two different
   # games, which is the whole reason the rule exists.
   #
-  # The `on:` table is FOUR KEYS, one per outcome, and the WORLD rolls which
-  # entry fires against the summed weights. Every entry is one word plus the
-  # author's line, carried verbatim onto the beat; the engine never composes
-  # speech.
+  # ITS `on:` TABLE MOVED TO THE FACTION (rpg-project#465) and nothing about
+  # it changed on the way. It sat here while this goblin was the only creature
+  # with orders; the slice's claim is four goblins answering ONE table, and a
+  # table on one placement cannot be shared. No placement below writes an `on:`
+  # of its own, so every goblin in the room inherits this one whole.
   - id: front-goblin
     ref: "dnd5e:monsters:goblin"
     faction: goblins
@@ -164,45 +248,32 @@ place:
     actions: ["dnd5e:weapons:scimitar"]
     intimidate: [{ ability: intimidation, dc: 12 }]
     persuade: [{ ability: persuasion, dc: 10 }]
-    on:
-      # A LANDED THREAT, 70/30. Seven times in ten it folds and teaches the
-      # party `goblin-cowed`, which the disposition above reads: the pair
-      # flips to allied and the ring changes colour under the token. Three
-      # times in ten it panics and BOLTS — a real routed walk on the world
-      # clock, off anybody's turn, with movement beats and no turn consumed.
-      #
-      # The 30 is what makes the threat a gamble rather than a button: the
-      # goblin you frightened away is a goblin you can no longer talk to.
-      intimidated:
-        - { weight: 70, say: "Fine! FINE. The cellar door is behind the barrels. Just don't.", fact: goblin-cowed }
-        - { weight: 30, say: "Boss! BOSS!", flee: {} }
 
-      # A MISSED THREAT. One entry, so it always fires: the goblin is not
-      # impressed and says so, and nothing else happens. Failure that costs
-      # nothing is deliberate HERE and not everywhere — the failed APPEAL
-      # below is the one with teeth.
-      intimidate_failed:
-        - { say: "Big talk, for someone standing in my doorway." }
-
-      # A LANDED APPEAL. It tells the truth and teaches nothing: the party
-      # walks away knowing where to go, and the goblin is still a goblin.
-      # NOT `goblin-cowed` — talking somebody round is not frightening them,
-      # and the disposition flips on the threat's fact alone.
-      persuaded:
-        - { say: "Bandits took the cellar. Go left at the rope, and mind the third step." }
-
-      # A FAILED APPEAL, AND THE TRAP. The goblin lies, and the lie is a
-      # FACT like any other — `cellar-is-clear`, an id and nothing else. The
-      # bandits' `arrives` below reads it. There is no truth bit anywhere on
-      # the wire, by ruling: a false fact has to look exactly like a true one
-      # to whoever received it, or the client hands the player the answer to
-      # the bad directions the author wrote.
-      #
-      # This is what "a failed persuade teaches the false fact and the bandits
-      # arrive" means mechanically, and it is authorable with the two words
-      # this slice ships. `lure` is not needed and is not used.
-      persuade_failed:
-        - { weight: 100, say: "Cellar's empty, friend. Nothing down there but rats. Straight on through.", fact: cellar-is-clear }
+  # THE OTHER THREE, AND THEY ARE DELIBERATELY PLAIN. Same ref, same faction,
+  # no `on:`, no `temper:`, no priced check — nothing distinguishes them from
+  # the one above except that nobody wrote them a DC, so each is checked
+  # against its own stat block's passive Insight (9) rather than the author's
+  # 12 and 10.
+  #
+  # WHICH IS THE CONTROL THE WALK NEEDS. Four identical goblins, one inherited
+  # table, one faction mix: every difference the table shows is the die, and a
+  # `temper:` written on any of these would be the author answering the
+  # question the mix exists to ask.
+  #
+  # Spread across the room rather than in a line, so one can be out of the
+  # pillar's sightline while another is not.
+  - id: front-goblin-2
+    ref: "dnd5e:monsters:goblin"
+    faction: goblins
+    at: [4, 1]
+  - id: front-goblin-3
+    ref: "dnd5e:monsters:goblin"
+    faction: goblins
+    at: [4, 5]
+  - id: front-goblin-4
+    ref: "dnd5e:monsters:goblin"
+    faction: goblins
+    at: [5, 6]
 
   # A prop to stand behind, so a walk can put the goblin out of sight and see
   # the verb refused for a SIGHTLINE rather than a distance (ErrUnwitnessed →
@@ -219,6 +290,26 @@ place:
   # They are hostile, so a fight forms the moment one of them sees a player:
   # the party followed the goblin's bad directions and met what was actually
   # down there.
+  #
+  # AND NOW THEY COME LOOKING (rpg-project#465). Each carries a `time` standing
+  # order toward [3, 3], a clear cell of the front room one step short of where
+  # the goblin stands: whenever a bandit is given time — a round of the world
+  # clock as the party walks and talks, or a round of a fight somebody else is
+  # in — and it can see nobody it is opposed to, it spends that round walking
+  # west. An arrival that should go somewhere is a STANDING ORDER, not a
+  # memory, which is why there is no `arrived` trigger for it to hang on.
+  #
+  # AN AUTHORED CELL IS WALKED ONTO, not up to, so the cell is chosen clear:
+  # [4, 3] is the goblin's and [1, 3] is where the party comes in.
+  #
+  # WRITING THIS KEY COSTS THE DEFAULT'S, and the file should show what it
+  # bought. `time` here replaces the rulebook's default `time` table WHOLESALE
+  # — there is no merging of entry lists — so these two bandits have given up
+  # the default's `enemy: reach → attack` and `enemy: seen → toward` along with
+  # it. A bandit that walks into the party's sight still FORMS a fight, by the
+  # shipped sight path, and then holds on its own turns, because this table
+  # says nothing about an enemy it can see. An author who wants both writes
+  # both.
   - id: bandit-1
     ref: "dnd5e:monsters:bandit"
     faction: bandits
@@ -226,6 +317,9 @@ place:
     targeting: closest
     actions: ["dnd5e:weapons:scimitar", "dnd5e:weapons:light-crossbow"]
     arrives: { fact: cellar-is-clear }
+    on:
+      time:
+        - { when: { enemy: none }, toward: { at: [3, 3] } }
   - id: bandit-2
     ref: "dnd5e:monsters:bandit"
     faction: bandits
@@ -233,6 +327,9 @@ place:
     targeting: closest
     actions: ["dnd5e:weapons:light-crossbow"]
     arrives: { fact: cellar-is-clear }
+    on:
+      time:
+        - { when: { enemy: none }, toward: { at: [3, 3] } }
 
 exits:
   - { id: front-door, at: [0,3] }

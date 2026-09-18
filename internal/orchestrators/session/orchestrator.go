@@ -12,10 +12,8 @@
 package session
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/KirkDiggler/rpg-toolkit/dice"
@@ -62,120 +60,27 @@ type Config struct {
 	// Story or recipient-local sequence.
 	PresentationIDs sdk.PresentationIDGenerator
 
-	// TurnDriver decides what an unplayed member does on its turn. Optional:
-	// nil selects the production wiring, which is ONE sdk.Minded(nil) PER
-	// SESSION handed over by turnDriverCache below. Dice's own doc explains
+	// TurnDriver decides what a member with no player does when it is given
+	// time -- its turn in a fight, or a round of the world clock. Optional:
+	// nil selects the production wiring, sdk.Driver(). Dice's own doc explains
 	// the shape and it applies verbatim here -- what New hands the SDK is
 	// always explicit, and the override exists so a test can script a
 	// monster's turn without reaching past this package into the SDK's
 	// construction.
 	//
-	// A DRIVER SUPPLIED HERE SERVES EVERY SESSION, which is the one place the
-	// override differs from production: it goes to sdk.Config.TurnDriver, the
-	// every-session door, and no per-session cache is built (the SDK refuses
-	// both doors wired at once). That is the right shape for the thing this
-	// field exists for -- a scripted driver is the assertion, and a test that
-	// wired one would not want a second session quietly getting a different
-	// one.
+	// EITHER WAY IT IS ONE DRIVER FOR EVERY SESSION, which is the difference
+	// from the pair this replaced (rpg-project#465). sdk.Minded(nil) was
+	// stateful -- it remembered which Go preset each member's SHEET named --
+	// so it needed one instance per session and a cache here to hand them out.
+	// A creature's policy is now the table an author wrote for it, held with
+	// the member in the world rather than in the driver, so sdk.Driver() holds
+	// nothing between turns and one value serves every session this Manager
+	// serves. The cache went with the state that justified it.
 	//
-	// The reason a test needs to: the default driver attacks a standing
-	// player and otherwise closes the distance, so it will never walk OUT of
-	// a fighter's reach. A reaction window is exactly what a monster leaving
-	// reach opens (rpg-project#316), which means the interrupt path has no
-	// producer under the shipped driver and could not otherwise be proven
-	// through this stack at all.
+	// The reason a test needs the override: the table drives a creature from
+	// what its author wrote, so a test that wants a specific turn out of a
+	// specific monster scripts the driver rather than authoring a dungeon.
 	TurnDriver sdk.TurnDriver
-}
-
-// turnDriverCache answers "what happens when the clock lands on a member with
-// no player" -- toolkit#1162, ADR-0043 (rpg-toolkit encounter#1163) -- with
-// ONE DRIVER PER SESSION, built the first time that session is seen.
-//
-// Without a driver at all, EndTurn parks the clock on a monster forever:
-// nothing can act for it, since EndTurn requires Member to be the active
-// member and the host binds Member to the authenticated human, who does not
-// own the monster.
-//
-// sdk.Minded(nil) is the production driver as of rpg-toolkit#1725: each
-// member is driven by the mind ITS OWN SHEET NAMES (rule A5), and a member
-// whose sheet names none gets exactly sdk.Behavior()'s answer -- attack the
-// closest standing player if one is in reach, otherwise close the distance,
-// otherwise pass. Three monsters name a mind as of rpg-toolkit#1745 -- the
-// skeleton a "retaliator", the thug a "berserker", the goblin a "coward" --
-// and every other monster's turn is unchanged.
-//
-// Nil is the whole input, and there is nothing left to pass: how long a mind
-// holds a grudge and how much room it keeps are the MIND's, named by the
-// word on a monster's sheet and held by the rulebook's preset for that word.
-// The Patience this package used to leave unset is gone from the SDK
-// entirely, which is the same principle stated better -- a host naming a
-// rules number is the smell CLAUDE.md opens with, and now there is no number
-// here to leave alone. It wraps rulebooks/dnd5e/behavior entirely inside the
-// toolkit; this package never imports encounter or behavior.
-//
-// # Why the cache is HERE and not in the SDK
-//
-// A session's lifetime is this package's: a Redis TTL, a run ending. The SDK's
-// Manager is deliberately stateless per verb and gets no session-end signal,
-// so a cache in there would have no owner for eviction. The SDK asks instead
-// (sdk.Config.TurnDrivers, rpg-toolkit#1734, adoption rule A6) and this is
-// what answers.
-//
-// # The lock is on the MAP, never on a driver
-//
-// sdk.Minded is stateful and its own doc says so -- it remembers which mind
-// each member was given and parks the view it is answering on itself for the
-// length of the call. What that value is not safe for is two goroutines
-// inside ONE session's turns, and that is the boundary the session already
-// had: two write verbs on one session race that session's own scope in the
-// SDK regardless of the driver. So this lock guards the lookup and the build,
-// and a driver handed out is a driver this type is done with. The mutex that
-// used to wrap Act is gone with the process-wide driver it protected.
-//
-// # Nothing is evicted, and that is a decision
-//
-// A driver is a handful of small maps, and a process sees a bounded number of
-// sessions between deploys, so the map's growth is bounded by the same thing
-// the process is. What would pay for eviction is a server that outlives its
-// sessions by enough that the dead ones dominate -- a long-lived process
-// serving short one-shot runs, or a session count per process that stops
-// being bounded by a deploy. At that point the eviction signal is the one
-// this package already owns: the Redis key's expiry, or run ending.
-type turnDriverCache struct {
-	mu      sync.Mutex
-	drivers map[string]sdk.TurnDriver
-}
-
-// newTurnDriverCache returns an empty cache. It builds no driver: the first
-// verb about a session is what mints that session's.
-func newTurnDriverCache() *turnDriverCache {
-	return &turnDriverCache{drivers: map[string]sdk.TurnDriver{}}
-}
-
-// compile-time proof the cache satisfies what it is handed to.
-var _ sdk.TurnDriverSource = (*turnDriverCache)(nil)
-
-// DriverFor returns sessionID's own driver, building one on first sight.
-//
-// A failure here is a WIRING fault, not a game outcome, so it is returned and
-// the verb that asked fails -- a monster silently falling back to the basic
-// driver would look like a design choice rather than a broken pin. The SDK
-// never falls back either (sdk.Config.TurnDrivers).
-func (c *turnDriverCache) DriverFor(_ context.Context, sessionID string) (sdk.TurnDriver, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if driver, built := c.drivers[sessionID]; built {
-		return driver, nil
-	}
-
-	driver, err := sdk.Minded(nil)
-	if err != nil {
-		return nil, fmt.Errorf("construct turn driver for session %q: %w", sessionID, err)
-	}
-
-	c.drivers[sessionID] = driver
-	return driver, nil
 }
 
 const presentationIDPrefix = "presentation"
@@ -215,17 +120,15 @@ func New(cfg Config) (*Orchestrator, error) {
 		presentationIDs = newDefaultPresentationIDs()
 	}
 
-	// EXACTLY ONE OF THE TWO DOORS, which the SDK enforces at construction.
-	// Production wires the per-session source; a test that scripted a monster's
-	// turn wired one driver, and that driver keeps serving every session,
-	// because a scripted driver is what the test is asserting about.
-	drivers := newTurnDriverCache()
-	var (
-		sourceForSDK sdk.TurnDriverSource = drivers
-		driverForSDK sdk.TurnDriver
-	)
-	if cfg.TurnDriver != nil {
-		sourceForSDK, driverForSDK = nil, cfg.TurnDriver
+	// ONE DRIVER, THE EVERY-SESSION DOOR (rpg-project#465). sdk.Driver() is
+	// the creature's own authored table, rolled through the session's shared
+	// dice, and it holds nothing between turns -- so there is nothing for a
+	// per-session cache to own and sdk.Config.TurnDrivers stays unwired. A
+	// test's override lands in the same field, because a scripted driver is
+	// what that test is asserting about.
+	driverForSDK := cfg.TurnDriver
+	if driverForSDK == nil {
+		driverForSDK = sdk.Driver()
 	}
 
 	policy := cfg.StaleTargetPolicy
@@ -243,7 +146,6 @@ func New(cfg Config) (*Orchestrator, error) {
 		Events:            broker,
 		Dice:              roller,
 		TurnDriver:        driverForSDK,
-		TurnDrivers:       sourceForSDK,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("construct session manager: %w", err)

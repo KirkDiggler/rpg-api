@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
 // shenanigans_test.go covers the social verbs' authoring half
@@ -97,18 +98,26 @@ func (s *ShenanigansSuite) TestAnUnpricedPlacementCarriesNothing() {
 		}
 		s.Nil(m.Intimidate, "%s prices no threat and is checked against its own stat block", m.Ref)
 		s.Nil(m.Persuade, "%s prices no appeal and is checked against its own stat block", m.Ref)
-		s.Nil(m.Answers, "%s answers nothing, so the world rolls no die about it", m.Ref)
+		s.Nil(m.Table, "%s carries no authored orders, so its kind's default table speaks alone", m.Ref)
 		checked++
 	}
 	require.Positive(s.T(), checked, "the file must still place monsters the author priced nothing on")
 }
 
-// TestTheMindsDungeonAnswersNothing pins what that file does NOT author. The
+// TestTheMindsDungeonAuthorsNoOrders pins what that file does NOT author. The
 // `on:` half belongs to a dungeon with a faction graph in it, and the Three
-// Minds has none -- the walk for THAT slice is the mind's half alone.
-func (s *ShenanigansSuite) TestTheMindsDungeonAnswersNothing() {
+// Minds has none.
+//
+// NIL IS NOT "DOES NOTHING" ANY MORE (rpg-project#465). Every monster in this
+// file is driven by the rulebook's default table for its kind, laid on inside
+// session.Spawn where a ref can be resolved; what this asserts is that the
+// AUTHOR added nothing over it, which is why the file still reads as a plain
+// tomb.
+func (s *ShenanigansSuite) TestTheMindsDungeonAuthorsNoOrders() {
 	for _, m := range s.minds.Monsters {
-		s.Nil(m.Answers, "%s", m.Ref)
+		s.Nil(m.Table, "%s", m.Ref)
+		s.Empty(m.Temper.Word, "%s is given no temperament, which is a soldier", m.Ref)
+		s.Empty(m.Temper.Mix, "%s is in no faction with a mix to be dealt from", m.Ref)
 	}
 }
 
@@ -141,8 +150,9 @@ func (s *ShenanigansSuite) TestTheFrontRoomGoblinPricesBothVerbs() {
 // matched loosely would not notice a converter that trimmed, escaped or
 // re-cased what the author typed.
 func (s *ShenanigansSuite) TestTheFrontRoomTableSurvivesTheCompile() {
-	answers := s.placement(s.frontRoom, "front-goblin").Answers
-	s.Require().NotNil(answers, "the front room goblin's whole point is its table")
+	answers := s.placement(s.frontRoom, "front-goblin").Table
+	s.Require().NotNil(answers,
+		"the front room goblin's whole point is its table, and it INHERITS one from its faction")
 
 	// A landed threat: 70/30, and the 30 is the gamble -- the goblin you
 	// frightened away is one you can no longer talk to.
@@ -193,7 +203,7 @@ func (s *ShenanigansSuite) TestTheFrontRoomTableSurvivesTheCompile() {
 // leaves a lie nobody ever walks into and a trap that never springs.
 func (s *ShenanigansSuite) TestTheGoblinsLieIsWhatBringsTheBandits() {
 	lie := s.placement(s.frontRoom, "front-goblin").
-		Answers[tkencounter.AnswerPersuadeFailed][0].Fact
+		Table[tkencounter.AnswerPersuadeFailed][0].Fact
 	s.Require().NotEmpty(lie, "the failed appeal must teach something for anything to read")
 
 	for _, id := range []string{"bandit-1", "bandit-2"} {
@@ -215,15 +225,111 @@ func (s *ShenanigansSuite) TestTheGoblinIsNotOnTheBanditsSide() {
 	s.Equal("bandits", s.placement(s.frontRoom, "bandit-2").Faction)
 }
 
-// TestTheBanditsArePricedForNothingAndAnswerNothing is the front room's own
-// control: only ONE creature in this file is a conversation. A bandit that
-// arrived with a table would be a second scene nobody designed, and one priced
-// with a DC would quietly claim you can talk down the ambush you walked into.
-func (s *ShenanigansSuite) TestTheBanditsArePricedForNothingAndAnswerNothing() {
+// TestTheBanditsArePricedForNothingAndSayNothing is the front room's own
+// control: only the GOBLINS are a conversation. A bandit priced with a DC
+// would quietly claim you can talk down the ambush you walked into, and one
+// with a social key on its table would be a second scene nobody designed.
+//
+// ITS TABLE IS NOT EMPTY ANY MORE, and that is a different claim: the bandits
+// carry a `time` standing order and nothing else (rpg-project#465). What this
+// pins is that the standing order did not bring a conversation with it.
+func (s *ShenanigansSuite) TestTheBanditsArePricedForNothingAndSayNothing() {
 	for _, id := range []string{"bandit-1", "bandit-2"} {
 		bandit := s.placement(s.frontRoom, id)
 		s.Nilf(bandit.Intimidate, "%s prices no threat", id)
 		s.Nilf(bandit.Persuade, "%s prices no appeal", id)
-		s.Nilf(bandit.Answers, "%s answers nothing", id)
+		for _, key := range tkencounter.AnswerKeys {
+			s.Nilf(bandit.Table[key], "%s answers nothing to %s", id, key)
+		}
+	}
+}
+
+// TestTheFourGoblinsShareOneTable is the slice's own claim, in the file
+// (rpg-project#465): four creatures, one set of orders, and the orders live on
+// the FACTION so that sentence is true by construction rather than by an
+// author copying a block four times.
+//
+// IDENTITY, NOT EQUIVALENCE. The compiler lays each placement's own `on:` over
+// its faction's, and none of these four writes one — so what every goblin
+// carries is the faction's table entry for entry. A test that compared only
+// lengths would pass against four blocks that had drifted apart.
+func (s *ShenanigansSuite) TestTheFourGoblinsShareOneTable() {
+	ids := []string{"front-goblin", "front-goblin-2", "front-goblin-3", "front-goblin-4"}
+	first := s.placement(s.frontRoom, ids[0]).Table
+	s.Require().NotNil(first)
+
+	for _, id := range ids[1:] {
+		s.Equalf(first, s.placement(s.frontRoom, id).Table,
+			"%s answers from the same authored table as %s", id, ids[0])
+	}
+}
+
+// TestOnlyTheNamedGoblinIsPriced is the control beside it. The three siblings
+// exist so the walk can watch ONE variable — the die each was dealt — and a
+// DC written on any of them would be a second one.
+//
+// NIL IS DERIVED, NOT UNGATED: each of the three is checked against its own
+// stat block's passive Insight, which for a goblin is 9.
+func (s *ShenanigansSuite) TestOnlyTheNamedGoblinIsPriced() {
+	for _, id := range []string{"front-goblin-2", "front-goblin-3", "front-goblin-4"} {
+		sibling := s.placement(s.frontRoom, id)
+		s.Nilf(sibling.Intimidate, "%s prices no threat and is checked against its own stat block", id)
+		s.Nilf(sibling.Persuade, "%s prices no appeal and is checked against its own stat block", id)
+	}
+}
+
+// TestNeitherFactionAuthorsATemperamentPerCreature pins the deal (design §3,
+// R5): every creature in this file gets its temperament from its faction's
+// MIX, and no placement names a word.
+//
+// THE MIX CROSSES UNDEALT. dungeonspec carries the faction's spread and the
+// composition throws it at spawn, with the faction as the die's entity, so the
+// streamer sees which goblin came out the coward. A placement that named a
+// word would be dealt nothing and raise no beat — which is the right answer
+// for an author who has already decided, and the wrong one for this walk.
+//
+// AND THE PROFILES ARE NOT FILLED HERE. What `coward` MEANS in numbers is
+// rulebook content, looked up inside session.Spawn; a profile filled on this
+// side would be rpg-api naming a rules value.
+func (s *ShenanigansSuite) TestNeitherFactionAuthorsATemperamentPerCreature() {
+	want := map[string]map[string]int{
+		"front-goblin":   {"coward": 2, "soldier": 1, "aggressive": 1},
+		"front-goblin-2": {"coward": 2, "soldier": 1, "aggressive": 1},
+		"front-goblin-3": {"coward": 2, "soldier": 1, "aggressive": 1},
+		"front-goblin-4": {"coward": 2, "soldier": 1, "aggressive": 1},
+		"bandit-1":       {"coward": 1, "soldier": 2, "aggressive": 1},
+		"bandit-2":       {"coward": 1, "soldier": 2, "aggressive": 1},
+	}
+	for id, mix := range want {
+		temper := s.placement(s.frontRoom, id).Temper
+		s.Equalf(mix, temper.Mix, "%s is dealt from its faction's mix", id)
+		s.Emptyf(temper.Word, "%s names no word of its own, or the mix is not dealt for it", id)
+		s.Equalf(tkencounter.TemperProfile{}, temper.Profile,
+			"%s crosses this package with no profile: what a word means is the rulebook's", id)
+	}
+}
+
+// TestTheBanditsWalkToTheFrontRoom pins the standing order (rpg-project#465
+// §2): an arrival that should go somewhere is a `time` entry with a `when`,
+// not a memory and not an `arrived` trigger.
+//
+// THE CELL IS ASSERTED EXACTLY. `toward: { at: … }` is walked ONTO rather than
+// up to, so an author who names an occupied cell has written a walk that
+// cannot finish; [3, 3] is chosen clear of the goblin at [4, 3] and the party's
+// own seat at [1, 3], and a change to either that forgot this line would be
+// invisible on the board until somebody watched a bandit stop short.
+func (s *ShenanigansSuite) TestTheBanditsWalkToTheFrontRoom() {
+	for _, id := range []string{"bandit-1", "bandit-2"} {
+		orders := s.placement(s.frontRoom, id).Table[tkencounter.AnswerTime]
+		s.Require().Lenf(orders, 1, "%s carries one standing order and nothing else", id)
+
+		entry := orders[0]
+		s.Require().NotNilf(entry.Toward, "%s walks toward something", id)
+		s.Require().NotNilf(entry.Toward.At, "%s walks toward an authored CELL, not a member", id)
+		s.Equalf(spatial.Position{X: 3, Y: 3}, *entry.Toward.At,
+			"%s walks onto the front room cell the file names", id)
+		s.Require().NotNilf(entry.When, "%s only walks when it has nobody to fight", id)
+		s.Equalf(tkencounter.EnemyNone, entry.When.Enemy,
+			"%s stops walking the moment it is opposed to something it can see", id)
 	}
 }
