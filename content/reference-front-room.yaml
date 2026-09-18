@@ -293,25 +293,36 @@ place:
   # the party followed the goblin's bad directions and met what was actually
   # down there.
   #
-  # AND NOW THEY COME LOOKING (rpg-project#465). Each carries a `time` standing
-  # order toward [3, 3], a clear cell of the front room one step short of where
-  # the goblin stands: whenever a bandit is given time — a round of the world
-  # clock as the party walks and talks, or a round of a fight somebody else is
-  # in — and it can see nobody it is opposed to, it spends that round walking
-  # west. An arrival that should go somewhere is a STANDING ORDER, not a
-  # memory, which is why there is no `arrived` trigger for it to hang on.
+  # AND NOW THEY COME LOOKING (rpg-project#465). Each carries a `time` table
+  # whose last line is a standing order toward [3, 3], a clear cell of the
+  # front room one step short of where the goblin stands: whenever a bandit is
+  # given time — a round of the world clock as the party walks and talks, or a
+  # round of a fight somebody else is in — and it can see nobody it is opposed
+  # to, it spends that round walking west. An arrival that should go somewhere
+  # is a STANDING ORDER, not a memory, which is why there is no `arrived`
+  # trigger for it to hang on.
   #
   # AN AUTHORED CELL IS WALKED ONTO, not up to, so the cell is chosen clear:
   # [4, 3] is the goblin's and [1, 3] is where the party comes in.
   #
-  # WRITING THIS KEY COSTS THE DEFAULT'S, and the file should show what it
-  # bought. `time` here replaces the rulebook's default `time` table WHOLESALE
-  # — there is no merging of entry lists — so these two bandits have given up
-  # the default's `enemy: reach → attack` and `enemy: seen → toward` along with
-  # it. A bandit that walks into the party's sight still FORMS a fight, by the
-  # shipped sight path, and then holds on its own turns, because this table
-  # says nothing about an enemy it can see. An author who wants both writes
-  # both.
+  # THE FIRST FIVE LINES ARE THE RULEBOOK'S DEFAULT, COPIED, AND THE COPY IS
+  # THE POINT OF THIS COMMENT. Writing a `time` key replaces the default's
+  # `time` key WHOLESALE — there is no merging of entry lists, by design, so an
+  # author never has to reason about what was added to what. Without the copy
+  # these two would walk west beautifully and then form a fight on sight and
+  # stand in it, because nothing on their table would have anything to say
+  # about an enemy they could see. An author who wants both writes both, and
+  # this is what both looks like.
+  #
+  # NO `hold` LINE, and that is not an omission: the default's last entry is
+  # `{ when: { enemy: none }, hold: {} }` and the standing order takes that
+  # band. A bandit with nobody in sight walks rather than waits, which is the
+  # only thing these two do differently from any other creature in the game.
+  #
+  # WHAT IT COSTS TO KEEP IN STEP is recorded rather than solved: the day the
+  # rulebook tunes its default, this copy does not move with it. That is an
+  # authoring question for after the walk, not a reason to leave the bandits
+  # unable to fight.
   - id: bandit-1
     ref: "dnd5e:monsters:bandit"
     faction: bandits
@@ -321,7 +332,12 @@ place:
     arrives: { fact: cellar-is-clear }
     on:
       time:
-        - { when: { enemy: none }, toward: { at: [3, 3] } }
+        - { when: { fled: { within: 3 } },     away: actor,      weight: 3 }
+        - { when: { attacked: { within: 3 } }, attack: attacker, weight: 3 }
+        - { when: { enemy: reach },            attack: enemy }
+        - { when: { enemy: seen },             toward: enemy }
+        - { when: { enemy: remembered },       toward: enemy }
+        - { when: { enemy: none },             toward: { at: [3, 3] } }
   - id: bandit-2
     ref: "dnd5e:monsters:bandit"
     faction: bandits
@@ -331,7 +347,12 @@ place:
     arrives: { fact: cellar-is-clear }
     on:
       time:
-        - { when: { enemy: none }, toward: { at: [3, 3] } }
+        - { when: { fled: { within: 3 } },     away: actor,      weight: 3 }
+        - { when: { attacked: { within: 3 } }, attack: attacker, weight: 3 }
+        - { when: { enemy: reach },            attack: enemy }
+        - { when: { enemy: seen },             toward: enemy }
+        - { when: { enemy: remembered },       toward: enemy }
+        - { when: { enemy: none },             toward: { at: [3, 3] } }
 
 exits:
   - { id: front-door, at: [0,3] }

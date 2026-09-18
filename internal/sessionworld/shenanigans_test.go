@@ -318,12 +318,17 @@ func (s *ShenanigansSuite) TestNeitherFactionAuthorsATemperamentPerCreature() {
 // cannot finish; [3, 3] is chosen clear of the goblin at [4, 3] and the party's
 // own seat at [1, 3], and a change to either that forgot this line would be
 // invisible on the board until somebody watched a bandit stop short.
+//
+// IT IS THE LAST LINE, and the band it sits in is the assertion. The five
+// above it are the rulebook's default copied in, so the entry that fires when
+// a bandit has nobody in sight is this one -- and `enemy: none` is what makes
+// the four exclusive bands hand it over.
 func (s *ShenanigansSuite) TestTheBanditsWalkToTheFrontRoom() {
 	for _, id := range []string{"bandit-1", "bandit-2"} {
 		orders := s.placement(s.frontRoom, id).Table[tkencounter.AnswerTime]
-		s.Require().Lenf(orders, 1, "%s carries one standing order and nothing else", id)
+		s.Require().NotEmptyf(orders, "%s has a time table", id)
 
-		entry := orders[0]
+		entry := orders[len(orders)-1]
 		s.Require().NotNilf(entry.Toward, "%s walks toward something", id)
 		s.Require().NotNilf(entry.Toward.At, "%s walks toward an authored CELL, not a member", id)
 		s.Equalf(spatial.Position{X: 3, Y: 3}, *entry.Toward.At,
@@ -331,5 +336,34 @@ func (s *ShenanigansSuite) TestTheBanditsWalkToTheFrontRoom() {
 		s.Require().NotNilf(entry.When, "%s only walks when it has nobody to fight", id)
 		s.Equalf(tkencounter.EnemyNone, entry.When.Enemy,
 			"%s stops walking the moment it is opposed to something it can see", id)
+	}
+}
+
+// TestTheBanditsCanStillFight is the other half, and it is the reason the
+// default's entries are copied onto these two placements at all
+// (rpg-project#465 §1, ruled during the build).
+//
+// A `time` KEY REPLACES THE DEFAULT'S WHOLESALE. There is no merging of entry
+// lists, by design — an author never has to reason about what was added to
+// what — so a placement that wrote only its standing order would walk west
+// beautifully, form a fight the moment it saw somebody, and then stand in it
+// with nothing on its table to say about an enemy in reach.
+//
+// ASSERTED BY BAND, not by entry index. What matters is that every `enemy:`
+// band a bandit can be in has an answer, because the bands are exclusive and
+// exactly one of them holds at any moment. An entry list that drifted in order
+// still passes; one that lost a band does not, which is the failure this
+// exists to catch.
+func (s *ShenanigansSuite) TestTheBanditsCanStillFight() {
+	for _, id := range []string{"bandit-1", "bandit-2"} {
+		answered := map[tkencounter.EnemyWord]bool{}
+		for _, entry := range s.placement(s.frontRoom, id).Table[tkencounter.AnswerTime] {
+			if entry.When != nil && entry.When.Enemy != "" {
+				answered[entry.When.Enemy] = true
+			}
+		}
+		for _, band := range tkencounter.EnemyWords {
+			s.Truef(answered[band], "%s has an answer for `enemy: %s`", id, band)
+		}
 	}
 }

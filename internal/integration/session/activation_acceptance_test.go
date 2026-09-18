@@ -57,8 +57,8 @@ func ragingBarbarian(id, playerID string) *tkcharacter.Data {
 	}
 }
 
-// inAFightWith seeds one character IN SIGHT of a skeleton and leaves them on a
-// turn clock — the only place activations exist.
+// inAFightWith seeds one character, walks them across the tomb, and leaves them
+// on a turn clock — the only place activations exist.
 func inAFightWith(
 	t *testing.T, sheet *tkcharacter.Data,
 ) (*acceptanceHarness, context.Context) {
@@ -85,30 +85,39 @@ func inAFightWithDice(
 		Session: "acceptance-run", Encounter: "tomb-encounter", World: world,
 	})
 	require.NoError(t, err)
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+
+	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{
+		Session: "acceptance-run", Member: sheet.ID, Position: pbAt(1, 1),
+	})
+	require.NoError(t, err)
+	_, err = h.handler.Move(ctx, &sessionpb.MoveRequest{
+		Session: "acceptance-run", Member: sheet.ID, Path: tombRoute(),
+	})
+	require.NoError(t, err)
+
+	// THE SKELETON ARRIVES AFTER THE WALK, and the order is the whole of this
+	// change (rpg-project#465). Time passes because the party acts: the
+	// nineteen steps above are nineteen rounds of the world clock, and every
+	// creature standing in the run is given time on each of them and ROLLS ITS
+	// OWN TABLE through this session's dice. Spawned first, the skeleton threw
+	// nineteen dice nobody scripted, which the one caller that scripts them
+	// cannot name and must not be asked to.
+	//
+	// IT IS NOT THE HARNESS THAT GIVES. `acceptanceSequenceDice` refuses an
+	// unexpected die by size on purpose — every die is seen, and a pick's die
+	// goes through the same shared path as any other — so the honest fix is to
+	// keep the monster out of the walk rather than to let the script shrug.
+	//
+	// THE FIGHT STILL FORMS HERE, on Spawn's own first-light check, which is
+	// what leaves the caller on a turn clock. It is the shape
+	// TestAcceptance_GreatWeaponFightingRollTraceCrossesLiveAndStory already
+	// proves, and the two scripted d20s are this formation's initiative.
+	spawned, err := h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
 		Session: "acceptance-run", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
 		Position: at(19, 3),
 	})
 	require.NoError(t, err)
-
-	// STRAIGHT INTO SIGHT, ON THE PILLAR GAP ROW, so Join's own first-light
-	// contact check forms the fight — the shape TestAcceptance_GreatWeapon-
-	// FightingRollTraceCrossesLiveAndStory already proves.
-	//
-	// IT USED TO WALK THE TOMB ROUTE, and that stopped being free
-	// (rpg-project#465). Time now passes because the party acts: nineteen
-	// steps is nineteen rounds of the world clock, and every creature in the
-	// run is given time on each of them and rolls its own table. For a helper
-	// whose whole job is "leave them on a turn clock" that is nineteen rounds
-	// of unrelated simulation bought with it — and for the one caller that
-	// scripts its dice, nineteen rounds of unscripted world dice it has no
-	// business naming. The walk itself is exercised where it is the subject,
-	// in acceptance_test.go.
-	joined, err := h.handler.Join(ctx, &sessionpb.JoinRequest{
-		Session: "acceptance-run", Member: sheet.ID, Position: pbAt(18, 3),
-	})
-	require.NoError(t, err)
-	require.NotNil(t, joined.GetFormed(), "activations exist only on a turn clock, so the fight must form here")
+	require.NotNil(t, spawned.Formed, "activations exist only on a turn clock, so the fight must form here")
 
 	return h, ctx
 }
