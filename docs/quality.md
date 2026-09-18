@@ -15,7 +15,7 @@ as work lands and as the boundary violations are addressed.
 
 ## Handlers
 
-Sanctuary (#1006): actual native Cleric/warded attack/hostile cantrip acceptance and shared live/Story mapping are covered against exact open toolkit PR commits. Local test readiness does not imply provider release or browser readiness; see [test build](how-to/sanctuary-test-build.md).
+Sanctuary (#1006): native Cleric/warded attack/hostile cantrip acceptance and shared live/Story mapping now target released toolkit providers. The user confirmed recipient immunity and recast refusal in the earlier development build; full timer expiry has provider regression coverage but no manual browser verification; see [test build](how-to/sanctuary-test-build.md).
 
 Spare the Dying (#982): mapping regression and public-handler acceptance cover stabilization, zero/false progress presence, existing result arms, no dice or slot payment, both life states, owner privacy and per-recipient live/Story equality. Browser verification is a separate [handoff](how-to/spare-the-dying-web-handoff.md); no broader grade increase.
 

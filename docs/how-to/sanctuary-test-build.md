@@ -1,19 +1,18 @@
 # Sanctuary development test build (#1006)
 
-This branch intentionally consumes the four **open, unmerged** toolkit PRs at
-their exact pushed commits, as requested for local testing. These are not
-released toolkit tags. No filesystem replacements or Go workspace are used.
+This branch adopts the published Sanctuary provider releases. All four toolkit
+PRs are merged; no development toolkit pins, filesystem replacements, or Go
+workspace are used.
 
-| Owning module | PR | Exact development version |
+| Owning module | PR | Released version |
 | --- | --- | --- |
-| rulebooks/dnd5e | #1811 | v0.180.1-0.20260918054201-ea82b1a90150 |
-| rulebooks/dnd5e/resolution | #1812 | v0.53.1-0.20260918054612-a6328167e795 |
-| rulebooks/dnd5e/encounter | #1813 | v0.88.1-0.20260917214116-6b4ac354edaf |
-| rulebooks/dnd5e/session | #1814 | v0.95.2-0.20260918054826-049de41a9198 |
+| rulebooks/dnd5e | #1811 | v0.181.0 |
+| rulebooks/dnd5e/resolution | #1812 | v0.54.0 |
+| rulebooks/dnd5e/encounter | #1813 | v0.89.0 |
+| rulebooks/dnd5e/session | #1814 | v0.96.0 |
 
-The session PR's go.mod already names this same combination. Requirements are
-pinned together (using `go mod edit -require=...`, then `go mod tidy`) to avoid
-resolving a nested module from another module's feature commit.
+Session v0.96.0 resolves to #1814 merge
+`9cee65ab71691587654fadc55f88750807c13baf` and pins this released combination.
 Merged protos #345 are in SDK v0.1.201, generated Go submodule
 `v0.0.0-20260918041943-0655dbbca56c`. Its generated code also contains the additive
 creature-table contract; this branch does not adopt those toolkit PRs or API #1005.
@@ -40,9 +39,7 @@ Existing Answered verb/beaten fields remain populated for this provider's contra
   concentration, so Sacred Flame is used for the isolated ward test.
 
 Focused test: `go test ./internal/handlers/dnd5e/session/v1alpha1 ./internal/integration/session -run Sanctuary -count=1`.
-Full checks: `make pre-commit` and `make ci-check`. The current release-pin
-script rejects local replaces/workspaces; passing it does **not** turn these
-pseudo-versions into released tags.
+Full checks: `make pre-commit` and `make ci-check`.
 
 ## Local image and integration
 
@@ -60,6 +57,10 @@ Cleric or explicitly document any isolated fixture setup.
 
 Provider caveat from #1812: a nested Sanctuary save colliding with an optional
 offer (such as Resistance) currently reports the provider's cannot-be-suspended
-error. This API does not bypass that limitation. Before release adoption,
-merge/release the providers through their normal workflow, replace all four
-development pins with the verified tags, and rerun validation. No automatic merge.
+error. This API does not bypass that limitation. All four providers are now adopted by release tag. No automatic merge.
+
+The local image and running browser stack were built from the earlier, tested
+provider commits at API `d1717ba`; changing release pins in this PR does not
+rebuild or replace that running stack. The user observed recipient immunity in
+Story and confirmed that no eligible targets prevented recasting. Full timer
+expiry was covered by provider regression tests, not manual browser acceptance.
