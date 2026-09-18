@@ -64,6 +64,7 @@ func roomFixture(t testing.TB, key string) []byte {
 // offset/color/intensity/range), the fractional/negative transforms, and the
 // frame and workspace declarations. Doubles stay doubles.
 func WorkshopRoomScene() tkencounter.RoomScenePresentation {
+	const furnitureGroupID = "furniture"
 	heightScale := 1.5
 	return tkencounter.RoomScenePresentation{
 		Version: 1,
@@ -87,7 +88,7 @@ func WorkshopRoomScene() tkencounter.RoomScenePresentation {
 						X: -2.25, Y: 0, Z: 1.3, RotationY: 0.37,
 					},
 					HeightScale: &heightScale,
-					ParentID:    "furniture",
+					ParentID:    furnitureGroupID,
 				},
 				{
 					Kind:     tkencounter.RoomSceneKindProp,
@@ -97,7 +98,7 @@ func WorkshopRoomScene() tkencounter.RoomScenePresentation {
 					Transform: tkencounter.RoomSceneTransform{
 						X: -2.1, Y: 1.2, Z: 1.25, RotationY: 0.37,
 					},
-					ParentID:  "furniture",
+					ParentID:  furnitureGroupID,
 					SupportID: "table",
 					PointLight: &tkencounter.RoomSceneLight{
 						Enabled:   true,
