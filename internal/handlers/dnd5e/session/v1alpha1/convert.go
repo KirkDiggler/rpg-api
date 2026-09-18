@@ -700,6 +700,14 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 	// saying why.
 	case sdk.EventTempered:
 		return sessionpb.EventKind_EVENT_KIND_TEMPERED
+	// A ROUTED WALK THAT MOVED NOBODY (rpg-project#465, from Kirk's walk).
+	// Here for EventTempered's reason and one of its own: the world clock
+	// charges a round per driven creature whether or not anybody moves, so
+	// demoted this beat would leave a spent round narrated as nothing at all
+	// -- and a reader could not tell a creature nobody asked from one sent
+	// somewhere it could not reach.
+	case sdk.EventStayed:
+		return sessionpb.EventKind_EVENT_KIND_STAYED
 	case sdk.EventMissed:
 		return sessionpb.EventKind_EVENT_KIND_MISSED
 	case sdk.EventCastMissed:
@@ -1131,6 +1139,33 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			Roll:    int32(b.Roll),
 			Of:      int32(b.Of),
 			Faction: b.Faction,
+		}}
+	case sdk.StayedBody:
+		// THE WHOLE ACCOUNT OF A SPENT ROUND IN WHICH NOTHING MOVED
+		// (rpg-project#465). The creature was sent somewhere -- by its own
+		// table, or by whatever else routes a walk -- and the route came back
+		// with no path, so the round ended on the cell it started on.
+		//
+		// EVERY FIELD CROSSES VERBATIM AND NOTHING IS DERIVED. `cause` is the
+		// engine's own `<module>:<type>:<id>` reference, so a creature walking
+		// under its own orders is distinguishable from one being shoved or
+		// commanded, and this seam neither parses it nor decides anything from
+		// it.
+		//
+		// AN EMPTY `why` IS AN ANSWER AND IS SENT AS ONE. The route had
+		// nowhere strictly nearer to offer, which is its own reason rather
+		// than a blocker it could name, and it is the commonest case. Nothing
+		// here substitutes a sentence for it: composing "no path" on this side
+		// would be the api narrating, and a client reading empty as "the
+		// producer forgot" would be reading a fact as a defect.
+		//
+		// NO CELLS, because nothing moved. Where the creature stands is what
+		// the roster and the atlas already answer, and a position here would
+		// be a second copy of a fact this beat did not change.
+		evt.Body = &sessionpb.Event_Stayed{Stayed: &sessionpb.Stayed{
+			Member: b.Member,
+			Cause:  b.Cause,
+			Why:    b.Why,
 		}}
 	case sdk.DoorBody:
 		// A DOOR THAT CHANGED BECAUSE SOMEBODY ROLLED is a check beat and

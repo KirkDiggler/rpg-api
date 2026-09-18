@@ -578,3 +578,80 @@ func TestTemperedBodyToProto_AnUnknownWordIsRefused(t *testing.T) {
 	require.Contains(t, err.Error(), "reckless")
 	require.Nil(t, event.GetTempered())
 }
+
+// TestEventStayedKindToProto is the spent round's kind half. An unmapped kind
+// demotes to EVENT_KIND_UNKNOWN with a nil body, which for this beat would
+// leave a round the world clock actually charged narrated as nothing at all.
+func TestEventStayedKindToProto(t *testing.T) {
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_STAYED, eventKindToProto(sdk.EventStayed))
+}
+
+// TestStayedBodyToProto_CarriesTheCauseAndTheRoutesOwnSentence is the beat's
+// acceptance case (rpg-project#465, from Kirk's walk): who stayed, what was
+// routing them, and the route's own phrase about where it stopped.
+//
+// THE CAUSE IS A REF AND CROSSES UNPARSED. `encounter:table:toward` says the
+// creature was walking under its own orders, and a spell's ref would say
+// something else; this seam neither reads it nor decides anything from it, so
+// the day a new router appears no arm here has to learn its name.
+//
+// NO CELLS ARE ASSERTED BECAUSE THERE ARE NONE. Nothing moved, so a from or a
+// to would be a second copy of what the roster and the atlas already answer.
+func TestStayedBodyToProto_CarriesTheCauseAndTheRoutesOwnSentence(t *testing.T) {
+	event := &sessionpb.Event{}
+	require.NoError(t, setEventBody(event, sdk.StayedBody{
+		Member: "front-goblin",
+		Cause:  "encounter:table:away",
+		Why:    "is blocked by dnd5e:props:pillar",
+	}))
+
+	got := event.GetStayed()
+	require.NotNil(t, got, "a round the clock charged must reach the wire")
+	require.Equal(t, "front-goblin", got.GetMember())
+	require.Equal(t, "encounter:table:away", got.GetCause(),
+		"the engine's own reference string, verbatim and unparsed")
+	require.Equal(t, "is blocked by dnd5e:props:pillar", got.GetWhy(),
+		"the route's own sentence, which this seam never composes or rewords")
+}
+
+// TestStayedBodyToProto_AnEmptyWhyIsAnAnswerAndIsSentAsOne is the load-bearing
+// case, not the edge: it is the COMMONEST one.
+//
+// EMPTY MEANS THE ROUTE HAD NOWHERE STRICTLY NEARER TO OFFER — a creature
+// already standing where it was sent, or one with no cell closer than the one
+// it is on. That is a reason, not a blocker the route could name, and not a
+// producer that forgot.
+//
+// SO NOTHING IS SUBSTITUTED FOR IT. Composing "no path" here would be the api
+// narrating, which is the one thing this layer may not do, and it would make
+// the two genuinely different situations indistinguishable to every reader.
+func TestStayedBodyToProto_AnEmptyWhyIsAnAnswerAndIsSentAsOne(t *testing.T) {
+	event := &sessionpb.Event{}
+	require.NoError(t, setEventBody(event, sdk.StayedBody{
+		Member: "bandit-1",
+		Cause:  "encounter:table:toward",
+		Why:    "",
+	}))
+
+	got := event.GetStayed()
+	require.NotNil(t, got, "a walk that found nowhere better still spent the round")
+	require.Equal(t, "bandit-1", got.GetMember())
+	require.Equal(t, "encounter:table:toward", got.GetCause(),
+		"the cause is required even here: a reader is never told a creature walked for no reason")
+	require.Empty(t, got.GetWhy(),
+		"empty crosses as empty; inventing a phrase would be this layer narrating")
+}
+
+// TestEventToProto_AStayedBeatCrossesWholeThroughTheSpine pins that the beat
+// survives the projection every event goes through, kind and body together.
+// The two are set in different functions, so a build with one and not the
+// other compiles and ships a beat a client cannot read.
+func TestEventToProto_AStayedBeatCrossesWholeThroughTheSpine(t *testing.T) {
+	got, err := eventToProto(sdk.Event{
+		Session: "sess-1", Seq: 12, Kind: sdk.EventStayed,
+		Body: sdk.StayedBody{Member: "bandit-2", Cause: "encounter:table:toward"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_STAYED, got.GetKind())
+	require.Equal(t, "bandit-2", got.GetStayed().GetMember())
+}
