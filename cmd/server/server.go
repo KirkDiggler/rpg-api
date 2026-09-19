@@ -540,6 +540,8 @@ func mustRedisClient() redis.Client {
 // own input struct) to dungeons.AtlasProjector.
 type registryProjector struct{ m *sdk.Manager }
 
-func (p registryProjector) AtlasOf(ctx context.Context, world *tkencounter.EncounterData) (*sdk.Atlas, error) {
-	return p.m.AtlasOf(ctx, &sdk.AtlasOfInput{World: world})
+func (p registryProjector) AtlasOf(
+	ctx context.Context, key string, world *tkencounter.EncounterData,
+) (*sdk.Atlas, error) {
+	return p.m.AtlasOf(ctx, &sdk.AtlasOfInput{World: world, Dungeon: key})
 }

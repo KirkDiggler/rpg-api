@@ -29,8 +29,11 @@ content/reference-tomb.yaml                  the shipped dungeon
 `rulebooks/dnd5e/encounter/dungeonspec`, never a local copy of its geometry.
 `Compile` dispatches on the file's own version: legacy v2 files compile as
 always, and a v3 single-room file (`dungeonspec.Load`, rpg-api#1003) lowers
-its complete room — scene, declarations, placements — into the same field
-contract, with the canonical presentation riding `Field.RoomScene` whole.
+its room into the same field contract — for each declared prop, the three
+numbers the engine reads out of the authored scene (`transform.x`, `.z`,
+`.rotationY`) joined to the gameplay block's footprint and its two blocking
+answers. The authored scene itself is content: the registry stores it
+verbatim in the file and never carries it on the field (rpg-project#479).
 Every compiled monster's ref is resolved against the rulebook's registry
 BEFORE the dungeon is accepted (a lookup, not a rule): a file whose monster
 names an unknown ref is refused with a validation error and never becomes an
@@ -42,9 +45,11 @@ picker would be a worse failure than a server that refuses to boot and says
 why. Each entry's `Atlas` comes from the `AtlasProjector` — production wires
 `session.Manager.AtlasOf` (the same validation-load path as `StartSession`
 and the same projection `Manager.Atlas` uses), so `PutDungeon`'s atlas and
-the started game's `GetAtlas` have one producer. A v3 room's canonical scene
-rides that atlas as `RoomSceneJSON`; a legacy world's stays empty. A world
-that compiled but will not load is a boot refusal / `Internal`, never a
+the started game's `GetAtlas` have one producer. The registry hands the
+projector the ENTRY's own key, which is echoed onto `Atlas.DungeonKey`, so a
+builder previewing a draft and a player in a session name the dungeon the
+same way and one client code path fetches the room's appearance for both. A
+world that compiled but will not load is a boot refusal / `Internal`, never a
 `FieldError`: the stack disagreed with itself, the author did nothing.
 
 `Registry` is the interface the lobby and authoring orchestrators see:
@@ -111,9 +116,8 @@ is `GetDungeon("reference-tomb")`.
 - A well-formed request whose file does not compile is **OK** with
   `errors` populated and `atlas` unset. `validate_only` never refuses a
   half-drawn map.
-- `errors` empty ⇒ compiled; `atlas` set, carrying `room_scene_json` for a
-  v3 room (the canonical scene string, verbatim) and nothing extra for a
-  legacy one; stored unless `validate_only`.
+- `errors` empty ⇒ compiled; `atlas` set, naming the saved entry on
+  `dungeon_key`; stored unless `validate_only`.
 - `GetDungeon` unknown key → `NotFound`.
 - Both RPCs require an authenticated caller; no per-player ownership exists on
   a dungeon yet (rpg-api#803 tracks verb authorization generally).
@@ -121,17 +125,19 @@ is `GetDungeon("reference-tomb")`.
 `PutDungeonResponse.atlas` is produced by the **same** `AtlasToProto` the
 session handler's `GetAtlas` uses (exported for exactly this reason): one
 producer of the wire atlas, so the builder has no second geometry to keep in
-step with the game — and one carriage of the room scene (`GetAtlasResponse.room_scene_json`)
-both callers share, proven against the exact authored source values.
+step with the game. The deprecated `GetAtlasResponse.room_scene_json` is
+never filled by either caller: what a room looks like is the authored file,
+fetched by `dungeon_key` through the ungated `GetDungeon`.
 
 ## Toolkit pins
 
-The single-room slice (rpg-api#1003) builds on released tags only:
-`rulebooks/dnd5e/encounter` v0.87.0 (dungeonspec v3 single-room decode,
-compile and `RoomScenePresentation`), `rulebooks/dnd5e/session` v0.94.0
-(the atlas carries the validated scene as `RoomSceneJSON`), and protos
-generated at commit `6ea2b2e6dffca16528a6eda491714381a8416a92`
-(`GetAtlasResponse.room_scene_json`). The earlier T1/T2/T3 wave notes below
+The single-room slice (rpg-api#1003) landed on `rulebooks/dnd5e/encounter`
+v0.87.0 and `rulebooks/dnd5e/session` v0.94.0, which carried the authored
+scene through the engine. Presentation-is-content (rpg-project#479) took it
+back out: encounter v0.93.x drops the presentation types, session v0.98.x
+replaces `Atlas.RoomSceneJSON` with `Atlas.DungeonKey`, and protos v0.1.204
+adds `GetAtlasResponse.dungeon_key` and deprecates `room_scene_json`. The
+earlier T1/T2/T3 wave notes below
 are that wave's record; the dispatch this component consumes is versioned
 inside dungeonspec, so v2 content needed no change.
 

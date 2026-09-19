@@ -127,43 +127,45 @@ func (s *HandlerSuite) TestPutDungeon_TheRequestReachesTheRegistryVerbatim() {
 	s.InDelta(0.5, resp.GetAtlas().GetRegions()[0].GetLighting().GetIntensity(), 1e-9)
 }
 
-// TestPutDungeon_AtlasCarriesTheRoomScene is the authoring side of the one
-// carriage: PutDungeon's answer and GetAtlas share AtlasToProto (the same
-// producer), so the compiled v3 room's canonical scene reaches the builder
-// too — the exact string with its fractional/negative doubles — while an
-// atlas without a room scene stays empty rather than growing a placeholder.
-func (s *HandlerSuite) TestPutDungeon_AtlasCarriesTheRoomScene() {
-	scene := `{"scene":{"version":1,"id":"scene-1","name":"Workshop",` +
-		`"items":[{"id":"table","transform":{"x":-2.25,"z":1.3,"rotationY":0.37}}],` +
-		`"groups":[{"id":"furniture","transform":{"x":-2.175,"y":0.6,"z":1.275}}]}}`
+// TestPutDungeon_AtlasNamesTheDungeonItCompiled is the authoring side
+// of the one carriage: PutDungeon's answer and GetAtlas share AtlasToProto
+// (the same producer), so a compiled entry's atlas names the key it was
+// compiled from, and what the room looks like is the file the author just
+// sent, served by that key (rpg-project#479).
+//
+// THE ECHO IS WHY THE BUILDER WORKS. The registry hands the entry's own key
+// to the projector, the projector echoes it onto the atlas, and the builder
+// previewing a room it just Put fetches the room's appearance by exactly the
+// string a player's client will use — one client code path draws both.
+func (s *HandlerSuite) TestPutDungeon_AtlasNamesTheDungeonItCompiled() {
 	s.registry.EXPECT().
 		Put(gomock.Any(), gomock.Any()).
 		Return(&dungeons.PutResult{Entry: &dungeons.Entry{
 			Key: "workshop-room",
 			Atlas: &sdk.Atlas{
-				Grid:          sdk.GridHex,
-				Cells:         []spatial.Position{{X: 0, Y: 0}},
-				RoomSceneJSON: scene,
+				Grid:       sdk.GridHex,
+				Cells:      []spatial.Position{{X: 0, Y: 0}},
+				DungeonKey: "workshop-room",
 			},
 		}}, nil)
 
 	resp, err := s.handler.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{Key: "workshop-room", Yaml: "version: 3\n"})
 	s.Require().NoError(err)
 	s.Require().NotNil(resp.GetAtlas())
-	s.Equal(scene, resp.GetAtlas().GetRoomSceneJson(),
-		"PutDungeon's atlas is the body the builder plays from, scene included")
+	s.Equal("workshop-room", resp.GetAtlas().GetDungeonKey(),
+		"PutDungeon's atlas names the entry the author just saved")
 
-	// Legacy absence stays absent.
+	// An atlas projected under no key names none.
 	s.registry.EXPECT().
 		Put(gomock.Any(), gomock.Any()).
 		Return(&dungeons.PutResult{Entry: &dungeons.Entry{
 			Key:   "crypt",
 			Atlas: &sdk.Atlas{Grid: sdk.GridHex, Cells: []spatial.Position{{X: 0, Y: 0}}},
 		}}, nil)
-	legacy, err := s.handler.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{Key: "crypt", Yaml: "version: 2\n"})
+	keyless, err := s.handler.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{Key: "crypt", Yaml: "version: 2\n"})
 	s.Require().NoError(err)
-	s.Require().NotNil(legacy.GetAtlas())
-	s.Empty(legacy.GetAtlas().GetRoomSceneJson(), "a v2 room's atlas carries no room scene")
+	s.Require().NotNil(keyless.GetAtlas())
+	s.Empty(keyless.GetAtlas().GetDungeonKey())
 }
 
 func (s *HandlerSuite) TestPutDungeon_RegistryFailureIsInternal() {

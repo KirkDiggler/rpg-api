@@ -118,8 +118,15 @@ type Entry struct {
 // serve: session.Manager.AtlasOf (the same validation-load path as
 // StartSession and the same projection Manager.Atlas uses), behind a
 // one-method adapter because the SDK's method takes its own input struct.
+//
+// The key rides along because a projected atlas names its dungeon
+// (rpg-project#479) and there is no session record here to ask. A live
+// session's atlas reads the key off its record; a preview's is the caller's
+// own, echoed back — which is the point, since the builder's preview and the
+// game's map have to name their dungeon the same way for one client code
+// path to draw both.
 type AtlasProjector interface {
-	AtlasOf(ctx context.Context, world *tkencounter.EncounterData) (*sdk.Atlas, error)
+	AtlasOf(ctx context.Context, key string, world *tkencounter.EncounterData) (*sdk.Atlas, error)
 }
 
 // PutInput is one PutDungeon call.
@@ -381,7 +388,12 @@ func (r *FileRegistry) compileEntry(ctx context.Context, raw []byte) (*Entry, []
 		return nil, nil, err
 	}
 
-	atlas, err := r.projector.AtlasOf(ctx, d.World)
+	// The FILE's own key, which is the one this entry is stored and served
+	// under. A request key that disagrees with it is refused just after this
+	// (ErrKeyMismatch, on both the Put path and the load-from-disk path), so
+	// an atlas built here can only ever reach a caller naming the same string
+	// the caller asked for.
+	atlas, err := r.projector.AtlasOf(ctx, d.Key, d.World)
 	if err != nil {
 		// A world that compiled but will not load is not the author's file
 		// being wrong; it is the stack disagreeing with itself.

@@ -3,14 +3,11 @@ package dungeons_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
-
-	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
@@ -22,8 +19,9 @@ const workshopKey = dungeonstest.WorkshopRoomKey
 // SingleRoomRegistrySuite exercises the released v3 provider through the real
 // file registry, on the shared authored workshop fixture (see dungeonstest's
 // workshop.go and internal/dungeons/testdata). The fixture is deliberately
-// presentation-rich but uses only public asset references: the registry never
-// reads model bytes.
+// presentation-rich and none of it is judged here any more: the registry
+// stores the author's bytes verbatim and compiles only the gameplay keys out
+// of them (rpg-project#479).
 type SingleRoomRegistrySuite struct {
 	suite.Suite
 	ctx      context.Context
@@ -38,16 +36,6 @@ func (s *SingleRoomRegistrySuite) SetupTest() {
 	s.ctx = context.Background()
 	s.registry, s.dir = dungeonstest.Scratch(s.T())
 	s.raw = dungeonstest.WorkshopRoomYAML(s.T())
-}
-
-// decodeScene decodes one RoomSceneJSON into the toolkit's presentation type,
-// so assertions compare DECODED SOURCE VALUES against the independently
-// spelled expected graph rather than two strings of the same converter.
-func (s *SingleRoomRegistrySuite) decodeScene(raw string) *tkencounter.RoomScenePresentation {
-	s.T().Helper()
-	var scene tkencounter.RoomScenePresentation
-	s.Require().NoError(json.Unmarshal([]byte(raw), &scene))
-	return &scene
 }
 
 // workshopFile is the registry file the full room is stored under.
@@ -76,8 +64,9 @@ func (s *SingleRoomRegistrySuite) TestValidateOnlyWritesNothing() {
 // TestSaveGetListAndFreshRegistryPreserveTheAuthoredRoom is the whole save
 // loop against the full room: the exact original bytes (comments included)
 // are stored and served, the metadata comes from the file's own lines, the
-// scene is the complete authored graph, and a FRESH registry over the saved
-// directory serves the same bytes and the same decoded scene.
+// projected atlas names the entry it was compiled from, and a FRESH registry
+// over the saved directory serves the same bytes, the same key and the same
+// compiled floor.
 func (s *SingleRoomRegistrySuite) TestSaveGetListAndFreshRegistryPreserveTheAuthoredRoom() {
 	out, err := s.registry.Put(s.ctx, &dungeons.PutInput{Key: workshopKey, YAML: s.raw})
 	s.Require().NoError(err)
@@ -86,9 +75,8 @@ func (s *SingleRoomRegistrySuite) TestSaveGetListAndFreshRegistryPreserveTheAuth
 	s.Equal(workshopKey, out.Entry.Key, "the key is the file's own key: line")
 	s.Equal("Workshop", out.Entry.Name, "the name is the visual scene's own")
 	s.Equal(s.raw, out.Entry.YAML, "stored verbatim, comments and spacing included")
-	s.NotEmpty(out.Entry.Atlas.RoomSceneJSON, "a v3 room carries its scene")
-	s.Equal(dungeonstest.WorkshopRoomScene(), *s.decodeScene(out.Entry.Atlas.RoomSceneJSON),
-		"PutDungeon's scene is the complete authored graph")
+	s.Equal(workshopKey, out.Entry.Atlas.DungeonKey,
+		"the projected atlas names the entry it was compiled from -- what a client fetches the room's picture by")
 
 	onDisk, err := os.ReadFile(s.workshopFile())
 	s.Require().NoError(err)
@@ -97,23 +85,23 @@ func (s *SingleRoomRegistrySuite) TestSaveGetListAndFreshRegistryPreserveTheAuth
 	got, err := s.registry.Get(s.ctx, workshopKey)
 	s.Require().NoError(err)
 	s.Equal(s.raw, got.YAML, "Get hands back the stored bytes, not a re-marshaled file")
-	s.Equal(out.Entry.Atlas.RoomSceneJSON, got.Atlas.RoomSceneJSON)
+	s.Equal(workshopKey, got.Atlas.DungeonKey)
 
 	list, err := s.registry.List(s.ctx)
 	s.Require().NoError(err)
 	s.Contains(list, dungeons.Summary{Key: workshopKey, Name: "Workshop"})
 
 	// A fresh registry over the saved directory — a restarted server — serves
-	// the same entry: same bytes, same metadata, same decoded scene.
+	// the same entry: same bytes, same metadata, same key, same floor.
 	reloaded, err := dungeons.NewFileRegistry(s.dir, false, dungeonstest.Projector(s.T()))
 	s.Require().NoError(err)
 	e, err := reloaded.Get(s.ctx, workshopKey)
 	s.Require().NoError(err)
 	s.Equal("Workshop", e.Name)
 	s.Equal(s.raw, e.YAML)
-	s.Equal(out.Entry.Atlas.RoomSceneJSON, e.Atlas.RoomSceneJSON)
-	s.Equal(dungeonstest.WorkshopRoomScene(), *s.decodeScene(e.Atlas.RoomSceneJSON),
-		"the fresh registry's scene is the complete authored graph, not a thumbnail")
+	s.Equal(workshopKey, e.Atlas.DungeonKey,
+		"the fresh registry names the same dungeon the first one did")
+	s.Equal(out.Entry.Atlas.Cells, e.Atlas.Cells, "and compiles the same floor from the same bytes")
 
 	freshList, err := reloaded.List(s.ctx)
 	s.Require().NoError(err)
@@ -123,8 +111,8 @@ func (s *SingleRoomRegistrySuite) TestSaveGetListAndFreshRegistryPreserveTheAuth
 // TestAFailingRealSaveKeepsThePreviousBytesAndEntry is the durability half:
 // a REAL save (not validate-only, which would not persist anyway) of a file
 // whose monster names a ref no rulebook definition has is refused, and the
-// prior entry — its bytes, its metadata and its scene — survives untouched,
-// on the in-memory registry and on disk alike.
+// prior entry — its bytes, its metadata and its compiled atlas — survives
+// untouched, on the in-memory registry and on disk alike.
 func (s *SingleRoomRegistrySuite) TestAFailingRealSaveKeepsThePreviousBytesAndEntry() {
 	_, err := s.registry.Put(s.ctx, &dungeons.PutInput{Key: workshopKey, YAML: s.raw})
 	s.Require().NoError(err)
@@ -141,7 +129,8 @@ func (s *SingleRoomRegistrySuite) TestAFailingRealSaveKeepsThePreviousBytesAndEn
 	after, err := s.registry.Get(s.ctx, workshopKey)
 	s.Require().NoError(err, "the prior entry still answers")
 	s.Equal(before.YAML, after.YAML, "the prior file bytes survive the failed save")
-	s.Equal(before.Atlas.RoomSceneJSON, after.Atlas.RoomSceneJSON, "so does its scene")
+	s.Equal(before.Atlas.Cells, after.Atlas.Cells, "so does its compiled floor")
+	s.Equal(workshopKey, after.Atlas.DungeonKey, "and its key")
 	s.Equal("Workshop", after.Name, "and its metadata")
 
 	onDisk, err := os.ReadFile(s.workshopFile())
