@@ -18,15 +18,15 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
 
-func nativeClericCombatScene(t *testing.T) (*acceptanceHarness, context.Context, string) {
+func nativeClericCombatScene(t *testing.T, preferred ...spells.Spell) (*acceptanceHarness, context.Context, string) {
 	t.Helper()
-	return nativeClericCombatSceneAt(t, 4, 0)
+	return nativeClericCombatSceneAt(t, 4, 0, preferred...)
 }
 
-func nativeClericCombatSceneAt(t *testing.T, targetX, targetY int) (*acceptanceHarness, context.Context, string) {
+func nativeClericCombatSceneAt(t *testing.T, targetX, targetY int, preferred ...spells.Spell) (*acceptanceHarness, context.Context, string) {
 	t.Helper()
 	h := newAcceptanceHarnessWith(t, failedSaveDice{}, sdk.Pass{})
-	id := createNativeCleric(t, h)
+	id := createNativeCleric(t, h, preferred...)
 	ctx := auth.WithPlayerID(context.Background(), "cleric-player")
 	allyCtx := auth.WithPlayerID(context.Background(), "player-alice")
 	_, err := h.charRepo.Create(ctx, characterrepo.CreateInput{Character: &entities.Character{Data: armedFighter("alice", "player-alice")}})

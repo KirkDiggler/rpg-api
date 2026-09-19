@@ -41,7 +41,7 @@ func TestAcceptance_GuidingBoltNativeCastAndReplay(t *testing.T) {
 			roll = 18
 		}
 		t.Run(name, func(t *testing.T) {
-			h, ctx, id := nativeClericCombatScene(t)
+			h, ctx, id := nativeClericCombatScene(t, spells.GuidingBolt)
 			useGuidingBoltDice(t, h, roll)
 			row := castRowFor(ctx, t, h, id, spells.GuidingBolt)
 			require.True(t, row.GetAvailable(), "%s", row.GetWhy())
@@ -142,7 +142,7 @@ func useGuidingBoltDice(t *testing.T, h *acceptanceHarness, roll int) {
 }
 
 func TestAcceptance_GuidingBoltExpiresAfterNextCasterTurn(t *testing.T) {
-	h, ctx, id := nativeClericCombatScene(t)
+	h, ctx, id := nativeClericCombatScene(t, spells.GuidingBolt)
 	useGuidingBoltDice(t, h, 18)
 	row := castRowFor(ctx, t, h, id, spells.GuidingBolt)
 	_, err := h.handler.Cast(ctx, &sessionpb.CastRequest{Session: castSessionID, Member: id, DeclarationId: row.GetId(), Targets: []string{"skel-1"}})

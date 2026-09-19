@@ -941,7 +941,7 @@ func convertClassDataToProto(data *classes.Data) *dnd5ev1alpha1.ClassInfo {
 				SubclassId: id, Name: classes.SubClassName(subclass),
 				Description: classes.SubClassDescription(subclass), Level: int32(data.SubclassLevel),
 				// Resolved requirements replace base choices with matching IDs.
-				AdditionalChoices: classRequirementsToProto(choices.GetClassRequirementsWithSubclass(data.ID, data.SubclassLevel, subclass)),
+				AdditionalChoices: subclassChoicesToProto(data.ID, data.SubclassLevel, subclass),
 			})
 		}
 	}
@@ -3659,4 +3659,35 @@ func featureIDToDisplayName(id string) string {
 		// Convert snake_case to Title Case as fallback
 		return toTitleCase(id)
 	}
+}
+
+// Keep automatic grants separate from selectable requirements. The toolkit
+// owns both the grant catalog and exclusion from paid choices.
+func subclassChoicesToProto(class classes.Class, level int, subclass classes.Subclass) []*dnd5ev1alpha1.Choice {
+	result := classRequirementsToProto(choices.GetClassRequirementsWithSubclass(class, level, subclass))
+	if class != classes.Cleric {
+		return result
+	}
+	mods := choices.GetSubclassModifications(subclass)
+	for _, choice := range result {
+		options := choice.GetSpellOptions()
+		if options == nil {
+			continue
+		}
+		var granted []spells.Spell
+		switch choice.GetChoiceType() {
+		case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS:
+			granted = choices.ClericSpellGrants(subclass, level)
+		case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS:
+			if mods != nil {
+				granted = mods.GrantedCantrips
+			}
+		}
+		for _, spell := range granted {
+			options.Grants = append(options.Grants, &dnd5ev1alpha1.GrantedSpell{
+				SpellRef: refs.Spells.ByID(spell).String(), SourceName: classes.SubClassName(subclass),
+			})
+		}
+	}
+	return result
 }

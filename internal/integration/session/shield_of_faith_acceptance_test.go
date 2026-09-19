@@ -29,7 +29,7 @@ func (s *ShieldOfFaithSuite) TestNativeProtectionPrivateSheetReplayAndReplacemen
 		}
 		s.Run(name, func() {
 			t := s.T()
-			h, ctx, id := nativeClericCombatScene(t)
+			h, ctx, id := nativeClericCombatScene(t, spells.ShieldOfFaith)
 			target, owner := "alice", "player-alice"
 			if self {
 				target, owner = id, "cleric-player"
@@ -93,7 +93,7 @@ func (s *ShieldOfFaithSuite) TestLeveledActionSpellBlockedInBothOrdersWithoutPay
 	for _, first := range []spells.Spell{spells.ShieldOfFaith, spells.Bless} {
 		s.Run(first, func() {
 			t := s.T()
-			h, ctx, id := nativeClericCombatScene(t)
+			h, ctx, id := nativeClericCombatScene(t, spells.ShieldOfFaith)
 			second := spells.Bless
 			if first == spells.Bless {
 				second = spells.ShieldOfFaith
@@ -124,7 +124,7 @@ func (s *ShieldOfFaithSuite) TestProtectionTurnsBoundaryHitIntoMissAfterReload()
 		}
 		s.Run(name, func() {
 			t := s.T()
-			h, ctx, id := nativeClericCombatScene(t)
+			h, ctx, id := nativeClericCombatScene(t, spells.ShieldOfFaith)
 			sheet, err := characterhandler.New(&characterhandler.HandlerConfig{CharacterService: newAcceptanceCharacterService(t, h)})
 			s.Require().NoError(err)
 			view, err := sheet.GetCharacterData(ctx, &characterpb.GetCharacterDataRequest{CharacterId: id})
@@ -154,7 +154,7 @@ func (s *ShieldOfFaithSuite) TestProtectionTurnsBoundaryHitIntoMissAfterReload()
 
 func (s *ShieldOfFaithSuite) TestOrdinaryAttackRemainsAvailableAfterBonusSpell() {
 	t := s.T()
-	h, ctx, id := nativeClericCombatSceneAt(t, 2, 1)
+	h, ctx, id := nativeClericCombatSceneAt(t, 2, 1, spells.ShieldOfFaith)
 	row := castRowFor(ctx, t, h, id, spells.ShieldOfFaith)
 	_, err := h.handler.Cast(ctx, &sessionpb.CastRequest{Session: castSessionID, Member: id, DeclarationId: row.GetId(), Targets: []string{id}})
 	s.Require().NoError(err)
@@ -168,7 +168,7 @@ func (s *ShieldOfFaithSuite) TestOrdinaryAttackRemainsAvailableAfterBonusSpell()
 
 func (s *ShieldOfFaithSuite) TestMonsterProtectionChangesAttackOutcome() {
 	t := s.T()
-	h, ctx, id := nativeClericCombatScene(t)
+	h, ctx, id := nativeClericCombatScene(t, spells.ShieldOfFaith)
 	row := castRowFor(ctx, t, h, id, spells.ShieldOfFaith)
 	_, err := h.handler.Cast(ctx, &sessionpb.CastRequest{Session: castSessionID, Member: id, DeclarationId: row.GetId(), Targets: []string{"skel-1"}})
 	s.Require().NoError(err)

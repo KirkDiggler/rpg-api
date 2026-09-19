@@ -26,7 +26,7 @@ func (s *InflictWoundsSuite) TestNativePaidAttackAndReplay() {
 	}{{"miss", 1, 0}, {"hit", 18, 3}, {"critical", 20, 6}} {
 		s.Run(tc.name, func() {
 			t := s.T()
-			h, ctx, id := nativeClericCombatSceneAt(t, 2, 1)
+			h, ctx, id := nativeClericCombatSceneAt(t, 2, 1, spells.InflictWounds)
 			useGuidingBoltDice(t, h, tc.roll)
 			row := castRowFor(ctx, t, h, id, spells.InflictWounds)
 			s.Require().True(row.GetAvailable(), row.GetWhy())
@@ -73,7 +73,7 @@ func (s *InflictWoundsSuite) TestNativePaidAttackAndReplay() {
 
 func (s *InflictWoundsSuite) TestOutOfTouchRangeDoesNotPay() {
 	t := s.T()
-	h, ctx, id := nativeClericCombatScene(t)
+	h, ctx, id := nativeClericCombatScene(t, spells.InflictWounds)
 	row := castRowFor(ctx, t, h, id, spells.InflictWounds)
 	before, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: id})
 	s.Require().NoError(err)

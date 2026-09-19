@@ -3,13 +3,13 @@ module github.com/KirkDiggler/rpg-api
 go 1.25.14
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260918054627-7be9a044ebeb
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260918200555-aa7f29fc42fa
 	github.com/KirkDiggler/rpg-toolkit/core v0.12.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.3
 	github.com/KirkDiggler/rpg-toolkit/npc v0.2.0
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.185.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.186.0
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.91.0
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.98.0
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.15.0
