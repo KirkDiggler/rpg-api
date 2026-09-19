@@ -322,6 +322,43 @@ func (s *RegistrySuite) TestPut_RefusedWhenAuthoringIsOff() {
 	s.True(os.IsNotExist(statErr), "a read-only registry never touches the directory")
 }
 
+// TestPut_ValidateOnlyIsAnsweredWhenAuthoringIsOff is the gate's scope
+// (rpg-project#481). The refusal above is the SAVE's; a grade writes nothing,
+// so the builder's per-edit preview is answered by a registry that may not
+// store a byte — with the engine's own defects for a broken file and the map
+// the game would play for a good one.
+func (s *RegistrySuite) TestPut_ValidateOnlyIsAnsweredWhenAuthoringIsOff() {
+	r := s.open(false)
+
+	// A broken file: the engine's defects, not ErrAuthoringDisabled.
+	broken := bytes.Replace(s.rekeyed("crypt"), []byte("start: [1, 3]"), []byte("start: [99, 99]"), 1)
+	s.Require().NotEqual(s.rekeyed("crypt"), broken, "the fixture's start line must be where this test expects it")
+
+	res, err := r.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: broken, ValidateOnly: true})
+	s.Require().NoError(err, "a read-only registry grades the file rather than refusing it")
+	s.Require().NotEmpty(res.Errors)
+	paths := make([]string, 0, len(res.Errors))
+	for _, fe := range res.Errors {
+		s.NotEmpty(fe.Message)
+		paths = append(paths, fe.Path)
+	}
+	s.Contains(paths, "start")
+
+	// A good file: the atlas, same as a writable registry answers.
+	res, err = r.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: s.rekeyed("crypt"), ValidateOnly: true})
+	s.Require().NoError(err)
+	s.Empty(res.Errors)
+	s.Require().NotNil(res.Entry)
+	s.Require().NotNil(res.Entry.Atlas, "the grade carries the map a session on this file would serve")
+	s.Equal("crypt", res.Entry.Atlas.DungeonKey)
+
+	// And neither grade left a trace: no file, no entry.
+	_, statErr := os.Stat(filepath.Join(s.dir, "crypt.yaml"))
+	s.True(os.IsNotExist(statErr), "a grade writes nothing")
+	_, err = r.Get(s.ctx, "crypt")
+	s.Require().ErrorIs(err, dungeons.ErrNotFound, "and registers nothing")
+}
+
 func (s *RegistrySuite) TestPut_OverwritesInPlaceAndLeavesNoTempFiles() {
 	r := s.open(true)
 	first := s.rekeyed("crypt")

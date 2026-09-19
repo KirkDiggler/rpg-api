@@ -1,11 +1,12 @@
 ---
 name: authoring service + dungeon content registry
 description: internal/dungeons (the file registry every authored dungeon lives in) and AuthoringService v1alpha1 (PutDungeon / GetDungeon) on the session stack
-updated: 2026-09-17
+updated: 2026-09-19
 confidence: medium-high — rpg-api#1003 single-room v3 adoption verified on released
 provider tags through registry byte/metadata/full-scene preservation, real-launch member-atlas,
 reload/author-edit snapshot isolation, seat-capacity and unknown-ref refusal suites; legacy v2
-compatibility pinned; no browser walk yet
+compatibility pinned; rpg-project#481's validate-only ungating verified through the registry
+suite and a real-registry wire suite reproducing the design's three probes; no browser walk yet
 ---
 
 # authoring service + dungeon content registry
@@ -63,15 +64,24 @@ world that compiled but will not load is a boot refusal / `Internal`, never a
   (different keys do not contend). A file that does not compile is a
   `PutResult.Errors` list, not an error. `ErrInvalidKey` (outside
   `[a-z0-9-]`), `ErrKeyMismatch` (request key ≠ file's `key:`), and
-  `ErrAuthoringDisabled` (registry constructed read-only) are errors.
+  `ErrAuthoringDisabled` are errors.
+
+`ErrAuthoringDisabled` belongs to the **write** (rpg-project#481 R1). A
+validate-only `Put` compiles and answers on a registry constructed read-only:
+grading bytes the caller supplied touches no file and no entry, and the
+builder's per-edit preview is exactly that grade. Before the fix the sentinel
+was returned at the top of `Put`, ahead of the validate branch, so a read-only
+registry could not grade a file at all.
 
 The registry never re-marshals: `GetDungeon` hands back the bytes that were
 `Put`, comments and spacing included (the builder's byte-identity round trip,
 design §5).
 
 `internal/dungeons/dungeonstest` builds registries for tests: `Shipped(t)`
-(read-only over the repo's `content/`) and `Scratch(t)` (a temp copy with
-authoring on).
+(read-only over the repo's `content/`), `Scratch(t)` (a temp copy with
+authoring on) and `ScratchReadOnly(t)` (the same temp copy with authoring
+off — a test that exercises the write refusal should not be the one whose
+failure writes into the repo's content tree).
 
 ### Seeding an empty mount
 
@@ -103,6 +113,17 @@ client sees `Unimplemented` for both RPCs — the proto's documented way to
 tell "authoring is off" from "server unreachable"; the web's Home-button probe
 is `GetDungeon("reference-tomb")`.
 
+There are **two** fences and they now guard different things. The env var
+decides whether the service exists at all, and it is the one a deployment
+turns off. The registry's own `authoring` flag decides whether a `Put` may
+**store**, and since rpg-project#481 it no longer decides whether a `Put` may
+**grade**: a read-only registry answers `validate_only` with the engine's
+defects or the atlas, and refuses only the save. In today's `cmd/server` one
+variable sets both, so the ungating is not yet reachable from a deployed
+client; what it buys is that the registry's second fence fences the write, and
+a server that should preview without storing is now a wiring choice rather
+than a code change.
+
 | Variable | Effect |
 |---|---|
 | `RPG_CONTENT_DIR` | directory the registry loads and writes; default `content` (the Docker image ships the repo's `content/` at `/home/appuser/content`). When set and lacking `reference-tomb.yaml`, the shipped copy is seeded into it at boot |
@@ -115,7 +136,8 @@ is `GetDungeon("reference-tomb")`.
   mismatch — is a gRPC `InvalidArgument`, no body.
 - A well-formed request whose file does not compile is **OK** with
   `errors` populated and `atlas` unset. `validate_only` never refuses a
-  half-drawn map.
+  half-drawn map, and is never refused by a read-only registry
+  (rpg-project#481).
 - `errors` empty ⇒ compiled; `atlas` set, naming the saved entry on
   `dungeon_key`; stored unless `validate_only`.
 - `GetDungeon` unknown key → `NotFound`.
@@ -158,13 +180,22 @@ three regions added.
 
 - `internal/dungeons/registry_test.go` — boot refuses a non-compiling file
   naming it; name/key mismatch refused; default dungeon required; validate-only
-  never writes; Put then Get returns bytes unchanged (and a fresh registry over
+  never writes, and is answered (defects or atlas) by a read-only registry that
+  still refuses to store; Put then Get returns bytes unchanged (and a fresh registry over
   the directory sees them); compile failure is a body; key mismatch /
   charset / authoring-off refusals; overwrite leaves no temp files; 16
   concurrent Puts on one key serialize under `-race` and the final file is one
   writer's file whole.
 - `internal/handlers/dnd5e/authoring/v1alpha1/handler_test.go` — the transport
   rules above over a mocked registry.
+- `internal/handlers/dnd5e/authoring/v1alpha1/validate_only_wire_test.go` —
+  `PutDungeon{validate_only}` end to end over a REAL registry constructed
+  read-only, on the shipped front room: the unedited file grades with its
+  atlas, a real save is still `FailedPrecondition`, and the design's three
+  probes come back as the engine's own paths — `place[0].faction` for a
+  placement in an undeclared faction, `factions[0].on.intimdate_failed` for a
+  misspelled trigger, and (today) a `line N` decode path for an unknown key,
+  which rpg-project#481 slice 1 turns into `factions[0].tempre`.
 - `internal/orchestrators/lobby/start_encounter_session_stack_test.go` —
   unknown `dungeon_key` refused before any write; explicit default key is the
   tomb; a dungeon that arrived through `Put` starts, its `GetAtlas` carries
