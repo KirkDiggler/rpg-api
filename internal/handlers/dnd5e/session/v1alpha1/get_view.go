@@ -19,13 +19,21 @@ func (h *Handler) GetView(ctx context.Context, req *sessionpb.GetViewRequest) (*
 		return nil, err
 	}
 
-	sightings, err := h.manager.View(ctx, &sdk.ViewInput{
+	viewInput := &sdk.ViewInput{
 		Session: req.GetSession(),
 		Member:  req.GetMember(),
-	})
+	}
+	sightings, err := h.manager.View(ctx, viewInput)
+	if err != nil {
+		return nil, sdkerr.StatusError(err)
+	}
+	areas, err := h.manager.Areas(ctx, viewInput)
 	if err != nil {
 		return nil, sdkerr.StatusError(err)
 	}
 
-	return &sessionpb.GetViewResponse{Sightings: sightingsToProto(sightings)}, nil
+	return &sessionpb.GetViewResponse{
+		Sightings: sightingsToProto(sightings),
+		Areas:     sightAreasToProto(areas),
+	}, nil
 }

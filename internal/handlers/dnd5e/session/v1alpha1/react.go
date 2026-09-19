@@ -48,6 +48,7 @@ func (h *Handler) React(ctx context.Context, req *sessionpb.ReactRequest) (*sess
 		Member:        req.GetMember(),
 		DeclarationID: req.GetDeclarationId(),
 		Choice:        choice,
+		Option:        req.GetOption(),
 	})
 	if err != nil {
 		return nil, sdkerr.StatusError(err)

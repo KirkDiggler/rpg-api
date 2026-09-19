@@ -41,7 +41,7 @@ func TestReact_BothChoicesTravelVerbatim(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 			mgr.EXPECT().React(gomock.Any(), &sdk.ReactInput{
-				Session: "sess-1", Member: "char-1", DeclarationID: "decl-react-1", Choice: tc.want,
+				Session: "sess-1", Member: "char-1", DeclarationID: "decl-react-1", Choice: tc.want, Option: "option-1",
 			}).Return(&sdk.ReactOutput{
 				Saved: sdk.SaveReport{Written: []string{"session:sess-1"}},
 			}, nil)
@@ -49,7 +49,7 @@ func TestReact_BothChoicesTravelVerbatim(t *testing.T) {
 			h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 			ctx := auth.WithPlayerID(context.Background(), "alice")
 			resp, err := h.React(ctx, &sessionpb.ReactRequest{
-				Session: "sess-1", Member: "char-1", DeclarationId: "decl-react-1", Choice: tc.in,
+				Session: "sess-1", Member: "char-1", DeclarationId: "decl-react-1", Choice: tc.in, Option: "option-1",
 			})
 
 			require.NoError(t, err)
