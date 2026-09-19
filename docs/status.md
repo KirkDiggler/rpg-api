@@ -11,6 +11,16 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Divine Favor adoption (#1013)** — Pins toolkit #1835's released root
+v0.187.0 (merge da0efa08). A native War Cleric receives Divine Favor as a
+domain grant; the existing public self-cast spends its bonus action and one
+slot, retains its action, and persists concentration. API integration tests
+cover cast live/Story equality, reload, hit/miss/critical radiant components,
+concentration replacement, and leveled-action refusal without payment. The user confirmed manual browser combat acceptance on the local
+`rpg-api:divine-favor` image built from the provider draft; the released pin
+now replaces that pseudo-version for merge.
+
+
 **Cleric preparation adoption (#1012)** — Adopts toolkit #1833's released root
 v0.186.0: new Clerics choose four level-one preparations, with domain spell and
 cantrip grants additive. Creation/finalization/storage and live Cast offers use
