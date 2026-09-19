@@ -11,6 +11,15 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**War Domain proficiency correction (#1014)** — Toolkit #1837 released as
+root v0.187.1 (merge 671bee80), now pinned here, applies heavy armor and
+martial weapons when a new War Cleric is finalized.
+Native creation integration coverage verifies repository persistence, a fresh
+character load, martial melee/ranged coverage, and character-response categories;
+Life does not gain martial weapons. Existing characters are not rewritten.
+War Priest and general nonproficient-armor penalties remain outside this fix.
+
+
 **Divine Favor adoption (#1013)** — Pins toolkit #1835's released root
 v0.187.0 (merge da0efa08). A native War Cleric receives Divine Favor as a
 domain grant; the existing public self-cast spends its bonus action and one
