@@ -22,9 +22,14 @@ and no pin changed. A new real-registry wire suite drives
 `PutDungeon{validate_only}` over a read-only registry on the shipped front
 room and reproduces the design's three probes verbatim —
 `place[0].faction` for a placement in an undeclared faction,
-`factions[0].on.intimdate_failed` for a misspelled trigger, and a `line N`
-decode path for an unknown key, which encounter slice 1 turns into
-`factions[0].tempre`. Note that `cmd/server` still derives both the service
+`factions[0].on.intimdate_failed` for a misspelled trigger, and
+`factions[0].tempre` for an unknown key. That third one is pathed because
+this slice also lifts `rulebooks/dnd5e/encounter` to **v0.94.1**
+(toolkit#1843, rpg-project#481 slice 1), which walks the v2 shape instead of
+reporting a decode line and a Go type name; session stays at v0.99.0 and no
+other pin moved. Its whole message is pinned in the test, because what the
+lift fixed is that nothing but the key and the legal keys is left in the
+refusal. Note that `cmd/server` still derives both the service
 registration and the registry's writability from `RPG_AUTHORING_ENABLED`, so a
 deployed client with the gate off still sees `Unimplemented` rather than a
 grade; this slice makes the registry's contract true and leaves the wiring

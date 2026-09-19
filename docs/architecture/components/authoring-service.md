@@ -6,7 +6,8 @@ confidence: medium-high — rpg-api#1003 single-room v3 adoption verified on rel
 provider tags through registry byte/metadata/full-scene preservation, real-launch member-atlas,
 reload/author-edit snapshot isolation, seat-capacity and unknown-ref refusal suites; legacy v2
 compatibility pinned; rpg-project#481's validate-only ungating verified through the registry
-suite and a real-registry wire suite reproducing the design's three probes; no browser walk yet
+suite and a real-registry wire suite reproducing the design's three probes on encounter
+v0.94.1, unknown key included; no browser walk yet
 ---
 
 # authoring service + dungeon content registry
@@ -65,6 +66,10 @@ world that compiled but will not load is a boot refusal / `Internal`, never a
   `PutResult.Errors` list, not an error. `ErrInvalidKey` (outside
   `[a-z0-9-]`), `ErrKeyMismatch` (request key ≠ file's `key:`), and
   `ErrAuthoringDisabled` are errors.
+
+Unknown keys in the v2 dialect are pathed `FieldError`s from encounter
+v0.94.1 (rpg-project#481 R2), so no refusal this service returns carries a
+line number or a Go type name any more; both dialects name the key.
 
 `ErrAuthoringDisabled` belongs to the **write** (rpg-project#481 R1). A
 validate-only `Put` compiles and answers on a registry constructed read-only:
@@ -158,7 +163,9 @@ v0.87.0 and `rulebooks/dnd5e/session` v0.94.0, which carried the authored
 scene through the engine. Presentation-is-content (rpg-project#479) took it
 back out: encounter v0.94.0 drops the presentation types, session v0.99.0
 replaces `Atlas.RoomSceneJSON` with `Atlas.DungeonKey`, and protos v0.1.204
-adds `GetAtlasResponse.dungeon_key` and deprecates `room_scene_json`. The
+adds `GetAtlasResponse.dungeon_key` and deprecates `room_scene_json`.
+Encounter **v0.94.1** (rpg-project#481 slice 1, toolkit#1843) gives a v2
+unknown key a pathed `FieldError`; session stays at v0.99.0. The
 earlier T1/T2/T3 wave notes below
 are that wave's record; the dispatch this component consumes is versioned
 inside dungeonspec, so v2 content needed no change.
@@ -194,8 +201,9 @@ three regions added.
   atlas, a real save is still `FailedPrecondition`, and the design's three
   probes come back as the engine's own paths — `place[0].faction` for a
   placement in an undeclared faction, `factions[0].on.intimdate_failed` for a
-  misspelled trigger, and (today) a `line N` decode path for an unknown key,
-  which rpg-project#481 slice 1 turns into `factions[0].tempre`.
+  misspelled trigger, and `factions[0].tempre` for an unknown key, whose whole
+  message is pinned because slice 1's fix is that nothing but the key and the
+  legal keys is left in it.
 - `internal/orchestrators/lobby/start_encounter_session_stack_test.go` —
   unknown `dungeon_key` refused before any write; explicit default key is the
   tomb; a dungeon that arrived through `Put` starts, its `GetAtlas` carries

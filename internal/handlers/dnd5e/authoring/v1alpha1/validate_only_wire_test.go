@@ -128,27 +128,26 @@ func (s *ValidateOnlyWireSuite) TestTypoedTriggerKeyNamesTheKey() {
 	s.Nil(resp.GetAtlas())
 }
 
-// TestUnknownKeyIsNamedButNotYetPathed is the third probe, and the one defect
-// in the contract the design records: in the v2 dialect an unknown key
-// surfaces as a DECODE failure carrying a line number, where the single-room
-// dialect already walks the shape and names the key by path.
+// TestUnknownKeyIsPathed is the third probe, and the one the design called
+// the defect in the contract: in the v2 dialect an unknown key used to
+// surface as a DECODE failure carrying a line number and the name of a Go
+// type the author has never heard of. Since encounter v0.94.1
+// (rpg-project#481 slice 1) the dialect walks the shape and names the key by
+// path, as the single-room dialect already did, so both halves of the
+// grammar refuse in one voice.
 //
-// The durable claim — the author is told WHICH key is wrong — is asserted
-// first and survives the fix.
-//
-// TODO(rpg-project#481, slice 1): when the encounter module gives a v2
-// unknown key a pathed FieldError, the line assertion below becomes
-// s.Equal("factions[0].tempre", resp.GetErrors()[0].GetPath()). The message
-// this build actually returns names a Go type, which is precisely what slice
-// 1 removes, so it is deliberately not pinned here as though it were desired.
-func (s *ValidateOnlyWireSuite) TestUnknownKeyIsNamedButNotYetPathed() {
+// THE WHOLE MESSAGE IS PINNED HERE where the two probes above match on a
+// substring, and the difference is the point: what this slice fixed is not
+// that the refusal mentions the key — it always did — but that nothing else
+// is left in it. An exact match is the only assertion that fails if a line
+// number or a Go type name comes back.
+func (s *ValidateOnlyWireSuite) TestUnknownKeyIsPathed() {
 	resp := s.grade(s.mutate("temper: { coward: 2", "tempre: { coward: 2"))
 
 	s.Require().Len(resp.GetErrors(), 1)
-	s.Contains(resp.GetErrors()[0].GetMessage(), "tempre",
-		"the refusal names the key the author typed")
-	s.Contains(resp.GetErrors()[0].GetPath(), "line ",
-		"today's shape: a decode defect carries its line, not the author's path")
+	s.Equal("factions[0].tempre", resp.GetErrors()[0].GetPath())
+	s.Equal(`"tempre" is not a key this build reads: they are id, mind, on, temper`,
+		resp.GetErrors()[0].GetMessage())
 	s.Nil(resp.GetAtlas())
 }
 

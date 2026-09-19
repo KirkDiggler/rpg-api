@@ -285,12 +285,25 @@ func (s *RegistrySuite) TestPut_ErrorsNameTheThingTheyAreAbout() {
 	s.Contains(paths, "regions[0].lighting.intensity")
 	s.GreaterOrEqual(len(paths), 2, "every defect, not the first: %v", res.Errors)
 
-	// An unknown key is a decode defect and names its line.
-	const unknownKeyLine = "hieght: 8\n" //nolint:misspell // the typo IS the test
-	res, err = r.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: append(s.rekeyed("crypt"), []byte(unknownKeyLine)...), ValidateOnly: true})
+	// An unknown key names ITSELF. It used to be a decode defect carrying a
+	// `line N` and the name of a Go type; encounter v0.94.1 walks the shape
+	// instead (rpg-project#481 slice 1), so the one grammar holds for every
+	// refusal the builder renders.
+	//
+	// The list of legal keys is deliberately NOT pinned: it grows every time
+	// the dialect gains a field, and a test that fails on new content says
+	// nothing about this one. What is pinned is what the fix was about — the
+	// path is the key, and nothing machine-facing survives in the sentence.
+	const misspelledKey = "hieght" //nolint:misspell // the typo IS the test
+	res, err = r.Put(s.ctx, &dungeons.PutInput{
+		Key: "crypt", YAML: append(s.rekeyed("crypt"), []byte(misspelledKey+": 8\n")...), ValidateOnly: true,
+	})
 	s.Require().NoError(err)
-	s.Require().NotEmpty(res.Errors)
-	s.Contains(res.Errors[0].Path, "line ")
+	s.Require().Len(res.Errors, 1)
+	s.Equal(misspelledKey, res.Errors[0].Path)
+	s.Contains(res.Errors[0].Message, `"`+misspelledKey+`"`, "the refusal quotes the key the author typed")
+	s.NotContains(res.Errors[0].Message, "line ", "no line number")
+	s.NotContains(res.Errors[0].Message, "dungeonspec.", "and no Go type name")
 }
 
 func (s *RegistrySuite) TestPut_KeyMustEqualTheFilesKey() {
