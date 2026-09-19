@@ -41,9 +41,13 @@ func createNativeCleric(t *testing.T, h *acceptanceHarness, preferred ...spells.
 	}
 	require.NotNil(t, listed)
 	require.True(t, proto.Equal(listed, details.GetClass()))
+	wantedDomain := pb.Subclass_SUBCLASS_LIFE_DOMAIN
+	if len(preferred) > 0 && preferred[0] == spells.DivineFavor {
+		wantedDomain = pb.Subclass_SUBCLASS_WAR_DOMAIN
+	}
 	var selectedDomain pb.Subclass
 	for _, domain := range listed.GetSubclasses() {
-		if domain.GetSubclassId() == pb.Subclass_SUBCLASS_LIFE_DOMAIN {
+		if domain.GetSubclassId() == wantedDomain {
 			selectedDomain = domain.GetSubclassId()
 		}
 	}
@@ -58,7 +62,7 @@ func createNativeCleric(t *testing.T, h *acceptanceHarness, preferred ...spells.
 			Selection: &pb.ChoiceData_Languages{Languages: &pb.LanguageSelection{Languages: []pb.Language{pb.Language_LANGUAGE_DWARVISH}}}}}})
 	require.NoError(t, err)
 	selected := []spells.Spell{spells.Bane, spells.Command, spells.HealingWord, spells.Sanctuary}
-	if len(preferred) > 0 {
+	if len(preferred) > 0 && preferred[0] != spells.DivineFavor {
 		selected[0] = preferred[0]
 	}
 	spellRefs := make([]string, 0, len(selected))
@@ -66,6 +70,9 @@ func createNativeCleric(t *testing.T, h *acceptanceHarness, preferred ...spells.
 		spellRefs = append(spellRefs, refs.Spells.ByID(spell).String())
 	}
 	accessRefs := append(append([]string(nil), spellRefs...), refs.Spells.Bless().String(), refs.Spells.CureWounds().String())
+	if wantedDomain == pb.Subclass_SUBCLASS_WAR_DOMAIN {
+		accessRefs = append(append([]string(nil), spellRefs...), refs.Spells.DivineFavor().String(), refs.Spells.ShieldOfFaith().String())
+	}
 
 	classChoices := make([]*pb.ChoiceData, 0, 8)
 	classChoices = append(classChoices, []*pb.ChoiceData{
@@ -100,7 +107,7 @@ func createNativeCleric(t *testing.T, h *acceptanceHarness, preferred ...spells.
 	handler = newCharacterCreationHandler(t, h)
 	draft, err := handler.GetDraft(ctx, &pb.GetDraftRequest{DraftId: id})
 	require.NoError(t, err)
-	require.Equal(t, pb.Subclass_SUBCLASS_LIFE_DOMAIN, draft.GetDraft().GetSubclass())
+	require.Equal(t, wantedDomain, draft.GetDraft().GetSubclass())
 	require.NotNil(t, draft.GetDraft().GetClassInfo().GetSpellcasting())
 	resumedChoices := make([]*pb.ChoiceData, 0, len(draft.GetDraft().GetChoices()))
 	for _, choice := range draft.GetDraft().GetChoices() {
