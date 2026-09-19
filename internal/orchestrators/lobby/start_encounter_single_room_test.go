@@ -2,10 +2,8 @@ package lobby_test
 
 import (
 	"bytes"
-	"encoding/json"
 	"time"
 
-	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
@@ -29,9 +27,12 @@ import (
 // ids — one of them on a NEGATIVE ODD axial row — and the party start) is Put
 // into a real scratch registry, launched through the real StartEncounter, and
 // read back through the real session Manager and the real GetAtlas handler.
-// Every assertion below compares DECODED SOURCE VALUES against the
-// independently spelled expected graph (dungeonstest.WorkshopRoomScene and
-// the authored axial cells), never two outputs of one converter.
+// Every assertion below compares against the AUTHORED values -- the file's
+// own axial cells, its own key -- never two outputs of one converter.
+//
+// What the room LOOKS like is not asserted here and is not on this wire any
+// more (rpg-project#479): the atlas names the dungeon, and a client fetches
+// the authored file by that key and reads the scene with its own codec.
 func (s *SessionStackSuite) TestStartEncounter_PlaysCompleteSingleRoom() {
 	registry, _ := dungeonstest.Scratch(s.T())
 	raw := dungeonstest.WorkshopRoomYAML(s.T())
@@ -51,24 +52,10 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysCompleteSingleRoom() {
 	// GetAtlas serves.
 	atlas, err := s.sessOrch.Manager.Atlas(s.ctx, &sdk.AtlasInput{Session: out.EncounterID, Member: "char-alice"})
 	s.Require().NoError(err)
-	s.NotEmpty(atlas.RoomSceneJSON, "a v3 room's canonical scene reaches the wire")
-	s.Equal(put.Entry.Atlas.RoomSceneJSON, atlas.RoomSceneJSON,
-		"PutDungeon's atlas and the started session's GetAtlas carry the same scene -- one producer")
-	s.Equal(dungeonstest.WorkshopRoomScene(), *s.decodeRoomScene(atlas.RoomSceneJSON),
-		"the full authored source graph arrived, value by value")
-	// The distinctive leaves, spelled directly so a decode regression names
-	// the fact it lost: the supported lit decor and the fractional negative
-	// transforms are presentation doubles nobody may narrow.
-	scene := s.decodeRoomScene(atlas.RoomSceneJSON)
-	s.Require().Len(scene.Scene.Items, 2)
-	candles := scene.Scene.Items[1]
-	s.Equal("table", candles.SupportID, "the decor stands on the raised prop")
-	s.Require().NotNil(candles.PointLight)
-	s.Equal("#ff9d52", candles.PointLight.Color)
-	s.InDelta(1.1, candles.PointLight.Intensity, 1e-9)
-	s.InDelta(-2.25, scene.Scene.Items[0].Transform.X, 1e-9)
-	s.Require().NotNil(scene.Scene.Items[0].HeightScale)
-	s.InDelta(1.5, *scene.Scene.Items[0].HeightScale, 1e-9)
+	s.Equal(dungeonstest.WorkshopRoomKey, atlas.DungeonKey,
+		"the started session names the dungeon it was launched from -- what the client fetches the room's picture by")
+	s.Equal(put.Entry.Atlas.DungeonKey, atlas.DungeonKey,
+		"PutDungeon's atlas and the started session's GetAtlas name the same entry -- one producer")
 
 	// The floor: one implicit region owning exactly the authored walkable
 	// hexes, in dungeon-absolute axial space.
@@ -141,7 +128,7 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysCompleteSingleRoom() {
 	s.True(skeleton.Actions[1].Ref.Equals(refs.Weapons.Shortbow()),
 		"and the bow behind it")
 
-	// And the real GetAtlas handler serves the same scene on the wire —
+	// And the real GetAtlas handler serves the same key on the wire —
 	// AtlasToProto's one carriage, exercised end to end.
 	handler, err := sessionv1alpha1.New(&sessionv1alpha1.HandlerConfig{
 		Manager: s.sessOrch.Manager, Broker: s.sessOrch.Broker, Characters: s.charRepo,
@@ -150,16 +137,27 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysCompleteSingleRoom() {
 	resp, err := handler.GetAtlas(auth.WithPlayerID(s.ctx, "alice"),
 		&sessionpb.GetAtlasRequest{Session: out.EncounterID, Member: "char-alice"})
 	s.Require().NoError(err)
-	s.Equal(atlas.RoomSceneJSON, resp.GetRoomSceneJson(),
-		"the handler carries the exact scene string, doubles intact")
+	s.Equal(dungeonstest.WorkshopRoomKey, resp.GetDungeonKey(),
+		"the handler carries the content key the session was launched under")
+	s.Empty(resp.GetRoomSceneJson(),
+		"and carries no scene: the engine stopped holding one, so the deprecated field is empty end to end")
 }
 
-// TestStartEncounter_SingleRoomSurvivesReloadAndAuthorEdit pins the snapshot
-// rule (single-room-play.md §4): each run persists its compiled presentation,
-// so a fresh read path over the STORED records serves the same scene, and a
-// room published AFTER the launch reaches only future launches — the already
-// running session keeps its original snapshot.
-func (s *SessionStackSuite) TestStartEncounter_SingleRoomSurvivesReloadAndAuthorEdit() {
+// TestStartEncounter_SingleRoomGeometrySurvivesReloadAndAuthorEdit pins what
+// a running session still owns after the presentation left it
+// (rpg-project#479): the COMPILED GEOMETRY. Each run persists the field it
+// was launched with, a fresh read path over the STORED records serves the
+// same field, and a room republished under the same key after the launch
+// reaches only future launches.
+//
+// AND THE KNOWN COST, ASSERTED RATHER THAN GLOSSED: both sessions name the
+// SAME key, so the already-running one now points at a file that changed
+// underneath it. Its geometry is what was compiled at launch; the picture a
+// client fetches by that key is the new one. Design R1 rules that acceptable
+// and visible pre-v1, and names the fix as the registry's — an immutable
+// content revision pinned on the session — never the encounter's. This test
+// is where that cost is written down, so nobody rediscovers it as a bug.
+func (s *SessionStackSuite) TestStartEncounter_SingleRoomGeometrySurvivesReloadAndAuthorEdit() {
 	registry, _ := dungeonstest.Scratch(s.T())
 	raw := dungeonstest.WorkshopRoomYAML(s.T())
 	put, err := registry.Put(s.ctx, &dungeons.PutInput{Key: dungeonstest.WorkshopRoomKey, YAML: raw})
@@ -176,14 +174,14 @@ func (s *SessionStackSuite) TestStartEncounter_SingleRoomSurvivesReloadAndAuthor
 
 	atlas, err := s.sessOrch.Manager.Atlas(s.ctx, &sdk.AtlasInput{Session: out.EncounterID, Member: "char-alice"})
 	s.Require().NoError(err)
-	original := atlas.RoomSceneJSON
-	s.NotEmpty(original)
-	s.Equal(dungeonstest.WorkshopRoomScene(), *s.decodeRoomScene(original))
+	s.Equal(dungeonstest.WorkshopRoomKey, atlas.DungeonKey)
+	originalCells := atlas.Cells
+	s.Require().Len(originalCells, 8, "the eight authored walkable hexes")
 
 	// A FRESH read path: a new orchestrator over the same stored records —
 	// nothing in memory — reconstitutes the session and serves the same
-	// scene. This is the reload half, through the SDK's own persisted-record
-	// load, not a cached answer.
+	// field and the same key. This is the reload half, through the SDK's own
+	// persisted-record load, not a cached answer.
 	fresh, err := sessionorch.New(sessionorch.Config{
 		Redis: s.redisClient, Characters: s.charRepo, TTL: 24 * time.Hour,
 		PresentationIDs: idgen.NewSequential("presentation"),
@@ -191,29 +189,32 @@ func (s *SessionStackSuite) TestStartEncounter_SingleRoomSurvivesReloadAndAuthor
 	s.Require().NoError(err)
 	reloaded, err := fresh.Manager.Atlas(s.ctx, &sdk.AtlasInput{Session: out.EncounterID, Member: "char-alice"})
 	s.Require().NoError(err)
-	s.Equal(original, reloaded.RoomSceneJSON, "the persisted snapshot survives a fresh read path")
+	s.Equal(originalCells, reloaded.Cells, "the persisted floor survives a fresh read path")
+	s.Equal(dungeonstest.WorkshopRoomKey, reloaded.DungeonKey,
+		"the key is on the RECORD, so a reload reads it back rather than deriving it")
 
-	// The author publishes a CHANGED room under the same key after the
-	// launch: a different label compiles to a different scene.
-	edited := bytes.Replace(raw, []byte("label: Table"), []byte("label: Table II"), 1)
-	s.Require().NotEqual(raw, edited, "the fixture's table label must be where this test expects it")
+	// The author publishes a room whose GEOMETRY differs under the same key
+	// after the launch: one authored hex is gone, so the floor is smaller.
+	edited := bytes.Replace(raw, []byte("{q: -1, r: 1}, "), nil, 1)
+	s.Require().NotEqual(raw, edited, "the fixture's walkable hexes must be where this test expects it")
 	republished, err := registry.Put(s.ctx, &dungeons.PutInput{Key: dungeonstest.WorkshopRoomKey, YAML: edited})
 	s.Require().NoError(err)
 	s.Require().Empty(republished.Errors)
-	s.NotEqual(original, republished.Entry.Atlas.RoomSceneJSON,
-		"the newly authored room is genuinely different")
+	s.Len(republished.Entry.Atlas.Cells, 7, "the newly authored room is genuinely different")
 
-	// The already running session keeps its ORIGINAL snapshot — through the
+	// The already running session keeps its ORIGINAL field — through the
 	// running manager and through the fresh read path alike.
 	after, err := s.sessOrch.Manager.Atlas(s.ctx, &sdk.AtlasInput{Session: out.EncounterID, Member: "char-alice"})
 	s.Require().NoError(err)
-	s.Equal(original, after.RoomSceneJSON, "the running session did not see the edit")
+	s.Equal(originalCells, after.Cells, "the running session did not see the edit")
 	afterReload, err := fresh.Manager.Atlas(s.ctx, &sdk.AtlasInput{Session: out.EncounterID, Member: "char-alice"})
 	s.Require().NoError(err)
-	s.Equal(original, afterReload.RoomSceneJSON, "and neither does its persisted snapshot")
+	s.Equal(originalCells, afterReload.Cells, "and neither does its persisted field")
+	s.Equal(dungeonstest.WorkshopRoomKey, after.DungeonKey,
+		"but it still names the key, whose file has changed under it -- the ruled pre-v1 cost")
 
 	// A FUTURE launch gets the edit: a second lobby starting on the same key
-	// plays the republished scene.
+	// plays the republished geometry, under the same key.
 	s.seedCharacter("char-bob", "bob", "Bob")
 	s.seedReadyLobby("lobby-2", "bob")
 	next, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
@@ -222,8 +223,8 @@ func (s *SessionStackSuite) TestStartEncounter_SingleRoomSurvivesReloadAndAuthor
 	s.Require().NoError(err)
 	nextAtlas, err := s.sessOrch.Manager.Atlas(s.ctx, &sdk.AtlasInput{Session: next.EncounterID, Member: "char-bob"})
 	s.Require().NoError(err)
-	s.Equal(republished.Entry.Atlas.RoomSceneJSON, nextAtlas.RoomSceneJSON,
-		"the published edit reaches the next launch")
+	s.Len(nextAtlas.Cells, 7, "the published edit reaches the next launch")
+	s.Equal(dungeonstest.WorkshopRoomKey, nextAtlas.DungeonKey)
 }
 
 // TestStartEncounter_SingleRoomInsufficientSeatsWritesNothing pins the launch
@@ -315,14 +316,4 @@ func (s *SessionStackSuite) TestStartEncounter_SingleRoomInsufficientSeatsWrites
 	sessionKeys, err = s.redisClient.Keys(s.ctx, "session:v1alpha1:*").Result()
 	s.Require().NoError(err)
 	s.Empty(sessionKeys, "and still no session record")
-}
-
-// decodeRoomScene decodes one RoomSceneJSON into the toolkit's presentation
-// type, so scene assertions compare decoded source values rather than two
-// strings of the same converter.
-func (s *SessionStackSuite) decodeRoomScene(raw string) *tkencounter.RoomScenePresentation {
-	s.T().Helper()
-	var scene tkencounter.RoomScenePresentation
-	s.Require().NoError(json.Unmarshal([]byte(raw), &scene))
-	return &scene
 }

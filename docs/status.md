@@ -47,24 +47,24 @@ the grant display; provider #1833 is merged and its release pin is adopted.
 **Sanctuary release adoption (#1006)** — Toolkit PRs #1811–#1814 are merged. Pins now use root v0.181.0, resolution v0.54.0, encounter v0.89.0, and session v0.96.0 with proto SDK v0.1.201. Ward response/event mappings and native creation/cast/live/Story tests cover the integration. The user confirmed recipient immunity and recast refusal in the earlier development build; manual timer expiry remains unverified. See [pins and local testing](how-to/sanctuary-test-build.md).
 
 **Single-room World Builder adoption (rpg-api#1003)** — the API leg of one
-playable authored room. On released provider tags only — encounter v0.87.0,
-session v0.94.0, protos generated at `6ea2b2e6` — `sessionworld.Compile`
-dispatches through `dungeonspec.Load`: legacy v2 files compile exactly as
-before (their absent room scene pinned nil), a v3 single-room file lowers
-whole (scene, workspace/frame declarations, prop declarations, placements)
-into the existing field contract, and every monster ref is resolved against
-the rulebook registry before the dungeon is accepted, so an unknown ref
-cannot become an entry or a launch. The atlas carries the canonical room
-scene: `AtlasToProto` copies `sdk.Atlas.RoomSceneJSON` verbatim into
-`GetAtlasResponse.room_scene_json` — the shared producer for `PutDungeon`'s
-preview and `GetAtlas` — with legacy atlases staying empty. Semantic suites
-prove the real loop end to end on miniredis-backed stores: registry
-byte/metadata/full-scene preservation (including across a fresh registry), a
-failing real save keeping the prior bytes and entry, launch with member
-atlas and per-actor cells — a negative odd axial row included — SDK-owned
-monster defaults on the persisted sheet, a fresh-manager reload of the
-persisted snapshot, author-edit isolation (a republished room reaches only
-future launches), and the seat-capacity refusal writing nothing (no session,
+playable authored room. `sessionworld.Compile` dispatches through
+`dungeonspec.Load`: legacy v2 files compile exactly as before, a v3
+single-room file lowers its gameplay keys and, per DECLARED prop, the three
+numbers the engine reads out of the authored scene, into the existing field
+contract; every monster ref is resolved against the rulebook registry before
+the dungeon is accepted, so an unknown ref cannot become an entry or a
+launch. The atlas names its content rather than carrying it: `AtlasToProto`
+copies `sdk.Atlas.DungeonKey` into `GetAtlasResponse.dungeon_key` — the
+shared producer for `PutDungeon`'s preview and `GetAtlas` — and leaves the
+deprecated `room_scene_json` unset (presentation-is-content,
+rpg-project#479). Semantic suites prove the real loop end to end on
+miniredis-backed stores: registry byte/metadata/key preservation (including
+across a fresh registry), a failing real save keeping the prior bytes and
+entry, launch with member atlas and per-actor cells — a negative odd axial
+row included — SDK-owned monster defaults on the persisted sheet, a
+fresh-manager reload of the persisted field, author-edit isolation (a
+republished room's GEOMETRY reaches only future launches), and the
+seat-capacity refusal writing nothing (no session,
 no world, no character bytes, no `EncounterStarted`). Browser rendering and
 the real Save/Play walk remain explicitly pending; API success is not
 browser acceptance.

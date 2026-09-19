@@ -118,22 +118,26 @@ func (s *RegistrySuite) TestBoot_IgnoresFilesThatAreNotYAML() {
 }
 
 // countingProjector stands in for the session Manager's AtlasOf: it records
-// how many worlds it was asked to project and answers a recognizable atlas,
-// or fails on demand.
+// how many worlds it was asked to project and under which keys, and answers a
+// recognizable atlas, or fails on demand.
 type countingProjector struct {
 	calls int
+	keys  []string
 	fail  error
 }
 
-func (p *countingProjector) AtlasOf(_ context.Context, world *tkencounter.EncounterData) (*sdk.Atlas, error) {
+func (p *countingProjector) AtlasOf(
+	_ context.Context, key string, world *tkencounter.EncounterData,
+) (*sdk.Atlas, error) {
 	p.calls++
+	p.keys = append(p.keys, key)
 	if p.fail != nil {
 		return nil, p.fail
 	}
 	if world == nil {
 		return nil, errors.New("nil world")
 	}
-	return &sdk.Atlas{Grid: sdk.GridHex, Cells: []spatial.Position{{X: 1, Y: 2}}}, nil
+	return &sdk.Atlas{Grid: sdk.GridHex, Cells: []spatial.Position{{X: 1, Y: 2}}, DungeonKey: key}, nil
 }
 
 // TestProjector_EveryEntryCarriesTheAtlasTheSessionWouldServe: the atlas on
@@ -143,16 +147,22 @@ func (s *RegistrySuite) TestProjector_EveryEntryCarriesTheAtlasTheSessionWouldSe
 	r, err := dungeons.NewFileRegistry(s.dir, true, p)
 	s.Require().NoError(err)
 	s.Equal(1, p.calls, "the shipped tomb was projected once at boot")
+	s.Equal([]string{dungeons.DefaultKey}, p.keys,
+		"and it was projected under its own key -- the projector cannot derive one from a world")
 
 	e, err := r.Get(s.ctx, dungeons.DefaultKey)
 	s.Require().NoError(err)
 	s.Require().NotNil(e.Atlas)
 	s.Equal([]spatial.Position{{X: 1, Y: 2}}, e.Atlas.Cells)
+	s.Equal(dungeons.DefaultKey, e.Atlas.DungeonKey, "so the entry's atlas names the entry")
 
 	res, err := r.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: s.rekeyed("crypt"), ValidateOnly: true})
 	s.Require().NoError(err)
 	s.Require().NotNil(res.Entry.Atlas, "validate_only still answers the atlas — it is the builder's preview")
 	s.Equal(2, p.calls)
+	s.Equal("crypt", p.keys[1], "a Put projects under the key being saved, not the one already loaded")
+	s.Equal("crypt", res.Entry.Atlas.DungeonKey,
+		"so a builder previewing a draft fetches its scene by the same key a player will")
 }
 
 // TestProjector_AWorldThatWillNotLoadIsNotTheAuthorsProblem: a compiled file

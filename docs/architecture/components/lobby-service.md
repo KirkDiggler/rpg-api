@@ -24,12 +24,16 @@ Design doc: `rpg-project/ideas/game-screen-rebuild/lobby-surface.md`. Umbrella:
 KirkDiggler/rpg-project#81. Implementation issue: rpg-api#629.
 
 Single-room authored content (rpg-api#1003) launches through this same path:
-a v3 room Put into the registry starts like any dungeon, its canonical scene
-reaches members as `GetAtlasResponse.room_scene_json`, and every actor stands
-on the authored axial cell — negative/odd rows included — through the one
-conversion `sessionworld` performs. Each run persists its compiled
-presentation, so a room republished after a launch reaches only future
-launches; and the existing seat-capacity refusal (party bigger than the
+a v3 room Put into the registry starts like any dungeon, and every actor
+stands on the authored axial cell — negative/odd rows included — through the
+one conversion `sessionworld` performs. The launch writes the RESOLVED
+dungeon key (after the default fallback) onto the session record, and it
+reaches members as `GetAtlasResponse.dungeon_key`, which is how a client
+fetches the room's appearance from the entry the world was compiled from
+(rpg-project#479). Each run persists its compiled FIELD, so a room
+republished after a launch reaches only future launches; the picture under
+that key is mutable and a live session sees the new one, which design R1
+rules acceptable pre-v1. The existing seat-capacity refusal (party bigger than the
 derived seats) still fires before any session, world, character write or
 `EncounterStarted` event. Browser proof of the authored room remains
 pending.

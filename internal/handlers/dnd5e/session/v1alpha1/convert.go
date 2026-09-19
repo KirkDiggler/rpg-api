@@ -1645,6 +1645,23 @@ func capacityGrantedBodyToProto(body *sdk.CapacityGrantedBody) *sessionpb.Capaci
 // Regions (GetAtlasResponse.regions) are copied cell for cell: they are
 // already absolute axial in the same frame as Cells, so nothing here converts
 // anything — the one place cells become axial is the toolkit's.
+//
+// # The map names its dungeon; it no longer carries the room's picture
+//
+// `dungeon_key` is the content key this world was compiled from, copied
+// across verbatim. `room_scene_json` is deprecated and DELIBERATELY LEFT
+// UNSET (rpg-project#479): what a room looks like is the World Builder's
+// content, and a client that wants it fetches the authored file by this key
+// through the ungated AuthoringService.GetDungeon and reads the scene with
+// the codec that owns one. The engine stopped carrying that document at
+// encounter v0.93.0, so there is no longer anything on the atlas to copy
+// into the old field -- and a field nothing can fill is left empty rather
+// than filled with something invented here.
+//
+// An empty key is the honest absence, not a default: it means the session was
+// launched from a world its host assembled rather than from a registry entry,
+// which is what every session written before the key existed is. A client
+// seeing it empty fetches nothing and draws what the map alone says.
 func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 	if a == nil {
 		return &sessionpb.GetAtlasResponse{}
@@ -1663,18 +1680,18 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 		sealed[i] = positionToProto(c)
 	}
 	return &sessionpb.GetAtlasResponse{
-		Grid:          gridKindToProto(a.Grid),
-		Layout:        hexLayoutToProto(a.Layout),
-		Cells:         cells,
-		Props:         props,
-		Boundaries:    atlasBoundariesToProto(a.Boundaries),
-		Doorways:      atlasDoorwaysToProto(a.Doorways),
-		Regions:       atlasRegionsToProto(a.Regions),
-		Segments:      atlasSegmentsToProto(a.Segments),
-		Sealed:        sealed,
-		Exits:         atlasExitsToProto(a.Exits),
-		Start:         atlasStartToProto(a.Start),
-		RoomSceneJson: a.RoomSceneJSON,
+		Grid:       gridKindToProto(a.Grid),
+		Layout:     hexLayoutToProto(a.Layout),
+		Cells:      cells,
+		Props:      props,
+		Boundaries: atlasBoundariesToProto(a.Boundaries),
+		Doorways:   atlasDoorwaysToProto(a.Doorways),
+		Regions:    atlasRegionsToProto(a.Regions),
+		Segments:   atlasSegmentsToProto(a.Segments),
+		Sealed:     sealed,
+		Exits:      atlasExitsToProto(a.Exits),
+		Start:      atlasStartToProto(a.Start),
+		DungeonKey: a.DungeonKey,
 	}
 }
 
