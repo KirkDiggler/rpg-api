@@ -11,14 +11,14 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
-**Divine Favor adoption (draft)** — Pins toolkit #1835's pushed root commit
-5b7cbbdc for local acceptance. A native War Cleric receives Divine Favor as a
+**Divine Favor adoption (#1013)** — Pins toolkit #1835's released root
+v0.187.0 (merge da0efa08). A native War Cleric receives Divine Favor as a
 domain grant; the existing public self-cast spends its bonus action and one
 slot, retains its action, and persists concentration. API integration tests
 cover cast live/Story equality, reload, hit/miss/critical radiant components,
-concentration replacement, and leveled-action refusal without payment. Root
-release pin replacement is required before merge. The local API image is
-`rpg-api:divine-favor`; manual browser combat acceptance remains pending.
+concentration replacement, and leveled-action refusal without payment. The user confirmed manual browser combat acceptance on the local
+`rpg-api:divine-favor` image built from the provider draft; the released pin
+now replaces that pseudo-version for merge.
 
 
 **Cleric preparation adoption (#1012)** — Adopts toolkit #1833's released root
