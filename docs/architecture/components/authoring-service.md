@@ -134,7 +134,7 @@ fetched by `dungeon_key` through the ungated `GetDungeon`.
 The single-room slice (rpg-api#1003) landed on `rulebooks/dnd5e/encounter`
 v0.87.0 and `rulebooks/dnd5e/session` v0.94.0, which carried the authored
 scene through the engine. Presentation-is-content (rpg-project#479) took it
-back out: encounter v0.93.x drops the presentation types, session v0.98.x
+back out: encounter v0.94.0 drops the presentation types, session v0.99.0
 replaces `Atlas.RoomSceneJSON` with `Atlas.DungeonKey`, and protos v0.1.204
 adds `GetAtlasResponse.dungeon_key` and deprecates `room_scene_json`. The
 earlier T1/T2/T3 wave notes below
