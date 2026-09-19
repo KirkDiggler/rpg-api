@@ -66,6 +66,10 @@ type PutDungeonOutput struct {
 // PutDungeon compiles and, unless ValidateOnly, stores a dungeon. Registry
 // sentinels (dungeons.ErrInvalidKey, ErrKeyMismatch, ErrAuthoringDisabled)
 // pass through for the handler to map.
+//
+// ErrAuthoringDisabled belongs to the SAVE alone (rpg-project#481): a
+// validate-only call is answered by a read-only registry, so the builder's
+// per-edit preview works on a server that will not store a byte.
 func (o *Orchestrator) PutDungeon(ctx context.Context, in *PutDungeonInput) (*PutDungeonOutput, error) {
 	if in == nil {
 		return nil, errors.New("authoring orchestrator: PutDungeonInput is required")
@@ -133,7 +137,8 @@ type ListScenariosOutput struct {
 // UNGATED, on GetDungeon's precedent and for GetDungeon's reason: it reads
 // and mutates nothing. It does not even reach the registry -- the answer is a
 // property of the binary, so a build with no content directory at all still
-// has one. PutDungeon keeps its own gate.
+// has one. PutDungeon's SAVE keeps its own gate; its validate-only grade does
+// not (rpg-project#481).
 //
 // Empty is legal and means this build offers none; the builder shows no
 // scenario panel rather than an error, because a dungeon with no scenario
