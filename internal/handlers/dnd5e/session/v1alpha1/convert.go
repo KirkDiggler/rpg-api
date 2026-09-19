@@ -1692,7 +1692,7 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 		Sealed:        sealed,
 		Exits:         atlasExitsToProto(a.Exits),
 		Start:         atlasStartToProto(a.Start),
-		RoomSceneJson: a.RoomSceneJSON,
+		RoomSceneJson: a.RoomSceneJSON, //nolint:staticcheck // Pinned toolkit still supplies this field; preserve atlas compatibility.
 	}
 }
 
