@@ -1837,76 +1837,165 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 		require.Equal(t, "char-1", got.GetExited().GetMember())
 	})
 
-	// DoorRevealed (rpg-project#350/#351): the flat door/state/approaches
-	// DoorRevealedBody carries grouped into the same nested DoorInfo shape
-	// GetDoors returns, plus the doorways that patch the recipient's cached
-	// atlas. A locked door's approaches list rides through; an unlocked one
-	// (see the RegionRevealed case below) carries no lock at all.
-	t.Run("DoorRevealed", func(t *testing.T) {
+	// ConcealmentRevealed (design rpg-project#490, E4): ONE beat for one
+	// authored secret, where DoorRevealed and RegionRevealed were two. Every
+	// field the SDK body carries has to reach the wire, because this payload
+	// IS the client's patch for two cached reads -- a list dropped here
+	// leaves a revealed room drawn with no walls, or a door on the map that
+	// no verb can open, and neither failure looks like a converter bug.
+	//
+	// THE DOORWAYS COME OFF THE DOORS. The SDK hangs each door's edges on the
+	// door; the wire carries one flat doorway list beside the door list,
+	// because those are the two shapes GetDoors and GetAtlas answer in. A
+	// wide door's edges arrive together and each names its own door.
+	t.Run("ConcealmentRevealed_CarriesEveryField", func(t *testing.T) {
 		got := mustEventToProto(t, sdk.Event{
-			Kind: sdk.EventDoorRevealed,
-			Body: sdk.DoorRevealedBody{
-				Door:  "hall-tomb",
-				State: "locked",
-				Doorways: []sdk.AtlasDoorway{
-					{Door: "hall-tomb", From: spatial.Position{X: 15, Y: 4}, To: spatial.Position{X: 16, Y: 4}},
-				},
-				Approaches: []sdk.DoorApproach{{Ability: "dex", DC: 12}},
-			},
-		})
-		d := got.GetDoorRevealed()
-		require.NotNil(t, d)
-		require.Equal(t, "hall-tomb", d.GetDoor().GetDoor())
-		require.Equal(t, sessionpb.DoorState_DOOR_STATE_LOCKED, d.GetDoor().GetState())
-		require.Len(t, d.GetDoor().GetLock().GetApproaches(), 1)
-		require.Equal(t, "dex", d.GetDoor().GetLock().GetApproaches()[0].GetAbility())
-		require.Equal(t, int32(12), d.GetDoor().GetLock().GetApproaches()[0].GetDc())
-		require.Len(t, d.GetDoorways(), 1)
-		require.Equal(t, "hall-tomb", d.GetDoorways()[0].GetConnection())
-	})
-
-	// An unlocked reveal carries no lock -- doorRevealedInfoToProto's
-	// presence law (Approaches empty means Lock unset), matching
-	// doorToProto's own convention field-for-field.
-	t.Run("DoorRevealed_Unlocked_CarriesNoLock", func(t *testing.T) {
-		got := mustEventToProto(t, sdk.Event{
-			Kind: sdk.EventDoorRevealed,
-			Body: sdk.DoorRevealedBody{Door: "entrance-hall", State: "open"},
-		})
-		require.Nil(t, got.GetDoorRevealed().GetDoor().GetLock())
-	})
-
-	// RegionRevealed (rpg-project#350/#351): the region's whole atlas slice
-	// -- region entry, props, and every boundary touching its cells -- reuses
-	// atlasRegionToProto and the shared atlasPropsToProto AtlasToProto itself
-	// uses, verbatim.
-	t.Run("RegionRevealed", func(t *testing.T) {
-		got := mustEventToProto(t, sdk.Event{
-			Kind: sdk.EventRegionRevealed,
-			Body: sdk.RegionRevealedBody{
-				Region: sdk.AtlasRegion{
-					ID: "tomb", Name: "Tomb", Archetype: "crypt",
-					Cells:    []spatial.Position{{X: 16, Y: 0}},
+			Kind: sdk.EventConcealmentRevealed,
+			Body: sdk.ConcealmentRevealedBody{
+				Concealment: "reference-tomb/vault",
+				Cells:       []spatial.Position{{X: 28, Y: 2}, {X: 29, Y: 2}},
+				Props: []sdk.AtlasProp{{
+					ID: "heirloom", Ref: "dnd5e:props:coffin", Holdable: true,
+					At: spatial.Position{X: 28, Y: 2}, BlocksMovement: true,
+				}},
+				Doors: []sdk.RevealedDoor{{
+					Door: "reference-tomb/vault-door", State: "locked",
+					Doorways: []sdk.AtlasDoorway{
+						{Door: "reference-tomb/vault-door", From: spatial.Position{X: 27, Y: 2}, To: spatial.Position{X: 28, Y: 2}},
+						{Door: "reference-tomb/vault-door", From: spatial.Position{X: 27, Y: 3}, To: spatial.Position{X: 28, Y: 3}},
+					},
+					Approaches: []sdk.DoorApproach{{Ability: "dex", Tool: "thieves-tools", DC: 12}},
+				}},
+				Regions: []sdk.AtlasRegion{{
+					ID: "vault", Name: "The Vault", Archetype: "crypt",
+					Cells:    []spatial.Position{{X: 28, Y: 2}, {X: 29, Y: 2}},
 					Lighting: sdk.Lighting{Intensity: 0.15},
-				},
-				Props: []sdk.AtlasProp{
-					{Ref: "dnd5e:props:coffin", At: spatial.Position{X: 22, Y: 3}, BlocksMovement: true},
-				},
-				Boundaries: []sdk.AtlasBoundary{
-					{From: spatial.Position{X: 15, Y: 0}, To: spatial.Position{X: 16, Y: 0}, BlocksMovement: true, BlocksLineOfSight: true},
-				},
+				}},
+				Boundaries: []sdk.AtlasBoundary{{
+					From: spatial.Position{X: 27, Y: 4}, To: spatial.Position{X: 28, Y: 4},
+					BlocksMovement: true, BlocksLineOfSight: true, Height: 0.7,
+				}},
+				Segments: []sdk.AtlasSegment{{
+					From: sdk.AxialPointF{Q: 27.25, R: 7.375}, To: sdk.AxialPointF{Q: 27.75, R: 0.625}, Height: 0.7,
+				}},
+				Sealed: []spatial.Position{{X: 29, Y: 2}},
 			},
 		})
-		r := got.GetRegionRevealed()
-		require.NotNil(t, r)
-		require.Equal(t, "tomb", r.GetRegion().GetId())
-		require.Equal(t, "crypt", r.GetRegion().GetArchetype())
-		require.Equal(t, 0.15, r.GetRegion().GetLighting().GetIntensity())
-		require.Len(t, r.GetProps(), 1)
-		require.Equal(t, "dnd5e:props:coffin", r.GetProps()[0].GetRef())
-		require.True(t, r.GetProps()[0].GetBlocksMovement())
-		require.Len(t, r.GetBoundaries(), 1)
-		require.True(t, r.GetBoundaries()[0].GetBlocksLineOfSight())
+
+		require.Equal(t, sessionpb.EventKind_EVENT_KIND_CONCEALMENT_REVEALED, got.GetKind())
+		c := got.GetConcealmentRevealed()
+		require.NotNil(t, c, "the one reveal kind carries the one reveal body")
+		require.Equal(t, "reference-tomb/vault", c.GetConcealment(),
+			"the secret's own id, which is what a client keys its patch on")
+
+		// THE FLOOR IT HID, in order, and the one cell of it nobody stands on.
+		// Sealed is a subset of cells rather than a second list of places, so
+		// a client applying the patch cannot end up with a cell it has sealed
+		// and never added.
+		require.Equal(t, [][2]float64{{28, 2}, {29, 2}}, projected(c.GetCells(), wireXY))
+		require.Equal(t, [][2]float64{{29, 2}}, projected(c.GetSealed(), wireXY))
+
+		// EVERY REGION IT TOUCHED, WHOLE -- archetype and lighting with it, so
+		// a room withheld entirely is dressed and lit the moment it arrives
+		// instead of rendering as bare floor until the next GetAtlas.
+		regions := c.GetRegions()
+		require.Equal(t, []string{"vault"},
+			projected(regions, func(r *sessionpb.AtlasRegion) string { return r.GetId() }))
+		require.Equal(t, "The Vault", regions[0].GetName())
+		require.Equal(t, "crypt", regions[0].GetArchetype())
+		require.Equal(t, 0.15, regions[0].GetLighting().GetIntensity())
+		require.Equal(t, [][2]float64{{28, 2}, {29, 2}}, projected(regions[0].GetCells(), wireXY))
+
+		// THE PROPS STANDING ON THAT FLOOR, through the same converter
+		// AtlasToProto uses, holdability and all.
+		props := c.GetProps()
+		require.Equal(t, []string{"heirloom"},
+			projected(props, func(p *sessionpb.AtlasProp) string { return p.GetId() }))
+		require.Equal(t, "dnd5e:props:coffin", props[0].GetRef())
+		require.True(t, props[0].GetHoldable())
+		require.True(t, props[0].GetBlocksMovement())
+
+		// THE DOOR, in the nested DoorInfo shape GetDoors answers in, its
+		// lock's approaches riding with it.
+		doors := c.GetDoors()
+		require.Equal(t, []string{"reference-tomb/vault-door"},
+			projected(doors, func(d *sessionpb.DoorInfo) string { return d.GetDoor() }))
+		require.Equal(t, sessionpb.DoorState_DOOR_STATE_LOCKED, doors[0].GetState())
+		approaches := doors[0].GetLock().GetApproaches()
+		require.Equal(t, []string{"dex"},
+			projected(approaches, func(a *sessionpb.CheckApproach) string { return a.GetAbility() }))
+		require.Equal(t, "thieves-tools", approaches[0].GetTool())
+		require.Equal(t, int32(12), approaches[0].GetDc())
+
+		// ITS EDGES, FLATTENED OUT of the door and onto the wire's own doorway
+		// list -- both of them, each still naming the door it belongs to.
+		doorways := c.GetDoorways()
+		require.Equal(t, []string{"reference-tomb/vault-door", "reference-tomb/vault-door"},
+			projected(doorways, func(d *sessionpb.AtlasDoorway) string { return d.GetConnection() }))
+		require.Equal(t, [][2]float64{{27, 2}, {27, 3}},
+			projected(doorways, func(d *sessionpb.AtlasDoorway) [2]float64 { return wireXY(d.GetFrom()) }))
+		require.Equal(t, [][2]float64{{28, 2}, {28, 3}},
+			projected(doorways, func(d *sessionpb.AtlasDoorway) [2]float64 { return wireXY(d.GetTo()) }))
+
+		// THE MECHANICAL TRUTH AT THE REVEALED SEAMS, and the walls as the
+		// author drew them. Boundaries say what may cross; segments are the
+		// line a client draws, in the fractional axial frame the atlas already
+		// carries them in.
+		boundaries := c.GetBoundaries()
+		require.Equal(t, [][2]float64{{27, 4}},
+			projected(boundaries, func(b *sessionpb.AtlasBoundary) [2]float64 { return wireXY(b.GetFrom()) }))
+		require.Equal(t, [][2]float64{{28, 4}},
+			projected(boundaries, func(b *sessionpb.AtlasBoundary) [2]float64 { return wireXY(b.GetTo()) }))
+		require.True(t, boundaries[0].GetBlocksMovement())
+		require.True(t, boundaries[0].GetBlocksLineOfSight())
+		require.Equal(t, float32(0.7), boundaries[0].GetHeight())
+
+		segments := c.GetSegments()
+		require.Equal(t, [][2]float64{{27.25, 7.375}},
+			projected(segments, func(s *sessionpb.AtlasSegment) [2]float64 { return wireQR(s.GetFrom()) }))
+		require.Equal(t, [][2]float64{{27.75, 0.625}},
+			projected(segments, func(s *sessionpb.AtlasSegment) [2]float64 { return wireQR(s.GetTo()) }))
+		require.Equal(t, float32(0.7), segments[0].GetHeight())
+	})
+
+	// An unlocked door carries no lock -- revealedDoorToProto's presence law
+	// (Approaches empty means Lock unset), matching doorToProto's own
+	// convention field-for-field rather than re-deriving it from State.
+	t.Run("ConcealmentRevealed_UnlockedDoorCarriesNoLock", func(t *testing.T) {
+		got := mustEventToProto(t, sdk.Event{
+			Kind: sdk.EventConcealmentRevealed,
+			Body: sdk.ConcealmentRevealedBody{
+				Concealment: "reference-tomb/vault",
+				Doors:       []sdk.RevealedDoor{{Door: "entrance-hall", State: "open"}},
+			},
+		})
+		require.Nil(t, got.GetConcealmentRevealed().GetDoors()[0].GetLock())
+	})
+
+	// A CELL-LESS CONCEALMENT IS LEGAL and means a hidden crossing: a door
+	// alone, hiding no floor. Empty cells here is an answer rather than a
+	// gap, and the doors are the whole patch -- which is the shape the v2
+	// lowering gives a concealed door touching no concealed region.
+	t.Run("ConcealmentRevealed_CellLessIsADoorAlone", func(t *testing.T) {
+		got := mustEventToProto(t, sdk.Event{
+			Kind: sdk.EventConcealmentRevealed,
+			Body: sdk.ConcealmentRevealedBody{
+				Concealment: "reference-tomb/hidden-crossing",
+				Doors: []sdk.RevealedDoor{{
+					Door: "reference-tomb/hidden-crossing", State: "closed",
+					Doorways: []sdk.AtlasDoorway{
+						{Door: "reference-tomb/hidden-crossing", From: spatial.Position{X: 4, Y: 1}, To: spatial.Position{X: 5, Y: 1}},
+					},
+				}},
+			},
+		})
+		c := got.GetConcealmentRevealed()
+		require.Empty(t, c.GetCells(), "a hidden crossing hides no floor")
+		require.Empty(t, c.GetRegions(), "and so trims no region to put back")
+		require.Equal(t, []string{"reference-tomb/hidden-crossing"},
+			projected(c.GetDoors(), func(d *sessionpb.DoorInfo) string { return d.GetDoor() }))
+		require.Equal(t, []string{"reference-tomb/hidden-crossing"},
+			projected(c.GetDoorways(), func(d *sessionpb.AtlasDoorway) string { return d.GetConnection() }))
 	})
 
 	// Sighted: a change in ONE recipient's own perception, passed through as
@@ -2663,3 +2752,25 @@ func mustEventsToProto(t *testing.T, es []sdk.Event) []*sessionpb.Event {
 	require.NoError(t, err, "this scene pins a projection, not a refusal")
 	return out
 }
+
+// projected maps a wire list through one fact about each element, so a test
+// can assert a repeated field by what it carries -- ids, coordinates -- in one
+// comparison that pins CONTENT AND ORDER together. Asserting a length beside
+// the elements would be a second, weaker statement of the same thing, and the
+// kind that gets bumped rather than read when the list changes.
+func projected[T any, R any](in []T, fact func(T) R) []R {
+	out := make([]R, len(in))
+	for i, v := range in {
+		out[i] = fact(v)
+	}
+	return out
+}
+
+// wireXY and wireQR read one wire point as a comparable pair. Position is
+// dungeon-absolute cell space; AxialPoint is the fractional axial frame a wall
+// segment's ends live in. They are deliberately separate: the two frames are
+// not interchangeable and a test that mixed them would compare a cell against
+// a wall corner.
+func wireXY(p *sessionpb.Position) [2]float64 { return [2]float64{p.GetX(), p.GetY()} }
+
+func wireQR(p *sessionpb.AxialPoint) [2]float64 { return [2]float64{p.GetQ(), p.GetR()} }
