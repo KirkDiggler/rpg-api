@@ -722,10 +722,15 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_ACTIVATION_RESULT
 	case sdk.EventDeathSave:
 		return sessionpb.EventKind_EVENT_KIND_DEATH_SAVE_ROLLED
-	case sdk.EventDoorRevealed:
-		return sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED
-	case sdk.EventRegionRevealed:
-		return sessionpb.EventKind_EVENT_KIND_REGION_REVEALED
+	// ONE NOUN, ONE REVEAL (design rpg-project#490, E4). The SDK retired
+	// EventDoorRevealed and EventRegionRevealed: one authored secret was
+	// split across two kinds because the engine hid doors and regions with
+	// two separate flags, and a concealment is the one thing an author
+	// hides. Its cells, props, member doors, boundaries, walls and touched
+	// regions arrive on this one beat instead. The older wire kinds stay on
+	// the proto, deprecated; nothing maps to them any more.
+	case sdk.EventConcealmentRevealed:
+		return sessionpb.EventKind_EVENT_KIND_CONCEALMENT_REVEALED
 	case sdk.EventSighted:
 		return sessionpb.EventKind_EVENT_KIND_SIGHTED
 	// Holdings (rpg-project#368). Each kind is a STATEMENT -- looted, held,
@@ -1002,7 +1007,7 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 		// Looter and body, and deliberately nothing about what moved: the
 		// beat is identical for a body that carried the run's only secret
 		// and one that carried nothing (design P3). What actually moved
-		// reaches the looter alone, as their own DOOR_REVEALED.
+		// reaches the looter alone, as their own CONCEALMENT_REVEALED.
 		evt.Body = &sessionpb.Event_Looted{Looted: &sessionpb.Looted{
 			Looter: b.Looter, Body: b.Body,
 		}}
@@ -1053,7 +1058,7 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 		// TRUTH GRAIN, so every recipient's atlas loses the prop and a
 		// client patches its cached map by removing this id -- the
 		// load-once, beat-refreshed law running subtractively, where
-		// DOOR_REVEALED runs it additively.
+		// CONCEALMENT_REVEALED runs it additively.
 		evt.Body = &sessionpb.Event_Held{Held: &sessionpb.Held{
 			Holder: b.Holder, Prop: b.Prop,
 		}}
@@ -1229,55 +1234,92 @@ func setWorldEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			Beaten:      b.Beaten,
 			Calculation: calculation,
 		}}
-	case sdk.DoorRevealedBody:
-		// No Boundaries here: DoorRevealedBody carries none (the masquerade-
-		// wall replacement the wire's own field is for is not yet a field
-		// this SDK version produces), so the wire field is left unset rather
-		// than populated from something this body does not have -- verbatim
-		// translation of what the SDK actually sends, not an invented value.
-		evt.Body = &sessionpb.Event_DoorRevealed{DoorRevealed: &sessionpb.DoorRevealed{
-			Door:     doorRevealedInfoToProto(b),
-			Doorways: atlasDoorwaysToProto(b.Doorways),
-		}}
-	case sdk.RegionRevealedBody:
-		// Segments and Sealed do NOT mean the same shape of thing here, and a
-		// client that treats them alike will draw the wrong room. Both are
-		// carried verbatim; neither is recomputed here.
+	// ONE NOUN, ONE REVEAL (design rpg-project#490, E4). What used to arrive
+	// as DoorRevealedBody and RegionRevealedBody -- two kinds, two payloads,
+	// one authored secret -- is one concealment now: the cells it hid, the
+	// props standing on them, the doors it hid with their own edges, the
+	// boundaries and walls at the revealed seams, the sealed cells inside it,
+	// and every region it touched. The engine hid doors and regions with two
+	// separate flags and so split one secret across two beats; it hides a
+	// concealment with one primitive and sends one. The SDK produces neither
+	// older body any more, so neither is converted here; the two wire kinds
+	// stay on the proto, deprecated, and retire when no client reads them.
+	//
+	// EVERY FIELD IS CARRIED VERBATIM. The composition derives this body from
+	// the recipient's own Atlas and Doors answers, so the patch and the map
+	// cannot disagree -- and this converter's whole contribution to that is
+	// not getting in the way.
+	case sdk.ConcealmentRevealedBody:
+		// DOORS AND DOORWAYS SPLIT ON THE WIRE where the SDK nests them. The
+		// body hangs each door's edges off the door; the proto carries one
+		// flat door list and one flat doorway list, which are the two shapes
+		// GetDoors and GetAtlas already answer in and therefore the two
+		// caches a client patches. Nothing is lost in the flatten: every
+		// AtlasDoorway names its own door (AtlasDoorway.connection), so the
+		// grouping is reconstructible from the flat list. A footprint door
+		// contributes none -- it stands in no crossing (rpg-project#485) --
+		// and that is an honest empty, not a dropped field.
+		doors := make([]*sessionpb.DoorInfo, len(b.Doors))
+		doorways := make([]sdk.AtlasDoorway, 0, len(b.Doors))
+		for i, d := range b.Doors {
+			doors[i] = revealedDoorToProto(d)
+			doorways = append(doorways, d.Doorways...)
+		}
+
+		// Cells adds; the rest are three different shapes of thing and a
+		// client that treats them alike will draw the wrong room. All of them
+		// are carried verbatim; none is recomputed here.
 		//
 		// SEGMENTS IS A DIFFERENCE, and adds: the walls this recipient did not
 		// have and now does. A wall already presented to them for any reason --
-		// the seam their own concealed door hides in, or one footing on floor
-		// they can already see -- is deliberately absent, because it is not news
-		// and they are already drawing it. So this is append-to-cache, never
-		// replace-for-region. It HAS to be a difference: a segment carries no
-		// footprint on purpose, so there is no way to ask which cells a wall
-		// stands on without leaking what the doorway list withholds. No wall
-		// ever leaves, so the atlas after a reveal is the atlas before it union
-		// this.
+		// the seam a concealed door hides in, or one footing on floor they can
+		// already see -- is deliberately absent, because it is not news and
+		// they are already drawing it. So this is append-to-cache, never
+		// replace. It HAS to be a difference: a segment carries no footprint on
+		// purpose, so there is no way to ask which cells a wall stands on
+		// without leaking what the doorway list withholds. No wall ever leaves,
+		// so the atlas after a reveal is the atlas before it union this.
 		//
 		// SEALED IS SCOPED, AND REPLACES, and the scoping is load-bearing rather
-		// than a style choice: a client swaps out the revealed region's cells
-		// and keeps every other sealed cell it had. Cells LEAVE this list. A
-		// non-knower's sealed list already holds some of the hidden room's own
-		// cells -- the footing of the walls presented to them (design C18),
-		// which reaches them as ownerless floor, and ownerless floor is floor
-		// nobody stands on -- and the moment the room is theirs those same cells
-		// are ordinary standable floor. A client that appended would leave a
-		// room it can see permanently unwalkable at its edges. So the atlas
-		// after a reveal is (the atlas before it, less the revealed region's
-		// cells) union this, which is why the beat carries the region's cells
-		// beside it. A difference could only ever add, and this field has to be
-		// able to take away.
+		// than a style choice: a client swaps out the arriving cells' sealed
+		// entries and keeps every other sealed cell it had. Cells LEAVE this
+		// list. A non-knower's sealed list already holds some of the hidden
+		// room's own cells -- the footing of the walls presented to them (design
+		// C18), which reaches them as ownerless floor, and ownerless floor is
+		// floor nobody stands on -- and the moment the secret is theirs those
+		// same cells are ordinary standable floor. A client that appended would
+		// leave a room it can see permanently unwalkable at its edges. So the
+		// atlas after a reveal is (the atlas before it, less the concealment's
+		// cells) union this, which is why the beat carries those cells beside
+		// it. A difference could only ever add, and this field has to be able
+		// to take away.
+		//
+		// REGIONS REPLACES ENTRY BY ENTRY, for a reason of its own: what an
+		// unaware recipient held was not a shorter LIST, it was a shorter
+		// REGION. A region is a name over a set of cells, and a concealment's
+		// cells cannot appear in it without naming the secret, so a touched
+		// region reached them trimmed, or did not reach them at all. Merging
+		// would leave the trim sitting beside the truth. Each entry arrives
+		// whole, archetype and lighting with it, which is how a room withheld
+		// entirely gets dressed and lit the moment it arrives.
+		cells := make([]*sessionpb.Position, len(b.Cells))
+		for i, c := range b.Cells {
+			cells[i] = positionToProto(c)
+		}
 		sealed := make([]*sessionpb.Position, len(b.Sealed))
 		for i, c := range b.Sealed {
 			sealed[i] = positionToProto(c)
 		}
-		evt.Body = &sessionpb.Event_RegionRevealed{RegionRevealed: &sessionpb.RegionRevealed{
-			Region:     atlasRegionToProto(b.Region),
-			Props:      atlasPropsToProto(b.Props),
-			Boundaries: atlasBoundariesToProto(b.Boundaries),
-			Segments:   atlasSegmentsToProto(b.Segments),
-			Sealed:     sealed,
+		evt.Body = &sessionpb.Event_ConcealmentRevealed{ConcealmentRevealed: &sessionpb.ConcealmentRevealed{
+			Concealment: b.Concealment,
+			Cells:       cells,
+			Props:       atlasPropsToProto(b.Props),
+			Doors:       doors,
+			Doorways:    atlasDoorwaysToProto(doorways),
+			Boundaries:  atlasBoundariesToProto(b.Boundaries),
+			Segments:    atlasSegmentsToProto(b.Segments),
+			Sealed:      sealed,
+			Regions:     atlasRegionsToProto(b.Regions),
 		}}
 	case sdk.WindowOpenedBody:
 		// The fight stopped to ask somebody something (rpg-project#316 rung
@@ -1752,8 +1794,8 @@ func atlasExitsToProto(es []sdk.AtlasExit) []*sessionpb.AtlasExit {
 }
 
 // atlasPropToProto mirrors one session.AtlasProp -- shared by AtlasToProto and
-// RegionRevealed's props, which the SDK's own doc promises carries them
-// "exactly as GetAtlasResponse.props would" (rpg-project#350/#351).
+// ConcealmentRevealed's props, which the SDK's own doc promises carries them
+// "exactly as GetAtlasResponse.props would" (rpg-project#350/#351, #490).
 func atlasPropToProto(prop sdk.AtlasProp) *sessionpb.AtlasProp {
 	return &sessionpb.AtlasProp{
 		// ID and Holdable (rpg-project#368, design §5). The id is the
@@ -2814,18 +2856,23 @@ func doorApproachesToProto(as []sdk.DoorApproach) []*sessionpb.CheckApproach {
 	return out
 }
 
-// doorRevealedInfoToProto groups DoorRevealedBody's flat door/state/
+// revealedDoorToProto groups one session.RevealedDoor's flat door/state/
 // approaches into the wire's nested DoorInfo -- the same shape GetDoors
-// already returns for this door, per DoorRevealed.door's own doc ("exactly
-// as this recipient's GetDoors would now list it"). Approaches is present
-// only while the door is locked (DoorRevealedBody's own field law), so a
-// non-empty list is the presence signal for Lock, matching doorToProto's
-// "Lock unset is not locked" convention field-for-field rather than
-// re-deriving it from State.
-func doorRevealedInfoToProto(b sdk.DoorRevealedBody) *sessionpb.DoorInfo {
-	out := &sessionpb.DoorInfo{Door: b.Door, State: doorStateToProto(b.State)}
-	if len(b.Approaches) > 0 {
-		out.Lock = &sessionpb.DoorLock{Approaches: doorApproachesToProto(b.Approaches)}
+// already returns for this door, per ConcealmentRevealed.doors's own doc
+// ("exactly as this recipient's GetDoors would now list them"). Approaches
+// is present only while the door is locked (RevealedDoor's own field law),
+// so a non-empty list is the presence signal for Lock, matching
+// doorToProto's "Lock unset is not locked" convention field-for-field
+// rather than re-deriving it from State.
+//
+// THE DOORWAYS DO NOT RIDE WITH IT. DoorInfo has no doorway field -- a
+// door's edges belong to the atlas, not to the door -- so the caller
+// flattens them into ConcealmentRevealed.doorways, which is the list a
+// client's cached atlas takes them from.
+func revealedDoorToProto(d sdk.RevealedDoor) *sessionpb.DoorInfo {
+	out := &sessionpb.DoorInfo{Door: d.Door, State: doorStateToProto(d.State)}
+	if len(d.Approaches) > 0 {
+		out.Lock = &sessionpb.DoorLock{Approaches: doorApproachesToProto(d.Approaches)}
 	}
 	return out
 }
