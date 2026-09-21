@@ -30,9 +30,11 @@ authors: `regions[].concealed: true` and `doors[].concealed: [...]` lower onto
 the one primitive, so every shipped reference dungeon compiles and loads as
 before. Recipient projection is untouched — the toolkit decides audiences and
 rpg-api neither filters nor re-derives them. Pins: `rpg-api-protos/gen/go`
-`v0.0.0-20260921225916-7ed49839b5e8` (tag v0.1.206, rpg-api-protos#352),
-encounter and session on rpg-toolkit#1862/#1863 pseudo-versions until those
-release.
+`v0.0.0-20260921225916-7ed49839b5e8`, which is tag `v0.1.206`'s commit on the
+`generated` branch (rpg-api-protos#352) — the bare release tag versions the
+repo-root module and cannot version the `gen/go` submodule, so this module has
+always been pinned by pseudo-version; `rulebooks/dnd5e/encounter` **v0.99.0**
+(toolkit#1862); session on toolkit#1863's pseudo-version until it releases.
 
 **The gate is on the write, not on the grade (rpg-project#481, slice 2)** —
 `FileRegistry.Put` returned `ErrAuthoringDisabled` at the top of the method,
