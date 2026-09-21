@@ -273,15 +273,21 @@ func exitIDs(atlas *sessionpb.GetAtlasResponse) []string {
 	return out
 }
 
-// findTheVault is path 1: search the hall, find the concealed door, open it.
-// The harness's roller answers the top face, so the perception check clears
-// DC 15 every run rather than one in three.
+// findTheVault is path 1: search the hall, find the concealed door, walk to
+// it, open it. The harness's roller answers the top face, so the perception
+// check clears DC 15 every run rather than one in three.
+//
+// THE WALK IS PART OF THE PATH, not setup noise: a door opens only from
+// beside it (rpg-toolkit#1856). Searching tells her where the vault door is
+// from anywhere in the hall; working its latch still costs her the steps.
 func (r *heirloomRun) findTheVault(t *testing.T, member string) {
 	t.Helper()
 	_, err := r.h.handler.Search(r.ctxOf(member), &sessionpb.SearchRequest{
 		Session: heirloomSession, Member: member, Region: "hall",
 	})
 	require.NoError(t, err)
+	hallSide := dungeonstest.HeirloomVaultDoorCrossing[0]
+	r.walkWithin(t, member, dungeonstest.HeirloomHallCells, hallSide[0], hallSide[1])
 	_, err = r.h.handler.OpenDoor(r.ctxOf(member), &sessionpb.OpenDoorRequest{
 		Session: heirloomSession, Member: member, Door: dungeonstest.HeirloomVaultDoorID,
 	})
@@ -612,14 +618,17 @@ func TestAcceptance_TheLootedWayInOpensTheSameVault(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	// The record hands her the door, and then she walks to it: a door opens
+	// only from beside it (rpg-toolkit#1856). Knowing the way in and being
+	// at it are two different things, and looting only buys the first.
+	hallSide := dungeonstest.HeirloomVaultDoorCrossing[0]
+	vaultSide := dungeonstest.HeirloomVaultDoorCrossing[1]
+	run.walkWithin(t, "alice", dungeonstest.HeirloomHallCells, hallSide[0], hallSide[1])
+
 	_, err = run.h.handler.OpenDoor(run.alice, &sessionpb.OpenDoorRequest{
 		Session: heirloomSession, Member: "alice", Door: dungeonstest.HeirloomVaultDoorID,
 	})
 	require.NoError(t, err, "the door the record revealed is one she can open")
-
-	hallSide := dungeonstest.HeirloomVaultDoorCrossing[0]
-	vaultSide := dungeonstest.HeirloomVaultDoorCrossing[1]
-	run.walkWithin(t, "alice", dungeonstest.HeirloomHallCells, hallSide[0], hallSide[1])
 	run.step(t, "alice", vaultSide[0], vaultSide[1])
 	run.walkWithin(t, "alice", dungeonstest.HeirloomVaultCells, 5, 1)
 
@@ -835,16 +844,18 @@ func TestAcceptance_TheScrollsWayInOpensTheSameVault(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	// And the same door the CAPTAIN's record reveals: two records, one way
+	// in, and the run cannot tell which one you read. She walks to it first
+	// either way -- a door opens only from beside it (rpg-toolkit#1856), and
+	// what the scroll taught her is where to walk, not a longer arm.
+	hallSide := dungeonstest.HeirloomVaultDoorCrossing[0]
+	vaultSide := dungeonstest.HeirloomVaultDoorCrossing[1]
+	run.walkWithin(t, "alice", dungeonstest.HeirloomHallCells, hallSide[0], hallSide[1])
+
 	_, err = run.h.handler.OpenDoor(run.alice, &sessionpb.OpenDoorRequest{
 		Session: heirloomSession, Member: "alice", Door: dungeonstest.HeirloomVaultDoorID,
 	})
 	require.NoError(t, err, "the door the scroll revealed is one she can open")
-
-	// And the same door the CAPTAIN's record reveals: two records, one way
-	// in, and the run cannot tell which one you read.
-	hallSide := dungeonstest.HeirloomVaultDoorCrossing[0]
-	vaultSide := dungeonstest.HeirloomVaultDoorCrossing[1]
-	run.walkWithin(t, "alice", dungeonstest.HeirloomHallCells, hallSide[0], hallSide[1])
 	run.step(t, "alice", vaultSide[0], vaultSide[1])
 	run.walkWithin(t, "alice", dungeonstest.HeirloomVaultCells, 5, 1)
 
