@@ -34,7 +34,8 @@ rpg-api neither filters nor re-derives them. Pins: `rpg-api-protos/gen/go`
 `generated` branch (rpg-api-protos#352) — the bare release tag versions the
 repo-root module and cannot version the `gen/go` submodule, so this module has
 always been pinned by pseudo-version; `rulebooks/dnd5e/encounter` **v0.99.0**
-(toolkit#1862); session on toolkit#1863's pseudo-version until it releases.
+(toolkit#1862) and `rulebooks/dnd5e/session` **v0.101.0** (toolkit#1863), both
+released tags.
 
 **The gate is on the write, not on the grade (rpg-project#481, slice 2)** —
 `FileRegistry.Put` returned `ErrAuthoringDisabled` at the top of the method,
