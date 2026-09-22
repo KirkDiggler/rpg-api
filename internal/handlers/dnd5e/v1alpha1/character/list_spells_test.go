@@ -90,3 +90,17 @@ func (s *ListSpellsTestSuite) TestListSpellsByLevel_Success() {
 func TestListSpellsTestSuite(t *testing.T) {
 	suite.Run(t, new(ListSpellsTestSuite))
 }
+
+func (s *ListSpellsTestSuite) TestCatalogIdentityAndNYIStatusSurviveMapping() {
+	s.mockService.EXPECT().ListSpellsByLevel(gomock.Any(), gomock.Any()).Return(&character.ListSpellsByLevelOutput{Spells: []character.SpellInfo{
+		{ID: "disguise-self", Ref: "dnd5e:spells:disguise-self", Name: "Disguise Self", Level: 1, NotYetImplemented: true},
+		{ID: "command", Ref: "dnd5e:spells:command", Name: "Command", Level: 1},
+	}, Total: 2}, nil)
+	response, err := s.handler.ListSpellsByLevel(context.Background(), &dnd5ev1alpha1.ListSpellsByLevelRequest{Level: 1})
+	s.Require().NoError(err)
+	s.Require().Len(response.Spells, 2)
+	s.Equal("dnd5e:spells:disguise-self", response.Spells[0].SpellRef)
+	s.True(response.Spells[0].NotYetImplemented)
+	s.Equal("dnd5e:spells:command", response.Spells[1].SpellRef)
+	s.False(response.Spells[1].NotYetImplemented)
+}

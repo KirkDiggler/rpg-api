@@ -358,10 +358,12 @@ type ListSpellsByLevelOutput struct {
 
 // SpellInfo contains spell details
 type SpellInfo struct {
-	ID          string
-	Name        string
-	Description string
-	Level       int
+	Ref               string
+	NotYetImplemented bool
+	ID                string
+	Name              string
+	Description       string
+	Level             int
 }
 
 // SetAppearanceInput sets the appearance for a draft.

@@ -926,10 +926,12 @@ func (h *Handler) ListSpellsByLevel(
 	for _, spell := range result.Spells {
 		// Convert the orchestrator SpellInfo to proto SpellInfo
 		protoSpell := &dnd5ev1alpha1.SpellInfo{
-			SpellId:     convertSpellToProtoEnum(spell.ID),
-			Name:        spell.Name,
-			Description: spell.Description,
-			Level:       int32(spell.Level),
+			SpellRef:          spell.Ref,
+			NotYetImplemented: spell.NotYetImplemented,
+			SpellId:           convertSpellToProtoEnum(spell.ID),
+			Name:              spell.Name,
+			Description:       spell.Description,
+			Level:             int32(spell.Level),
 		}
 		protoSpells = append(protoSpells, protoSpell)
 	}
