@@ -54,8 +54,10 @@ func ProjectorFor(m *sdk.Manager) dungeons.AtlasProjector { return managerProjec
 
 type managerProjector struct{ m *sdk.Manager }
 
-func (p managerProjector) AtlasOf(ctx context.Context, world *tkencounter.EncounterData) (*sdk.Atlas, error) {
-	return p.m.AtlasOf(ctx, &sdk.AtlasOfInput{World: world})
+func (p managerProjector) AtlasOf(
+	ctx context.Context, key string, world *tkencounter.EncounterData,
+) (*sdk.Atlas, error) {
+	return p.m.AtlasOf(ctx, &sdk.AtlasOfInput{World: world, Dungeon: key})
 }
 
 // ContentDir locates the repo's content/ directory by walking up from the
@@ -76,7 +78,10 @@ func ContentDir(t testing.TB) string {
 }
 
 // Shipped returns a read-only registry over the real content/ directory.
-// Puts are refused, so nothing a test does can touch the tree.
+// WRITES are refused, so nothing a test does can touch the tree; a
+// validate-only Put is answered, because a grade writes nothing
+// (rpg-project#481). A test that wants a read-only registry it may Put to
+// freely wants ScratchReadOnly.
 func Shipped(t testing.TB) *dungeons.FileRegistry {
 	t.Helper()
 
@@ -93,6 +98,27 @@ func Shipped(t testing.TB) *dungeons.FileRegistry {
 func Scratch(t testing.TB) (*dungeons.FileRegistry, string) {
 	t.Helper()
 
+	return scratch(t, true)
+}
+
+// ScratchReadOnly is Scratch with authoring OFF: the same temp copy of the
+// shipped content, behind a registry that refuses to store anything — the
+// shape the server boots with when RPG_AUTHORING_ENABLED is unset.
+//
+// A COPY rather than Shipped's real content/ directory, deliberately: a test
+// that proves the write refusal should not be the one test whose failure
+// writes into the repo's own content tree.
+func ScratchReadOnly(t testing.TB) (*dungeons.FileRegistry, string) {
+	t.Helper()
+
+	return scratch(t, false)
+}
+
+// scratch copies the shipped content into a temp directory and opens a
+// registry over it.
+func scratch(t testing.TB, authoring bool) (*dungeons.FileRegistry, string) {
+	t.Helper()
+
 	src := ContentDir(t)
 	dst := t.TempDir()
 	entries, err := os.ReadDir(src)
@@ -106,7 +132,7 @@ func Scratch(t testing.TB) (*dungeons.FileRegistry, string) {
 		copyFile(t, filepath.Join(src, e.Name()), filepath.Join(dst, e.Name()))
 	}
 
-	r, err := dungeons.NewFileRegistry(dst, true, Projector(t))
+	r, err := dungeons.NewFileRegistry(dst, authoring, Projector(t))
 	if err != nil {
 		t.Fatalf("dungeonstest: %v", err)
 	}

@@ -158,6 +158,15 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 
 	if _, err := o.sessionManager.StartSession(ctx, &sdk.StartSessionInput{
 		Session: encID, Encounter: encID, World: dungeon.World,
+		// The RESOLVED key, after the default fallback above -- what this
+		// launch actually loaded, not what the request asked for
+		// (rpg-project#479). It is written on the session record and reaches
+		// a client on GetAtlasResponse.dungeon_key, which is how a play view
+		// fetches the room's appearance from the same registry entry this
+		// world was compiled from. Passing in.DungeonKey instead would hand
+		// a client an empty string for every default launch and send it
+		// looking for content under no key at all.
+		Dungeon: key,
 	}); err != nil {
 		return nil, fmt.Errorf("start session %q on new stack: %w", encID, err)
 	}

@@ -3,13 +3,15 @@ package sessionworld
 // The workshop suite compiles the shared single-room v3 fixture (the same
 // file the registry and launch suites play, internal/dungeons/testdata) and
 // pins what rpg-api's thin adoption owes it: the file's own identity, the
-// authored axial cells — including the NEGATIVE ODD ROW — the complete scene
-// riding the field, the declared placement, and the refusals. This package
+// authored axial cells — including the NEGATIVE ODD ROW — the three numbers
+// per prop the lowering takes out of the authored scene, the declared
+// placement, and the refusals. This package
 // performs exactly one geometry conversion (cellOf); these tests are what
 // prove it once, at the seam, rather than a second algorithm.
 
 import (
 	"bytes"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,6 +29,11 @@ import (
 // registry and launch suites play these bytes and so must this package, or a
 // "fixture" nobody plays could drift.
 var workshopFixturePath = filepath.Join("..", "dungeons", "testdata", "workshop-room.yaml")
+
+// sqrt3 is the one irrational the source-to-canonical scale uses: an editor
+// hex of circumradius 1 is sqrt(3) editor units across the flats, which is
+// exactly one cell's FeetPerCell.
+const sqrt3 = 1.7320508075688772935274463415058723669428052538102380135
 
 type WorkshopSuite struct {
 	suite.Suite
@@ -79,55 +86,41 @@ func (s *WorkshopSuite) TestThePartyAndTheGarrisonStandWhereTheyWereAuthored() {
 		"authored axial (q=1, r=-1) arrives as itself — a negative odd row survives cellOf")
 }
 
-// TestTheSceneRidesTheFieldWhole pins the retention half of the adoption:
-// the compiled field carries the complete presentation the author wrote —
-// frame and workspace declarations, the grouped raised prop with its height
-// scale, the supported lit decor, the fractional/negative source transforms —
-// as doubles, untouched. Gameplay truth beside it: the declared table
-// placement with both blocking answers.
-func (s *WorkshopSuite) TestTheSceneRidesTheFieldWhole() {
-	scene := s.dungeon.World.Field.RoomScene
-	s.Require().NotNil(scene, "a v3 room's scene rides the field")
-	s.Equal(1, scene.Version)
-	s.Equal("world-xz", scene.Frame.HorizontalPlane)
-	s.Equal("world-y-up", scene.Frame.VerticalAxis)
-	s.Equal("world-scene-unit", scene.Frame.DistanceUnit)
-	s.Equal(float64(1), scene.Frame.HexRadius)
-	s.Equal("owner-local-xz", scene.Frame.FootprintFrame)
-	s.Equal(float64(6), scene.Workspace.HexRadius)
-	s.Equal(float64(12), scene.Workspace.HorizontalLimit)
+// TestTheThreeNumbersPerPropReachTheField pins what the engine actually
+// takes from the World Builder's scene now that it no longer carries it
+// (rpg-project#479): for each DECLARED prop, the authored transform's x, z
+// and rotationY, joined to the gameplay block's own footprint and its two
+// blocking answers. Everything else the author wrote — asset refs, labels,
+// parent groups, height scales, the candles' point light, the frame's axis
+// words — is content the engine never reads, no longer carries and no longer
+// judges. The candles are in the scene and NOT here, because nothing
+// declared them.
+//
+// Expectations are the AUTHORED numbers times the one documented scale, not
+// constants copied out of an output: k = FeetPerCell/sqrt(3) feet per source
+// unit, origin = (x*k, z*k), facing = -rotationY in degrees, and the name
+// swap (spatial's D lies along the facing, so the declared width becomes D
+// and the depth becomes W). A regression names which term moved.
+func (s *WorkshopSuite) TestTheThreeNumbersPerPropReachTheField() {
+	const k = tkencounter.FeetPerCell / sqrt3
 
-	s.Equal("scene-1", scene.Scene.ID)
-	s.Equal("Workshop", scene.Scene.Name)
-	s.Require().Len(scene.Scene.Items, 2)
-	table := scene.Scene.Items[0]
-	s.Equal("table", table.ID)
-	s.Equal(tkencounter.RoomSceneKindProp, table.Kind)
-	s.Equal("dnd5e:props:torture-table", table.AssetRef)
-	s.InDelta(-2.25, table.Transform.X, 1e-9, "fractional negative transform, a double")
-	s.InDelta(1.3, table.Transform.Z, 1e-9)
-	s.InDelta(0.37, table.Transform.RotationY, 1e-9)
-	s.Require().NotNil(table.HeightScale)
-	s.InDelta(1.5, *table.HeightScale, 1e-9, "the raised prop's height scale rides")
-	s.Equal("furniture", table.ParentID, "the raised prop is grouped")
-
-	candles := scene.Scene.Items[1]
-	s.Equal("candles", candles.ID)
-	s.Equal("table", candles.SupportID, "the decor is supported by the prop")
-	s.Require().NotNil(candles.PointLight)
-	s.True(candles.PointLight.Enabled)
-	s.Equal("#ff9d52", candles.PointLight.Color)
-	s.InDelta(1.1, candles.PointLight.Intensity, 1e-9)
-	s.InDelta(2.6, candles.PointLight.Range, 1e-9)
-	s.InDelta(0.5, candles.PointLight.Offset.Y, 1e-9)
-
-	s.Require().Len(scene.Scene.Groups, 1)
-	s.Equal("furniture", scene.Scene.Groups[0].ID)
-	s.InDelta(-2.175, scene.Scene.Groups[0].Transform.X, 1e-9)
-
-	s.Require().Len(s.dungeon.World.Field.Placed, 1, "one declared placement")
+	s.Require().Len(s.dungeon.World.Field.Placed, 1,
+		"one DECLARED prop: the undeclared candles are dressing, never inferred blocking")
 	placed := s.dungeon.World.Field.Placed[0]
 	s.Equal(tkencounter.PropID("table"), placed.ID)
+
+	// The three numbers, from `transform: {x: -2.25, z: 1.3, rotationY: 0.37}`.
+	s.InDelta(-2.25*k, placed.Placement.Origin.X, 1e-9, "authored x, scaled")
+	s.InDelta(1.3*k, placed.Placement.Origin.Y, 1e-9, "authored z becomes the plane's Y")
+	s.InDelta(-0.37*180/math.Pi, placed.Placement.Facing, 1e-9,
+		"a source yaw arrives as the opposite plane angle")
+
+	// The footprint, from the GAMEPLAY block's own declaration.
+	s.InDelta(1.2*k, placed.Placement.Footprint.D, 1e-9, "the declared width lies along the facing")
+	s.InDelta(0.5*k, placed.Placement.Footprint.W, 1e-9, "and the declared depth across it")
+	s.InDelta(0.1*k, placed.Placement.LocalOffset.X, 1e-9)
+	s.InDelta(-0.2*k, placed.Placement.LocalOffset.Y, 1e-9)
+
 	s.True(placed.BlocksMovement, "the table is walked around")
 	s.False(placed.BlocksLineOfSight, "and seen over, as declared")
 }
@@ -145,17 +138,17 @@ func (s *WorkshopSuite) TestTheImplicitRegionIsOneBrightCryptRoom() {
 	s.InDelta(1.0, *region.Lighting.Intensity, 1e-9, "bright is intensity 1")
 }
 
-// TestALegacyV2DungeonKeepsNoRoomScene pins compatibility the other way: the
-// shipped tomb predates room scenes, compiles exactly as before, and its
-// world carries NO room scene — absence stays absence on every carrier.
-func TestALegacyV2DungeonKeepsNoRoomScene(t *testing.T) {
+// TestALegacyV2DungeonPlacesNoProps pins compatibility the other way: the
+// shipped tomb is v2, has no scene to lower and no prop declarations,
+// compiles exactly as before, and contributes NOTHING to the field's placed
+// props — absence stays absence rather than becoming a zero-sized box at the
+// origin.
+func TestALegacyV2DungeonPlacesNoProps(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "content", "reference-tomb.yaml"))
 	require.NoError(t, err, "the shipped tomb must exist")
 	dungeon, err := Compile(raw)
 	require.NoError(t, err, "the shipped tomb must still compile")
-	require.Nil(t, dungeon.World.Field.RoomScene,
-		"legacy v2 content has no room scene, and none is invented")
-	require.Empty(t, dungeon.World.Field.Placed, "and no placed contributors either")
+	require.Empty(t, dungeon.World.Field.Placed, "a v2 dungeon declares no placed contributors")
 }
 
 // TestAnUnspellableStandingIsRefusedByName pins the strict decode: a play

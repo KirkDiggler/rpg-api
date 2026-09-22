@@ -66,9 +66,13 @@ var (
 	// would be lying to the next reader.
 	ErrKeyMismatch = errors.New("request key does not match the file's key")
 
-	// ErrAuthoringDisabled means Put was called on a registry constructed
+	// ErrAuthoringDisabled means a WRITE was asked of a registry constructed
 	// read-only (RPG_AUTHORING_ENABLED unset). The AuthoringService is not
 	// registered in that mode, so this is a second fence, not the first.
+	//
+	// A validate-only Put never returns it (rpg-project#481). Grading a file
+	// the caller supplied mutates nothing, and the builder's per-edit preview
+	// is exactly that grade.
 	ErrAuthoringDisabled = errors.New("authoring is disabled")
 )
 
@@ -118,8 +122,15 @@ type Entry struct {
 // serve: session.Manager.AtlasOf (the same validation-load path as
 // StartSession and the same projection Manager.Atlas uses), behind a
 // one-method adapter because the SDK's method takes its own input struct.
+//
+// The key rides along because a projected atlas names its dungeon
+// (rpg-project#479) and there is no session record here to ask. A live
+// session's atlas reads the key off its record; a preview's is the caller's
+// own, echoed back — which is the point, since the builder's preview and the
+// game's map have to name their dungeon the same way for one client code
+// path to draw both.
 type AtlasProjector interface {
-	AtlasOf(ctx context.Context, world *tkencounter.EncounterData) (*sdk.Atlas, error)
+	AtlasOf(ctx context.Context, key string, world *tkencounter.EncounterData) (*sdk.Atlas, error)
 }
 
 // PutInput is one PutDungeon call.
@@ -130,7 +141,9 @@ type PutInput struct {
 	// YAML is the file, verbatim.
 	YAML []byte
 
-	// ValidateOnly compiles and answers without writing anything.
+	// ValidateOnly compiles and answers without writing anything — the
+	// builder's per-edit preview. Answered whether or not this registry may
+	// write, because a grade mutates nothing (rpg-project#481).
 	ValidateOnly bool
 }
 
@@ -155,7 +168,8 @@ type Registry interface {
 	// Put compiles and, unless ValidateOnly, stores a dungeon. A file that
 	// does not compile is a PutResult with Errors, not an error: the author
 	// needs the list. An error is a malformed request (ErrInvalidKey,
-	// ErrKeyMismatch), a read-only registry (ErrAuthoringDisabled), or I/O.
+	// ErrKeyMismatch), a WRITE asked of a read-only registry
+	// (ErrAuthoringDisabled; a validate-only Put is answered by one), or I/O.
 	Put(ctx context.Context, in *PutInput) (*PutResult, error)
 }
 
@@ -185,8 +199,11 @@ var _ Registry = (*FileRegistry)(nil)
 // when DefaultKey is absent — the tomb must load whether or not authoring
 // is on, because StartEncounter with no key plays it.
 //
-// authoring decides whether Put writes; with it false Put returns
-// ErrAuthoringDisabled and the directory is never written to.
+// authoring decides whether Put WRITES; with it false a storing Put returns
+// ErrAuthoringDisabled and the directory is never written to. A validate-only
+// Put still compiles and answers on such a registry (rpg-project#481): it
+// writes nothing either way, and the builder's per-edit preview is the one
+// call a read-only registry can still serve.
 //
 // projector produces each Entry's Atlas. Required.
 func NewFileRegistry(dir string, authoring bool, projector AtlasProjector) (*FileRegistry, error) {
@@ -287,7 +304,11 @@ func (r *FileRegistry) Put(ctx context.Context, in *PutInput) (*PutResult, error
 	if !keyPattern.MatchString(in.Key) {
 		return nil, fmt.Errorf("dungeon key %q: %w", in.Key, ErrInvalidKey)
 	}
-	if !r.authoring {
+	// THE GATE IS ON THE WRITE, NOT ON THE GRADE (rpg-project#481).
+	// Compiling bytes the caller handed us touches no file and no entry, so a
+	// read-only registry answers a validate-only request — which is what the
+	// builder calls on every edit — and refuses only the save.
+	if !in.ValidateOnly && !r.authoring {
 		return nil, ErrAuthoringDisabled
 	}
 
@@ -381,7 +402,12 @@ func (r *FileRegistry) compileEntry(ctx context.Context, raw []byte) (*Entry, []
 		return nil, nil, err
 	}
 
-	atlas, err := r.projector.AtlasOf(ctx, d.World)
+	// The FILE's own key, which is the one this entry is stored and served
+	// under. A request key that disagrees with it is refused just after this
+	// (ErrKeyMismatch, on both the Put path and the load-from-disk path), so
+	// an atlas built here can only ever reach a caller naming the same string
+	// the caller asked for.
+	atlas, err := r.projector.AtlasOf(ctx, d.Key, d.World)
 	if err != nil {
 		// A world that compiled but will not load is not the author's file
 		// being wrong; it is the stack disagreeing with itself.

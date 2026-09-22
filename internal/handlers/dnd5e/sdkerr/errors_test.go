@@ -154,6 +154,14 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// ErrNotAPack (Unpack, rpg-toolkit#1544): a real, resolvable item
 		// that simply isn't a Pack. Same shape as ErrNotAVendor above.
 		{"ErrNotAPack", sdk.ErrNotAPack, codes.FailedPrecondition},
+		// ErrNotATarget (rpg-project#493 R4): a swing at a placed world NPC.
+		// The same wrong-kind-for-this-verb shape as ErrNotAVendor and
+		// ErrNotAPack above -- the target exists and is visible, it is just
+		// not something you attack -- and DELIBERATELY NOT the
+		// ErrStaleDeclaration it used to be: stale sends a host round a
+		// re-read loop that answers the same thing every time, which is the
+		// whole reason the SDK split this sentinel off.
+		{"ErrNotATarget", sdk.ErrNotATarget, codes.FailedPrecondition},
 		// ErrCannotActivate is ErrCannotAfford's shape one verb further out:
 		// an ability that could have run and said no. The SDK documents it as
 		// not currently reachable through Activate — Afford consults the same

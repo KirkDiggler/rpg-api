@@ -42,24 +42,32 @@ func TestTheIntelTableIsConstructionTruth(t *testing.T) {
 	require.Len(t, table, len(dungeon.World.Field.Intel), "no two records share an id")
 	require.NotEmpty(t, table, "the world carries the records the file declares")
 
-	// COMPILED IDS, all of them. Each record's own id and the door it reveals
-	// are minted `<key>/<id>`, because the composition's tables are keyed
-	// that way and two dungeons in one process must not collide. A raw
+	// COMPILED IDS, all of them. Each record's own id and the CONCEALMENT it
+	// reveals are minted `<key>/<id>`, because the composition's tables are
+	// keyed that way and two dungeons in one process must not collide. A raw
 	// authored id here would look right in a diff and reveal nothing at
 	// runtime.
 	//
-	// TWO RECORDS, ONE DOOR, and that is ordinary rather than a mistake:
+	// IT REVEALS A CONCEALMENT, NOT A DOOR (rpg-project#490, R7/E5). The file
+	// still says `reveals: { door: vault }` -- that is v2's vocabulary and it
+	// is unchanged -- and the v2 lowering points it at the one concealment
+	// holding that door, which here is the concealed vault region's. The
+	// compiled id happens to read the same because the region and its door
+	// share the authored name `vault`; what changed is which table the record
+	// is keyed into.
+	//
+	// TWO RECORDS, ONE SECRET, and that is ordinary rather than a mistake:
 	// the captain remembers the way in and somebody wrote it down in the
 	// hall. Knowledge is not scarce, and the pair is what lets the tool be
 	// exercised without fighting the hardest monster in the dungeon (R6).
-	const vault = tkencounter.DoorID("reference-tomb-heirloom/vault")
+	const vault = tkencounter.ConcealmentID("reference-tomb-heirloom/vault")
 	for _, id := range []tkencounter.IntelID{
 		"reference-tomb-heirloom/vault-map",
 		"reference-tomb-heirloom/hall-notes",
 	} {
 		rec, declared := table[id]
 		require.True(t, declared, "the file declares %s", id)
-		require.Equal(t, vault, rec.Door, "%s reveals the vault door", id)
+		require.Equal(t, vault, rec.Concealment, "%s reveals the vault's secret", id)
 	}
 }
 

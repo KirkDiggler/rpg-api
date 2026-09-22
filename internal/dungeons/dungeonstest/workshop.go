@@ -4,8 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 )
 
 // The single-room v3 fixtures (internal/dungeons/testdata): shared YAML, one
@@ -54,71 +52,4 @@ func roomFixture(t testing.TB, key string) []byte {
 	}
 
 	return raw
-}
-
-// WorkshopRoomScene is the FULL source graph the workshop fixture authors,
-// spelled here once as an independent expected value: not decoded out of any
-// converter's output, so a test that compares an atlas against it proves the
-// whole scene crossed, value by value — the grouped raised table (with its
-// height scale and parent group), the supported lit candles (support, light
-// offset/color/intensity/range), the fractional/negative transforms, and the
-// frame and workspace declarations. Doubles stay doubles.
-func WorkshopRoomScene() tkencounter.RoomScenePresentation {
-	const furnitureGroupID = "furniture"
-	heightScale := 1.5
-	return tkencounter.RoomScenePresentation{
-		Version: 1,
-		Frame: tkencounter.RoomSceneFrame{
-			HorizontalPlane: "world-xz",
-			VerticalAxis:    "world-y-up",
-			DistanceUnit:    "world-scene-unit",
-			HexRadius:       1,
-			FootprintFrame:  "owner-local-xz",
-		},
-		Workspace: tkencounter.RoomSceneWorkspace{HexRadius: 6, HorizontalLimit: 12},
-		Scene: tkencounter.RoomVisualScene{
-			Version: 1, ID: "scene-1", Name: "Workshop",
-			Items: []tkencounter.RoomSceneItem{
-				{
-					Kind:     tkencounter.RoomSceneKindProp,
-					ID:       "table",
-					Label:    "Table",
-					AssetRef: "dnd5e:props:torture-table",
-					Transform: tkencounter.RoomSceneTransform{
-						X: -2.25, Y: 0, Z: 1.3, RotationY: 0.37,
-					},
-					HeightScale: &heightScale,
-					ParentID:    furnitureGroupID,
-				},
-				{
-					Kind:     tkencounter.RoomSceneKindProp,
-					ID:       "candles",
-					Label:    "Candles",
-					AssetRef: "dnd5e:props:candles",
-					Transform: tkencounter.RoomSceneTransform{
-						X: -2.1, Y: 1.2, Z: 1.25, RotationY: 0.37,
-					},
-					ParentID:  furnitureGroupID,
-					SupportID: "table",
-					PointLight: &tkencounter.RoomSceneLight{
-						Enabled:   true,
-						Offset:    tkencounter.RoomSceneOffset{X: 0, Y: 0.5, Z: 0},
-						Color:     "#ff9d52",
-						Intensity: 1.1,
-						Range:     2.6,
-					},
-				},
-			},
-			Groups: []tkencounter.RoomSceneGroup{
-				{
-					Kind:  tkencounter.RoomSceneKindGroup,
-					ID:    "furniture",
-					Label: "Furniture",
-					Transform: tkencounter.RoomSceneTransform{
-						X: -2.175, Y: 0.6, Z: 1.275, RotationY: 0.37,
-					},
-				},
-			},
-		},
-	}
 }
