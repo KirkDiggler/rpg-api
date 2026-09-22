@@ -1059,18 +1059,22 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 		// sentence. Reaches every recipient the session addressed it to,
 		// monsters included; nothing on this side narrows the audience.
 		//
-		// THE SDK'S Cause HAS NOWHERE TO GO YET, and that is a wire gap
-		// rather than a choice here. session/v0.102.0 records WHY a pair
-		// turned -- "attacked by alice", "round 3 started" (rpg-project#493,
-		// R2 and R3) -- and StanceChanged carries between and stance only.
-		// Inventing a field for it at this seam is not this layer's to do:
-		// the proto is the contract, so the reason rides an additive
-		// `cause` on the message or it does not cross. Until that lands a
-		// client is told the pair turned and not why, which is exactly what
-		// the SDK says a reader does when the cause is absent -- so the
-		// missing half reads as the lawful empty case rather than a hole.
+		// THE CAUSE CROSSES WHOLE, AND SO DOES ITS ABSENCE
+		// (rpg-api-protos#354). The SDK records WHY a pair turned --
+		// "attacked by alice", "the fall of scout", "round 3 started"
+		// (rpg-project#493, R2 and R3) -- and the wire now has a `cause`
+		// to put it in. It is copied, never composed: the sentence is the
+		// composition's, the way the stance is the author's word, so a
+		// phrase written here would be this layer narrating.
+		//
+		// EMPTY IS COPIED TOO, and deliberately not filled in. A pair also
+		// turns because a faction's mind came to know the fact the author
+		// named -- the hold-out beat -- and that fold writes no sentence,
+		// because nobody decided one. Substituting a default here would
+		// hand every client a reason no author wrote, and the emptiness is
+		// what tells a reader to say only that the pair turned.
 		evt.Body = &sessionpb.Event_StanceChanged{StanceChanged: &sessionpb.StanceChanged{
-			Between: b.Between, Stance: b.Stance,
+			Between: b.Between, Stance: b.Stance, Cause: b.Cause,
 		}}
 	case sdk.ArrivedBody:
 		// A reserved placement entered the run (rpg-project#375 step B,

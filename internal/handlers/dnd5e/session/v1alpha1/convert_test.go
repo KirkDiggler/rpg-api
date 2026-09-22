@@ -1800,15 +1800,34 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	})
 
 	// The stance beat (rpg-project#375, design §6): kind and body, verbatim
-	// -- the pair as the session sorted it, the stance as the author's word.
+	// -- the pair as the session sorted it, the stance as the author's word,
+	// and the composition's own sentence for why (rpg-api-protos#354).
 	t.Run("StanceChanged", func(t *testing.T) {
+		got := mustEventToProto(t, sdk.Event{
+			Kind: sdk.EventStanceChanged,
+			Body: sdk.StanceChangedBody{
+				Between: []string{"party", "raiders"}, Stance: "hostile", Cause: "attacked by alice",
+			},
+		})
+		require.Equal(t, sessionpb.EventKind_EVENT_KIND_STANCE_CHANGED, got.GetKind())
+		require.Equal(t, []string{"party", "raiders"}, got.GetStanceChanged().GetBetween())
+		require.Equal(t, "hostile", got.GetStanceChanged().GetStance())
+		require.Equal(t, "attacked by alice", got.GetStanceChanged().GetCause(),
+			"the sentence the composition wrote, not one composed here")
+	})
+
+	// A pair that a mind's knowledge turned carries no sentence, and the
+	// converter leaves it that way. Substituting a default would hand every
+	// client a reason no author wrote; the emptiness is what tells a reader
+	// to say only that the pair turned.
+	t.Run("StanceChangedWithoutACause", func(t *testing.T) {
 		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventStanceChanged,
 			Body: sdk.StanceChangedBody{Between: []string{"party", "raiders"}, Stance: "neutral"},
 		})
-		require.Equal(t, sessionpb.EventKind_EVENT_KIND_STANCE_CHANGED, got.GetKind())
-		require.Equal(t, []string{"party", "raiders"}, got.GetStanceChanged().GetBetween())
 		require.Equal(t, "neutral", got.GetStanceChanged().GetStance())
+		require.Empty(t, got.GetStanceChanged().GetCause(),
+			"the hold-out beat writes no cause, and nothing here invents one")
 	})
 
 	t.Run("Moved", func(t *testing.T) {
