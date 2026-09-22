@@ -1040,6 +1040,17 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 		// maps the word to a color the way it maps Ended.ending to a
 		// sentence. Reaches every recipient the session addressed it to,
 		// monsters included; nothing on this side narrows the audience.
+		//
+		// THE SDK'S Cause HAS NOWHERE TO GO YET, and that is a wire gap
+		// rather than a choice here. session/v0.102.0 records WHY a pair
+		// turned -- "attacked by alice", "round 3 started" (rpg-project#493,
+		// R2 and R3) -- and StanceChanged carries between and stance only.
+		// Inventing a field for it at this seam is not this layer's to do:
+		// the proto is the contract, so the reason rides an additive
+		// `cause` on the message or it does not cross. Until that lands a
+		// client is told the pair turned and not why, which is exactly what
+		// the SDK says a reader does when the cause is absent -- so the
+		// missing half reads as the lawful empty case rather than a hole.
 		evt.Body = &sessionpb.Event_StanceChanged{StanceChanged: &sessionpb.StanceChanged{
 			Between: b.Between, Stance: b.Stance,
 		}}
