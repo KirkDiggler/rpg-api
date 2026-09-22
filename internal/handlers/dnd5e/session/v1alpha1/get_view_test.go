@@ -25,8 +25,12 @@ func TestGetView_Unauthenticated_Errors(t *testing.T) {
 func TestGetView_HappyPath(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
-	mgr.EXPECT().View(gomock.Any(), &sdk.ViewInput{Session: "sess-1", Member: "char-1"}).Return(
+	viewInput := &sdk.ViewInput{Session: "sess-1", Member: "char-1"}
+	mgr.EXPECT().View(gomock.Any(), viewInput).Return(
 		[]sdk.Sighting{{Subject: "goblin-1"}}, nil,
+	)
+	mgr.EXPECT().Areas(gomock.Any(), viewInput).Return(
+		[]sdk.SightArea{{ID: "area-1", Name: "Fog", Ref: "spell:fog", RadiusFeet: 15}}, nil,
 	)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
@@ -34,6 +38,9 @@ func TestGetView_HappyPath(t *testing.T) {
 	resp, err := h.GetView(ctx, &sessionpb.GetViewRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
 	require.Len(t, resp.GetSightings(), 1)
+	require.Len(t, resp.GetAreas(), 1)
+	require.Equal(t, "area-1", resp.GetAreas()[0].GetId())
+	require.Equal(t, "spell:fog", resp.GetAreas()[0].GetSourceRef())
 }
 
 func TestGetView_ManagerError_TranslatesViaErrorTable(t *testing.T) {
