@@ -2774,3 +2774,135 @@ func projected[T any, R any](in []T, fact func(T) R) []R {
 func wireXY(p *sessionpb.Position) [2]float64 { return [2]float64{p.GetX(), p.GetY()} }
 
 func wireQR(p *sessionpb.AxialPoint) [2]float64 { return [2]float64{p.GetQ(), p.GetR()} }
+
+// TestAtlasToProto_APlacedFootprintCrossesTheSeamWhole is the wire half of
+// rpg-api-protos#351: every field of one placement reaches GetAtlasResponse,
+// and none of them is derived here.
+//
+// EVERY NUMBER IS DIFFERENT, on purpose. Width and depth are the pair a
+// converter is most likely to swap -- the authored dialect really does swap
+// those names one layer down -- and a rectangle three feet across by seven
+// deep fails loudly where a square one would pass a converter that drew the
+// table turned ninety degrees. The same holds for the origin against the
+// local offset, and for x against y inside each of them.
+//
+// MUTATION-CHECKED on `cells`, which is the field the wire exists for:
+// dropping the `Cells:` line from atlasPlacedPropToProto fails the cells
+// assertions below, and dropping the whole `Placed:` line from AtlasToProto
+// fails the length assertion.
+func TestAtlasToProto_APlacedFootprintCrossesTheSeamWhole(t *testing.T) {
+	got := AtlasToProto(&sdk.Atlas{
+		Grid:  sdk.GridHex,
+		Cells: []spatial.Position{{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 1, Y: 1}},
+		Placed: []sdk.AtlasPlacedProp{{
+			ID: "long-table",
+			Placement: sdk.FootprintPlacement{
+				Width:       3,
+				Depth:       7,
+				Origin:      sdk.FootprintPoint{X: 11, Y: 13},
+				Facing:      29,
+				LocalOffset: sdk.FootprintPoint{X: 2, Y: -5},
+			},
+			BlocksMovement:    true,
+			BlocksLineOfSight: false,
+			Holdable:          true,
+			Cells:             []spatial.Position{{X: 1, Y: 0}, {X: 1, Y: 1}},
+		}},
+	})
+
+	require.Len(t, got.GetPlaced(), 1)
+	placed := got.GetPlaced()[0]
+	require.Equal(t, "long-table", placed.GetId(),
+		"the author's name is the only handle Hold can use")
+
+	// The pose. Across-the-facing is 3 and along-it is 7; a converter that
+	// re-swapped the pair the authored dialect already swapped fails here.
+	pose := placed.GetPlacement()
+	require.NotNil(t, pose, "a placement always carries its rectangle")
+	require.Equal(t, 3.0, pose.GetWidth(), "width lies ACROSS the facing")
+	require.Equal(t, 7.0, pose.GetDepth(), "depth lies ALONG it")
+	require.Equal(t, 29.0, pose.GetFacing(), "degrees from east, verbatim -- nothing snaps to a hex edge")
+	require.Equal(t, 11.0, pose.GetOrigin().GetX())
+	require.Equal(t, 13.0, pose.GetOrigin().GetY())
+	require.Equal(t, 2.0, pose.GetLocalOffset().GetX())
+	require.Equal(t, -5.0, pose.GetLocalOffset().GetY(),
+		"the offset is a real nudge in the placement's own axes, not decoration")
+
+	// The two blocking answers are independent, and this table is the pair
+	// that proves it: walked around, seen over. A converter that copied one
+	// bool into both passes neither assertion.
+	require.True(t, placed.GetBlocksMovement())
+	require.False(t, placed.GetBlocksLineOfSight())
+	require.True(t, placed.GetHoldable(),
+		"the author's flag, verbatim -- a client offers Hold only where it is true")
+
+	// THE FIELD THE WIRE EXISTS FOR. Standing is a trace of the rectangle
+	// against the floor, and it is carried so nobody runs that geometry a
+	// second time. Both cells, in the atlas's own order.
+	require.Len(t, placed.GetCells(), 2, "the rectangle stands on two cells")
+	require.Equal(t, 1.0, placed.GetCells()[0].GetX())
+	require.Equal(t, 0.0, placed.GetCells()[0].GetY())
+	require.Equal(t, 1.0, placed.GetCells()[1].GetX())
+	require.Equal(t, 1.0, placed.GetCells()[1].GetY())
+}
+
+// TestAtlasToProto_PlacedAbsenceIsFalseAndEmpty pins the two shapes that a
+// converter is tempted to spell as "nothing": a map with no placements at
+// all, and a placement nobody declared anything about.
+//
+// FALSE IS AN ANSWER on all three flags. A rectangle nobody declared holdable
+// is scenery, and a rectangle nobody declared blocking is walked through and
+// seen over -- those are facts the author gave, not facts nobody gave, and a
+// converter that filtered such an entry out of the list would tell a client
+// the thing is not on the floor.
+//
+// An empty list is the repeated field's own empty, matching every other list
+// on this message rather than inventing a nil-versus-empty distinction the
+// wire cannot carry anyway.
+func TestAtlasToProto_PlacedAbsenceIsFalseAndEmpty(t *testing.T) {
+	bare := AtlasToProto(&sdk.Atlas{Grid: sdk.GridHex, Cells: []spatial.Position{{X: 0, Y: 0}}})
+	require.Empty(t, bare.GetPlaced(), "a map with no placements carries an empty list")
+
+	quiet := AtlasToProto(&sdk.Atlas{
+		Grid:   sdk.GridHex,
+		Cells:  []spatial.Position{{X: 0, Y: 0}},
+		Placed: []sdk.AtlasPlacedProp{{ID: "rug", Cells: []spatial.Position{{X: 0, Y: 0}}}},
+	})
+	require.Len(t, quiet.GetPlaced(), 1,
+		"a placement nobody declared anything about is still standing there")
+	rug := quiet.GetPlaced()[0]
+	require.False(t, rug.GetBlocksMovement())
+	require.False(t, rug.GetBlocksLineOfSight())
+	require.False(t, rug.GetHoldable())
+	require.NotNil(t, rug.GetPlacement(),
+		"a zero pose is a real pose -- a rectangle anchored at the origin, facing east")
+	require.NotNil(t, rug.GetPlacement().GetOrigin(),
+		"the source carries a VALUE, so there is no absence here to translate")
+	require.NotNil(t, rug.GetPlacement().GetLocalOffset())
+	require.Len(t, rug.GetCells(), 1)
+}
+
+// TestAtlasToProto_PlacedIsNotFoldedIntoProps pins the one collapse that
+// would look tidy and lose the run: the two lists are different KINDS of
+// thing, and a placement has no cell to be "at".
+//
+// A converter that appended placements to `props` would hand a client a prop
+// carrying no ref -- nothing to draw -- standing at whichever cell somebody
+// picked out of its footprint, and the client's Hold offer would then be
+// keyed off a list whose ids the engine's prop verbs do not answer to.
+func TestAtlasToProto_PlacedIsNotFoldedIntoProps(t *testing.T) {
+	got := AtlasToProto(&sdk.Atlas{
+		Grid:  sdk.GridHex,
+		Cells: []spatial.Position{{X: 0, Y: 0}},
+		Props: []sdk.AtlasProp{{ID: "urn", Ref: "dnd5e:props:urn", At: spatial.Position{X: 0, Y: 0}}},
+		Placed: []sdk.AtlasPlacedProp{{
+			ID:    "bookcase",
+			Cells: []spatial.Position{{X: 0, Y: 0}},
+		}},
+	})
+
+	require.Len(t, got.GetProps(), 1, "the cell prop is alone on its own list")
+	require.Equal(t, "urn", got.GetProps()[0].GetId())
+	require.Len(t, got.GetPlaced(), 1, "and the rectangle is alone on its own")
+	require.Equal(t, "bookcase", got.GetPlaced()[0].GetId())
+}

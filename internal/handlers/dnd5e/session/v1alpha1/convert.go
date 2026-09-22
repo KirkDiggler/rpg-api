@@ -1690,6 +1690,16 @@ func capacityGrantedBodyToProto(body *sdk.CapacityGrantedBody) *sessionpb.Capaci
 // the bools straight across is the whole job here; deciding anything about them
 // would be this layer inventing world state.
 //
+// # Two lists of things, because there are two kinds of thing
+//
+// `props` are the things standing on A CELL, naming content they draw as.
+// `placed` are the authored FOOTPRINTS -- rectangles drawn at an angle, big
+// enough to stand on several cells or small enough to stand on none of their
+// centers, naming no content at all (rpg-api-protos#351). The two never share
+// an id and neither is derivable from the other. A placement carries the cells
+// the engine says it stands on, and this layer copies that list rather than
+// tracing the rectangle a second time; see atlasPlacedPropToProto.
+//
 // Exported because it has two callers that MUST agree: GetAtlas, and the
 // AuthoringService's PutDungeon, whose answer is the same message so the
 // builder has no second geometry to keep in step with the game
@@ -1745,6 +1755,14 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 		Exits:      atlasExitsToProto(a.Exits),
 		Start:      atlasStartToProto(a.Start),
 		DungeonKey: a.DungeonKey,
+		// The authored rectangles standing on the map, beside -- never
+		// inside -- the cell props above. A client draws a placement from
+		// this list rather than from the World Builder's own scene bytes,
+		// because the scene is the author's whole drawing and says nothing
+		// about the run: whether the thing has arrived, whether somebody is
+		// already carrying it, or whether this member can see where it
+		// stands.
+		Placed: atlasPlacedPropsToProto(a.Placed),
 	}
 }
 
@@ -1835,6 +1853,100 @@ func atlasPropsToProto(ps []sdk.AtlasProp) []*sessionpb.AtlasProp {
 		out[i] = atlasPropToProto(p)
 	}
 	return out
+}
+
+// atlasPlacedPropToProto mirrors one session.AtlasPlacedProp -- a rectangle
+// somebody drew on the map, the two blocking answers its author gave it,
+// whether it can be picked up, and the cells the engine says it stands on
+// (rpg-api-protos#351).
+//
+// A DIFFERENT KIND OF THING FROM AtlasProp, not a better one. A prop occupies
+// A CELL and names content it draws as; a placement occupies AN AREA and names
+// no content at all -- it is the geometry a door, a table or a bookcase was
+// drawn as, and the World Builder owns what it looks like. The two lists never
+// share an id, so a client may key them together.
+//
+// # Absence is the whole vocabulary, and this converter adds no flag to it
+//
+// A placement is off this list when it is still in reserve, when somebody is
+// holding it (for everyone at once -- a thing leaving the floor is not a
+// secret), and when this recipient cannot see the floor it stands on. All
+// three are the SDK's answers, decided before the list reaches here, and this
+// layer copies the list it was given. A flag saying "held" or "hidden" would
+// be a second answer to a question absence already answers, and a client
+// drawing flagged entries would draw furniture nobody can reach.
+//
+// # Cells is copied, never re-measured
+//
+// Standing is a trace of the rectangle against every cell of the floor, and
+// it is the SAME SET Hold's reach judges. A seam that rasterized the box a
+// second time here would be a second geometry one layer before the client's,
+// disagreeing at exactly the edges that matter -- where a table's corner
+// clips a hex -- and an offer this list produced could then contradict the
+// refusal the engine gives.
+func atlasPlacedPropToProto(p sdk.AtlasPlacedProp) *sessionpb.AtlasPlacedProp {
+	cells := make([]*sessionpb.Position, len(p.Cells))
+	for i, c := range p.Cells {
+		cells[i] = positionToProto(c)
+	}
+
+	return &sessionpb.AtlasPlacedProp{
+		Id:                p.ID,
+		Placement:         footprintPlacementToProto(p.Placement),
+		BlocksMovement:    p.BlocksMovement,
+		BlocksLineOfSight: p.BlocksLineOfSight,
+		Holdable:          p.Holdable,
+		Cells:             cells,
+	}
+}
+
+func atlasPlacedPropsToProto(ps []sdk.AtlasPlacedProp) []*sessionpb.AtlasPlacedProp {
+	out := make([]*sessionpb.AtlasPlacedProp, len(ps))
+	for i, p := range ps {
+		out[i] = atlasPlacedPropToProto(p)
+	}
+
+	return out
+}
+
+// footprintPlacementToProto mirrors session.FootprintPlacement field for
+// field: the rectangle's size in feet, where it is anchored, which way it
+// faces, and how far it is nudged inside its own axes.
+//
+// NOTHING IS SWAPPED, SNAPPED OR SCALED HERE. Width lies ACROSS the facing and
+// Depth ALONG it; the authored dialect performs that name swap at the
+// construction boundary, long before this seam, and re-swapping it here would
+// draw every door turned ninety degrees. Facing is degrees from east and any
+// finite angle is legal -- zero is due east, a real facing, never "not
+// authored".
+//
+// The two points are always written, because the source carries VALUES and a
+// value type has no absence to translate. A zero origin is a real anchor and a
+// zero local offset is the pose most placements hold (the rectangle centered on
+// its origin), so an omitted message here would spell a fact the SDK never
+// said.
+func footprintPlacementToProto(p sdk.FootprintPlacement) *sessionpb.FootprintPlacement {
+	return &sessionpb.FootprintPlacement{
+		Width:       p.Width,
+		Depth:       p.Depth,
+		Origin:      footprintPointToProto(p.Origin),
+		Facing:      p.Facing,
+		LocalOffset: footprintPointToProto(p.LocalOffset),
+	}
+}
+
+// footprintPointToProto mirrors session.FootprintPoint: one point on the
+// map's continuous plane, IN FEET.
+//
+// DELIBERATELY NOT positionToProto's target. A Position is a cell coordinate
+// in the atlas's own frame, where 1 means one cell along an axis; these are
+// feet on the plane the engine traces rectangles in. The same spot carries
+// different numbers in the two frames and neither converts without the
+// layout, so sending one where the other belongs puts a table five times too
+// far out. The wire mints a separate message for exactly that reason, and
+// this converter is the only thing that fills it.
+func footprintPointToProto(p sdk.FootprintPoint) *sessionpb.FootprintPoint {
+	return &sessionpb.FootprintPoint{X: p.X, Y: p.Y}
 }
 
 // atlasRegionToProto mirrors session.AtlasRegion: a named set of absolute

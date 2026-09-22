@@ -1,0 +1,58 @@
+# A v4 single room whose one authored FOOTPRINT can be picked up
+# (rpg-api-protos#351, rpg-toolkit#1854).
+#
+# The smallest document that puts a placed rectangle on the wire and lets a
+# player take it: one room, two declared props, and a `propBindings` block
+# that makes exactly one of them holdable. The bench is the control — same
+# kind of thing, same list, no orders — so a scene can say "this one and not
+# that one" instead of "the only one there is".
+#
+# Deliberately NOT the workshop room, which declares one prop nobody may
+# touch and exists to pin the presentation lowering. This file exists to say
+# one thing: a v4 placement reaches GetAtlas with its cells and its holdable
+# flag, and leaves the map when somebody holds it.
+version: 4
+key: placed-table-room
+play: {void: transparent, lighting: bright, standing: centre-covered}
+room:
+  version: 3
+  id: room-1
+  name: The Long Table
+  coordinateFrame: {hexRadius: 1}
+  workspace: {hexRadius: 6}
+  scene:
+    version: 1
+    id: scene-1
+    name: The Long Table
+    items:
+      - id: table
+        kind: prop
+        assetRef: dnd5e:props:torture-table
+        label: Table
+        transform: {x: 0, y: 0, z: 0, rotationY: 0}
+      - id: bench
+        kind: prop
+        assetRef: dnd5e:props:bench
+        label: Bench
+        transform: {x: 2, y: 0, z: 0, rotationY: 0}
+    groups: []
+  room:
+    implicitRegionId: room-1-region
+    walkableHexes: [{q: 0, r: 0}, {q: 1, r: 0}, {q: 2, r: 0}, {q: 3, r: 0},
+      {q: -1, r: 0}, {q: -2, r: 0},
+      {q: 0, r: 1}, {q: 1, r: 1}, {q: -1, r: 1},
+      {q: 0, r: -1}, {q: 1, r: -1}, {q: 2, r: -1}]
+    propDeclarations:
+      table:
+        blocksMovement: false
+        blocksLineOfSight: false
+        footprint: {width: 1.4, depth: 0.6, offsetX: 0, offsetZ: 0}
+      bench:
+        blocksMovement: false
+        blocksLineOfSight: false
+        footprint: {width: 0.8, depth: 0.4, offsetX: 0, offsetZ: 0}
+    arrangementDeclarations: {}
+    propBindings:
+      table: {holdable: true}
+    partyStart: {q: -2, r: 0}
+    monsters: []
