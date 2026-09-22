@@ -1772,10 +1772,9 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	}
 	s.Require().NotNil(cantripChoice, "a bard is asked for cantrips")
 	s.Equal(int32(2), cantripChoice.GetChooseCount())
-	s.Equal([]string{bladeWardRef, trueStrikeRef, viciousMockeryRef, thunderclapRef},
+	s.Equal([]string{bladeWardRef, "dnd5e:spells:light", trueStrikeRef, viciousMockeryRef, thunderclapRef},
 		cantripChoice.GetSpellOptions().GetAvailableRefs(),
-		"the options are gated to the cantrips this build can cast, as refs — "+
-			"book order first, then what this build has added")
+		"the shared options include explicitly catalog-only Light without changing the pick count")
 	s.Empty(cantripChoice.GetSpellOptions().GetAvailable(), //nolint:staticcheck // Asserting the deprecated field stays unwritten.
 		"the deprecated enum field is not written beside the refs")
 	s.Require().NotNil(spellChoice, "a bard is asked for the provider's leveled spell choice")
@@ -1909,4 +1908,23 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	s.Equal([]string{trueStrikeRef, viciousMockeryRef}, stored.Character.Data.KnownCantrips)
 	s.Contains(stored.Character.Data.KnownSpells, baneRef)
 	s.Contains(stored.Character.Data.KnownSpells, thunderwaveRef)
+}
+
+func (s *CharacterCreationSuite) TestSharedNYISpellCatalog() {
+	ctx := s.authCtx("catalog-player")
+	entries := map[string]*dnd5ev1alpha1.SpellInfo{}
+	for _, level := range []int32{0, 1} {
+		result, err := s.server.CharacterClient.ListSpellsByLevel(ctx, &dnd5ev1alpha1.ListSpellsByLevelRequest{Level: level})
+		s.Require().NoError(err)
+		for _, entry := range result.Spells {
+			entries[entry.SpellRef] = entry
+		}
+	}
+	for _, id := range []string{"light", "charm-person", "disguise-self", "identify"} {
+		entry := entries["dnd5e:spells:"+id]
+		s.Require().NotNil(entry, id)
+		s.True(entry.NotYetImplemented, id)
+	}
+	s.Require().NotNil(entries["dnd5e:spells:command"])
+	s.False(entries["dnd5e:spells:command"].NotYetImplemented)
 }

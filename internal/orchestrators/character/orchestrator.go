@@ -14,6 +14,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells"
 
@@ -1167,10 +1168,14 @@ func (o *Orchestrator) ListSpellsByLevel(_ context.Context, input *ListSpellsByL
 	result := make([]SpellInfo, 0, len(toolkitSpells))
 	for _, spellData := range toolkitSpells {
 		info := SpellInfo{
-			ID:          spellData.ID,
-			Name:        spellData.Name,
-			Description: spellData.Description,
-			Level:       spellData.Level,
+			NotYetImplemented: spellData.NotYetImplemented,
+			ID:                spellData.ID,
+			Name:              spellData.Name,
+			Description:       spellData.Description,
+			Level:             spellData.Level,
+		}
+		if ref := refs.Spells.ByID(spellData.ID); ref != nil {
+			info.Ref = ref.String()
 		}
 		result = append(result, info)
 	}
