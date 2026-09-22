@@ -524,6 +524,24 @@ func sightingsToProto(ss []sdk.Sighting) []*sessionpb.Sighting {
 	return out
 }
 
+func sightAreaToProto(a sdk.SightArea) *sessionpb.SightArea {
+	return &sessionpb.SightArea{
+		Id:         a.ID,
+		Name:       a.Name,
+		SourceRef:  a.Ref,
+		Center:     positionToProto(a.Center),
+		RadiusFeet: int32(a.RadiusFeet),
+	}
+}
+
+func sightAreasToProto(areas []sdk.SightArea) []*sessionpb.SightArea {
+	out := make([]*sessionpb.SightArea, len(areas))
+	for i, area := range areas {
+		out[i] = sightAreaToProto(area)
+	}
+	return out
+}
+
 func stepToProto(s sdk.Step) *sessionpb.Step {
 	return &sessionpb.Step{Position: positionToProto(s.Position), Seq: s.Seq}
 }
@@ -2435,6 +2453,8 @@ func footprintOriginToProto(origin sdk.FootprintOrigin) sessionpb.FootprintOrigi
 		return sessionpb.FootprintOrigin_FOOTPRINT_ORIGIN_CASTER
 	case sdk.FootprintOriginCasterEdge:
 		return sessionpb.FootprintOrigin_FOOTPRINT_ORIGIN_CASTER_EDGE
+	case sdk.FootprintOriginPoint:
+		return sessionpb.FootprintOrigin_FOOTPRINT_ORIGIN_POINT
 	default:
 		return sessionpb.FootprintOrigin_FOOTPRINT_ORIGIN_UNSPECIFIED
 	}

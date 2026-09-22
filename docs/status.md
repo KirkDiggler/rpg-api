@@ -36,9 +36,13 @@ proven to be the same set. Pins: `rpg-api-protos/gen/go` the pseudo-version
 of `cb1dfcd8`, which is release `v0.1.207`'s commit on the `generated`
 branch (rpg-api-protos#353) — the bare release tag versions the repo-root
 module and cannot version the `gen/go` submodule, so this module has always
-been pinned by pseudo-version; `rulebooks/dnd5e/encounter` **v0.101.0**
-(toolkit#1866) and `rulebooks/dnd5e/session` **v0.103.0** (toolkit#1867),
-both released tags.
+been pinned by pseudo-version; `rulebooks/dnd5e/encounter` **v0.102.1**,
+`rulebooks/dnd5e/session` **v0.104.0** and `rulebooks/dnd5e` **v0.189.0**,
+all released tags and all the latest of their module. The placed work
+itself landed at encounter v0.101.0 (toolkit#1866) and session v0.103.0
+(toolkit#1867); the two tags above it carry the R5 provocation fix
+(toolkit#1868) and the Tempest lane `dev` already adopted, which this
+branch takes along rather than pinning behind.
 
 **One concealment, one reveal (rpg-project#490, E4)** — The engine hid doors
 and regions behind two separate flags, so one authored secret arrived as two

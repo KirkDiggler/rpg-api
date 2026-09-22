@@ -41,6 +41,7 @@ type Manager interface {
 	Status(ctx context.Context, in *sdk.StatusInput) (*sdk.Status, error)
 	Story(ctx context.Context, in *sdk.StoryInput) ([]sdk.Event, error)
 	View(ctx context.Context, in *sdk.ViewInput) ([]sdk.Sighting, error)
+	Areas(ctx context.Context, in *sdk.ViewInput) ([]sdk.SightArea, error)
 	Atlas(ctx context.Context, in *sdk.AtlasInput) (*sdk.Atlas, error)
 	Where(ctx context.Context, in *sdk.WhereInput) (*sdk.WhereOutput, error)
 	Doors(ctx context.Context, in *sdk.DoorsInput) (*sdk.DoorsOutput, error)
