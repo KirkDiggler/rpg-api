@@ -920,28 +920,47 @@ func convertClassDataToProto(data *classes.Data) *dnd5ev1alpha1.ClassInfo {
 
 	// REQUIREMENTS - Load ALL choices from toolkit
 	allChoices := loadAllClassChoices(data.ID)
+	// Subclasses are populated only when this class's own SubclassLevel is
+	// reachable at creation (level 1) — classes.Data.Subclasses is a flat,
+	// level-blind catalog, but the web form requires a selection whenever
+	// this list is non-empty (rpg-dnd5e-web ClassSelectionModal.tsx). A
+	// level-3 class (Fighter, Rogue, Barbarian, Bard) or level-2 class
+	// (Wizard, Druid) offered here at level 1 would force a choice that
+	// doesn't exist yet — see rpg-toolkit#1760. Cleric is the only class
+	// whose subclass (Divine Domain) is a level-1 choice today; there is no
+	// level-up mechanic yet, so "reachable at level 1" is the only case that
+	// matters until one exists.
 	subclasses := make([]*dnd5ev1alpha1.SubclassInfo, 0, len(data.Subclasses))
-	for _, subclass := range data.Subclasses {
-		id := convertSubclassToProtoEnum(subclass)
-		if id == dnd5ev1alpha1.Subclass_SUBCLASS_UNSPECIFIED {
-			continue
+	if choices.GetClassRequirements(data.ID).Subclass != nil {
+		for _, subclass := range data.Subclasses {
+			id := convertSubclassToProtoEnum(subclass)
+			if id == dnd5ev1alpha1.Subclass_SUBCLASS_UNSPECIFIED {
+				continue
+			}
+			subclasses = append(subclasses, &dnd5ev1alpha1.SubclassInfo{
+				SubclassId: id, Name: classes.SubClassName(subclass),
+				Description: classes.SubClassDescription(subclass), Level: int32(data.SubclassLevel),
+				// Resolved requirements replace base choices with matching IDs.
+				AdditionalChoices: subclassChoicesToProto(data.ID, data.SubclassLevel, subclass),
+			})
 		}
-		subclasses = append(subclasses, &dnd5ev1alpha1.SubclassInfo{
-			SubclassId: id, Name: classes.SubClassName(subclass),
-			Description: classes.SubClassDescription(subclass), Level: int32(data.SubclassLevel),
-			// Resolved requirements replace base choices with matching IDs.
-			AdditionalChoices: classRequirementsToProto(choices.GetClassRequirementsWithSubclass(data.ID, data.SubclassLevel, subclass)),
-		})
 	}
 
 	var spellcasting *dnd5ev1alpha1.SpellcastingInfo
 	if data.SpellcastingAbility != "" {
+		// ClassInfo describes a class as character creation offers it, so the
+		// row it reports is level 1. rpg-toolkit#1781 moved cantrips known,
+		// spells known and slots off classes.Data -- three level-1 scalars
+		// that could not say what level 2 held -- onto a per-level
+		// progression table; row 1 is the same three numbers this read
+		// before, now with a level attached to them.
+		progression := classes.SpellProgressionAtLevel(data.ID, 1)
 		spellcasting = &dnd5ev1alpha1.SpellcastingInfo{
 			SpellcastingAbility: string(data.SpellcastingAbility),
-			CantripsKnown:       int32(data.CantripsKnown), SpellsKnown: int32(data.SpellsKnown),
+			CantripsKnown:       int32(progression.CantripsKnown), SpellsKnown: int32(progression.SpellsKnown),
 		}
-		if len(data.SpellSlots) > 0 {
-			spellcasting.SpellSlotsLevel_1 = int32(data.SpellSlots[0])
+		if len(progression.SpellSlots) > 0 {
+			spellcasting.SpellSlotsLevel_1 = int32(progression.SpellSlots[0])
 		}
 	}
 
@@ -1177,6 +1196,28 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 		Name:       data.Name,
 		Level:      int32(data.Level),
 		Appearance: customizationconverter.ToolkitToProto(data.Appearance),
+		// Experience, READ-ONLY (design R4.12): "Experience is read-only over
+		// the wire: it reaches the client as the total plus the derived
+		// entitled level, and no service call writes it." This is the only
+		// place any of the three is written, and it is a projection of the
+		// stored sheet -- there is no code path on the served API that puts a
+		// number back into character.Data.Experience.
+		//
+		// The two derived numbers come from the toolkit's own threshold table
+		// (2014 PHB p.15), never from arithmetic here: "Level entitlement is
+		// derived from the total by a threshold table the toolkit owns"
+		// (R4.9). An API that could compute entitlement is an API that has an
+		// opinion about when a level is earned.
+		//
+		// ENTITLEMENT IS NOT LEVEL. The gap between EntitledLevel and Level is
+		// the whole "level up available" signal (R4.10): no flag, nothing
+		// stored, nothing to keep in sync. A NextLevelThreshold of 0 means
+		// there is no next level, which is the truth at level 20 and cannot be
+		// confused with a threshold, because the only level that costs 0 is
+		// the one every character already has.
+		ExperiencePoints:   int32(data.Experience),
+		EntitledLevel:      int32(toolkitchar.EntitledLevelForExperience(data.Experience)),
+		NextLevelThreshold: int32(toolkitchar.NextExperienceThreshold(data.Experience)),
 	}
 
 	// Convert race and subrace
@@ -3618,4 +3659,35 @@ func featureIDToDisplayName(id string) string {
 		// Convert snake_case to Title Case as fallback
 		return toTitleCase(id)
 	}
+}
+
+// Keep automatic grants separate from selectable requirements. The toolkit
+// owns both the grant catalog and exclusion from paid choices.
+func subclassChoicesToProto(class classes.Class, level int, subclass classes.Subclass) []*dnd5ev1alpha1.Choice {
+	result := classRequirementsToProto(choices.GetClassRequirementsWithSubclass(class, level, subclass))
+	if class != classes.Cleric {
+		return result
+	}
+	mods := choices.GetSubclassModifications(subclass)
+	for _, choice := range result {
+		options := choice.GetSpellOptions()
+		if options == nil {
+			continue
+		}
+		var granted []spells.Spell
+		switch choice.GetChoiceType() {
+		case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS:
+			granted = choices.ClericSpellGrants(subclass, level)
+		case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS:
+			if mods != nil {
+				granted = mods.GrantedCantrips
+			}
+		}
+		for _, spell := range granted {
+			options.Grants = append(options.Grants, &dnd5ev1alpha1.GrantedSpell{
+				SpellRef: refs.Spells.ByID(spell).String(), SourceName: classes.SubClassName(subclass),
+			})
+		}
+	}
+	return result
 }

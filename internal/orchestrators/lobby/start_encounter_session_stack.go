@@ -66,12 +66,18 @@ type StartEncounterOutput struct {
 //
 // # What is still narrow here, stated rather than implied
 //
-//   - NO MONSTER BEHAVIOR. session.Spawn takes no decider, by its own
-//     design ("behavior arrives with the wave that brings it"), so the
-//     garrison is placed, perceived and remembered correctly and does
-//     not act. It DOES carry the intel records the author placed in it
-//     (rpg-project#368, #372): a monster arrives holding what it was
-//     authored to know, so a body can be worth looting.
+//   - THE GARRISON ACTS AT LAUNCH, and this bullet used to say the
+//     opposite. It read "NO MONSTER BEHAVIOR ... the garrison is placed,
+//     perceived and remembered correctly and does not act", which was true
+//     while session.Spawn took no decider and stopped being true when the
+//     creature's table shipped with the monster (rpg-project#465). A room
+//     that seats the party in sight of its garrison forms a fight inside
+//     this call, and a monster that wins initiative takes its whole turn
+//     before this function returns — which is why the placement order
+//     below is load-bearing (rpg-api#1029). It DOES also carry the intel
+//     records the author placed in it (rpg-project#368, #372): a monster
+//     arrives holding what it was authored to know, so a body can be worth
+//     looting.
 //   - The authored endings are BOTH declared now (rpg-project#268): the
 //     party withdrawing (sessionworld.EndingWithdrawn, external) and the
 //     boss going down (sessionworld.EndingBossDown, TriggerMemberDown over
@@ -158,18 +164,48 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 
 	if _, err := o.sessionManager.StartSession(ctx, &sdk.StartSessionInput{
 		Session: encID, Encounter: encID, World: dungeon.World,
+		// The RESOLVED key, after the default fallback above -- what this
+		// launch actually loaded, not what the request asked for
+		// (rpg-project#479). It is written on the session record and reaches
+		// a client on GetAtlasResponse.dungeon_key, which is how a play view
+		// fetches the room's appearance from the same registry entry this
+		// world was compiled from. Passing in.DungeonKey instead would hand
+		// a client an empty string for every default launch and send it
+		// looking for content under no key at all.
+		Dungeon: key,
 	}); err != nil {
 		return nil, fmt.Errorf("start session %q on new stack: %w", encID, err)
 	}
 
-	for i, m := range members {
-		if _, err := o.sessionManager.Join(ctx, &sdk.JoinInput{
-			Session: encID, Member: m.CharacterID, Position: dungeon.PartySeats[i],
-		}); err != nil {
-			return nil, fmt.Errorf("join %q to session %q on new stack: %w", m.CharacterID, encID, err)
-		}
-	}
-
+	// THE GARRISON GOES DOWN BEFORE THE PARTY DOES, and the order is the
+	// whole point rather than a tidy-up (rpg-api#1029).
+	//
+	// Every call below is its own load-act-save against a LIVE world: the
+	// moment a member is placed where something hostile can see them, the
+	// composition forms the fight, and if initiative rolls an unplayed member
+	// first it drives that member's turn inside the very verb that placed
+	// somebody (rpg-toolkit#1162, encounter's form). So a launch that seats
+	// the party first is running the game while it is still setting the
+	// table: the first monster placed in sight of a seat fought a party
+	// standing next to half a garrison, the monsters still to be placed
+	// missed the initiative roll and were transferred into a bubble already
+	// running, and a skeleton that won initiative and critted the only
+	// level-1 character left nobody conscious -- `party_defeated`, the run
+	// closed, and the NEXT monster's spawn refused with ErrClosed while a
+	// session record was already written.
+	//
+	// Placing the whole garrison first makes "the board is finished" and "the
+	// fight may start" the same moment: nothing here is hostile to anything
+	// else on the board until the party arrives, so no verb below can form a
+	// fight, and the party's own arrival forms exactly one with everybody in
+	// it.
+	//
+	// WHAT THIS DOES NOT REACH, said plainly rather than left to be
+	// rediscovered: a dungeon that declares two factions hostile to EACH
+	// OTHER would form a fight partway through this loop the same way, and no
+	// ordering this host can choose fixes that -- it needs a session verb that
+	// places a whole board in one load-act-save. No authored dungeon does that
+	// today.
 	for _, monster := range dungeon.Monsters {
 		arrives, err := arrivalOf(monster.Arrives)
 		if err != nil {
@@ -217,9 +253,74 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 			// presence means is the run's, and the session's own reads
 			// already leave a reserved member out.
 			Arrives: arrives,
+			// What the author armed this monster with
+			// (`place[].actions`, rpg-project#448), VERBATIM AND IN
+			// ORDER. Nil is the ordinary case and leaves the stat
+			// block's own arms alone; a list replaces them with the
+			// weapons named. The ORDER is the instruction — both
+			// drivers take the first action whose target is in reach,
+			// so a placement listing the blade first swings when you
+			// close on it and one listing only a bow shoots you point
+			// blank. Nothing here sorts or tidies it.
+			//
+			// The seam refuses a weapon the catalog does not have
+			// (session.ErrUnknownContent, naming the ref), so a bad
+			// file fails the launch rather than putting a monster on
+			// the board that cannot act.
+			Actions: monster.Actions,
+			// What it takes to lean on this monster or talk it round,
+			// and what it DOES about either (`place[].intimidate`,
+			// `place[].persuade` and `place[].on`, rpg-project#454 and
+			// rpg-project#458) -- forwarded verbatim beside Actions, and
+			// converted at this boundary and nowhere else: the compiler
+			// speaks the composition's CheckApproach and the seam takes
+			// the session's own DoorApproach, so a route crosses here in
+			// the SDK's vocabulary rather than the composition's.
+			//
+			// NIL MEANS DERIVED, NOT UNGATED, and nothing here defaults
+			// either list. An unpriced monster is checked against its own
+			// stat block's passive Insight at verb time -- a goblin is DC
+			// 9 and a thug DC 10 -- so a zero invented on this side would
+			// be a difficulty nobody chose sitting where the rulebook's
+			// own answer belongs.
+			//
+			Intimidate: socialApproachesOf(monster.Intimidate),
+			Persuade:   socialApproachesOf(monster.Persuade),
+			// THE CREATURE'S TABLE AND THE WORD THAT LOADS ITS DIE
+			// (rpg-project#465), HAND-CARRIED OFF THE COMPILED PLACEMENT
+			// AND NOT CONVERTED. Both are the composition's own types on
+			// both sides of this call -- dungeonspec compiled them and the
+			// SDK's SpawnInput takes them -- so there is nothing to
+			// translate, and inventing a converter here would be this
+			// package holding a second copy of the author's grammar.
+			//
+			// NOTHING IS FOLDED AND NO WORD IS RESOLVED HERE. The rulebook's
+			// default table for the monster's kind goes UNDER these orders
+			// inside Spawn, and what `coward` means in numbers is looked up
+			// there too: both need a ref resolved to a kind, which is a
+			// rulebook's job and never this one's. A nil table is therefore
+			// not a creature that does nothing -- it is a creature the
+			// author gave no orders, driven by its kind's default.
+			//
+			// A MIX CROSSES INTACT. `temper: { coward: 1, soldier: 2 }` on a
+			// faction is dealt per member inside the composition, through the
+			// world's dice with the FACTION as the die's entity, and the
+			// beat that says which goblin came out the coward is written
+			// there. Dealing one here would be the API rolling.
+			Table:  monster.Table,
+			Temper: monster.Temper,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("spawn %q into session %q on new stack: %w", monster.MemberID, encID, err)
+		}
+	}
+
+	// AND THE PARTY ARRIVES LAST, onto a finished board.
+	for i, m := range members {
+		if _, err := o.sessionManager.Join(ctx, &sdk.JoinInput{
+			Session: encID, Member: m.CharacterID, Position: dungeon.PartySeats[i],
+		}); err != nil {
+			return nil, fmt.Errorf("join %q to session %q on new stack: %w", m.CharacterID, encID, err)
 		}
 	}
 
@@ -300,6 +401,40 @@ func refuseSharedMemberIDs(members []*lobbyrepo.Member, monsters []sessionworld.
 		}
 	}
 	return nil
+}
+
+// socialApproachesOf spells the author's priced routes for a social verb
+// (`place[].intimidate` and `place[].persuade`, rpg-project#454 and
+// rpg-project#458) from the composition's own CheckApproach into the session
+// seam's DoorApproach.
+//
+// ONE FUNCTION FOR BOTH VERBS, unlike the two roll converters at the handler
+// seam. The distinction is what each function is named for: those keep a
+// PRESENCE LAW that belongs to one verb's output and could diverge, while this
+// one is a struct spelling that belongs to the two modules' vocabularies. A
+// third social verb reuses it without a decision; the day Persuade's routes
+// stop being CheckApproach, splitting it is a rename.
+//
+// THE TRANSLATION IS SPELLING ONLY, like arrivalOf below it: the two structs
+// carry the same three fields and neither side is interpreted here. It exists
+// because the two modules own their own vocabulary at this boundary (S2), not
+// because anything is being decided -- what an ability ref or a tool ref
+// MEANS is the rulebook's, and what a DC is worth is the resolver's.
+//
+// NIL IN, NIL OUT, and that is the load-bearing case rather than an edge:
+// absent does not mean "no check", it means the rulebook derives one from the
+// monster's own passive Insight at verb time. Returning an empty non-nil
+// slice would hand the seam a monster priced with no way through, which is a
+// different and much worse claim.
+func socialApproachesOf(approaches []tkencounter.CheckApproach) []sdk.DoorApproach {
+	if approaches == nil {
+		return nil
+	}
+	out := make([]sdk.DoorApproach, len(approaches))
+	for i, approach := range approaches {
+		out[i] = sdk.DoorApproach{Ability: approach.Ability, Tool: approach.Tool, DC: approach.DC}
+	}
+	return out
 }
 
 // arrivalOf translates a placement's compiled arrival predicate -- the

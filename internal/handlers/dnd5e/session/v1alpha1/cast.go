@@ -3,6 +3,8 @@ package sessionv1alpha1
 import (
 	"context"
 
+	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sdkerr"
+
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
@@ -25,7 +27,8 @@ import (
 // would be deciding something Afford already decided, and the two would be
 // free to disagree. Exactly Activate's argument, one verb over.
 //
-// The response is an acknowledgement carrying only the two S6 reports. What
+// The response carries persistence/delivery and the contract's warded-target
+// summary. The detailed ward save belongs to the event stream. What
 // the cast DID reaches every client on the stream -- CAST, then SAVED when
 // the spell forced a roll, then one ACTIVATION_RESULT per delivered effect
 // -- and putting any of it here would make this a second, rival account of
@@ -37,6 +40,16 @@ import (
 // new arm. ErrBadCast (a target named on a self-cast, or omitted on one that
 // needs it) is INVALID_ARGUMENT; a target that drifted out of range is
 // ErrStaleDeclaration, FAILED_PRECONDITION, exactly as today.
+//
+// A GATED CAST CAN STOP PART-WAY THROUGH (rpg-toolkit's Resistance),
+// [Unlock]'s own shape applied to a target's saving throw instead of a lock
+// check: when a target holds something spendable on their own save, the
+// machine poses a window after the roll and before the save's verdict is
+// read, and out.Posed is true. Roll and Total are then the only answers;
+// Saved, Delivery and Caught all cross the wire as their zero value, because
+// CastOutput leaves them unset in this case -- nothing here has to
+// special-case them. Answering the window with the existing, already-generic
+// React verb finishes the cast and writes the beats this response did not.
 func (h *Handler) Cast(
 	ctx context.Context, req *sessionpb.CastRequest,
 ) (*sessionpb.CastResponse, error) {
@@ -71,7 +84,7 @@ func (h *Handler) Cast(
 		Option: req.GetOption(),
 	})
 	if err != nil {
-		return nil, statusError(err)
+		return nil, sdkerr.StatusError(err)
 	}
 
 	// Persisted, not Saved. The SDK renamed Activate's persistence report to
@@ -79,8 +92,15 @@ func (h *Handler) Cast(
 	// -- the gate's saving throw -- and the wire's `saved` field is the
 	// persistence one in both responses.
 	return &sessionpb.CastResponse{
-		Saved:    saveReportToProto(out.Persisted),
-		Delivery: deliveryReportToProto(out.Delivery),
-		Caught:   caughtMembersToProto(out.Caught),
+		Saved:         saveReportToProto(out.Persisted),
+		Delivery:      deliveryReportToProto(out.Delivery),
+		Caught:        caughtMembersToProto(out.Caught),
+		WardedTargets: append([]string(nil), out.WardedTargets...),
+		Paused:        out.Posed,
+		// unlockRollToProto's own conversion -- a *int meaningful only while
+		// Posed, onto the wire's optional int32 -- reused rather than
+		// duplicated, since Roll and Total need exactly the same presence law.
+		Roll:  unlockRollToProto(out.Roll),
+		Total: unlockRollToProto(out.Total),
 	}, nil
 }

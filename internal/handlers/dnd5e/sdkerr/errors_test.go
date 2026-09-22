@@ -1,4 +1,4 @@
-package sessionv1alpha1
+package sdkerr
 
 import (
 	"fmt"
@@ -76,6 +76,12 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// below), a deliberate choice this table follows rather than
 		// pattern-matches.
 		{"ErrInvalidUnpackRequest", sdk.ErrInvalidUnpackRequest, codes.InvalidArgument},
+		// The level-up submission's own malformed-request sentinel: a choice
+		// id the level never asked for, a count that does not match, an option
+		// off the list. Its bucket was pinned by NOTHING until now -- moving
+		// it into FAILED_PRECONDITION passed the entire suite, integration
+		// included, because the sibling static test only proves a case exists.
+		{"ErrBadLevelRequest", sdk.ErrBadLevelRequest, codes.InvalidArgument},
 
 		// FAILED_PRECONDITION -- well-formed request, world state refuses it.
 		{"ErrInBubble", sdk.ErrInBubble, codes.FailedPrecondition},
@@ -105,6 +111,21 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// the same shape as ErrOutOfReach above.
 		{"ErrOutOfRange", sdk.ErrOutOfRange, codes.FailedPrecondition},
 		{"ErrNotVisible", sdk.ErrNotVisible, codes.FailedPrecondition},
+		// Intimidate's own refusal (rpg-project#454): the threatened member
+		// cannot see who is threatening them. FAILED_PRECONDITION like the
+		// rows around it, and DELIBERATELY NOT folded into ErrOutOfReach --
+		// reach is a distance and this is a sightline, so a client that read
+		// the two as one would tell the player to step closer when what they
+		// need is to be seen.
+		{"ErrUnwitnessed", sdk.ErrUnwitnessed, codes.FailedPrecondition},
+		// The social offer comes from the NPC (rpg-project#494): a real,
+		// visible creature whose binding authored no entries for the verb.
+		// FAILED_PRECONDITION with the rows around it, and NOT NotFound --
+		// the creature is on the roster and in plain sight, so answering
+		// "no such member" would deny something the player can see. Without
+		// this row the refusal falls through to Internal, and an ordinary
+		// "you cannot talk to that one" reads to a client as a server fault.
+		{"ErrNoSocialEntry", sdk.ErrNoSocialEntry, codes.FailedPrecondition},
 		// Holdings (rpg-project#368): Loot's and Hold's own state refusals,
 		// each reachable only about a body or prop the member can SEE --
 		// for anything they cannot, the composition collapses the refusal
@@ -141,6 +162,14 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// ErrNotAPack (Unpack, rpg-toolkit#1544): a real, resolvable item
 		// that simply isn't a Pack. Same shape as ErrNotAVendor above.
 		{"ErrNotAPack", sdk.ErrNotAPack, codes.FailedPrecondition},
+		// ErrNotATarget (rpg-project#493 R4): a swing at a placed world NPC.
+		// The same wrong-kind-for-this-verb shape as ErrNotAVendor and
+		// ErrNotAPack above -- the target exists and is visible, it is just
+		// not something you attack -- and DELIBERATELY NOT the
+		// ErrStaleDeclaration it used to be: stale sends a host round a
+		// re-read loop that answers the same thing every time, which is the
+		// whole reason the SDK split this sentinel off.
+		{"ErrNotATarget", sdk.ErrNotATarget, codes.FailedPrecondition},
 		// ErrCannotActivate is ErrCannotAfford's shape one verb further out:
 		// an ability that could have run and said no. The SDK documents it as
 		// not currently reachable through Activate — Afford consults the same
@@ -186,6 +215,18 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// says locked (with the DC), a merely-shut one says shut. World
 		// state refusing, never a malformed request.
 		{"ErrDoorShut", sdk.ErrDoorShut, codes.FailedPrecondition},
+		// The other two advancement sentinels (rpg-project#452). Pinned HERE
+		// as well as through the handler and integration tests that exercise
+		// them, because those prove a code reaches a client down one PATH,
+		// while this proves the sentinel sits in the right BUCKET -- which is
+		// exactly what the sibling static test cannot see.
+		//
+		// The split is the request versus the situation. A malformed
+		// submission (ErrBadLevelRequest, above) can succeed if rebuilt. A
+		// level not earned or not describable cannot: only waiting, or content
+		// landing, changes the answer.
+		{"ErrCannotAdvance", sdk.ErrCannotAdvance, codes.FailedPrecondition},
+		{"ErrLevelNotOffered", sdk.ErrLevelNotOffered, codes.FailedPrecondition},
 		// Already in the pinned SDK before this feature (v0.21.4) and unmapped
 		// until this audit: this package's OWN adapter vocabulary going stale
 		// against itself, not a caller mistake.
@@ -214,7 +255,7 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 			// ("verb: %w") so the table is proven against errors.Is chains,
 			// not bare sentinel identity.
 			wrapped := fmt.Errorf("move: step 1: %w", tt.err)
-			got := statusError(wrapped)
+			got := StatusError(wrapped)
 			st, ok := status.FromError(got)
 			require.True(t, ok, "statusError must always return a gRPC status error")
 			require.Equal(t, tt.want, st.Code(), "sentinel %s", tt.name)
@@ -232,6 +273,27 @@ var errorsGoDefaultCaseSentinels = map[string]bool{
 	// any verb returns, so it should never reach a handler. See errors.go's
 	// own doc on statusError for the full reasoning.
 	"ErrNotFound": true,
+
+	// A PRODUCER DEFECT, AND INTERNAL IS THE HONEST CODE (rpg-project#462).
+	// ErrNoCalculation fires when a verb in THIS build rolled a d20 and then
+	// wrote the beat with no arithmetic behind the total — a seam that has
+	// quietly gone back to publishing one number, which is the exact failure
+	// that slice exists to end. The SDK refuses it loudly "where it is still a
+	// bug rather than a story" (its own doc).
+	//
+	// SO IT IS NOT FAILED_PRECONDITION, and the distinction is the whole
+	// point of the bucket above it. Every row there is a well-formed call that
+	// the world's present state refuses, and the player can do something about
+	// it: step into the light, wait for your turn, get closer. There is
+	// nothing a player or a client can do about this one. Telling them "that
+	// is not allowed right now" would send them looking for a game reason for
+	// a server bug, and a dock that blames the player for a producer defect is
+	// how somebody stops trusting the panel.
+	//
+	// It is NOT returned for a verb that rolled nothing — opening an unlocked
+	// door faces no DC and nil is the truth there — so reaching a handler at
+	// all means this build is broken, which is what Internal says.
+	"ErrNoCalculation": true,
 }
 
 // sdkSentinelNames reads every exported Err* sentinel declared in the PINNED
@@ -334,12 +396,12 @@ func TestStatusError_MapsEverySDKSentinel(t *testing.T) {
 
 func TestStatusError_UnmappedSentinelFallsBackToInternal(t *testing.T) {
 	unrecognized := fmt.Errorf("some future sentinel the table has not been updated for")
-	got := statusError(unrecognized)
+	got := StatusError(unrecognized)
 	st, ok := status.FromError(got)
 	require.True(t, ok)
 	require.Equal(t, codes.Internal, st.Code())
 }
 
 func TestStatusError_Nil_ReturnsNil(t *testing.T) {
-	require.NoError(t, statusError(nil))
+	require.NoError(t, StatusError(nil))
 }

@@ -10,6 +10,7 @@ package session_test
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/KirkDiggler/rpg-api/internal/testsupport/levelfixture"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
@@ -318,6 +320,7 @@ func armedFighter(id, playerID string) *tkcharacter.Data {
 		PlayerID: playerID,
 		Name:     id,
 		Level:    3,
+		Levels:   levelfixture.Synthetic(classes.Fighter, 3),
 		ClassID:  classes.Fighter,
 		RaceID:   races.Human,
 		AbilityScores: shared.AbilityScores{
@@ -913,14 +916,38 @@ func TestSkeletonsDrivenTurnStrikesFromRange(t *testing.T) {
 	require.NoError(t, err, "the skeleton's whole turn -- strike, end -- drives inside this one call")
 
 	// Isolated to what THIS EndTurn call itself produced: alice's own
-	// end-turn beat, then the skeleton's swing. Exactly three beats: the
-	// shortbow attack needs no approach, so no moved beat is authored.
+	// end-turn beat, the skeleton's pick, its swing, and its turn closing
+	// back to her.
+	//
+	// ASSERTED BY SHAPE, NOT BY COUNT (rpg-project#465). The list used to be
+	// pinned at exactly three, and the creature's table added beats of its own
+	// -- an `answered` naming the pick that chose the swing, and a world `tick`
+	// for the round the fight wrapped. Bumping the number to six would pin
+	// every one of those as though the test were about how many things happen,
+	// which it never was: what it is about is that the shortbow swings FROM
+	// WHERE IT STANDS, inside this one call, and hands the fight back.
+	//
+	// THE `moved` CHECK IS THE ONE THE COUNT WAS REALLY MAKING. A count of
+	// three happened to exclude an approach; this excludes it by name, which
+	// is the claim rpg-project#254 cares about and the one a bow at 80/320
+	// feet is supposed to make true.
 	beats := storyBeats(ctx, t, h.handler, "monster-turn-run", "alice")[before:]
-	require.Len(t, beats, 3,
-		"expected alice's turn-ended, the shortbow swing, and the skeleton's turn-ended; got %v", beats)
 	require.Equal(t, "turn-ended", beats[0], "alice's own end-turn beat comes first")
-	require.Contains(t, []string{"struck", "missed"}, beats[1], "the swing, with no approach before it")
-	require.Equal(t, "turn-ended", beats[2], "the skeleton's own turn closes back to alice")
+	require.NotContains(t, beats, "moved",
+		"the shortbow reaches three cells out, so nothing closes the distance first: %v", beats)
+
+	swing := slices.IndexFunc(beats, func(beat string) bool {
+		return beat == "struck" || beat == "missed"
+	})
+	require.Positive(t, swing, "the skeleton swings inside this one call: %v", beats)
+	// THE PICK IS WHY IT SWUNG, and it is on the beat before the swing: the
+	// creature's table rolled `attack` off its own default, which is what a
+	// reader follows back when they ask why a monster did anything.
+	require.Contains(t, beats[:swing], "answered",
+		"the swing is preceded by the pick that chose it: %v", beats)
+
+	closing := slices.Index(beats[swing:], "turn-ended")
+	require.Positive(t, closing, "the skeleton's own turn closes after the swing: %v", beats)
 
 	require.Equal(t, "alice", endResp.GetNext(), "turn_ended{next: player} -- the fight hands cleanly back")
 	require.True(t, endResp.GetRoundWrapped(), "a two-member fight wraps straight back to whoever led it")

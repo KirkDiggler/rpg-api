@@ -1,16 +1,18 @@
 package sessionv1alpha1
 
 import (
+	"errors"
 	"fmt"
 	"math"
 
-	"github.com/KirkDiggler/rpg-api/internal/converters/assetref"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/currency"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
+
+	"github.com/KirkDiggler/rpg-api/internal/converters/assetref"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 )
@@ -476,11 +478,35 @@ func discoveriesToProto(d map[string]sdk.Discovery) map[string]*sessionpb.Discov
 // (rpg-dnd5e-web#564) — and Kind (rpg-toolkit#1230), for the same reason:
 // a client routes a player subject to a player model instead of guessing a
 // monster ref from the subject id (rpg-dnd5e-web#792).
+//
+// # Stance, per viewer, carried and never derived
+//
+// `Sighting.stance` (rpg-api-protos#340, rpg-project#458) is what THIS VIEWER
+// believes the subject's stance toward them to be, so the ring under a token
+// is a belief rather than the roster's truth. The composition answers it
+// through `encounter.BelievedStance`; the session seam carries it beside Name
+// and Kind, and this converter copies it.
+//
+// EMPTY CROSSES AS EMPTY, and that is the load-bearing case rather than an
+// edge. The seam leaves it empty when the run cannot answer — a subject who is
+// not a member, or one in no faction at all, which a world NPC is — and the
+// wire's own doc defines empty as "the observer has no word for it". Mapping
+// that to "neutral" would be this seam inventing a belief nobody holds, and a
+// client would draw a confident ring around a creature whose side is simply
+// unknown. The fallback belongs to the client, which has the roster's faction
+// color to fall back TO; this seam has nothing to fall back to and must not
+// pretend otherwise.
+//
+// NOTHING IS DERIVED HERE EITHER. Filling it from the roster's faction would
+// make a per-viewer belief field carry shared truth, and the first `pretend`
+// would have to UNDO a lie this converter told rather than simply start
+// telling a different truth.
 func sightingToProto(s sdk.Sighting) *sessionpb.Sighting {
 	return &sessionpb.Sighting{
 		Subject:    s.Subject,
 		Name:       s.Name,
 		Kind:       memberKindToProto(s.Kind),
+		Stance:     s.Stance,
 		Payload:    s.Payload,
 		Channel:    s.Channel,
 		At:         s.At,
@@ -494,6 +520,24 @@ func sightingsToProto(ss []sdk.Sighting) []*sessionpb.Sighting {
 	out := make([]*sessionpb.Sighting, len(ss))
 	for i, s := range ss {
 		out[i] = sightingToProto(s)
+	}
+	return out
+}
+
+func sightAreaToProto(a sdk.SightArea) *sessionpb.SightArea {
+	return &sessionpb.SightArea{
+		Id:         a.ID,
+		Name:       a.Name,
+		SourceRef:  a.Ref,
+		Center:     positionToProto(a.Center),
+		RadiusFeet: int32(a.RadiusFeet),
+	}
+}
+
+func sightAreasToProto(areas []sdk.SightArea) []*sessionpb.SightArea {
+	out := make([]*sessionpb.SightArea, len(areas))
+	for i, area := range areas {
+		out[i] = sightAreaToProto(area)
 	}
 	return out
 }
@@ -647,20 +691,64 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_STRUCK
 	case sdk.EventDoor:
 		return sessionpb.EventKind_EVENT_KIND_DOOR
+	// The first shenanigan (rpg-project#454). BOTH ARMS LAND IN THE SAME
+	// CHANGE as the body below, for the cast door's stated reason: an
+	// unmapped kind does not fail, it demotes to EVENT_KIND_UNKNOWN and its
+	// body stays nil -- and this beat is the ONLY account of its roll, since
+	// IntimidateResponse deliberately carries no beaten, total or dc. A
+	// demoted arm would lose the die for the whole table, the actor
+	// included, rather than degrade one field of it.
+	case sdk.EventIntimidated:
+		return sessionpb.EventKind_EVENT_KIND_INTIMIDATED
+	// The front room goblin (rpg-project#458). EventPersuaded is the threat
+	// beat's twin and takes its reasoning whole. EventAnswered is the second
+	// roll -- the WORLD's, on the author's table -- and it is the arm that
+	// would be missed most quietly: the creature's line, the fact it taught
+	// and whether it bolted all ride this one body, so a demotion would leave
+	// a goblin running out of the room with nothing in the log saying why.
+	case sdk.EventPersuaded:
+		return sessionpb.EventKind_EVENT_KIND_PERSUADED
+	case sdk.EventAnswered:
+		return sessionpb.EventKind_EVENT_KIND_ANSWERED
+	// The creature's table (rpg-project#465). EventTempered lands in the same
+	// change as its body below, on EventAnswered's argument: a dealt
+	// temperament is rolled ONCE, at the door, and this beat is the only
+	// account of that roll anyone ever gets. Demoted, the streamer would watch
+	// four goblins off one sheet behave differently with nothing in the log
+	// saying why.
+	case sdk.EventTempered:
+		return sessionpb.EventKind_EVENT_KIND_TEMPERED
+	// A ROUTED WALK THAT MOVED NOBODY (rpg-project#465, from Kirk's walk).
+	// Here for EventTempered's reason and one of its own: the world clock
+	// charges a round per driven creature whether or not anybody moves, so
+	// demoted this beat would leave a spent round narrated as nothing at all
+	// -- and a reader could not tell a creature nobody asked from one sent
+	// somewhere it could not reach.
+	case sdk.EventStayed:
+		return sessionpb.EventKind_EVENT_KIND_STAYED
 	case sdk.EventMissed:
 		return sessionpb.EventKind_EVENT_KIND_MISSED
 	case sdk.EventCastMissed:
 		return sessionpb.EventKind_EVENT_KIND_CAST_MISSED
+	case sdk.EventWarded:
+		return sessionpb.EventKind_EVENT_KIND_WARDED
+	case sdk.EventCastWarded:
+		return sessionpb.EventKind_EVENT_KIND_CAST_WARDED
 	case sdk.EventActivated:
 		return sessionpb.EventKind_EVENT_KIND_ACTIVATED
 	case sdk.EventActivationResult:
 		return sessionpb.EventKind_EVENT_KIND_ACTIVATION_RESULT
 	case sdk.EventDeathSave:
 		return sessionpb.EventKind_EVENT_KIND_DEATH_SAVE_ROLLED
-	case sdk.EventDoorRevealed:
-		return sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED
-	case sdk.EventRegionRevealed:
-		return sessionpb.EventKind_EVENT_KIND_REGION_REVEALED
+	// ONE NOUN, ONE REVEAL (design rpg-project#490, E4). The SDK retired
+	// EventDoorRevealed and EventRegionRevealed: one authored secret was
+	// split across two kinds because the engine hid doors and regions with
+	// two separate flags, and a concealment is the one thing an author
+	// hides. Its cells, props, member doors, boundaries, walls and touched
+	// regions arrive on this one beat instead. The older wire kinds stay on
+	// the proto, deprecated; nothing maps to them any more.
+	case sdk.EventConcealmentRevealed:
+		return sessionpb.EventKind_EVENT_KIND_CONCEALMENT_REVEALED
 	case sdk.EventSighted:
 		return sessionpb.EventKind_EVENT_KIND_SIGHTED
 	// Holdings (rpg-project#368). Each kind is a STATEMENT -- looted, held,
@@ -731,7 +819,13 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 // its catch-up through (get_story.go, rpg-api-protos#239), so both paths
 // drop it identically; adding a wire `tags` field is a proto change, not
 // something this function can paper over on its own.
-func eventToProto(e sdk.Event) *sessionpb.Event {
+//
+// IT RETURNS AN ERROR AS OF rpg-project#458, from setEventBody's one refusing
+// arm. The spine above never fails -- it is field-for-field copying and a kind
+// lookup that demotes -- so an error here means one beat's BODY carries a
+// value this build cannot spell on the wire, and the caller's job is to say so
+// rather than to send the beat with that value quietly replaced.
+func eventToProto(e sdk.Event) (*sessionpb.Event, error) {
 	evt := &sessionpb.Event{
 		Session:     e.Session,
 		Seq:         e.Seq,
@@ -741,19 +835,30 @@ func eventToProto(e sdk.Event) *sessionpb.Event {
 		Kind:        eventKindToProto(e.Kind),
 		Payload:     e.Payload,
 	}
-	setEventBody(evt, e.Body)
-	return evt
+	if err := setEventBody(evt, e.Body); err != nil {
+		return nil, fmt.Errorf("event seq %d kind %q: %w", e.Seq, e.Kind, err)
+	}
+	return evt, nil
 }
 
 // eventsToProto mirrors a []sdk.Event slice -- GetStory's own use of the
 // same eventToProto StreamEvents sends through one at a time, so catch-up
 // and live delivery share one projection all the way to the wire.
-func eventsToProto(es []sdk.Event) []*sessionpb.Event {
+//
+// ONE BAD BEAT FAILS THE WHOLE READ, deliberately. A catch-up that silently
+// dropped the beat it could not spell would hand a client a story with a hole
+// in it and no seq gap to notice -- and this read exists precisely so a
+// reconnecting client can trust that what it got is what happened.
+func eventsToProto(es []sdk.Event) ([]*sessionpb.Event, error) {
 	out := make([]*sessionpb.Event, len(es))
 	for i, e := range es {
-		out[i] = eventToProto(e)
+		converted, err := eventToProto(e)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = converted
 	}
-	return out
+	return out, nil
 }
 
 // setEventBody projects the SDK's typed session.EventBody onto the proto
@@ -773,13 +878,24 @@ func eventsToProto(es []sdk.Event) []*sessionpb.Event {
 // slice 4) carry the arriving/departing member -- the same field the wire
 // Joined/Exited messages added at protos v0.1.136 (oneof tags 17/18), so
 // GetStory gets both free through this same converter.
-func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
+// IT RETURNS AN ERROR AS OF rpg-project#458, and exactly one arm can produce
+// one. An `answered` beat's WORD says what the creature did, and this build
+// knows two of them; the enum's own comment says it grows a value per slice.
+// The day the toolkit ships `alarm` against an api that was not rebuilt, the
+// choice here is between a wire value that says "the creature only spoke" --
+// a positive, false claim about a creature that in fact ran for the guards --
+// and a refusal. It refuses. See answerWordToProto.
+func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 	switch b := body.(type) {
 	case sdk.TurnEndedBody:
 		evt.Body = &sessionpb.Event_TurnEnded{TurnEnded: &sessionpb.TurnEnded{Member: b.Member, Next: b.Next}}
 	case sdk.DownedBody:
 		evt.Body = &sessionpb.Event_Downed{Downed: &sessionpb.Downed{Member: b.Member}}
 	case sdk.DeathSaveBody:
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
 		evt.Body = &sessionpb.Event_DeathSaveRolled{DeathSaveRolled: &sessionpb.DeathSaveRolled{
 			Actor: b.Actor, Roll: int32(b.Roll), Outcome: deathSaveOutcomeToProto(b.Outcome),
 			SuccessesAdded: int32(b.SuccessesAdded), FailuresAdded: int32(b.FailuresAdded),
@@ -788,21 +904,36 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			Stabilized: b.Stabilized, Dead: b.Dead, Recovered: b.Recovered,
 			HpRestored: int32(b.HPRestored), Continuation: deathSaveContinuationToProto(b.Continuation),
 			PresentationId: b.PresentationID,
-			Calculation:    rollCalculationToProto(b.Calculation),
+			Calculation:    calculation,
 		}}
 	case sdk.StruckBody:
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
+		damageComponents, err := damageComponentsToProto(b.DamageComponents)
+		if err != nil {
+			return err
+		}
 		evt.Body = &sessionpb.Event_Struck{Struck: &sessionpb.Struck{
-			Attacker:            b.Attacker,
-			Target:              b.Target,
-			Roll:                int32(b.Roll),
-			Total:               int32(b.Total),
-			Against:             int32(b.Against),
-			Damage:              int32(b.Damage),
-			Attack:              attackRefToProto(b.Attack),
-			Critical:            b.Critical,
-			DamageComponents:    damageComponentsToProto(b.DamageComponents),
-			AdvantageSources:    attackModifierSourcesToProto(b.AdvantageSources),
-			DisadvantageSources: attackModifierSourcesToProto(b.DisadvantageSources),
+			Attacker:         b.Attacker,
+			Target:           b.Target,
+			Roll:             int32(b.Roll),
+			Total:            int32(b.Total),
+			Against:          int32(b.Against),
+			Damage:           int32(b.Damage),
+			Attack:           attackRefToProto(b.Attack),
+			Critical:         b.Critical,
+			DamageComponents: damageComponents,
+			// advantage_sources and disadvantage_sources ARE DEPRECATED AND
+			// STAY EMPTY (rpg-project#462, R1). They were the older, narrower
+			// spelling of what the d20's own keep record now carries, refs and
+			// ids with no name and no cancellation; the SDK body dropped them
+			// outright. Filling both would give a client two places to read one
+			// fact and let them disagree with the dice they describe. The
+			// attribution is on Calculation's first component, on the pool it
+			// actually decided.
+			//
 			// Why this swing happened out of turn, when it did
 			// (rpg-project#316). The field has been on the wire since
 			// protos#258 and had nothing to copy until session's body
@@ -812,13 +943,37 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			// Same token the attacker got back on AttackResponse, so this
 			// recipient can name the same roll the attacker is presenting.
 			PresentationId: b.PresentationID,
-			Calculation:    rollCalculationToProto(b.Calculation),
+			Calculation:    calculation,
 		}}
 	case sdk.CastMissedBody:
 		evt.Body = &sessionpb.Event_CastMissed{CastMissed: &sessionpb.CastMissed{
 			Actor: b.Actor, Target: b.Target, Spell: spellRefToProto(b.Spell),
 		}}
+	case sdk.WardedBody:
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
+		evt.Body = &sessionpb.Event_Warded{Warded: &sessionpb.Warded{
+			Attacker: b.Attacker, Target: b.Target, Attack: attackRefToProto(b.Attack),
+			Source: b.Source, Ability: b.Ability, Roll: int32(b.Roll), Total: int32(b.Total),
+			Dc: int32(b.DC), Calculation: calculation,
+		}}
+	case sdk.CastWardedBody:
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
+		evt.Body = &sessionpb.Event_CastWarded{CastWarded: &sessionpb.CastWarded{
+			Actor: b.Actor, Target: b.Target, Spell: spellRefToProto(b.Spell),
+			Source: b.Source, Ability: b.Ability, Roll: int32(b.Roll), Total: int32(b.Total),
+			Dc: int32(b.DC), Calculation: calculation,
+		}}
 	case sdk.MissedBody:
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
 		evt.Body = &sessionpb.Event_Missed{Missed: &sessionpb.Missed{
 			Attacker: b.Attacker,
 			Target:   b.Target,
@@ -829,12 +984,16 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			Reaction: reactionRefToProto(b.Reaction),
 			// See the struck case: one shared token per swing.
 			PresentationId: b.PresentationID,
-			Calculation:    rollCalculationToProto(b.Calculation),
+			Calculation:    calculation,
 		}}
 	case sdk.ActivatedBody:
 		evt.Body = &sessionpb.Event_Activated{Activated: activatedBodyToProto(b)}
 	case sdk.ActivationResultBody:
-		if result := activationResultBodyToProto(b); result != nil {
+		result, err := activationResultBodyToProto(b)
+		if err != nil {
+			return err
+		}
+		if result != nil {
 			evt.Body = &sessionpb.Event_ActivationResult{ActivationResult: result}
 		}
 	case sdk.FightStartedBody:
@@ -866,7 +1025,7 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		// Looter and body, and deliberately nothing about what moved: the
 		// beat is identical for a body that carried the run's only secret
 		// and one that carried nothing (design P3). What actually moved
-		// reaches the looter alone, as their own DOOR_REVEALED.
+		// reaches the looter alone, as their own CONCEALMENT_REVEALED.
 		evt.Body = &sessionpb.Event_Looted{Looted: &sessionpb.Looted{
 			Looter: b.Looter, Body: b.Body,
 		}}
@@ -899,8 +1058,23 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		// maps the word to a color the way it maps Ended.ending to a
 		// sentence. Reaches every recipient the session addressed it to,
 		// monsters included; nothing on this side narrows the audience.
+		//
+		// THE CAUSE CROSSES WHOLE, AND SO DOES ITS ABSENCE
+		// (rpg-api-protos#354). The SDK records WHY a pair turned --
+		// "attacked by alice", "the fall of scout", "round 3 started"
+		// (rpg-project#493, R2 and R3) -- and the wire now has a `cause`
+		// to put it in. It is copied, never composed: the sentence is the
+		// composition's, the way the stance is the author's word, so a
+		// phrase written here would be this layer narrating.
+		//
+		// EMPTY IS COPIED TOO, and deliberately not filled in. A pair also
+		// turns because a faction's mind came to know the fact the author
+		// named -- the hold-out beat -- and that fold writes no sentence,
+		// because nobody decided one. Substituting a default here would
+		// hand every client a reason no author wrote, and the emptiness is
+		// what tells a reader to say only that the pair turned.
 		evt.Body = &sessionpb.Event_StanceChanged{StanceChanged: &sessionpb.StanceChanged{
-			Between: b.Between, Stance: b.Stance,
+			Between: b.Between, Stance: b.Stance, Cause: b.Cause,
 		}}
 	case sdk.ArrivedBody:
 		// A reserved placement entered the run (rpg-project#375 step B,
@@ -917,7 +1091,7 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		// TRUTH GRAIN, so every recipient's atlas loses the prop and a
 		// client patches its cached map by removing this id -- the
 		// load-once, beat-refreshed law running subtractively, where
-		// DOOR_REVEALED runs it additively.
+		// CONCEALMENT_REVEALED runs it additively.
 		evt.Body = &sessionpb.Event_Held{Held: &sessionpb.Held{
 			Holder: b.Holder, Prop: b.Prop,
 		}}
@@ -932,64 +1106,253 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		}}
 	case sdk.EndedBody:
 		evt.Body = &sessionpb.Event_Ended{Ended: &sessionpb.Ended{Ending: b.Ending}}
+	case sdk.IntimidatedBody:
+		// A threat, landed or missed (rpg-project#454). VERBATIM, and
+		// BEATEN IS COPIED rather than derived here from total against dc --
+		// the law Saved.succeeded and DoorChanged.beaten already keep, for
+		// the same reason: the day a rule changes what beating a DC means,
+		// every reader that derived it would be wrong at once.
+		//
+		// EVERY FIELD CROSSES ON A MISS TOO. The SDK writes beaten, dc and
+		// total with no omitempty precisely because `beaten: false` is the
+		// whole content of a missed threat, and this seam must not
+		// reintroduce the absence its author removed.
+		//
+		// NOTHING ABOUT THE CONSEQUENCE, and the wire has no field for one.
+		// A beaten threat lands a deed on the witnesses and what it is worth
+		// is the threatened creature's mind's to decide; a client narrates
+		// that from the creature's next turn. Deliberately unlike
+		// DoorChanged below, which can report the state its own check
+		// produced -- there is no state here to report yet.
+		//
+		// THE WHOLE ROLL RIDES WITH THE VERDICT (rpg-project#462). dc, total
+		// and beaten are the outcome; the calculation is what was thrown to
+		// get there -- both d20 faces when a rule decided between them, and
+		// the keep record naming the rule and who brought it. An untrained
+		// character threw two dice and this seam used to publish one number,
+		// so the house rule shipped applied and invisible. It is ABSENT on a
+		// beat that recorded no arithmetic, which is the truth rather than a
+		// zero-valued calculation a reader would have to tell apart.
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
+		evt.Body = &sessionpb.Event_Intimidated{Intimidated: &sessionpb.Intimidated{
+			Actor:       b.Actor,
+			Target:      b.Target,
+			Dc:          int32(b.DC),
+			Total:       int32(b.Total),
+			Beaten:      b.Beaten,
+			Calculation: calculation,
+		}}
+	case sdk.PersuadedBody:
+		// An appeal, landed or missed (rpg-project#458). The threat body's
+		// twin, field for field and law for law -- beaten is COPIED and never
+		// derived from total against dc, and every field crosses on a miss
+		// too, because `beaten: false` is the whole content of a failed
+		// appeal and the `persuade_failed` table fired on it.
+		//
+		// A SEPARATE ARM RATHER THAN ONE SHARED "SOCIAL CHECK" BODY, which is
+		// the wire's own decision (rpg-api-protos#340) and not this
+		// converter's to relitigate: a consumer switching on Event.body gets a
+		// typed verb out of the arm it matched, and a shared body would make
+		// it branch twice -- once to find the arm, once to read a
+		// discriminator.
+		//
+		// It carries the whole roll for the threat body's reason, above.
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
+		evt.Body = &sessionpb.Event_Persuaded{Persuaded: &sessionpb.Persuaded{
+			Actor:       b.Actor,
+			Target:      b.Target,
+			Dc:          int32(b.DC),
+			Total:       int32(b.Total),
+			Beaten:      b.Beaten,
+			Calculation: calculation,
+		}}
+	case sdk.AnsweredBody:
+		answered, err := answeredToProto(b)
+		if err != nil {
+			return err
+		}
+		evt.Body = &sessionpb.Event_Answered{Answered: answered}
+	case sdk.TemperedBody:
+		// WHICH TEMPERAMENT A FACTION'S MIX DEALT ONE CREATURE, at the door
+		// (rpg-project#465 §3, R5). Four goblins handed one table and one mix
+		// answer it four different ways, and this is the beat that lets the
+		// table see which one came out the coward.
+		//
+		// THE DIE NAMES ITS ENTITY, as every pool on this seam does: the mix
+		// belongs to the FACTION, so the faction threw, and `member` is who
+		// the word landed on. Both cross; neither is derived from the other.
+		//
+		// AN AUTHORED `temper:` RAISES NO BEAT AT ALL. Nothing was rolled, so
+		// there is nothing to show -- that creature's word still reaches every
+		// reader on Answered.temper, on every pick it makes.
+		temper, err := temperToProto(b.Temper)
+		if err != nil {
+			return err
+		}
+		evt.Body = &sessionpb.Event_Tempered{Tempered: &sessionpb.Tempered{
+			Member:  b.Member,
+			Temper:  temper,
+			Roll:    int32(b.Roll),
+			Of:      int32(b.Of),
+			Faction: b.Faction,
+		}}
+	case sdk.StayedBody:
+		// THE WHOLE ACCOUNT OF A SPENT ROUND IN WHICH NOTHING MOVED
+		// (rpg-project#465). The creature was sent somewhere -- by its own
+		// table, or by whatever else routes a walk -- and the route came back
+		// with no path, so the round ended on the cell it started on.
+		//
+		// EVERY FIELD CROSSES VERBATIM AND NOTHING IS DERIVED. `cause` is the
+		// engine's own `<module>:<type>:<id>` reference, so a creature walking
+		// under its own orders is distinguishable from one being shoved or
+		// commanded, and this seam neither parses it nor decides anything from
+		// it.
+		//
+		// AN EMPTY `why` IS AN ANSWER AND IS SENT AS ONE. The route had
+		// nowhere strictly nearer to offer, which is its own reason rather
+		// than a blocker it could name, and it is the commonest case. Nothing
+		// here substitutes a sentence for it: composing "no path" on this side
+		// would be the api narrating, and a client reading empty as "the
+		// producer forgot" would be reading a fact as a defect.
+		//
+		// NO CELLS, because nothing moved. Where the creature stands is what
+		// the roster and the atlas already answer, and a position here would
+		// be a second copy of a fact this beat did not change.
+		evt.Body = &sessionpb.Event_Stayed{Stayed: &sessionpb.Stayed{
+			Member: b.Member,
+			Cause:  b.Cause,
+			Why:    b.Why,
+		}}
+	default:
+		return setWorldEventBody(evt, body)
+	}
+	return nil
+}
+
+// setWorldEventBody carries the second half of the same type switch: the
+// world's own beats -- doors, regions, windows -- and the spell beats that
+// close a cast.
+//
+// THE SPLIT IS A COMPLEXITY BOUNDARY AND NOTHING ELSE. One switch over every
+// body kind outgrew the cyclomatic limit the day the creature's table and the
+// ward slice each brought their own arms, and no arm changed in the move. A
+// body kind is recognized here or in setEventBody and never in both, and one
+// this build does not recognize still leaves evt.Body nil so the payload
+// stays the passthrough carrier.
+func setWorldEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
+	switch b := body.(type) {
 	case sdk.DoorBody:
+		// A DOOR THAT CHANGED BECAUSE SOMEBODY ROLLED is a check beat and
+		// carries the whole roll (rpg-project#462, R4). A door that opened
+		// because somebody walked through it recorded no arithmetic and
+		// carries none -- the SDK body leaves Calculation nil on every
+		// non-attempt beat and the wire field stays unset, exactly as dc,
+		// total and actor already do there.
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
 		evt.Body = &sessionpb.Event_Door{Door: &sessionpb.DoorChanged{
-			Door:   b.Door,
-			State:  doorStateToProto(b.State),
-			Actor:  b.Actor,
-			Dc:     int32(b.DC),
-			Total:  int32(b.Total),
-			Beaten: b.Beaten,
+			Door:        b.Door,
+			State:       doorStateToProto(b.State),
+			Actor:       b.Actor,
+			Dc:          int32(b.DC),
+			Total:       int32(b.Total),
+			Beaten:      b.Beaten,
+			Calculation: calculation,
 		}}
-	case sdk.DoorRevealedBody:
-		// No Boundaries here: DoorRevealedBody carries none (the masquerade-
-		// wall replacement the wire's own field is for is not yet a field
-		// this SDK version produces), so the wire field is left unset rather
-		// than populated from something this body does not have -- verbatim
-		// translation of what the SDK actually sends, not an invented value.
-		evt.Body = &sessionpb.Event_DoorRevealed{DoorRevealed: &sessionpb.DoorRevealed{
-			Door:     doorRevealedInfoToProto(b),
-			Doorways: atlasDoorwaysToProto(b.Doorways),
-		}}
-	case sdk.RegionRevealedBody:
-		// Segments and Sealed do NOT mean the same shape of thing here, and a
-		// client that treats them alike will draw the wrong room. Both are
-		// carried verbatim; neither is recomputed here.
+	// ONE NOUN, ONE REVEAL (design rpg-project#490, E4). What used to arrive
+	// as DoorRevealedBody and RegionRevealedBody -- two kinds, two payloads,
+	// one authored secret -- is one concealment now: the cells it hid, the
+	// props standing on them, the doors it hid with their own edges, the
+	// boundaries and walls at the revealed seams, the sealed cells inside it,
+	// and every region it touched. The engine hid doors and regions with two
+	// separate flags and so split one secret across two beats; it hides a
+	// concealment with one primitive and sends one. The SDK produces neither
+	// older body any more, so neither is converted here; the two wire kinds
+	// stay on the proto, deprecated, and retire when no client reads them.
+	//
+	// EVERY FIELD IS CARRIED VERBATIM. The composition derives this body from
+	// the recipient's own Atlas and Doors answers, so the patch and the map
+	// cannot disagree -- and this converter's whole contribution to that is
+	// not getting in the way.
+	case sdk.ConcealmentRevealedBody:
+		// DOORS AND DOORWAYS SPLIT ON THE WIRE where the SDK nests them. The
+		// body hangs each door's edges off the door; the proto carries one
+		// flat door list and one flat doorway list, which are the two shapes
+		// GetDoors and GetAtlas already answer in and therefore the two
+		// caches a client patches. Nothing is lost in the flatten: every
+		// AtlasDoorway names its own door (AtlasDoorway.connection), so the
+		// grouping is reconstructible from the flat list. A footprint door
+		// contributes none -- it stands in no crossing (rpg-project#485) --
+		// and that is an honest empty, not a dropped field.
+		doors := make([]*sessionpb.DoorInfo, len(b.Doors))
+		doorways := make([]sdk.AtlasDoorway, 0, len(b.Doors))
+		for i, d := range b.Doors {
+			doors[i] = revealedDoorToProto(d)
+			doorways = append(doorways, d.Doorways...)
+		}
+
+		// Cells adds; the rest are three different shapes of thing and a
+		// client that treats them alike will draw the wrong room. All of them
+		// are carried verbatim; none is recomputed here.
 		//
 		// SEGMENTS IS A DIFFERENCE, and adds: the walls this recipient did not
 		// have and now does. A wall already presented to them for any reason --
-		// the seam their own concealed door hides in, or one footing on floor
-		// they can already see -- is deliberately absent, because it is not news
-		// and they are already drawing it. So this is append-to-cache, never
-		// replace-for-region. It HAS to be a difference: a segment carries no
-		// footprint on purpose, so there is no way to ask which cells a wall
-		// stands on without leaking what the doorway list withholds. No wall
-		// ever leaves, so the atlas after a reveal is the atlas before it union
-		// this.
+		// the seam a concealed door hides in, or one footing on floor they can
+		// already see -- is deliberately absent, because it is not news and
+		// they are already drawing it. So this is append-to-cache, never
+		// replace. It HAS to be a difference: a segment carries no footprint on
+		// purpose, so there is no way to ask which cells a wall stands on
+		// without leaking what the doorway list withholds. No wall ever leaves,
+		// so the atlas after a reveal is the atlas before it union this.
 		//
 		// SEALED IS SCOPED, AND REPLACES, and the scoping is load-bearing rather
-		// than a style choice: a client swaps out the revealed region's cells
-		// and keeps every other sealed cell it had. Cells LEAVE this list. A
-		// non-knower's sealed list already holds some of the hidden room's own
-		// cells -- the footing of the walls presented to them (design C18),
-		// which reaches them as ownerless floor, and ownerless floor is floor
-		// nobody stands on -- and the moment the room is theirs those same cells
-		// are ordinary standable floor. A client that appended would leave a
-		// room it can see permanently unwalkable at its edges. So the atlas
-		// after a reveal is (the atlas before it, less the revealed region's
-		// cells) union this, which is why the beat carries the region's cells
-		// beside it. A difference could only ever add, and this field has to be
-		// able to take away.
+		// than a style choice: a client swaps out the arriving cells' sealed
+		// entries and keeps every other sealed cell it had. Cells LEAVE this
+		// list. A non-knower's sealed list already holds some of the hidden
+		// room's own cells -- the footing of the walls presented to them (design
+		// C18), which reaches them as ownerless floor, and ownerless floor is
+		// floor nobody stands on -- and the moment the secret is theirs those
+		// same cells are ordinary standable floor. A client that appended would
+		// leave a room it can see permanently unwalkable at its edges. So the
+		// atlas after a reveal is (the atlas before it, less the concealment's
+		// cells) union this, which is why the beat carries those cells beside
+		// it. A difference could only ever add, and this field has to be able
+		// to take away.
+		//
+		// REGIONS REPLACES ENTRY BY ENTRY, for a reason of its own: what an
+		// unaware recipient held was not a shorter LIST, it was a shorter
+		// REGION. A region is a name over a set of cells, and a concealment's
+		// cells cannot appear in it without naming the secret, so a touched
+		// region reached them trimmed, or did not reach them at all. Merging
+		// would leave the trim sitting beside the truth. Each entry arrives
+		// whole, archetype and lighting with it, which is how a room withheld
+		// entirely gets dressed and lit the moment it arrives.
+		cells := make([]*sessionpb.Position, len(b.Cells))
+		for i, c := range b.Cells {
+			cells[i] = positionToProto(c)
+		}
 		sealed := make([]*sessionpb.Position, len(b.Sealed))
 		for i, c := range b.Sealed {
 			sealed[i] = positionToProto(c)
 		}
-		evt.Body = &sessionpb.Event_RegionRevealed{RegionRevealed: &sessionpb.RegionRevealed{
-			Region:     atlasRegionToProto(b.Region),
-			Props:      atlasPropsToProto(b.Props),
-			Boundaries: atlasBoundariesToProto(b.Boundaries),
-			Segments:   atlasSegmentsToProto(b.Segments),
-			Sealed:     sealed,
+		evt.Body = &sessionpb.Event_ConcealmentRevealed{ConcealmentRevealed: &sessionpb.ConcealmentRevealed{
+			Concealment: b.Concealment,
+			Cells:       cells,
+			Props:       atlasPropsToProto(b.Props),
+			Doors:       doors,
+			Doorways:    atlasDoorwaysToProto(doorways),
+			Boundaries:  atlasBoundariesToProto(b.Boundaries),
+			Segments:    atlasSegmentsToProto(b.Segments),
+			Sealed:      sealed,
+			Regions:     atlasRegionsToProto(b.Regions),
 		}}
 	case sdk.WindowOpenedBody:
 		// The fight stopped to ask somebody something (rpg-project#316 rung
@@ -1031,6 +1394,10 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			Targets: targets,
 		}}
 	case sdk.SavedBody:
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
 		// The whole of one saving throw. SUCCEEDED IS COPIED, never derived
 		// here from total against dc -- the rulebook classifies its own roll,
 		// the law DeathSaveRolled.outcome already keeps, so the day beating a
@@ -1043,7 +1410,7 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 			Dc:          int32(b.DC),
 			Succeeded:   b.Succeeded,
 			Source:      spellRefToProto(b.Source),
-			Calculation: rollCalculationToProto(b.Calculation),
+			Calculation: calculation,
 		}}
 	case sdk.ConcentrationEndedBody:
 		// Who lost what, and why. THE REASON IS AN OPEN STRING and this
@@ -1082,18 +1449,32 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) {
 		// Offer is a value on this body, not a pointer -- a window that
 		// named nothing to spend could not have been posed -- so it always
 		// converts to a non-nil message.
+		//
+		// THE PAUSED WINDOW IS WHERE AN UNTRAINED ROLL IS FIRST SEEN
+		// (rpg-project#462, R5). calculation has been on the wire since the
+		// window shipped and had nothing to copy, because the SDK body had no
+		// field for it; it does now. Roll and Total are the two scalars the
+		// player decides with, and the calculation is the pair of faces they
+		// are deciding ABOUT -- a player asked to spend a Bardic Inspiration
+		// die on a roll they can only see one face of is being asked blind.
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
 		evt.Body = &sessionpb.Event_RollWindowOpened{RollWindowOpened: &sessionpb.RollWindowOpened{
 			PresentationId: b.PresentationID,
 			Audience:       b.Audience,
 			Offer:          reactionRefToProto(&b.Offer),
 			Roll:           int32(b.Roll),
 			Total:          int32(b.Total),
+			Calculation:    calculation,
 		}}
 	default:
 		// nil (no typed body for this kind) or a body type this build does
 		// not recognize: leave evt.Body nil. payload stays the passthrough
 		// carrier.
 	}
+	return nil
 }
 
 // activatedBodyToProto trusts Session's bodyFor validation of the required
@@ -1108,14 +1489,16 @@ func activatedBodyToProto(body sdk.ActivatedBody) *sessionpb.Activated {
 // activationResultBodyToProto preserves the SDK's one-result invariant. A
 // nil or malformed decoded SDK body has no wire body rather than an arbitrary
 // first arm; payload remains untouched on the enclosing Event.
-func activationResultBodyToProto(body sdk.ActivationResultBody) *sessionpb.ActivationResult {
+func activationResultBodyToProto(body sdk.ActivationResultBody) (*sessionpb.ActivationResult, error) {
 	result := &sessionpb.ActivationResult{Actor: body.Actor}
 	populated := 0
 	if body.HealingApplied != nil {
 		populated++
-		result.Result = &sessionpb.ActivationResult_HealingApplied{
-			HealingApplied: healingAppliedBodyToProto(body.HealingApplied),
+		healing, err := healingAppliedBodyToProto(body.HealingApplied)
+		if err != nil {
+			return nil, err
 		}
+		result.Result = &sessionpb.ActivationResult_HealingApplied{HealingApplied: healing}
 	}
 	if body.ConditionApplied != nil {
 		populated++
@@ -1142,9 +1525,11 @@ func activationResultBodyToProto(body sdk.ActivationResultBody) *sessionpb.Activ
 	// so a malformed body with two results still produces no wire body at all.
 	if body.DamageApplied != nil {
 		populated++
-		result.Result = &sessionpb.ActivationResult_DamageApplied{
-			DamageApplied: damageAppliedBodyToProto(body.DamageApplied),
+		damage, err := damageAppliedBodyToProto(body.DamageApplied)
+		if err != nil {
+			return nil, err
 		}
+		result.Result = &sessionpb.ActivationResult_DamageApplied{DamageApplied: damage}
 	}
 	// A creature the effect MOVED is a result arm for the same reason damage
 	// is one: a push is a thing an effect delivered, and ActivationResult is
@@ -1171,9 +1556,9 @@ func activationResultBodyToProto(body sdk.ActivationResultBody) *sessionpb.Activ
 		}
 	}
 	if populated != 1 {
-		return nil
+		return nil, nil
 	}
-	return result
+	return result, nil
 }
 
 // moveImposedBodyToProto mirrors an imposed move field-for-field.
@@ -1202,9 +1587,9 @@ func moveImposedBodyToProto(body *sdk.MoveImposedBody) *sessionpb.MoveImposed {
 // healingAppliedBodyToProto mirrors a heal onto the wire without deriving one
 // representation from the other. New bodies carry Calculation only; legacy
 // Story records retain their deprecated Roll and Modifier scalars.
-func healingAppliedBodyToProto(body *sdk.HealingAppliedBody) *sessionpb.HealingApplied {
+func healingAppliedBodyToProto(body *sdk.HealingAppliedBody) (*sessionpb.HealingApplied, error) {
 	if body == nil {
-		return nil
+		return nil, errors.New("healing applied body is required")
 	}
 	out := &sessionpb.HealingApplied{
 		Target: body.Target, Amount: int32(body.Amount), Requested: int32(body.Requested),
@@ -1214,14 +1599,18 @@ func healingAppliedBodyToProto(body *sdk.HealingAppliedBody) *sessionpb.HealingA
 	if body.Calculation != nil {
 		// New bodies populate only Calculation. Its total is authoritative;
 		// neither Requested nor the deprecated scalars are derived from it.
-		out.Calculation = rollCalculationToProto(body.Calculation)
+		calculation, err := rollCalculationToProto(body.Calculation)
+		if err != nil {
+			return nil, err
+		}
+		out.Calculation = calculation
 	} else {
 		// Legacy bodies retain exactly the two deprecated scalar fields and do
 		// not gain a fabricated calculation.
 		out.Roll = int32(body.Roll)         //nolint:staticcheck // Required read compatibility for pre-trace Story records.
 		out.Modifier = int32(body.Modifier) //nolint:staticcheck // Required read compatibility for pre-trace Story records.
 	}
-	return out
+	return out, nil
 }
 
 // damageAppliedBodyToProto mirrors damage HealingApplied's way, and the
@@ -1229,9 +1618,14 @@ func healingAppliedBodyToProto(body *sdk.HealingAppliedBody) *sessionpb.HealingA
 // Modifier scalars for Story records written before roll traces existed, and
 // NOTHING EVER WROTE A DAMAGE RESULT before them, so there is no legacy shape
 // to read and Calculation is the only representation of the dice.
-func damageAppliedBodyToProto(body *sdk.DamageAppliedBody) *sessionpb.DamageApplied {
+func damageAppliedBodyToProto(body *sdk.DamageAppliedBody) (*sessionpb.DamageApplied, error) {
 	if body == nil {
-		return nil
+		return nil, errors.New("damage applied body is required")
+	}
+
+	calculation, err := rollCalculationToProto(body.Calculation)
+	if err != nil {
+		return nil, err
 	}
 
 	return &sessionpb.DamageApplied{
@@ -1245,13 +1639,13 @@ func damageAppliedBodyToProto(body *sdk.DamageAppliedBody) *sessionpb.DamageAppl
 		HpAfter:    int32(body.HPAfter),
 		// The 1d4's own face, so a client can show the roll rather than only
 		// what it totalled.
-		Calculation: rollCalculationToProto(body.Calculation),
+		Calculation: calculation,
 		// COPIED FROM THE BODY, never derived from SourceRef. The rulebook
 		// authors what kind of damage a spell deals -- psychic, for Vicious
 		// Mockery -- and a client that read the spell's ref to decide would
 		// be deriving 5e, which is the whole thing content refs prevent. The
 		// same converter the strike path's components already run through.
-	}
+	}, nil
 }
 
 // spellRefToProto mirrors AbilityRef's shape one content type over: the full
@@ -1318,6 +1712,16 @@ func capacityGrantedBodyToProto(body *sdk.CapacityGrantedBody) *sessionpb.Capaci
 // the bools straight across is the whole job here; deciding anything about them
 // would be this layer inventing world state.
 //
+// # Two lists of things, because there are two kinds of thing
+//
+// `props` are the things standing on A CELL, naming content they draw as.
+// `placed` are the authored FOOTPRINTS -- rectangles drawn at an angle, big
+// enough to stand on several cells or small enough to stand on none of their
+// centers, naming no content at all (rpg-api-protos#351). The two never share
+// an id and neither is derivable from the other. A placement carries the cells
+// the engine says it stands on, and this layer copies that list rather than
+// tracing the rectangle a second time; see atlasPlacedPropToProto.
+//
 // Exported because it has two callers that MUST agree: GetAtlas, and the
 // AuthoringService's PutDungeon, whose answer is the same message so the
 // builder has no second geometry to keep in step with the game
@@ -1326,6 +1730,23 @@ func capacityGrantedBodyToProto(body *sdk.CapacityGrantedBody) *sessionpb.Capaci
 // Regions (GetAtlasResponse.regions) are copied cell for cell: they are
 // already absolute axial in the same frame as Cells, so nothing here converts
 // anything — the one place cells become axial is the toolkit's.
+//
+// # The map names its dungeon; it no longer carries the room's picture
+//
+// `dungeon_key` is the content key this world was compiled from, copied
+// across verbatim. `room_scene_json` is deprecated and DELIBERATELY LEFT
+// UNSET (rpg-project#479): what a room looks like is the World Builder's
+// content, and a client that wants it fetches the authored file by this key
+// through the ungated AuthoringService.GetDungeon and reads the scene with
+// the codec that owns one. The engine stopped carrying that document at
+// encounter v0.93.0, so there is no longer anything on the atlas to copy
+// into the old field -- and a field nothing can fill is left empty rather
+// than filled with something invented here.
+//
+// An empty key is the honest absence, not a default: it means the session was
+// launched from a world its host assembled rather than from a registry entry,
+// which is what every session written before the key existed is. A client
+// seeing it empty fetches nothing and draws what the map alone says.
 func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 	if a == nil {
 		return &sessionpb.GetAtlasResponse{}
@@ -1355,6 +1776,15 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 		Sealed:     sealed,
 		Exits:      atlasExitsToProto(a.Exits),
 		Start:      atlasStartToProto(a.Start),
+		DungeonKey: a.DungeonKey,
+		// The authored rectangles standing on the map, beside -- never
+		// inside -- the cell props above. A client draws a placement from
+		// this list rather than from the World Builder's own scene bytes,
+		// because the scene is the author's whole drawing and says nothing
+		// about the run: whether the thing has arrived, whether somebody is
+		// already carrying it, or whether this member can see where it
+		// stands.
+		Placed: atlasPlacedPropsToProto(a.Placed),
 	}
 }
 
@@ -1415,8 +1845,8 @@ func atlasExitsToProto(es []sdk.AtlasExit) []*sessionpb.AtlasExit {
 }
 
 // atlasPropToProto mirrors one session.AtlasProp -- shared by AtlasToProto and
-// RegionRevealed's props, which the SDK's own doc promises carries them
-// "exactly as GetAtlasResponse.props would" (rpg-project#350/#351).
+// ConcealmentRevealed's props, which the SDK's own doc promises carries them
+// "exactly as GetAtlasResponse.props would" (rpg-project#350/#351, #490).
 func atlasPropToProto(prop sdk.AtlasProp) *sessionpb.AtlasProp {
 	return &sessionpb.AtlasProp{
 		// ID and Holdable (rpg-project#368, design §5). The id is the
@@ -1445,6 +1875,100 @@ func atlasPropsToProto(ps []sdk.AtlasProp) []*sessionpb.AtlasProp {
 		out[i] = atlasPropToProto(p)
 	}
 	return out
+}
+
+// atlasPlacedPropToProto mirrors one session.AtlasPlacedProp -- a rectangle
+// somebody drew on the map, the two blocking answers its author gave it,
+// whether it can be picked up, and the cells the engine says it stands on
+// (rpg-api-protos#351).
+//
+// A DIFFERENT KIND OF THING FROM AtlasProp, not a better one. A prop occupies
+// A CELL and names content it draws as; a placement occupies AN AREA and names
+// no content at all -- it is the geometry a door, a table or a bookcase was
+// drawn as, and the World Builder owns what it looks like. The two lists never
+// share an id, so a client may key them together.
+//
+// # Absence is the whole vocabulary, and this converter adds no flag to it
+//
+// A placement is off this list when it is still in reserve, when somebody is
+// holding it (for everyone at once -- a thing leaving the floor is not a
+// secret), and when this recipient cannot see the floor it stands on. All
+// three are the SDK's answers, decided before the list reaches here, and this
+// layer copies the list it was given. A flag saying "held" or "hidden" would
+// be a second answer to a question absence already answers, and a client
+// drawing flagged entries would draw furniture nobody can reach.
+//
+// # Cells is copied, never re-measured
+//
+// Standing is a trace of the rectangle against every cell of the floor, and
+// it is the SAME SET Hold's reach judges. A seam that rasterized the box a
+// second time here would be a second geometry one layer before the client's,
+// disagreeing at exactly the edges that matter -- where a table's corner
+// clips a hex -- and an offer this list produced could then contradict the
+// refusal the engine gives.
+func atlasPlacedPropToProto(p sdk.AtlasPlacedProp) *sessionpb.AtlasPlacedProp {
+	cells := make([]*sessionpb.Position, len(p.Cells))
+	for i, c := range p.Cells {
+		cells[i] = positionToProto(c)
+	}
+
+	return &sessionpb.AtlasPlacedProp{
+		Id:                p.ID,
+		Placement:         footprintPlacementToProto(p.Placement),
+		BlocksMovement:    p.BlocksMovement,
+		BlocksLineOfSight: p.BlocksLineOfSight,
+		Holdable:          p.Holdable,
+		Cells:             cells,
+	}
+}
+
+func atlasPlacedPropsToProto(ps []sdk.AtlasPlacedProp) []*sessionpb.AtlasPlacedProp {
+	out := make([]*sessionpb.AtlasPlacedProp, len(ps))
+	for i, p := range ps {
+		out[i] = atlasPlacedPropToProto(p)
+	}
+
+	return out
+}
+
+// footprintPlacementToProto mirrors session.FootprintPlacement field for
+// field: the rectangle's size in feet, where it is anchored, which way it
+// faces, and how far it is nudged inside its own axes.
+//
+// NOTHING IS SWAPPED, SNAPPED OR SCALED HERE. Width lies ACROSS the facing and
+// Depth ALONG it; the authored dialect performs that name swap at the
+// construction boundary, long before this seam, and re-swapping it here would
+// draw every door turned ninety degrees. Facing is degrees from east and any
+// finite angle is legal -- zero is due east, a real facing, never "not
+// authored".
+//
+// The two points are always written, because the source carries VALUES and a
+// value type has no absence to translate. A zero origin is a real anchor and a
+// zero local offset is the pose most placements hold (the rectangle centered on
+// its origin), so an omitted message here would spell a fact the SDK never
+// said.
+func footprintPlacementToProto(p sdk.FootprintPlacement) *sessionpb.FootprintPlacement {
+	return &sessionpb.FootprintPlacement{
+		Width:       p.Width,
+		Depth:       p.Depth,
+		Origin:      footprintPointToProto(p.Origin),
+		Facing:      p.Facing,
+		LocalOffset: footprintPointToProto(p.LocalOffset),
+	}
+}
+
+// footprintPointToProto mirrors session.FootprintPoint: one point on the
+// map's continuous plane, IN FEET.
+//
+// DELIBERATELY NOT positionToProto's target. A Position is a cell coordinate
+// in the atlas's own frame, where 1 means one cell along an axis; these are
+// feet on the plane the engine traces rectangles in. The same spot carries
+// different numbers in the two frames and neither converts without the
+// layout, so sending one where the other belongs puts a table five times too
+// far out. The wire mints a separate message for exactly that reason, and
+// this converter is the only thing that fills it.
+func footprintPointToProto(p sdk.FootprintPoint) *sessionpb.FootprintPoint {
+	return &sessionpb.FootprintPoint{X: p.X, Y: p.Y}
 }
 
 // atlasRegionToProto mirrors session.AtlasRegion: a named set of absolute
@@ -1517,9 +2041,300 @@ func verbToProto(v sdk.Verb) sessionpb.Verb {
 	// showing it wrong. That is the whole panel this slice exists to fill.
 	case sdk.VerbCast:
 		return sessionpb.Verb_VERB_CAST
+	// VerbIntimidate (rpg-project#454). LOAD-BEARING FOR THE DOCK, not a
+	// completeness sweep: leaving it unmapped would label every threat a
+	// member can make VERB_UNSPECIFIED -- and a client drops a verb it cannot
+	// name rather than showing it wrong, so the row would simply never appear.
+	//
+	// ON BOTH CLOCKS AS OF rpg-project#458 R3, which corrects what this
+	// comment used to say. Afford emitted this row on the TURN clock
+	// unconditionally, the way it emits VerbMove, and returned an empty list
+	// on the world clock. It now emits both social rows on the world clock
+	// too, at no cost -- not a discount, but Move's own rule: the world clock
+	// has no economy to fall short of. So this arm is what a player standing
+	// in a front room with no fight in it reads.
+	case sdk.VerbIntimidate:
+		return sessionpb.Verb_VERB_INTIMIDATE
+	// VerbPersuade (rpg-project#458). Intimidate's reason, and one more that
+	// is new with it: Afford emits BOTH social rows on the WORLD clock as well
+	// as the turn clock (R3), so this is the row a player sees standing in a
+	// front room where no fight exists. Unmapped, the one panel this slice
+	// exists to fill would come up empty.
+	case sdk.VerbPersuade:
+		return sessionpb.Verb_VERB_PERSUADE
 	default:
 		return sessionpb.Verb_VERB_UNSPECIFIED
 	}
+}
+
+// answeredToProto projects one Answered beat: the world's own roll on the
+// author's table, with every number it was made of.
+//
+// SPLIT OUT OF setEventBody, which is one arm per body and nothing else. This
+// arm grew three refusing conversions and a conditional pair with the creature's
+// table (rpg-project#465), and a switch that big stops being readable as a list
+// of bodies — which is the one thing it has to stay.
+func answeredToProto(b sdk.AnsweredBody) (*sessionpb.Answered, error) {
+	// THE WORLD'S OWN ROLL ON THE AUTHOR'S TABLE (rpg-project#458 R1,
+	// rpg-project#465 §6). Two things reach this one body: a social
+	// verdict's answer -- the player's check published `intimidated` or
+	// `persuaded`, and then the world rolled -- and a creature spending
+	// one turn's worth of doing, on its turn in a fight or a round of the
+	// world clock. One table, one roll, one shape; `key` says which.
+	//
+	// EVERY FIELD CROSSES, none of them derived. `entry: 0` is an answer
+	// (the author's first line fired), `beaten: false` is an answer (the
+	// failure table was read), and an empty `say` is an answer (the author
+	// wrote the creature no line). The SDK writes all of them without
+	// omitempty for exactly that reason and this seam must not reintroduce
+	// the absence its author removed.
+	//
+	// THE ARITHMETIC RIDES ALONG, NOT THE RESULT ALONE. `candidates`
+	// carries every entry whose `when` held with its authored weight, its
+	// temperament factor and their product, so a debug log can redo the
+	// engine's sum rather than take `of` on trust. Empty is a real answer:
+	// nothing was eligible, the creature held, and the beat says so.
+	word, err := answerWordToProto(b.Word)
+	if err != nil {
+		return nil, err
+	}
+	key, err := answerKeyToProto(b.Key)
+	if err != nil {
+		return nil, err
+	}
+	temper, err := temperToProto(b.Temper)
+	if err != nil {
+		return nil, err
+	}
+	answered := &sessionpb.Answered{
+		Creature: b.Creature,
+		Roll:     int32(b.Roll),
+		Of:       int32(b.Of),
+		Entry:    int32(b.Entry),
+		Word:     word,
+		Say:      b.Say,
+		// WHICH KEY THE WORLD ROLLED ON -- the one field that replaces the
+		// deprecated `verb`/`beaten` pair, which between them could spell
+		// exactly the four social outcomes and had no way at all to say
+		// "it was this creature's turn".
+		Key: key,
+		// The loaded table as rolled, and the word that loaded it. Temper
+		// is on every pick deliberately: a reader holding one beat can say
+		// why the coward ran without joining back to the TEMPERED beat
+		// that dealt it, and a creature whose temperament was AUTHORED
+		// raised no such beat to join to.
+		Candidates: answerCandidatesToProto(b.Candidates),
+		Temper:     temper,
+		// `fact` IS DELIBERATELY NOT SET, ruled by Kirk on rpg-project#458
+		// after the contract had already made room for it.
+		//
+		// A FACT IS PER-OBSERVER KNOWLEDGE AND THIS BEAT IS BROADCAST. It
+		// goes to every witness of the creature, and what any one of them
+		// then KNOWS is the intel log's answer, held per observer and
+		// reachable only through a read that is entitled to it. Putting the
+		// id on a broadcast beat would hand the whole table a fact the
+		// world may have taught only some of them, and there is no second
+		// field that could take it back.
+		//
+		// NOTHING IS LOST. The story has the author's `say` line, which is
+		// what a player actually receives; the consequence arrives on its
+		// own terms as a STANCE_CHANGED or an arrival. `b.Fact` is read
+		// and dropped here exactly as the verdict fields are on the
+		// response one file over.
+	}
+	// THE DEPRECATED PAIR IS STILL FILLED, BUT ONLY WHERE IT CAN TELL THE
+	// TRUTH (rpg-project#465). A reader written against the shipped shape
+	// keeps working on all four social keys, and on `time` both stay unset
+	// -- because no verb spoke and no check was beaten, and a zero Verb
+	// beside `beaten: false` would read as a threat that failed. Leaving
+	// them out is the honest account of a turn; filling them in would be a
+	// sentence about an event that never happened.
+	//
+	// BEATEN IS REPEATED FROM THE CHECK BEAT ON PURPOSE where it applies.
+	// It says which table `entry` indexes into, and pairing two beats to
+	// find out would assume an ordering the stream does not promise.
+	if answerKeyIsSocial(key) {
+		// The seam's own Verb, mapped through the one table every other
+		// verb on the wire goes through. An unrecognized verb here
+		// DEGRADES to UNSPECIFIED rather than refusing, unlike the word
+		// and the key above, and the difference is what each field claims:
+		// this pair is deprecated and a client reads `key` instead, while
+		// a word demoted to UNSPECIFIED would assert that the creature
+		// merely spoke.
+		//nolint:staticcheck // Deprecated by `key`, and deliberately still
+		// written: the contract keeps both filled on every social key so a
+		// reader built against the shipped shape goes on working.
+		answered.Verb = verbToProto(sdk.Verb(b.Verb))
+		//nolint:staticcheck // Deprecated by `key`; see the line above.
+		answered.Beaten = b.Beaten
+	}
+
+	return answered, nil
+}
+
+// answerWordToProto names WHAT A CREATURE DID when the world rolled the
+// author's table (rpg-project#458, extended by rpg-project#465).
+//
+// IT REFUSES AN UNKNOWN WORD RATHER THAN DEMOTING IT, and that is the whole
+// reason it returns an error at all. The enum's own comment says it grows one
+// value per slice: `alarm`, `lure`, `pretend` and `patrol` are named in the
+// design and deliberately absent from the wire. So a word this build does not
+// know is not a field it can degrade -- ANSWER_WORD_UNSPECIFIED is the wire's
+// way of saying "an entry that only speaks", which is a positive claim, and
+// sending it about a creature that actually ran for the guards would have
+// every client narrate the wrong scene with nothing anywhere saying so. The
+// refusal is loud, it names the word, and the fix is to rebuild this seam
+// against the toolkit that grew it.
+//
+// SIX WORDS NOW, AND THE FOUR THAT ARRIVED ARE TIME WORDS. `fact` and `flee`
+// are what a creature does when a social verb resolves against it; `hold`,
+// `attack`, `toward` and `away` are what it does with one turn's worth of
+// doing, on its turn in a fight or a round of the world clock. WHICH WORD IS
+// LEGAL ON WHICH KEY IS NOT THIS FUNCTION'S QUESTION and deliberately not a
+// second enum: the table's compiler refuses `attack` under `intimidated`, so
+// a word on the wrong key never reaches this seam.
+//
+// EMPTY IS NOT UNKNOWN. An author may write an entry that only speaks, and the
+// SDK carries that as an empty Word; UNSPECIFIED is its exact wire spelling.
+func answerWordToProto(word string) (sessionpb.AnswerWord, error) {
+	switch word {
+	case "":
+		return sessionpb.AnswerWord_ANSWER_WORD_UNSPECIFIED, nil
+	case "fact":
+		return sessionpb.AnswerWord_ANSWER_WORD_FACT, nil
+	case "flee":
+		return sessionpb.AnswerWord_ANSWER_WORD_FLEE, nil
+	case "hold":
+		return sessionpb.AnswerWord_ANSWER_WORD_HOLD, nil
+	case "attack":
+		return sessionpb.AnswerWord_ANSWER_WORD_ATTACK, nil
+	case "toward":
+		return sessionpb.AnswerWord_ANSWER_WORD_TOWARD, nil
+	case "away":
+		return sessionpb.AnswerWord_ANSWER_WORD_AWAY, nil
+	default:
+		return sessionpb.AnswerWord_ANSWER_WORD_UNSPECIFIED,
+			fmt.Errorf("answered beat carries outcome word %q, which this build cannot name on the wire", word)
+	}
+}
+
+// answerKeyToProto names WHICH TABLE the world rolled on (rpg-project#465 §2)
+// -- the author's own spelling under `on:`, carried so the beat stands alone.
+//
+// IT REFUSES ANYTHING BUT THE FIVE, answerWordToProto's law for
+// answerWordToProto's reason. The design seals the trigger vocabulary and says
+// it grows one word per use case, so a sixth key means this seam is older than
+// the toolkit that produced the beat. ANSWER_KEY_UNSPECIFIED is the zero this
+// file's every enum keeps for "the producer failed", and publishing it about a
+// creature that answered a real trigger would be exactly that claim.
+//
+// EMPTY REFUSES TOO, and this is the one place that differs from the word
+// above. An empty Word is an author's real choice -- an entry that only speaks
+// -- but there is no such thing as a pick on no key: the SDK fills this on
+// every beat it writes, and empty means a beat stored by the build BEFORE the
+// table existed, which this seam cannot honestly spell. Loud is the point:
+// pre-release, a run that old is a run nobody is playing.
+func answerKeyToProto(key string) (sessionpb.AnswerKey, error) {
+	switch key {
+	case "intimidated":
+		return sessionpb.AnswerKey_ANSWER_KEY_INTIMIDATED, nil
+	case "intimidate_failed":
+		return sessionpb.AnswerKey_ANSWER_KEY_INTIMIDATE_FAILED, nil
+	case "persuaded":
+		return sessionpb.AnswerKey_ANSWER_KEY_PERSUADED, nil
+	case "persuade_failed":
+		return sessionpb.AnswerKey_ANSWER_KEY_PERSUADE_FAILED, nil
+	case "time":
+		return sessionpb.AnswerKey_ANSWER_KEY_TIME, nil
+	default:
+		return sessionpb.AnswerKey_ANSWER_KEY_UNSPECIFIED,
+			fmt.Errorf("answered beat carries key %q, which this build cannot name on the wire", key)
+	}
+}
+
+// answerKeyIsSocial says whether a key had a VERB and a CHECK behind it --
+// which is the whole question `verb` and `beaten` answer, and the reason those
+// two are filled on four keys and left unset on the fifth (rpg-project#465).
+//
+// A `time` pick has neither: nothing spoke and nothing was beaten. Writing
+// VERB_UNSPECIFIED and `beaten: false` there would spell "a threat that
+// failed", a sentence about an event that never happened, which is precisely
+// what deprecated the pair.
+func answerKeyIsSocial(key sessionpb.AnswerKey) bool {
+	switch key {
+	case sessionpb.AnswerKey_ANSWER_KEY_INTIMIDATED,
+		sessionpb.AnswerKey_ANSWER_KEY_INTIMIDATE_FAILED,
+		sessionpb.AnswerKey_ANSWER_KEY_PERSUADED,
+		sessionpb.AnswerKey_ANSWER_KEY_PERSUADE_FAILED:
+		return true
+	case sessionpb.AnswerKey_ANSWER_KEY_UNSPECIFIED, sessionpb.AnswerKey_ANSWER_KEY_TIME:
+		return false
+	default:
+		return false
+	}
+}
+
+// temperToProto names A CREATURE'S TEMPERAMENT -- the weight profile loading
+// its die (rpg-project#465 §3).
+//
+// EMPTY IS TEMPER_NONE, EXPLICITLY, never left to fall through to
+// UNSPECIFIED. Having no temperament is a real answer about a creature, and
+// this is the law slotToProto keeps one screen down for the same reason: the
+// zero on this seam means the producer failed, so a creature nobody gave a
+// word to needs a word of its own.
+//
+// NONE IS NOT SOLDIER, and collapsing them would lose the only thing they do
+// not share. They multiply identically -- every factor 100 -- but SOLDIER
+// means a placement or a faction's mix NAMED that word and NONE means nobody
+// did, and a reader asking whether anybody chose it must be able to tell.
+//
+// AN UNKNOWN WORD REFUSES. Not UNSPECIFIED, which would confess this build's
+// failure in a field a client reads as the world's answer, and above all not
+// NONE, which would publish "this creature has no temperament" about a
+// creature whose author gave it one -- every pick it ever makes would read as
+// a soldier's, and nothing anywhere would say the word had been dropped.
+func temperToProto(word string) (sessionpb.Temper, error) {
+	switch word {
+	case "":
+		return sessionpb.Temper_TEMPER_NONE, nil
+	case "soldier":
+		return sessionpb.Temper_TEMPER_SOLDIER, nil
+	case "coward":
+		return sessionpb.Temper_TEMPER_COWARD, nil
+	case "aggressive":
+		return sessionpb.Temper_TEMPER_AGGRESSIVE, nil
+	default:
+		return sessionpb.Temper_TEMPER_UNSPECIFIED,
+			fmt.Errorf("beat carries temperament %q, which this build cannot name on the wire", word)
+	}
+}
+
+// answerCandidatesToProto mirrors THE LOADED TABLE AS ROLLED: every entry
+// whose `when` held, in the author's order, with the arithmetic that put it on
+// the die (rpg-project#465 §6).
+//
+// FIELD FOR FIELD, NOTHING DERIVED. `loaded` is weight x percent and this seam
+// copies the engine's own product rather than recomputing it -- a converter
+// that multiplied here could disagree with the sum on `of` and there would be
+// no way to tell which of the two was the roll that happened.
+//
+// EMPTY IN, EMPTY OUT, and empty is a real answer: a `time` roll where no
+// entry's `when` held put nothing on the table, so the creature held and the
+// beat says so with no candidates at all.
+func answerCandidatesToProto(cs []sdk.AnswerCandidate) []*sessionpb.AnswerCandidate {
+	if len(cs) == 0 {
+		return nil
+	}
+	out := make([]*sessionpb.AnswerCandidate, len(cs))
+	for i, c := range cs {
+		out[i] = &sessionpb.AnswerCandidate{
+			Entry:   int32(c.Entry),
+			Weight:  int32(c.Weight),
+			Percent: int32(c.Percent),
+			Loaded:  int32(c.Loaded),
+		}
+	}
+	return out
 }
 
 // slotToProto mirrors session.Slot onto the wire enum.
@@ -1642,6 +2457,8 @@ func footprintOriginToProto(origin sdk.FootprintOrigin) sessionpb.FootprintOrigi
 		return sessionpb.FootprintOrigin_FOOTPRINT_ORIGIN_CASTER
 	case sdk.FootprintOriginCasterEdge:
 		return sessionpb.FootprintOrigin_FOOTPRINT_ORIGIN_CASTER_EDGE
+	case sdk.FootprintOriginPoint:
+		return sessionpb.FootprintOrigin_FOOTPRINT_ORIGIN_POINT
 	default:
 		return sessionpb.FootprintOrigin_FOOTPRINT_ORIGIN_UNSPECIFIED
 	}
@@ -1872,17 +2689,85 @@ func intsToInt32s(values []int) []int32 {
 	return out
 }
 
+// rollSourcesToProto copies a list of provider-authored identities in the
+// order the producer wrote them. Each entry is independently copied, never
+// aliased into the SDK's own slice.
+func rollSourcesToProto(sources []sdk.RollSource) []*sessionpb.RollSource {
+	out := make([]*sessionpb.RollSource, len(sources))
+	for i := range sources {
+		out[i] = rollSourceToProto(&sources[i])
+	}
+	return out
+}
+
+// keepRuleToProto names WHY one face of a pool counted and the others did not
+// (rpg-project#462, R1/R2).
+//
+// IT REFUSES A RULE THIS BUILD CANNOT NAME rather than demoting it, the same
+// law answerWordToProto keeps and for the same reason. KEEP_RULE_UNSPECIFIED
+// is not "some rule we could not read": a pool nothing touched carries no
+// DiceKeep at all, so UNSPECIFIED would be a positive claim that a keep record
+// exists and says nothing. Sending it about a pool a real rule decided would
+// have every client draw two faces with no reason beside them and nothing
+// anywhere saying the reason was dropped. The refusal is loud, it names the
+// rule, and the fix is to rebuild this seam against the toolkit that grew it.
+//
+// AN EMPTY RULE IS REFUSED TOO. Unlike the answered beat's word, where empty
+// is an authored answer, a keep record with no rule could not have decided
+// anything -- absence of a rule is spelled by the absence of the record.
+func keepRuleToProto(rule sdk.KeepRule) (sessionpb.KeepRule, error) {
+	switch rule {
+	case sdk.KeepAdvantage:
+		return sessionpb.KeepRule_KEEP_RULE_ADVANTAGE, nil
+	case sdk.KeepDisadvantage:
+		return sessionpb.KeepRule_KEEP_RULE_DISADVANTAGE, nil
+	case sdk.KeepCancelled:
+		return sessionpb.KeepRule_KEEP_RULE_CANCELLED, nil
+	default:
+		return sessionpb.KeepRule_KEEP_RULE_UNSPECIFIED,
+			fmt.Errorf("dice pool carries keep rule %q, which this build cannot name on the wire", string(rule))
+	}
+}
+
+// diceKeepToProto copies the record that decided KeptIndices, and who brought
+// it. Granted and imposed cross exactly as the producer listed them; this seam
+// never reads them to decide what the rule was, because the rule is its own
+// field (rpg-project#462, R1).
+//
+// It is called only for a pool that HAS a record -- diceTraceToProto keeps the
+// nil test, because a straight roll's unset field is the truth and not a
+// conversion this function has to invent an answer for.
+func diceKeepToProto(keep *sdk.DiceKeep) (*sessionpb.DiceKeep, error) {
+	if keep == nil {
+		return nil, errors.New("dice keep record is required")
+	}
+	rule, err := keepRuleToProto(keep.Rule)
+	if err != nil {
+		return nil, err
+	}
+	return &sessionpb.DiceKeep{
+		Rule:    rule,
+		Granted: rollSourcesToProto(keep.Granted),
+		Imposed: rollSourcesToProto(keep.Imposed),
+	}, nil
+}
+
 // diceTraceToProto copies the complete physical dice history field-for-field.
 // Subtotal is authoritative and is never recomputed from the face lists.
-func diceTraceToProto(trace *sdk.DiceTrace) *sessionpb.DiceTrace {
+//
+// KEEP IS UNSET WHEN NOTHING TOUCHED THE POOL, and that is the whole zero
+// value law of the record: a straight roll kept every face, nobody decided it,
+// and the absent field says exactly that. A client reading two faces and no
+// keep record is reading a producer defect, not advantage.
+func diceTraceToProto(trace *sdk.DiceTrace) (*sessionpb.DiceTrace, error) {
 	if trace == nil {
-		return nil
+		return nil, errors.New("dice trace is required")
 	}
 	rerolls := make([]*sessionpb.DiceReroll, len(trace.Rerolls))
 	for i := range trace.Rerolls {
 		rerolls[i] = diceRerollToProto(&trace.Rerolls[i])
 	}
-	return &sessionpb.DiceTrace{
+	out := &sessionpb.DiceTrace{
 		Notation:      trace.Notation,
 		DieSize:       int32(trace.DieSize),
 		OriginalRolls: intsToInt32s(trace.OriginalRolls),
@@ -1891,37 +2776,61 @@ func diceTraceToProto(trace *sdk.DiceTrace) *sessionpb.DiceTrace {
 		KeptIndices:   intsToInt32s(trace.KeptIndices),
 		Subtotal:      int32(trace.Subtotal),
 	}
+	if trace.Keep != nil {
+		keep, err := diceKeepToProto(trace.Keep)
+		if err != nil {
+			return nil, err
+		}
+		out.Keep = keep
+	}
+	return out, nil
 }
 
 // rollComponentToProto preserves optional modifier presence, including a
 // present zero. Dice and source are independently copied and never aliased.
-func rollComponentToProto(component *sdk.RollComponent) *sessionpb.RollComponent {
+// A component with no dice is a flat modifier and its wire Dice stays unset.
+func rollComponentToProto(component *sdk.RollComponent) (*sessionpb.RollComponent, error) {
 	if component == nil {
-		return nil
+		return nil, errors.New("roll component is required")
 	}
 	out := &sessionpb.RollComponent{
 		Source:       rollSourceToProto(&component.Source),
-		Dice:         diceTraceToProto(component.Dice),
 		SubtractDice: component.SubtractDice,
+	}
+	if component.Dice != nil {
+		dice, err := diceTraceToProto(component.Dice)
+		if err != nil {
+			return nil, err
+		}
+		out.Dice = dice
 	}
 	if component.Modifier != nil {
 		modifier := int32(*component.Modifier)
 		out.Modifier = &modifier
 	}
-	return out
+	return out, nil
 }
 
 // rollCalculationToProto preserves component production order and copies the
 // producer's authoritative total without validation or arithmetic.
-func rollCalculationToProto(calculation *sdk.RollCalculation) *sessionpb.RollCalculation {
+//
+// A NIL CALCULATION IS AN ANSWER, not a failure: a body that recorded no
+// arithmetic leaves the wire field unset, the same presence law every other
+// optional projection in this file keeps. The error channel reports exactly
+// one thing -- a keep rule this build cannot name.
+func rollCalculationToProto(calculation *sdk.RollCalculation) (*sessionpb.RollCalculation, error) {
 	if calculation == nil {
-		return nil
+		return nil, nil
 	}
 	components := make([]*sessionpb.RollComponent, len(calculation.Components))
 	for i := range calculation.Components {
-		components[i] = rollComponentToProto(&calculation.Components[i])
+		component, err := rollComponentToProto(&calculation.Components[i])
+		if err != nil {
+			return nil, err
+		}
+		components[i] = component
 	}
-	return &sessionpb.RollCalculation{Components: components, Total: int32(calculation.Total)}
+	return &sessionpb.RollCalculation{Components: components, Total: int32(calculation.Total)}, nil
 }
 
 // hasRollComponent reports which of DamageComponent's two SDK read shapes is
@@ -1935,7 +2844,7 @@ func hasRollComponent(component *sdk.RollComponent) bool {
 		component.Dice != nil || component.Modifier != nil
 }
 
-func damageComponentsToProto(in []sdk.DamageComponent) []*sessionpb.DamageComponent {
+func damageComponentsToProto(in []sdk.DamageComponent) ([]*sessionpb.DamageComponent, error) {
 	out := make([]*sessionpb.DamageComponent, len(in))
 	for i := range in {
 		component := &in[i]
@@ -1951,7 +2860,11 @@ func damageComponentsToProto(in []sdk.DamageComponent) []*sessionpb.DamageCompon
 		if hasRollComponent(&component.Roll) {
 			// New bodies populate only Roll. Deprecated scalar fields stay empty,
 			// even if a malformed in-memory value also happens to carry them.
-			converted.Roll = rollComponentToProto(&component.Roll)
+			roll, err := rollComponentToProto(&component.Roll)
+			if err != nil {
+				return nil, err
+			}
+			converted.Roll = roll
 		} else {
 			// Legacy bodies populate only their deprecated scalars. In
 			// particular, no roll trace is fabricated from final faces.
@@ -1962,18 +2875,7 @@ func damageComponentsToProto(in []sdk.DamageComponent) []*sessionpb.DamageCompon
 		}
 		out[i] = converted
 	}
-	return out
-}
-
-func attackModifierSourcesToProto(in []sdk.AttackModifierSource) []*sessionpb.AttackModifierSource {
-	out := make([]*sessionpb.AttackModifierSource, len(in))
-	for i, source := range in {
-		out[i] = &sessionpb.AttackModifierSource{
-			SourceRef: source.SourceRef,
-			SourceId:  source.SourceID,
-		}
-	}
-	return out
+	return out, nil
 }
 
 // abilityRefToProto mirrors the sole public identity of a compiled Activate
@@ -2101,18 +3003,23 @@ func doorApproachesToProto(as []sdk.DoorApproach) []*sessionpb.CheckApproach {
 	return out
 }
 
-// doorRevealedInfoToProto groups DoorRevealedBody's flat door/state/
+// revealedDoorToProto groups one session.RevealedDoor's flat door/state/
 // approaches into the wire's nested DoorInfo -- the same shape GetDoors
-// already returns for this door, per DoorRevealed.door's own doc ("exactly
-// as this recipient's GetDoors would now list it"). Approaches is present
-// only while the door is locked (DoorRevealedBody's own field law), so a
-// non-empty list is the presence signal for Lock, matching doorToProto's
-// "Lock unset is not locked" convention field-for-field rather than
-// re-deriving it from State.
-func doorRevealedInfoToProto(b sdk.DoorRevealedBody) *sessionpb.DoorInfo {
-	out := &sessionpb.DoorInfo{Door: b.Door, State: doorStateToProto(b.State)}
-	if len(b.Approaches) > 0 {
-		out.Lock = &sessionpb.DoorLock{Approaches: doorApproachesToProto(b.Approaches)}
+// already returns for this door, per ConcealmentRevealed.doors's own doc
+// ("exactly as this recipient's GetDoors would now list them"). Approaches
+// is present only while the door is locked (RevealedDoor's own field law),
+// so a non-empty list is the presence signal for Lock, matching
+// doorToProto's "Lock unset is not locked" convention field-for-field
+// rather than re-deriving it from State.
+//
+// THE DOORWAYS DO NOT RIDE WITH IT. DoorInfo has no doorway field -- a
+// door's edges belong to the atlas, not to the door -- so the caller
+// flattens them into ConcealmentRevealed.doorways, which is the list a
+// client's cached atlas takes them from.
+func revealedDoorToProto(d sdk.RevealedDoor) *sessionpb.DoorInfo {
+	out := &sessionpb.DoorInfo{Door: d.Door, State: doorStateToProto(d.State)}
+	if len(d.Approaches) > 0 {
+		out.Lock = &sessionpb.DoorLock{Approaches: doorApproachesToProto(d.Approaches)}
 	}
 	return out
 }

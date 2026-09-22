@@ -18,10 +18,15 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
 
-func nativeClericCombatScene(t *testing.T) (*acceptanceHarness, context.Context, string) {
+func nativeClericCombatScene(t *testing.T, preferred ...spells.Spell) (*acceptanceHarness, context.Context, string) {
+	t.Helper()
+	return nativeClericCombatSceneAt(t, 4, 0, preferred...)
+}
+
+func nativeClericCombatSceneAt(t *testing.T, targetX, targetY int, preferred ...spells.Spell) (*acceptanceHarness, context.Context, string) {
 	t.Helper()
 	h := newAcceptanceHarnessWith(t, failedSaveDice{}, sdk.Pass{})
-	id := createNativeCleric(t, h)
+	id := createNativeCleric(t, h, preferred...)
 	ctx := auth.WithPlayerID(context.Background(), "cleric-player")
 	allyCtx := auth.WithPlayerID(context.Background(), "player-alice")
 	_, err := h.charRepo.Create(ctx, characterrepo.CreateInput{Character: &entities.Character{Data: armedFighter("alice", "player-alice")}})
@@ -37,7 +42,7 @@ func nativeClericCombatScene(t *testing.T) (*acceptanceHarness, context.Context,
 	for _, offer := range worldOffers.GetDeclarations() {
 		require.False(t, offer.GetVerb() == sessionpb.Verb_VERB_CAST && offer.GetAvailable(), "world-clock exploration does not imply a missing cast mapping")
 	}
-	_, err = h.manager.Manager.Spawn(ctx, &sdk.SpawnInput{Session: castSessionID, ID: "skel-1", Ref: refs.Monsters.Skeleton().String(), Position: at(4, 0)})
+	_, err = h.manager.Manager.Spawn(ctx, &sdk.SpawnInput{Session: castSessionID, ID: "skel-1", Ref: refs.Monsters.Skeleton().String(), Position: at(targetX, targetY)})
 	require.NoError(t, err)
 	turn, err := h.handler.Turn(ctx, &sessionpb.TurnRequest{Session: castSessionID, Member: id})
 	require.NoError(t, err)

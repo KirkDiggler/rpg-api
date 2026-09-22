@@ -127,6 +127,47 @@ func (s *HandlerSuite) TestPutDungeon_TheRequestReachesTheRegistryVerbatim() {
 	s.InDelta(0.5, resp.GetAtlas().GetRegions()[0].GetLighting().GetIntensity(), 1e-9)
 }
 
+// TestPutDungeon_AtlasNamesTheDungeonItCompiled is the authoring side
+// of the one carriage: PutDungeon's answer and GetAtlas share AtlasToProto
+// (the same producer), so a compiled entry's atlas names the key it was
+// compiled from, and what the room looks like is the file the author just
+// sent, served by that key (rpg-project#479).
+//
+// THE ECHO IS WHY THE BUILDER WORKS. The registry hands the entry's own key
+// to the projector, the projector echoes it onto the atlas, and the builder
+// previewing a room it just Put fetches the room's appearance by exactly the
+// string a player's client will use — one client code path draws both.
+func (s *HandlerSuite) TestPutDungeon_AtlasNamesTheDungeonItCompiled() {
+	s.registry.EXPECT().
+		Put(gomock.Any(), gomock.Any()).
+		Return(&dungeons.PutResult{Entry: &dungeons.Entry{
+			Key: "workshop-room",
+			Atlas: &sdk.Atlas{
+				Grid:       sdk.GridHex,
+				Cells:      []spatial.Position{{X: 0, Y: 0}},
+				DungeonKey: "workshop-room",
+			},
+		}}, nil)
+
+	resp, err := s.handler.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{Key: "workshop-room", Yaml: "version: 3\n"})
+	s.Require().NoError(err)
+	s.Require().NotNil(resp.GetAtlas())
+	s.Equal("workshop-room", resp.GetAtlas().GetDungeonKey(),
+		"PutDungeon's atlas names the entry the author just saved")
+
+	// An atlas projected under no key names none.
+	s.registry.EXPECT().
+		Put(gomock.Any(), gomock.Any()).
+		Return(&dungeons.PutResult{Entry: &dungeons.Entry{
+			Key:   "crypt",
+			Atlas: &sdk.Atlas{Grid: sdk.GridHex, Cells: []spatial.Position{{X: 0, Y: 0}}},
+		}}, nil)
+	keyless, err := s.handler.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{Key: "crypt", Yaml: "version: 2\n"})
+	s.Require().NoError(err)
+	s.Require().NotNil(keyless.GetAtlas())
+	s.Empty(keyless.GetAtlas().GetDungeonKey())
+}
+
 func (s *HandlerSuite) TestPutDungeon_RegistryFailureIsInternal() {
 	s.registry.EXPECT().Put(gomock.Any(), gomock.Any()).Return(nil, errors.New("disk full"))
 	_, err := s.handler.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{Key: "crypt", Yaml: "x"})

@@ -1,0 +1,387 @@
+# The front room (rpg-project#458, ideas/shenanigans/front-room-goblin.md) —
+# the fixture the front room goblin is authored against: a creature that is
+# NOT your enemy, standing in the first room, that you talk to.
+#
+# Three rooms, west to east:
+#
+#   - the FRONT ROOM, where the party comes in, with FOUR goblins standing in
+#     it. None is hostile. No fight forms, nobody rolls initiative, and the
+#     world clock is running — which is the entire point of the slice. Lean on
+#     one or talk it round and the AUTHOR'S OWN TABLE decides what it does —
+#     the SAME table for all four, since it is written on their faction, and
+#     the only thing that differs between them is the temperament each was
+#     dealt from that faction's mix (rpg-project#465);
+#   - the PASSAGE, empty, so the bandits are genuinely two rooms away and a
+#     fleeing goblin has somewhere to run;
+#   - the BANDIT HALL, where two bandits wait. They are hostile from frame
+#     one, and they DO NOT ARRIVE until the goblin's bad directions are
+#     believed.
+#
+# WHY A FIFTH FILE RATHER THAN A FIFTH ROOM ON AN EXISTING ONE. The brief
+# asked whether the Three Minds dungeon was the natural home. It is not: that
+# file has no `factions:` at all, its own shenanigans test says so in as many
+# words ("the `on: { intimidated: … }` half belongs to the raider camp's
+# dispositions, not to a tomb with no factions in it"), and giving it a
+# faction graph would change how every fight in it forms. The raider camp has
+# the graph but is hostile from frame one and is the hold-out scenario's
+# pinned fixture. A room where nothing attacks you is a different scene from
+# both, and it needs to be pickable on its own in the lobby.
+#
+# The goblin and the bandits have no promoted model yet and draw as the
+# fallback capsule; the file ships anyway so the figures start working the day
+# the models land, exactly as the Three Minds did.
+version: 2
+key: reference-front-room
+name: The Front Room
+orientation: pointy
+void: opaque
+
+regions:
+  - id: front-room
+    name: The Front Room
+    archetype: crypt
+    lighting: { intensity: 0.7 }
+    cells:
+      - [[0,0],[1,0],[2,0],[3,0],[4,0],[5,0]]
+      - [[0,1],[1,1],[2,1],[3,1],[4,1],[5,1]]
+      - [[0,2],[1,2],[2,2],[3,2],[4,2],[5,2]]
+      - [[0,3],[1,3],[2,3],[3,3],[4,3],[5,3]]
+      - [[0,4],[1,4],[2,4],[3,4],[4,4],[5,4]]
+      - [[0,5],[1,5],[2,5],[3,5],[4,5],[5,5]]
+      - [[0,6],[1,6],[2,6],[3,6],[4,6],[5,6]]
+      - [[0,7],[1,7],[2,7],[3,7],[4,7],[5,7]]
+  - id: passage
+    name: The Passage
+    archetype: crypt
+    lighting: { intensity: 0.4 }
+    cells:
+      - [[6,0],[7,0],[8,0],[9,0],[10,0],[11,0],[12,0],[13,0]]
+      - [[6,1],[7,1],[8,1],[9,1],[10,1],[11,1],[12,1],[13,1]]
+      - [[6,2],[7,2],[8,2],[9,2],[10,2],[11,2],[12,2],[13,2]]
+      - [[6,3],[7,3],[8,3],[9,3],[10,3],[11,3],[12,3],[13,3]]
+      - [[6,4],[7,4],[8,4],[9,4],[10,4],[11,4],[12,4],[13,4]]
+      - [[6,5],[7,5],[8,5],[9,5],[10,5],[11,5],[12,5],[13,5]]
+      - [[6,6],[7,6],[8,6],[9,6],[10,6],[11,6],[12,6],[13,6]]
+      - [[6,7],[7,7],[8,7],[9,7],[10,7],[11,7],[12,7],[13,7]]
+  - id: bandit-hall
+    name: The Bandit Hall
+    archetype: crypt
+    lighting: { intensity: 0.25 }
+    cells:
+      - [[14,0],[15,0],[16,0],[17,0],[18,0],[19,0],[20,0],[21,0]]
+      - [[14,1],[15,1],[16,1],[17,1],[18,1],[19,1],[20,1],[21,1]]
+      - [[14,2],[15,2],[16,2],[17,2],[18,2],[19,2],[20,2],[21,2]]
+      - [[14,3],[15,3],[16,3],[17,3],[18,3],[19,3],[20,3],[21,3]]
+      - [[14,4],[15,4],[16,4],[17,4],[18,4],[19,4],[20,4],[21,4]]
+      - [[14,5],[15,5],[16,5],[17,5],[18,5],[19,5],[20,5],[21,5]]
+      - [[14,6],[15,6],[16,6],[17,6],[18,6],[19,6],[20,6],[21,6]]
+      - [[14,7],[15,7],[16,7],[17,7],[18,7],[19,7],[20,7],[21,7]]
+
+# The party comes in at the west wall, facing the goblin.
+start: [1, 3]
+
+# One seam per room boundary, quarter lines like every other reference file:
+# they shave the cells either side and leave every one of them standable, so
+# nothing here is sealed and a goblin that runs has a way through.
+walls:
+  - start: { cell: [5,7], offset: [0.25, 0.375] }
+    end:   { cell: [6,0], offset: [-0.25, -0.375] }
+    name: the front room seam
+  - start: { cell: [13,7], offset: [0.25, 0.375] }
+    end:   { cell: [14,0], offset: [-0.25, -0.375] }
+    name: the hall seam
+
+# Both doorways stand open. NOTHING IS LOCKED IN THIS FILE, deliberately: the
+# scene is about what a player says, and a lock would put a second check in
+# front of the one being walked.
+doors:
+  - id: front-passage
+    at: { cell: [6,4], offset: [-0.25, -0.375] }
+  - id: passage-hall
+    at: { cell: [14,4], offset: [-0.25, -0.375] }
+
+# Two sides beside the party's own. NEITHER NAMES A MIND: a faction's mind is
+# what decides whether the faction knows a fact, and both of these turn on
+# facts the PARTY is present for, so there is nobody whose private knowledge
+# would gate it.
+#
+# BOTH NOW CARRY ORDERS AND A MIX (rpg-project#465, the creature's table).
+# A faction is layer two of a creature's policy — every placement in it
+# inherits its `on:`, and a placement that writes the same KEY replaces it
+# wholesale rather than adding to it. The goblins' answer table lives here
+# rather than on one placement precisely so all four of them share it: one
+# table, four creatures, four different answers, and the only thing that
+# differs is the die each was dealt.
+factions:
+  # FOUR GOBLINS, ONE TABLE, FOUR BEHAVIOURS — the slice's whole claim, and
+  # the mix is what makes it visible. `{ coward: 2, soldier: 1, aggressive: 1 }`
+  # is a d4 thrown once per goblin at spawn WITH THE FACTION AS THE DIE'S
+  # ENTITY, and each throw is a `tempered` beat, so the table watches which
+  # one came out the coward before anybody has said a word to it.
+  #
+  # Weighted toward `coward` on purpose, and the design's own arithmetic says
+  # why. The authored 70-cower / 30-flee below is untouched for a soldier; a
+  # COWARD trebles `flee`, so it rolls 70 against 90 and runs 56% of the time,
+  # while the AGGRESSIVE one quarters it and rolls 70 against 7.5 and runs
+  # 10%. One threat, one line, one table — and one goblin bolts while the next
+  # stands there saying the same words. That difference IS the walk.
+  - id: goblins
+    temper: { coward: 2, soldier: 1, aggressive: 1 }
+    # The author's orders for every goblin in the room. FOUR KEYS, one per
+    # social outcome, and the WORLD rolls which entry fires against the summed
+    # weights — each one loaded by the roller's own temperament. Every entry is
+    # one word plus the author's line, carried verbatim onto the beat; the
+    # engine never composes speech.
+    #
+    # NO `time` KEY HERE, DELIBERATELY. A goblin that is given time falls
+    # through to the rulebook's default table for its kind, which is what makes
+    # a neutral goblin stand still (nothing it is opposed to is in sight, so no
+    # entry's `when` holds and it holds) and what makes a COWED one keep
+    # running: the default reads `fled: { within: 3 }` and walks it away from
+    # whoever frightened it, for three rounds of the party's own steps. Writing
+    # a `time` key here would replace that wholesale and cost both.
+    on:
+      # A LANDED THREAT, 70/30. Seven times in ten it folds and teaches the
+      # party `goblin-cowed`; three times in ten it panics and BOLTS. The
+      # flee word lands a `fled` deed at now and does NOT step here — the
+      # verb pays its round on the world clock and the goblin's own `time`
+      # table does the running, which is why the party sees it go on their
+      # steps rather than instantly.
+      #
+      # The 30 is what makes the threat a gamble rather than a button: the
+      # goblin you frightened away is a goblin you can no longer talk to.
+      # And it is 30 only for a soldier — a coward runs on a 56% share and
+      # the aggressive one on 10%, off this same line.
+      intimidated:
+        - { weight: 70, say: "Fine! FINE. The cellar door is behind the barrels. Just don't.", fact: goblin-cowed }
+        - { weight: 30, say: "Boss! BOSS!", flee: {} }
+
+      # A MISSED THREAT. One entry, so it always fires: the goblin is not
+      # impressed and says so, and nothing else happens. Failure that costs
+      # nothing is deliberate HERE and not everywhere — the failed APPEAL
+      # below is the one with teeth.
+      intimidate_failed:
+        - { say: "Big talk, for someone standing in my doorway." }
+
+      # A LANDED APPEAL. It tells the truth and teaches nothing: the party
+      # walks away knowing where to go, and the goblin is still a goblin.
+      # NOT `goblin-cowed` — talking somebody round is not frightening them,
+      # and the disposition flips on the threat's fact alone.
+      persuaded:
+        - { say: "Bandits took the cellar. Go left at the rope, and mind the third step." }
+
+      # A FAILED APPEAL, AND THE TRAP. The goblin lies, and the lie is a
+      # FACT like any other — `cellar-is-clear`, an id and nothing else. The
+      # bandits' `arrives` below reads it. There is no truth bit anywhere on
+      # the wire, by ruling: a false fact has to look exactly like a true one
+      # to whoever received it, or the client hands the player the answer to
+      # the bad directions the author wrote.
+      #
+      # This is what "a failed persuade teaches the false fact and the bandits
+      # arrive" means mechanically, and it is authorable with the two words
+      # this slice ships. `lure` is not needed and is not used.
+      persuade_failed:
+        - { weight: 100, say: "Cellar's empty, friend. Nothing down there but rats. Straight on through.", fact: cellar-is-clear }
+
+  # The bandits are dealt from a mix too, weighted the other way: they are
+  # what walked in because you were lied to, and a band of them should mostly
+  # come at you. The one coward in four is the point — the same orders
+  # produce a bandit that holds back, and nobody authored it.
+  - id: bandits
+    temper: { coward: 1, soldier: 2, aggressive: 1 }
+
+# The whole shape of the scene, in two lines.
+#
+# The goblin is NEUTRAL, and the line is load-bearing rather than decorative:
+# the default stance between `party` and any declared faction is HOSTILE, so
+# without this the goblin attacks on frame one and there is no front room.
+# Neutral means no fight forms, the creature is never driven, and it stands
+# there while the WORLD clock runs — which is the entire slice. True FROM FRAME
+# ONE and not forever: see the aggression note below.
+#
+# The bandits are HOSTILE from frame one, but they are not in the room yet;
+# see `arrives` below.
+#
+# WHAT IS NOT HERE, AND WHY. The design writes this pair as
+# `stance: neutral, until: { fact: goblin-cowed }, then: allied` — cow the
+# goblin and it stops being an enemy. THAT IS STILL NOT BUILT, and the reason
+# is now only half what it was.
+#
+# RE-SEATED at encounter v0.100.0 (rpg-project#493, dispositions turn both
+# ways). This block used to refuse the design in two sentences and one of them
+# has been retired:
+#
+#   - `then:` is still not a field on a disposition at all. Unchanged.
+#   - "an `until` on a non-hostile pair is refused (only a hostile pair has
+#     something to stop doing)" IS GONE. R1 ruled `until` runs both ways, so
+#     an `until` on THIS pair is legal now — and it turns the goblins HOSTILE,
+#     which is the one outcome that destroys the front room. The refusal moved
+#     to allied only ("an allied pair has nothing to become"), and the half of
+#     the old note that survives verbatim is `encounter.StanceAllied`'s own
+#     doc: "Authorable only as a static stance; no predicate turns a pair
+#     allied."
+#
+# SO THE CONCLUSION IS UNCHANGED AND THE HAZARD IS NEW. There is still no
+# spelling of "a neutral creature becomes friendlier" — nothing turns a pair
+# allied, and starting the goblin hostile to get a flip would destroy the
+# premise the other way, since a hostile goblin forms a fight, takes a turn and
+# swings. A static neutral is still the honest authoring. What changed is that
+# writing the `until` anyway no longer fails loudly at compile: it now compiles
+# into the opposite scene.
+#
+# `goblin-cowed` is still taught and read by nobody: allowed by R8 ("the
+# dungeon allows; the scenario refuses"), visible in the intel log and on the
+# answered beat, and changing no stance. Filed rather than faked.
+#
+# ONE THING ABOUT THIS SCENE IS GENUINELY DIFFERENT AT THESE PINS. R3 made
+# aggression a law rather than an authored trigger: swing at the front-room
+# goblin and the whole `goblins` pair turns hostile at once, all four of them,
+# and the fight forms in that same settle. Nothing in this file asks for that
+# and nothing in this file can turn it off — it is what a neutral faction
+# somebody attacks now does everywhere. The front room is a room you can ruin,
+# which is the point of the ruling and worth knowing before a walk.
+dispositions:
+  - { between: [goblins, party], stance: neutral }
+  - { between: [bandits, party], stance: hostile }
+
+place:
+  # THE FRONT ROOM GOBLIN. One creature the party talks to, and every half of
+  # the conversation is on its placement.
+  #
+  # `intimidate:` at DC 12 and `persuade:` at DC 10 are what MAKE this goblin
+  # talkable at all (rpg-project#494): the offer comes from the NPC, so a
+  # creature with no entries carries no social verb and there is no default
+  # behind the silence. The appeal is deliberately EASIER than the threat —
+  # this goblin would rather be talked to than shouted at, which is a thing an
+  # author can say and the engine hears.
+  #
+  # A CHARACTER WITHOUT THE SKILL ROLLS AT DISADVANTAGE (R2), so against DC
+  # 10 the party's face and the party's barbarian are playing two different
+  # games, which is the whole reason the rule exists.
+  #
+  # ITS `on:` TABLE MOVED TO THE FACTION (rpg-project#465) and nothing about
+  # it changed on the way. It sat here while this goblin was the only creature
+  # with orders; the slice's claim is four goblins answering ONE table, and a
+  # table on one placement cannot be shared. No placement below writes an `on:`
+  # of its own, so every goblin in the room inherits this one whole.
+  - id: front-goblin
+    ref: "dnd5e:monsters:goblin"
+    faction: goblins
+    at: [4, 3]
+    targeting: closest
+    actions: ["dnd5e:weapons:scimitar"]
+    intimidate: [{ ability: intimidation, dc: 12 }]
+    persuade: [{ ability: persuasion, dc: 10 }]
+
+  # THE OTHER THREE, AND THEY ARE DELIBERATELY PLAIN. Same ref, same faction,
+  # no `on:`, no `temper:`, no priced check — nothing distinguishes them from
+  # the one above except that nobody wrote them a DC.
+  #
+  # SO THEY CANNOT BE INTIMIDATED OR PERSUADED AT ALL (rpg-project#494 R1).
+  # They used to be talked to on a DERIVED DC of 9, their stat block's passive
+  # Insight; that approach is retired, and absence now means what an author
+  # saying nothing has always meant — this creature does not do that. Afford
+  # lists only front-goblin as a candidate for either verb, and aiming a verb
+  # at one of these three is refused by name. Authoring an `intimidate:` block
+  # on any of them is all it takes to change that, which is the point.
+  #
+  # THEY ARE STILL THE CONTROL THE WALK NEEDS, for the `time` table rather
+  # than for the social verbs. Four identical goblins, one inherited table, one
+  # faction mix: every difference the table shows is the die, and a `temper:`
+  # written on any of these would be the author answering the question the mix
+  # exists to ask.
+  #
+  # Spread across the room rather than in a line, so one can be out of the
+  # pillar's sightline while another is not.
+  - id: front-goblin-2
+    ref: "dnd5e:monsters:goblin"
+    faction: goblins
+    at: [4, 1]
+  - id: front-goblin-3
+    ref: "dnd5e:monsters:goblin"
+    faction: goblins
+    at: [4, 5]
+  - id: front-goblin-4
+    ref: "dnd5e:monsters:goblin"
+    faction: goblins
+    at: [5, 6]
+
+  # A prop to stand behind, so a walk can put the goblin out of sight and see
+  # the verb refused for a SIGHTLINE rather than a distance (ErrUnwitnessed →
+  # FAILED_PRECONDITION).
+  - { ref: "dnd5e:props:pillar", at: [2,5], blocks_movement: true, blocks_los: true }
+  - { ref: "dnd5e:props:brazier", at: [1,1], blocks_movement: true, blocks_los: false }
+  - { ref: "dnd5e:props:bone-pile", at: [10,2], blocks_movement: false, blocks_los: false }
+
+  # THE BANDITS, TWO ROOMS AWAY AND NOT YET ANYWHERE. Until `cellar-is-clear`
+  # is known by anybody in the run, these placements are on no map and in no
+  # roster — exactly as if they had not been written. A failed appeal mints
+  # the fact, and they walk in.
+  #
+  # They are hostile, so a fight forms the moment one of them sees a player:
+  # the party followed the goblin's bad directions and met what was actually
+  # down there.
+  #
+  # AND NOW THEY COME LOOKING (rpg-project#465). Each carries a `time` table
+  # whose last line is a standing order toward [3, 3], a clear cell of the
+  # front room one step short of where the goblin stands: whenever a bandit is
+  # given time — a round of the world clock as the party walks and talks, or a
+  # round of a fight somebody else is in — and it can see nobody it is opposed
+  # to, it spends that round walking west. An arrival that should go somewhere
+  # is a STANDING ORDER, not a memory, which is why there is no `arrived`
+  # trigger for it to hang on.
+  #
+  # AN AUTHORED CELL IS WALKED ONTO, not up to, so the cell is chosen clear:
+  # [4, 3] is the goblin's and [1, 3] is where the party comes in.
+  #
+  # THE FIRST FIVE LINES ARE THE RULEBOOK'S DEFAULT, COPIED, AND THE COPY IS
+  # THE POINT OF THIS COMMENT. Writing a `time` key replaces the default's
+  # `time` key WHOLESALE — there is no merging of entry lists, by design, so an
+  # author never has to reason about what was added to what. Without the copy
+  # these two would walk west beautifully and then form a fight on sight and
+  # stand in it, because nothing on their table would have anything to say
+  # about an enemy they could see. An author who wants both writes both, and
+  # this is what both looks like.
+  #
+  # NO `hold` LINE, and that is not an omission: the default's last entry is
+  # `{ when: { enemy: none }, hold: {} }` and the standing order takes that
+  # band. A bandit with nobody in sight walks rather than waits, which is the
+  # only thing these two do differently from any other creature in the game.
+  #
+  # WHAT IT COSTS TO KEEP IN STEP is recorded rather than solved: the day the
+  # rulebook tunes its default, this copy does not move with it. That is an
+  # authoring question for after the walk, not a reason to leave the bandits
+  # unable to fight.
+  - id: bandit-1
+    ref: "dnd5e:monsters:bandit"
+    faction: bandits
+    at: [16, 3]
+    targeting: closest
+    actions: ["dnd5e:weapons:scimitar", "dnd5e:weapons:light-crossbow"]
+    arrives: { fact: cellar-is-clear }
+    on:
+      time:
+        - { when: { fled: { within: 3 } },     away: actor,      weight: 3 }
+        - { when: { attacked: { within: 3 } }, attack: attacker, weight: 3 }
+        - { when: { enemy: reach },            attack: enemy }
+        - { when: { enemy: seen },             toward: enemy }
+        - { when: { enemy: remembered },       toward: enemy }
+        - { when: { enemy: none },             toward: { at: [3, 3] } }
+  - id: bandit-2
+    ref: "dnd5e:monsters:bandit"
+    faction: bandits
+    at: [16, 5]
+    targeting: closest
+    actions: ["dnd5e:weapons:light-crossbow"]
+    arrives: { fact: cellar-is-clear }
+    on:
+      time:
+        - { when: { fled: { within: 3 } },     away: actor,      weight: 3 }
+        - { when: { attacked: { within: 3 } }, attack: attacker, weight: 3 }
+        - { when: { enemy: reach },            attack: enemy }
+        - { when: { enemy: seen },             toward: enemy }
+        - { when: { enemy: remembered },       toward: enemy }
+        - { when: { enemy: none },             toward: { at: [3, 3] } }
+
+exits:
+  - { id: front-door, at: [0,3] }

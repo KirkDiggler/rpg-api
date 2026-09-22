@@ -38,6 +38,51 @@ func TestGetAtlas_HappyPath(t *testing.T) {
 	require.Len(t, resp.GetCells(), 1)
 }
 
+// TestGetAtlas_DungeonKeyNamesTheContentTheSessionPlays pins the atlas
+// read's carriage after the scene left the wire (rpg-project#479): the
+// content key the SDK read off the session record reaches the response. (That
+// the deprecated scene field stays empty is AtlasToProto's own test, since
+// this read and PutDungeon share that one producer.)
+//
+// A session whose record holds no key answers with none rather than a
+// default. Empty is the honest absence -- it says the world was assembled by
+// its host rather than loaded from a registry entry, which is what every
+// session written before the key existed is -- and a client that sees it
+// fetches nothing and draws what the map alone says.
+func TestGetAtlas_DungeonKeyNamesTheContentTheSessionPlays(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Atlas(gomock.Any(), &sdk.AtlasInput{Session: "sess-1", Member: "char-1"}).Return(&sdk.Atlas{
+		Grid:       sdk.GridHex,
+		Cells:      []spatial.Position{{X: 0, Y: 0}},
+		DungeonKey: "reference-front-room",
+	}, nil)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	resp, err := h.GetAtlas(ctx, &sessionpb.GetAtlasRequest{Session: "sess-1", Member: "char-1"})
+	require.NoError(t, err)
+	require.Equal(t, "reference-front-room", resp.GetDungeonKey(),
+		"the record's key crosses verbatim -- it is what a client fetches the room's picture by")
+}
+
+func TestGetAtlas_ASessionWithNoDungeonKeyAnswersWithNone(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Atlas(gomock.Any(), &sdk.AtlasInput{Session: "sess-1", Member: "char-1"}).Return(&sdk.Atlas{
+		Grid:  sdk.GridHex,
+		Cells: []spatial.Position{{X: 0, Y: 0}},
+	}, nil)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	resp, err := h.GetAtlas(ctx, &sessionpb.GetAtlasRequest{Session: "sess-1", Member: "char-1"})
+	require.NoError(t, err)
+	require.Empty(t, resp.GetDungeonKey(),
+		"no key on the record is no key on the wire, not a default this layer chose")
+	require.Len(t, resp.GetCells(), 1, "and the map itself still arrives")
+}
+
 func TestGetAtlas_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)

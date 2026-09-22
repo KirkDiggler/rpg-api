@@ -34,6 +34,7 @@ import (
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 	tkscenarios "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/scenarios"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster/monsters"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
@@ -137,6 +138,24 @@ type Monster struct {
 	// the package that threw it away.
 	Targeting string
 
+	// Actions is what this monster can do, in the author's order
+	// (`place[].actions`, rpg-project#448). Nil when the author armed it
+	// with nothing, which leaves the stat block's own arms alone.
+	//
+	// UNLIKE Targeting ABOVE, THIS ONE CROSSES. session.SpawnInput has a
+	// field for it, so the launch forwards it verbatim and a placement's
+	// weapons reach the live monster — which is the whole point of the
+	// slice: two goblins in one room, one with a blade for when you close
+	// and one without, and no Go between the file and the board.
+	//
+	// WEAPON REFS, `dnd5e:weapons:shortbow`, VERBATIM AND IN ORDER. Both
+	// drivers take the first action whose target is in reach, so the order
+	// is the instruction rather than a list to tidy: nothing here sorts it,
+	// deduplicates it, or reads it. Whether the catalog has a named weapon
+	// is the rulebook's question, answered at spawn, which refuses the
+	// launch by name rather than placing a monster that cannot act.
+	Actions []string
+
 	// PlacementID is the author's own name for this placement
 	// (`place[].id`), or empty when they gave it none (rpg-project#368,
 	// design P2).
@@ -216,6 +235,80 @@ type Monster struct {
 	// it would spawn a reserved monster as PLACED -- three zombies standing
 	// at the gate from frame one -- which is what scene A4 exists to catch.
 	Arrives tkencounter.Trigger
+
+	// Intimidate is the author's priced check for frightening this monster
+	// (`place[].intimidate`, rpg-project#454): the same approach list a lock
+	// carries, one entry per route through. Nil when the author priced none,
+	// which is the ordinary case and means DERIVED, not ungated -- the
+	// rulebook rolls Intimidation against the stat block's own passive
+	// Insight (goblin 9, thug 10).
+	//
+	// UNLIKE Targeting ABOVE, THIS ONE CROSSES, as of rpg-toolkit#1790:
+	// session.SpawnInput grew a field for it, so the launch forwards it
+	// verbatim and an authored difficulty reaches the live monster. Until
+	// that field existed the value was carried here and stopped, on the
+	// Targeting precedent -- keep the fact at the seam that has it rather
+	// than drop it in the package that threw it away -- and two tests
+	// pinned the gap so its closing would be noticed. It closed; they are
+	// deleted.
+	//
+	// NIL STAYS NIL ALL THE WAY DOWN. Nothing here defaults it, because
+	// absent is not "no check" but "derive one": the rulebook rolls
+	// Intimidation against the stat block's own passive Insight at threat
+	// time. A zero value invented on this side would be a DC nobody chose.
+	Intimidate []tkencounter.CheckApproach
+
+	// Persuade is the author's priced check for talking this monster round
+	// (`place[].persuade`, rpg-project#458). Intimidate's twin above, with
+	// Intimidate's contracts: nil means DERIVED, not ungated, and the
+	// rulebook rolls Persuasion against the same passive Insight a threat is
+	// read by -- a creature reads a liar and a flatterer with one sense.
+	Persuade []tkencounter.CheckApproach
+
+	// Table is this monster's whole POLICY -- what it does, keyed by what
+	// happened (`place[].on` laid over its faction's, rpg-project#465), as the
+	// COMPILED entries dungeonspec produced: weights resolved, fact ids
+	// minted, the author's lines verbatim.
+	//
+	// IT REPLACED `Answers`, which was the same map under a narrower name
+	// while the four social verdicts were the only keys. `time` is a key of
+	// this same table now -- what a creature does when it is given time, its
+	// turn in a fight or a round of the world clock -- so a name about
+	// answering a verb stopped describing it. There is no second spelling
+	// beside this one: two representations of one authored table is what this
+	// workspace bans, and the old field is gone rather than kept in step.
+	//
+	// TWO OF THE THREE LAYERS (design §1). dungeonspec laid the placement's
+	// `on:` over its faction's; the RULEBOOK's default table for the monster's
+	// kind goes underneath, and that happens inside session.Spawn, which is
+	// the only side that can resolve a ref to a kind. Which is why a nil here
+	// does NOT mean a creature that does nothing: it means the author wrote no
+	// orders and the rulebook's default speaks alone.
+	//
+	// THE MAP CROSSES WHOLE. Nothing here reads a key or picks an entry --
+	// which entry fires is the world's die, rolled inside the encounter, and a
+	// package that peeked at the table here would be a second reader of an
+	// authored fact.
+	Table tkencounter.Table
+
+	// Temper is the temperament loading this monster's die: the word the
+	// author wrote on the placement, else its faction's word, else the
+	// faction's MIX for the composition to deal one from (`place[].temper`,
+	// `factions[].temper`, rpg-project#465 §3).
+	//
+	// A WEIGHT PROFILE AND NOTHING ELSE -- four goblins off one sheet with one
+	// table are four different creatures because their dice are loaded
+	// differently, not because they were given different orders.
+	//
+	// THE PROFILES ARE NOT FILLED HERE AND MUST NOT BE. What `coward` MEANS is
+	// rulebook content, and filling in numbers on this side would be this
+	// package naming a rules value -- the smell CLAUDE.md opens with.
+	// dungeonspec carries the word, session.Spawn looks the profile up, and
+	// this field crosses between them untouched.
+	//
+	// THE ZERO VALUE IS A SOLDIER: a monster nobody gave a temperament and one
+	// authored `temper: soldier` are the same creature, every factor 100.
+	Temper tkencounter.Temper
 }
 
 // Compile turns one authored dungeon file into a [Dungeon].
@@ -227,16 +320,9 @@ type Monster struct {
 // apart (the authoring RPC answers the first as a body and the second as a
 // status) use errors.Is / errors.As.
 func Compile(raw []byte) (*Dungeon, error) {
-	decoded, err := tkdungeonspec.Decode(raw)
+	spec, err := tkdungeonspec.Load(raw)
 	if err != nil {
-		return nil, fmt.Errorf("decode spec: %w", err)
-	}
-	if defects := tkdungeonspec.Validate(decoded); len(defects) > 0 {
-		return nil, fmt.Errorf("validate spec: %w", &tkdungeonspec.ValidationError{Errors: defects})
-	}
-	spec, err := tkdungeonspec.Compile(decoded)
-	if err != nil {
-		return nil, fmt.Errorf("compile spec: %w", err)
+		return nil, fmt.Errorf("load spec: %w", err)
 	}
 	if len(spec.PartyStart) == 0 {
 		// Unreachable for a spec that compiled -- dungeonspec documents
@@ -250,6 +336,20 @@ func Compile(raw []byte) (*Dungeon, error) {
 	seats := make([]spatial.Position, len(spec.PartyStart))
 	for i, seat := range spec.PartyStart {
 		seats[i] = cellOf(orientation, seat.At)
+	}
+
+	// Resolve every content reference before accepting the dungeon. This is
+	// deliberately a lookup only: the SDK owns construction and all rules.
+	for _, m := range spec.Monsters {
+		if _, known := monsters.ByRef(m.Ref); !known {
+			id := m.ID
+			if id == "" {
+				id = m.Ref
+			}
+			return nil, &tkdungeonspec.ValidationError{Errors: []tkdungeonspec.FieldError{{
+				Message: fmt.Sprintf("monster %q references unknown monster %q", id, m.Ref),
+			}}}
+		}
 	}
 
 	monsters := make([]Monster, len(spec.Monsters))
@@ -270,9 +370,27 @@ func Compile(raw []byte) (*Dungeon, error) {
 		claimed[id] = i
 		monsters[i] = Monster{
 			Ref: m.Ref, MemberID: id, At: cellOf(orientation, m.At),
-			Boss: m.Boss, Targeting: m.Targeting,
+			Boss: m.Boss, Targeting: m.Targeting, Actions: m.Actions,
 			PlacementID: m.ID, Holds: m.Holds, Faction: m.Faction,
 			Arrives: m.Arrives,
+			// The shenanigan half (rpg-project#454, rpg-project#458) and
+			// the creature's table beside it (rpg-project#465), carried
+			// whole rather than read: the author's two priced checks, the
+			// policy keyed by what happened, and the word that loads its
+			// die. Absent means absent -- no defaulting here, because nil
+			// is "derive the check" for the two lists, "the rulebook's
+			// default speaks alone" for the table, and "a soldier" for the
+			// temperament, and each is the ordinary case.
+			//
+			// THE TABLE IS NO LONGER FLATTENED. This used to pull one fact
+			// out of one key (`m.On[OnIntimidated]`), which was all the
+			// composition had room for; `on:` is now five keys of weighted
+			// entries and the whole map crosses, so adding a sixth trigger
+			// is a dungeonspec change and not a line here.
+			Intimidate: m.Intimidate,
+			Persuade:   m.Persuade,
+			Table:      m.Table,
+			Temper:     m.Temper,
 		}
 	}
 
@@ -290,7 +408,7 @@ func Compile(raw []byte) (*Dungeon, error) {
 		if bossID != "" {
 			return nil, fmt.Errorf(
 				"dungeon %q authors more than one boss (%q and %q): one death ends things, and it cannot be two",
-				decoded.Key,
+				spec.Key,
 				bossID,
 				m.MemberID,
 			)
@@ -314,7 +432,7 @@ func Compile(raw []byte) (*Dungeon, error) {
 	}
 
 	return &Dungeon{
-		Key: decoded.Key, Name: decoded.Name,
+		Key: spec.Key, Name: spec.Name,
 		World: world, PartySeats: seats, Monsters: monsters,
 	}, nil
 }

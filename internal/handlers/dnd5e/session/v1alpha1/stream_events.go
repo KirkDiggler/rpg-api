@@ -47,7 +47,20 @@ func (h *Handler) StreamEvents(req *sessionpb.StreamEventsRequest, stream sessio
 			if !ok {
 				return nil
 			}
-			if err := stream.Send(eventToProto(evt)); err != nil {
+			// A beat whose body this build cannot spell on the wire ENDS
+			// THE STREAM rather than going out with the unspellable value
+			// quietly replaced (rpg-project#458, answerWordToProto). A
+			// stream that dropped it would leave a seq gap the client
+			// cannot distinguish from a beat it was not entitled to see,
+			// which is the one failure a per-recipient stream must never
+			// produce silently.
+			converted, err := eventToProto(evt)
+			if err != nil {
+				slog.ErrorContext(ctx, "session stream: event body not projectable, stream ending",
+					"session", session, "recipient", member, "seq", evt.Seq, "kind", evt.Kind, "error", err)
+				return status.Errorf(codes.Internal, "project event: %v", err)
+			}
+			if err := stream.Send(converted); err != nil {
 				// The trace logged below only ever covers a SUCCESSFUL
 				// Send -- logging beforehand would claim delivery for an
 				// event this handler never actually got out (a

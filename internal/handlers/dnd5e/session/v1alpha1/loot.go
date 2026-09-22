@@ -3,6 +3,8 @@ package sessionv1alpha1
 import (
 	"context"
 
+	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sdkerr"
+
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
@@ -19,8 +21,8 @@ import (
 // nothing have to answer with the same bytes: a found list, a count or a flag
 // here would tell a party which corpse was worth looting, which is the one
 // thing looting the wrong body must not teach. What the looter gained reaches
-// them alone, on their own stream, as the DOOR_REVEALED beat a successful
-// search already produces (design P4); everyone present hears LOOTED, which
+// them alone, on their own stream, as the CONCEALMENT_REVEALED beat a
+// successful search already produces (design P4); everyone present hears LOOTED, which
 // names looter and body and nothing else.
 func (h *Handler) Loot(ctx context.Context, req *sessionpb.LootRequest) (*sessionpb.LootResponse, error) {
 	if err := h.callerActingAs(ctx, req.GetMember()); err != nil {
@@ -34,7 +36,7 @@ func (h *Handler) Loot(ctx context.Context, req *sessionpb.LootRequest) (*sessio
 		Range:   int(req.GetRange()),
 	})
 	if err != nil {
-		return nil, statusError(err)
+		return nil, sdkerr.StatusError(err)
 	}
 
 	return &sessionpb.LootResponse{

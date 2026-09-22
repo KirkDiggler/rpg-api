@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/KirkDiggler/rpg-api/internal/testsupport/levelfixture"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
@@ -44,6 +45,7 @@ func dualWieldingFighter(
 	t.Helper()
 	sheet := &tkcharacter.Data{
 		ID: id, PlayerID: playerID, Name: id, Level: 3,
+		Levels:  levelfixture.Synthetic(classes.Fighter, 3),
 		ClassID: classes.Fighter, RaceID: races.Human,
 		AbilityScores: shared.AbilityScores{
 			abilities.STR: 16, abilities.DEX: 14, abilities.CON: 14,

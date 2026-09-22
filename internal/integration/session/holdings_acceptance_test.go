@@ -273,15 +273,21 @@ func exitIDs(atlas *sessionpb.GetAtlasResponse) []string {
 	return out
 }
 
-// findTheVault is path 1: search the hall, find the concealed door, open it.
-// The harness's roller answers the top face, so the perception check clears
-// DC 15 every run rather than one in three.
+// findTheVault is path 1: search the hall, find the concealed door, walk to
+// it, open it. The harness's roller answers the top face, so the perception
+// check clears DC 15 every run rather than one in three.
+//
+// THE WALK IS PART OF THE PATH, not setup noise: a door opens only from
+// beside it (rpg-toolkit#1856). Searching tells her where the vault door is
+// from anywhere in the hall; working its latch still costs her the steps.
 func (r *heirloomRun) findTheVault(t *testing.T, member string) {
 	t.Helper()
 	_, err := r.h.handler.Search(r.ctxOf(member), &sessionpb.SearchRequest{
 		Session: heirloomSession, Member: member, Region: "hall",
 	})
 	require.NoError(t, err)
+	hallSide := dungeonstest.HeirloomVaultDoorCrossing[0]
+	r.walkWithin(t, member, dungeonstest.HeirloomHallCells, hallSide[0], hallSide[1])
 	_, err = r.h.handler.OpenDoor(r.ctxOf(member), &sessionpb.OpenDoorRequest{
 		Session: heirloomSession, Member: member, Door: dungeonstest.HeirloomVaultDoorID,
 	})
@@ -523,12 +529,16 @@ func TestAcceptance_ThePartyThatNeverSearchesFinishesBlind(t *testing.T) {
 // TestAcceptance_LootingTheCaptainRevealsTheDoorToTheLooterAlone is design
 // §8's second row and design P4: loot is a second writer of the fact search
 // writes, so the reveal it produces is byte-identical to a successful
-// search's -- one DOOR_REVEALED, to the looter, and nobody else's map moves.
+// search's -- one CONCEALMENT_REVEALED, to the looter, and nobody else's map
+// moves. The beat names the SECRET the door belongs to (rpg-project#490): one
+// authored secret, one reveal, and the door rides it.
 //
 // THE WHOLE CHAIN IS DRIVEN, file to beat. The author DECLARES A RECORD --
 // `intel: [{id: vault-map, reveals: {door: vault-door}}]` -- and places it in
 // a monster with `holds: [vault-map]`; dungeonspec mints the compiled record
-// id and the compiled door id it reveals; sessionworld carries the record id
+// id and the compiled id of the concealment it reveals -- v2's `door` key
+// lowers onto the one concealment holding that door; sessionworld carries the
+// record id
 // onto the monster and the intel TABLE onto the field; the launch forwards
 // the record into Spawn; the composition seeds it as a holding when the
 // monster enters the world; Loot copies it to the looter and reads the
@@ -570,17 +580,17 @@ func lootTheCaptain(t *testing.T, captainHolds bool) {
 	if captainHolds {
 		require.Len(t, run.atlas(t, "alice").GetDoorways(), 1,
 			"looting the body that held the record puts what it reveals on the looter's map")
-		require.Contains(t, run.kinds(t, "alice"), sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED,
+		require.Contains(t, run.kinds(t, "alice"), sessionpb.EventKind_EVENT_KIND_CONCEALMENT_REVEALED,
 			"the looter hears the same beat a successful search produces")
 	} else {
 		require.Empty(t, run.atlas(t, "alice").GetDoorways(),
 			"a body holding nothing transfers nothing")
-		require.NotContains(t, run.kinds(t, "alice"), sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED)
+		require.NotContains(t, run.kinds(t, "alice"), sessionpb.EventKind_EVENT_KIND_CONCEALMENT_REVEALED)
 	}
 	require.Empty(t, run.atlas(t, "bob").GetDoorways(),
 		"and nobody else's map moves either way -- knowledge is audience-scoped, "+
 			"unlike where things physically are")
-	require.NotContains(t, run.kinds(t, "bob"), sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED)
+	require.NotContains(t, run.kinds(t, "bob"), sessionpb.EventKind_EVENT_KIND_CONCEALMENT_REVEALED)
 
 	// EVERYONE PRESENT HEARS THE LOOT ITSELF, and it names looter and body
 	// and nothing of what moved (design P3): a beat that varied with what
@@ -612,14 +622,17 @@ func TestAcceptance_TheLootedWayInOpensTheSameVault(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	// The record hands her the door, and then she walks to it: a door opens
+	// only from beside it (rpg-toolkit#1856). Knowing the way in and being
+	// at it are two different things, and looting only buys the first.
+	hallSide := dungeonstest.HeirloomVaultDoorCrossing[0]
+	vaultSide := dungeonstest.HeirloomVaultDoorCrossing[1]
+	run.walkWithin(t, "alice", dungeonstest.HeirloomHallCells, hallSide[0], hallSide[1])
+
 	_, err = run.h.handler.OpenDoor(run.alice, &sessionpb.OpenDoorRequest{
 		Session: heirloomSession, Member: "alice", Door: dungeonstest.HeirloomVaultDoorID,
 	})
 	require.NoError(t, err, "the door the record revealed is one she can open")
-
-	hallSide := dungeonstest.HeirloomVaultDoorCrossing[0]
-	vaultSide := dungeonstest.HeirloomVaultDoorCrossing[1]
-	run.walkWithin(t, "alice", dungeonstest.HeirloomHallCells, hallSide[0], hallSide[1])
 	run.step(t, "alice", vaultSide[0], vaultSide[1])
 	run.walkWithin(t, "alice", dungeonstest.HeirloomVaultCells, 5, 1)
 
@@ -805,7 +818,7 @@ func TestAcceptance_HoldingAScrollTeachesItsHolderAlone(t *testing.T) {
 
 	require.Len(t, run.atlas(t, "alice").GetDoorways(), 1,
 		"picking up the scroll put what its record reveals on her map")
-	require.Contains(t, run.kinds(t, "alice"), sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED,
+	require.Contains(t, run.kinds(t, "alice"), sessionpb.EventKind_EVENT_KIND_CONCEALMENT_REVEALED,
 		"as the same beat a search and a loot both produce -- one reveal shape, three ways in")
 
 	// HER ALONE. Knowledge is audience-scoped even though where the scroll
@@ -813,7 +826,7 @@ func TestAcceptance_HoldingAScrollTeachesItsHolderAlone(t *testing.T) {
 	// learned nothing from watching.
 	require.Empty(t, run.atlas(t, "bob").GetDoorways(),
 		"bob saw the scroll leave the floor and still does not know the way in")
-	require.NotContains(t, run.kinds(t, "bob"), sessionpb.EventKind_EVENT_KIND_DOOR_REVEALED)
+	require.NotContains(t, run.kinds(t, "bob"), sessionpb.EventKind_EVENT_KIND_CONCEALMENT_REVEALED)
 	require.NotContains(t, propIDs(run.atlas(t, "bob")), dungeonstest.ScrollPropID,
 		"though the scroll is gone from his map too, as every held prop is")
 
@@ -835,16 +848,18 @@ func TestAcceptance_TheScrollsWayInOpensTheSameVault(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	// And the same door the CAPTAIN's record reveals: two records, one way
+	// in, and the run cannot tell which one you read. She walks to it first
+	// either way -- a door opens only from beside it (rpg-toolkit#1856), and
+	// what the scroll taught her is where to walk, not a longer arm.
+	hallSide := dungeonstest.HeirloomVaultDoorCrossing[0]
+	vaultSide := dungeonstest.HeirloomVaultDoorCrossing[1]
+	run.walkWithin(t, "alice", dungeonstest.HeirloomHallCells, hallSide[0], hallSide[1])
+
 	_, err = run.h.handler.OpenDoor(run.alice, &sessionpb.OpenDoorRequest{
 		Session: heirloomSession, Member: "alice", Door: dungeonstest.HeirloomVaultDoorID,
 	})
 	require.NoError(t, err, "the door the scroll revealed is one she can open")
-
-	// And the same door the CAPTAIN's record reveals: two records, one way
-	// in, and the run cannot tell which one you read.
-	hallSide := dungeonstest.HeirloomVaultDoorCrossing[0]
-	vaultSide := dungeonstest.HeirloomVaultDoorCrossing[1]
-	run.walkWithin(t, "alice", dungeonstest.HeirloomHallCells, hallSide[0], hallSide[1])
 	run.step(t, "alice", vaultSide[0], vaultSide[1])
 	run.walkWithin(t, "alice", dungeonstest.HeirloomVaultCells, 5, 1)
 

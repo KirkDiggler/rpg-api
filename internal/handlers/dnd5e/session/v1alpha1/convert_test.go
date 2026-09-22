@@ -93,6 +93,12 @@ func TestVerbToProto(t *testing.T) {
 	// client can act on while the fight waits -- would arrive UNSPECIFIED,
 	// and the panel would have nothing to draw but a dead table.
 	require.Equal(t, sessionpb.Verb_VERB_REACT, verbToProto(sdk.VerbReact))
+	// The first shenanigan (rpg-project#454). Afford emits this row on the
+	// turn clock unconditionally, the way it emits VerbMove, so unmapped it
+	// would not be one wrong label but the whole Intimidate affordance
+	// missing: a client drops a verb it cannot name rather than drawing it
+	// wrong.
+	require.Equal(t, sessionpb.Verb_VERB_INTIMIDATE, verbToProto(sdk.VerbIntimidate))
 	require.Equal(t, sessionpb.Verb_VERB_UNSPECIFIED, verbToProto(sdk.Verb("bogus")))
 }
 
@@ -441,6 +447,35 @@ func TestAtlasToProto_Populated(t *testing.T) {
 	require.Equal(t, 0.0, pit.GetLighting().GetIntensity())
 }
 
+// TestAtlasToProto_DungeonKeyNamesTheContentAndTheSceneIsGone pins what
+// replaced the scene carriage (rpg-project#479): the atlas names the content
+// key its world was compiled from, the client fetches the room's appearance
+// by that key, and the deprecated `room_scene_json` is left EMPTY by this
+// converter on every path.
+//
+// The old field is still on the wire and must stay unset rather than
+// repurposed: a client on the previous build reads an empty scene and draws
+// the map alone, which is exactly what it did for every world authored
+// before scenes existed. Filling it with anything -- a key, a placeholder,
+// a re-marshaled fragment -- would make an old client draw a room nobody
+// authored.
+func TestAtlasToProto_DungeonKeyNamesTheContentAndTheSceneIsGone(t *testing.T) {
+	got := AtlasToProto(&sdk.Atlas{
+		Grid:       sdk.GridHex,
+		Cells:      []spatial.Position{{X: 0, Y: 0}},
+		DungeonKey: "workshop-room",
+	})
+	require.Equal(t, "workshop-room", got.GetDungeonKey(),
+		"the key crosses verbatim -- it is what a client fetches the scene by")
+	require.Empty(t, got.GetRoomSceneJson(),
+		"the deprecated scene field is never filled, not even when a key is present")
+
+	keyless := AtlasToProto(&sdk.Atlas{Grid: sdk.GridHex, Cells: []spatial.Position{{X: 0, Y: 0}}})
+	require.Empty(t, keyless.GetDungeonKey(),
+		"a world launched under no key names none rather than inventing a default")
+	require.Empty(t, keyless.GetRoomSceneJson())
+}
+
 func TestWhereToProto_Nil(t *testing.T) {
 	got := whereToProto(nil)
 	require.NotNil(t, got)
@@ -465,18 +500,30 @@ func TestDeliveryReportToProto(t *testing.T) {
 }
 
 func TestStrikeDetailToProto_EmptyStaysNonNil(t *testing.T) {
-	require.NotNil(t, damageComponentsToProto(nil))
-	require.Empty(t, damageComponentsToProto(nil))
-	require.NotNil(t, attackModifierSourcesToProto(nil))
-	require.Empty(t, attackModifierSourcesToProto(nil))
+	components, err := damageComponentsToProto(nil)
+	require.NoError(t, err)
+	require.NotNil(t, components)
+	require.Empty(t, components)
 }
 
-func TestRollTraceConverters_NilSafe(t *testing.T) {
+// A CALCULATION IS OPTIONAL AND ITS ABSENCE IS THE ANSWER; a trace, a
+// component and a keep record are not, and asking this seam to convert one
+// that is not there is a caller defect it refuses rather than answering with
+// a nil nobody can tell from an unset field.
+func TestRollTraceConverters_NilHandling(t *testing.T) {
 	require.Nil(t, rollSourceToProto(nil))
 	require.Nil(t, diceRerollToProto(nil))
-	require.Nil(t, diceTraceToProto(nil))
-	require.Nil(t, rollComponentToProto(nil))
-	require.Nil(t, rollCalculationToProto(nil))
+
+	_, err := diceTraceToProto(nil)
+	require.Error(t, err)
+	_, err = rollComponentToProto(nil)
+	require.Error(t, err)
+	_, err = diceKeepToProto(nil)
+	require.Error(t, err)
+
+	calculation, err := rollCalculationToProto(nil)
+	require.NoError(t, err)
+	require.Nil(t, calculation, "a body that recorded no arithmetic leaves the wire field unset")
 }
 
 func TestRolledEventBodiesProjectCalculation(t *testing.T) {
@@ -507,6 +554,253 @@ func TestRolledEventBodiesProjectCalculation(t *testing.T) {
 		require.Equal(t, int32(11), got.GetTotal())
 		require.Equal(t, "bard-1", got.GetComponents()[0].GetSource().GetSourceId())
 	}
+}
+
+// d20WithKeep is one settled d20 pool carrying a keep record, the shape every
+// scene below is about. The faces are the argument: a rule that kept one of
+// two is the whole reason the record exists.
+func d20WithKeep(faces []int, kept []int, keep *sdk.DiceKeep) *sdk.RollCalculation {
+	subtotal := 0
+	for _, index := range kept {
+		subtotal = faces[index]
+	}
+	if len(kept) == 0 {
+		subtotal = faces[0]
+	}
+	notation := "1d20"
+	if len(faces) > 1 {
+		notation = "2d20"
+	}
+	return &sdk.RollCalculation{
+		Total: subtotal,
+		Components: []sdk.RollComponent{{
+			Source: sdk.RollSource{Ref: "dnd5e:skills:intimidation", Name: "Intimidation", SourceID: "char-1"},
+			Dice: &sdk.DiceTrace{
+				Notation: notation, DieSize: 20,
+				OriginalRolls: faces, FinalRolls: faces, KeptIndices: kept,
+				Subtotal: subtotal, Keep: keep,
+			},
+		}},
+	}
+}
+
+// THE KEEP RECORD IS WHY A FACE COUNTED, and every field of it crosses: the
+// rule as an enum this build knows, and both source lists with the entity
+// that brought each one. The web draws a die in its owner's style from
+// source_id, so dropping it would leave the client guessing from the beat's
+// actor -- which is the client calculating (rpg-project#462, R7).
+func TestDiceKeepToProto_CarriesEveryRuleAndBothSourceLists(t *testing.T) {
+	help := sdk.RollSource{
+		Ref: "dnd5e:actions:help", Name: "Help", Label: "ally", SourceID: "alice",
+	}
+	untrained := sdk.RollSource{
+		Ref: "dnd5e:rules:untrained", Name: "Untrained", Label: "skill", SourceID: "char-1",
+	}
+
+	for _, tc := range []struct {
+		name        string
+		keep        sdk.DiceKeep
+		wantRule    sessionpb.KeepRule
+		wantGranted int
+		wantImposed int
+	}{
+		{
+			name:        "advantage names who granted it",
+			keep:        sdk.DiceKeep{Rule: sdk.KeepAdvantage, Granted: []sdk.RollSource{help}},
+			wantRule:    sessionpb.KeepRule_KEEP_RULE_ADVANTAGE,
+			wantGranted: 1,
+		},
+		{
+			name:        "disadvantage names who imposed it",
+			keep:        sdk.DiceKeep{Rule: sdk.KeepDisadvantage, Imposed: []sdk.RollSource{untrained}},
+			wantRule:    sessionpb.KeepRule_KEEP_RULE_DISADVANTAGE,
+			wantImposed: 1,
+		},
+		{
+			name: "cancellation names both sides",
+			keep: sdk.DiceKeep{
+				Rule:    sdk.KeepCancelled,
+				Granted: []sdk.RollSource{help},
+				Imposed: []sdk.RollSource{untrained},
+			},
+			wantRule:    sessionpb.KeepRule_KEEP_RULE_CANCELLED,
+			wantGranted: 1,
+			wantImposed: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := diceKeepToProto(&tc.keep)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantRule, got.GetRule())
+			require.Len(t, got.GetGranted(), tc.wantGranted)
+			require.Len(t, got.GetImposed(), tc.wantImposed)
+
+			for i, want := range tc.keep.Granted {
+				require.Equal(t, want.Ref, got.GetGranted()[i].GetRef())
+				require.Equal(t, want.Name, got.GetGranted()[i].GetName())
+				require.Equal(t, want.Label, got.GetGranted()[i].GetLabel())
+				require.Equal(t, want.SourceID, got.GetGranted()[i].GetSourceId(),
+					"the entity whose rule threw the die is what a tray draws its style from")
+			}
+			for i, want := range tc.keep.Imposed {
+				require.Equal(t, want.Ref, got.GetImposed()[i].GetRef())
+				require.Equal(t, want.Name, got.GetImposed()[i].GetName())
+				require.Equal(t, want.Label, got.GetImposed()[i].GetLabel())
+				require.Equal(t, want.SourceID, got.GetImposed()[i].GetSourceId())
+			}
+		})
+	}
+}
+
+// A STRAIGHT ROLL CARRIES NO RECORD, and the unset field is the answer rather
+// than a defaulted one. UNSPECIFIED would be this seam claiming a rule exists
+// that it could not name.
+func TestDiceTraceToProto_StraightRollLeavesKeepUnset(t *testing.T) {
+	got, err := diceTraceToProto(&sdk.DiceTrace{
+		Notation: "1d20", DieSize: 20,
+		OriginalRolls: []int{11}, FinalRolls: []int{11}, Subtotal: 11,
+	})
+	require.NoError(t, err)
+	require.Nil(t, got.GetKeep(), "nobody touched this pool and the zero value says so")
+	require.Empty(t, got.GetKeptIndices())
+}
+
+// A RULE THIS BUILD CANNOT NAME IS REFUSED, never demoted to UNSPECIFIED.
+// Elven Accuracy and the reroll feats are named in the design and deliberately
+// absent from the wire; the day one ships against an api that was not rebuilt,
+// a client would otherwise draw three faces with no reason beside them.
+func TestKeepRuleToProto_RefusesARuleThisBuildCannotName(t *testing.T) {
+	for _, rule := range []sdk.KeepRule{sdk.KeepRule("elven-accuracy"), sdk.KeepRule("")} {
+		_, err := keepRuleToProto(rule)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), string(rule))
+	}
+
+	// The refusal reaches the caller rather than stopping at the helper: a
+	// beat carrying an unnameable rule does not become an event at all.
+	err := setEventBody(&sessionpb.Event{}, sdk.IntimidatedBody{
+		Actor: "char-1", Target: "goblin-1", DC: 13, Total: 7, Beaten: false,
+		Calculation: d20WithKeep([]int{7, 18}, []int{0}, &sdk.DiceKeep{
+			Rule:    sdk.KeepRule("elven-accuracy"),
+			Imposed: []sdk.RollSource{{Ref: "dnd5e:rules:untrained", Name: "Untrained", SourceID: "char-1"}},
+		}),
+	})
+	require.Error(t, err)
+}
+
+// THE CHECK BEATS CARRY THE WHOLE ROLL (rpg-project#462, R4 and R5). Each of
+// these used to reach the wire as {dc, total, beaten} or {roll, total}, so an
+// untrained character threw two dice and the table saw one number.
+func TestCheckBeatsCarryTheCalculation(t *testing.T) {
+	untrained := &sdk.DiceKeep{
+		Rule:    sdk.KeepDisadvantage,
+		Imposed: []sdk.RollSource{{Ref: "dnd5e:rules:untrained", Name: "Untrained", SourceID: "char-1"}},
+	}
+
+	for _, tc := range []struct {
+		name string
+		body sdk.EventBody
+		read func(*sessionpb.Event) *sessionpb.RollCalculation
+	}{
+		{
+			name: "intimidated",
+			body: sdk.IntimidatedBody{
+				Actor: "char-1", Target: "goblin-1", DC: 13, Total: 7,
+				Calculation: d20WithKeep([]int{7, 18}, []int{0}, untrained),
+			},
+			read: func(e *sessionpb.Event) *sessionpb.RollCalculation {
+				return e.GetIntimidated().GetCalculation()
+			},
+		},
+		{
+			name: "persuaded",
+			body: sdk.PersuadedBody{
+				Actor: "char-1", Target: "goblin-1", DC: 13, Total: 7,
+				Calculation: d20WithKeep([]int{7, 18}, []int{0}, untrained),
+			},
+			read: func(e *sessionpb.Event) *sessionpb.RollCalculation {
+				return e.GetPersuaded().GetCalculation()
+			},
+		},
+		{
+			name: "door changed by an unlock attempt",
+			body: sdk.DoorBody{
+				Door: "door-1", State: "locked", Actor: "char-1", DC: 15, Total: 7,
+				Calculation: d20WithKeep([]int{7, 18}, []int{0}, untrained),
+			},
+			read: func(e *sessionpb.Event) *sessionpb.RollCalculation {
+				return e.GetDoor().GetCalculation()
+			},
+		},
+		{
+			name: "the paused roll window",
+			body: sdk.RollWindowOpenedBody{
+				Audience: "char-1", Roll: 7, Total: 7,
+				Offer:       sdk.ReactionRef{Ref: "dnd5e:features:bardic_inspiration", Name: "Bardic Inspiration"},
+				Calculation: d20WithKeep([]int{7, 18}, []int{0}, untrained),
+			},
+			read: func(e *sessionpb.Event) *sessionpb.RollCalculation {
+				return e.GetRollWindowOpened().GetCalculation()
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			event := &sessionpb.Event{}
+			require.NoError(t, setEventBody(event, tc.body))
+
+			got := tc.read(event)
+			require.NotNil(t, got, "the beat carries the roll, not three numbers")
+
+			dice := got.GetComponents()[0].GetDice()
+			require.Equal(t, "2d20", dice.GetNotation())
+			require.Equal(t, []int32{7, 18}, dice.GetFinalRolls(), "both faces cross, not the settled one")
+			require.Equal(t, []int32{0}, dice.GetKeptIndices())
+			require.Equal(t, sessionpb.KeepRule_KEEP_RULE_DISADVANTAGE, dice.GetKeep().GetRule())
+			require.Equal(t, "Untrained", dice.GetKeep().GetImposed()[0].GetName(),
+				"the word the log prints comes down from the server")
+			require.Equal(t, "char-1", dice.GetKeep().GetImposed()[0].GetSourceId())
+			require.Empty(t, dice.GetKeep().GetGranted())
+		})
+	}
+}
+
+// A BEAT THAT RECORDED NO ARITHMETIC CARRIES NONE. A door somebody walked
+// through was not a check, and an older beat written before this slice has no
+// calculation to carry; both leave the field unset rather than crossing with
+// a zero-valued calculation a reader would have to tell apart from a real one.
+func TestBeatsWithoutArithmeticLeaveTheCalculationUnset(t *testing.T) {
+	event := &sessionpb.Event{}
+	require.NoError(t, setEventBody(event, sdk.DoorBody{Door: "door-1", State: "open"}))
+	require.Nil(t, event.GetDoor().GetCalculation())
+
+	event = &sessionpb.Event{}
+	require.NoError(t, setEventBody(event, sdk.IntimidatedBody{Actor: "char-1", Target: "goblin-1", DC: 13, Total: 7}))
+	require.Nil(t, event.GetIntimidated().GetCalculation())
+}
+
+// THE STRUCK BEAT WRITES NEITHER DEPRECATED LIST (rpg-project#462, R1), even
+// when the swing's d20 was decided by a rule. A reader that still consults
+// them finds nothing, which is the point: there is one place to read the
+// attribution and it is the pool the rule decided.
+func TestStruckBeatWritesNoParallelSourceLists(t *testing.T) {
+	event := &sessionpb.Event{}
+	require.NoError(t, setEventBody(event, sdk.StruckBody{
+		Attacker: "char-1", Target: "goblin-1", Roll: 18, Total: 21, Against: 13, Damage: 6,
+		Calculation: d20WithKeep([]int{7, 18}, []int{1}, &sdk.DiceKeep{
+			Rule: sdk.KeepAdvantage,
+			Granted: []sdk.RollSource{{
+				Ref: "dnd5e:features:reckless_attack", Name: "Reckless Attack", SourceID: "char-1",
+			}},
+		}),
+	}))
+
+	struck := event.GetStruck()
+	require.Empty(t, struck.GetAdvantageSources())    //nolint:staticcheck // Pins that the deprecated field stays empty.
+	require.Empty(t, struck.GetDisadvantageSources()) //nolint:staticcheck // Pins that the deprecated field stays empty.
+	require.Equal(t, sessionpb.KeepRule_KEEP_RULE_ADVANTAGE,
+		struck.GetCalculation().GetComponents()[0].GetDice().GetKeep().GetRule())
+	require.Equal(t, "Reckless Attack",
+		struck.GetCalculation().GetComponents()[0].GetDice().GetKeep().GetGranted()[0].GetName())
 }
 
 func TestCastBodyToProto_CanonicalTargetsAndFaithfulLegacyProjection(t *testing.T) {
@@ -605,7 +899,8 @@ func TestRollCalculationToProto_FieldForFieldOrderPresenceAndIsolation(t *testin
 		Total: 777,
 	}
 
-	got := rollCalculationToProto(in)
+	got, err := rollCalculationToProto(in)
+	require.NoError(t, err)
 	require.True(t, proto.Equal(want, got), "the converter copies every authored field without recomputing totals")
 	require.NotNil(t, got.GetComponents()[0].Modifier, "a present zero modifier stays present")
 	require.Equal(t, []int32{1, 0}, got.GetComponents()[0].GetDice().GetKeptIndices(), "producer order is preserved")
@@ -626,7 +921,7 @@ func TestRollDamageComponentToProto_NewAndLegacyRepresentationsNeverMix(t *testi
 	zeroModifier := 0
 	zeroMultiplier := 0.0
 
-	newComponent := damageComponentsToProto([]sdk.DamageComponent{{
+	newComponents, err := damageComponentsToProto([]sdk.DamageComponent{{
 		Source: "weapon",
 		Roll: sdk.RollComponent{
 			Source: sdk.RollSource{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword"},
@@ -647,7 +942,9 @@ func TestRollDamageComponentToProto_NewAndLegacyRepresentationsNeverMix(t *testi
 		// Session's decoder never creates one. The API still emits only the new
 		// representation when Roll is present; it does not merge or validate.
 		SourceRef: "legacy-ref", Dice: "legacy-dice", FinalRolls: []int{6}, FlatBonus: 6,
-	}})[0]
+	}})
+	require.NoError(t, err)
+	newComponent := newComponents[0]
 
 	require.NotNil(t, newComponent.GetRoll())
 	require.Equal(t, []int32{1, 5}, newComponent.GetRoll().GetDice().GetOriginalRolls())
@@ -661,10 +958,12 @@ func TestRollDamageComponentToProto_NewAndLegacyRepresentationsNeverMix(t *testi
 	require.Nil(t, newComponent.GetFinalRolls())
 	require.Zero(t, newComponent.GetFlatBonus())
 
-	legacyComponent := damageComponentsToProto([]sdk.DamageComponent{{
+	legacyComponents, err := damageComponentsToProto([]sdk.DamageComponent{{
 		Source: "weapon", SourceRef: "dnd5e:weapons:longsword", Dice: "1d8",
 		FinalRolls: []int{7, 2}, FlatBonus: 3, DamageType: sdk.DamageSlashing,
-	}})[0]
+	}})
+	require.NoError(t, err)
+	legacyComponent := legacyComponents[0]
 	require.Nil(t, legacyComponent.GetRoll())
 	require.Equal(t, "dnd5e:weapons:longsword", legacyComponent.GetSourceRef())
 	require.Equal(t, "1d8", legacyComponent.GetDice())
@@ -674,7 +973,7 @@ func TestRollDamageComponentToProto_NewAndLegacyRepresentationsNeverMix(t *testi
 
 func TestRollHealingAppliedToProto_NewAndLegacyRepresentationsNeverMix(t *testing.T) {
 	level := 1
-	newBody := healingAppliedBodyToProto(&sdk.HealingAppliedBody{
+	newBody, err := healingAppliedBodyToProto(&sdk.HealingAppliedBody{
 		Target: "alice", Amount: 2, Requested: 7, Roll: 99, Modifier: 98,
 		SourceRef: "dnd5e:features:second_wind", SourceName: "Second Wind",
 		HPBefore: 8, HPAfter: 10,
@@ -694,17 +993,19 @@ func TestRollHealingAppliedToProto_NewAndLegacyRepresentationsNeverMix(t *testin
 			Total: 7,
 		},
 	})
+	require.NoError(t, err)
 	require.NotNil(t, newBody.GetCalculation())
 	require.Equal(t, int32(7), newBody.GetCalculation().GetTotal())
 	require.Equal(t, "Fighter level", newBody.GetCalculation().GetComponents()[1].GetSource().GetLabel())
 	require.Zero(t, newBody.GetRoll(), "new events do not also populate deprecated roll")
 	require.Zero(t, newBody.GetModifier(), "new events do not also populate deprecated modifier")
 
-	legacyBody := healingAppliedBodyToProto(&sdk.HealingAppliedBody{
+	legacyBody, err := healingAppliedBodyToProto(&sdk.HealingAppliedBody{
 		Target: "alice", Amount: 2, Requested: 7, Roll: 6, Modifier: 1,
 		SourceRef: "dnd5e:features:second_wind", SourceName: "Second Wind",
 		HPBefore: 8, HPAfter: 10,
 	})
+	require.NoError(t, err)
 	require.Nil(t, legacyBody.GetCalculation())
 	require.Equal(t, int32(6), legacyBody.GetRoll())
 	require.Equal(t, int32(1), legacyBody.GetModifier())
@@ -743,11 +1044,33 @@ func richStruckEvent() sdk.Event {
 					DamageType: sdk.DamageSlashing, Multiplier: &immunity,
 				},
 			},
-			AdvantageSources: []sdk.AttackModifierSource{
-				{SourceRef: "dnd5e:conditions:hidden", SourceID: "char-1"},
-			},
-			DisadvantageSources: []sdk.AttackModifierSource{
-				{SourceRef: "dnd5e:conditions:dodging", SourceID: "goblin-1"},
+			// THE ATTRIBUTION IS ON THE D20 IT DECIDED (rpg-project#462, R1).
+			// The body's parallel AdvantageSources/DisadvantageSources are
+			// gone from the SDK; the rules that met over this swing ride the
+			// first component's own keep record, naming both the rule and the
+			// entity that brought it. Hidden granted and Dodging imposed, so
+			// the pool was rolled straight and the record says why -- the one
+			// case the older lists could not represent at all.
+			Calculation: &sdk.RollCalculation{
+				Total: 21,
+				Components: []sdk.RollComponent{{
+					Source: sdk.RollSource{
+						Ref: "dnd5e:weapons:longsword", Name: "Longsword", SourceID: "char-1",
+					},
+					Dice: &sdk.DiceTrace{
+						Notation: "1d20", DieSize: 20,
+						OriginalRolls: []int{18}, FinalRolls: []int{18}, Subtotal: 18,
+						Keep: &sdk.DiceKeep{
+							Rule: sdk.KeepCancelled,
+							Granted: []sdk.RollSource{{
+								Ref: "dnd5e:conditions:hidden", Name: "Hidden", SourceID: "char-1",
+							}},
+							Imposed: []sdk.RollSource{{
+								Ref: "dnd5e:conditions:dodging", Name: "Dodging", SourceID: "goblin-1",
+							}},
+						},
+					},
+				}},
 			},
 		},
 	}
@@ -760,7 +1083,7 @@ func richStruckEvent() sdk.Event {
 // (rpg-api-protos#239's own ruling: live and catch-up must be byte-equal for
 // the same seq).
 func TestEventsToProto(t *testing.T) {
-	got := eventsToProto([]sdk.Event{
+	got := mustEventsToProto(t, []sdk.Event{
 		{
 			Session: "sess-1", Seq: 1, At: 10, Correlation: "corr-1", Recipient: "char-1",
 			Kind: sdk.EventTurnEnded, Payload: []byte("p"),
@@ -778,15 +1101,15 @@ func TestEventsToProto(t *testing.T) {
 }
 
 func TestEventsToProto_Empty(t *testing.T) {
-	got := eventsToProto(nil)
+	got := mustEventsToProto(t, nil)
 	require.Empty(t, got)
 }
 
 func TestEventsToProto_RichStruckMatchesDirectConversion(t *testing.T) {
 	in := richStruckEvent()
-	caughtUp := eventsToProto([]sdk.Event{in})
+	caughtUp := mustEventsToProto(t, []sdk.Event{in})
 	require.Len(t, caughtUp, 1)
-	require.True(t, proto.Equal(eventToProto(in), caughtUp[0]),
+	require.True(t, proto.Equal(mustEventToProto(t, in), caughtUp[0]),
 		"GetStory's slice conversion and StreamEvents' direct conversion share one mapping")
 }
 
@@ -800,7 +1123,7 @@ func TestActivationEventKindsToProto(t *testing.T) {
 // identity, arithmetic, or prose from any other field.
 func TestActivationEventBodiesToProto(t *testing.T) {
 	t.Run("Activated", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventActivated, Payload: []byte("activated-payload"),
 			Body: sdk.ActivatedBody{
 				Actor: "alice",
@@ -822,7 +1145,7 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 
 	t.Run("HealingApplied", func(t *testing.T) {
 		fighterLevel := 1
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventActivationResult,
 			Body: sdk.ActivationResultBody{
 				Actor: "alice",
@@ -882,7 +1205,7 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 	})
 
 	t.Run("ConditionApplied", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventActivationResult,
 			Body: sdk.ActivationResultBody{
 				Actor: "alice",
@@ -906,7 +1229,7 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 	})
 
 	t.Run("ConditionRemoved", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventActivationResult,
 			Body: sdk.ActivationResultBody{
 				Actor: "alice",
@@ -931,7 +1254,7 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 	})
 
 	t.Run("CapacityGranted", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventActivationResult,
 			Body: sdk.ActivationResultBody{
 				Actor: "alice",
@@ -962,7 +1285,7 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 	// way, which a reader would otherwise have to reconstruct by correlating
 	// those beats by hand.
 	t.Run("MoveImposed", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventActivationResult,
 			Body: sdk.ActivationResultBody{
 				Actor: "bard-1",
@@ -992,7 +1315,7 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 	// zero by proto3's own rules, so the arm itself has to be present for a
 	// client to tell "pushed nowhere" from "not pushed".
 	t.Run("MoveImposed pinned against the fold", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventActivationResult,
 			Body: sdk.ActivationResultBody{
 				Actor: "bard-1",
@@ -1011,7 +1334,10 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 }
 
 func TestActivationResultVariantConverters_NilSafe(t *testing.T) {
-	require.Nil(t, healingAppliedBodyToProto(nil))
+	_, err := healingAppliedBodyToProto(nil)
+	require.Error(t, err, "a result arm that is not there is a caller defect, not an empty heal")
+	_, err = damageAppliedBodyToProto(nil)
+	require.Error(t, err)
 	require.Nil(t, conditionAppliedBodyToProto(nil))
 	require.Nil(t, conditionRemovedBodyToProto(nil))
 	require.Nil(t, capacityGrantedBodyToProto(nil))
@@ -1047,7 +1373,7 @@ func TestActivationEventBody_NilOrMalformedStaysNil(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := eventToProto(sdk.Event{
+			got := mustEventToProto(t, sdk.Event{
 				Kind: sdk.EventActivationResult, Payload: []byte("passthrough"), Body: tt.body,
 			})
 			require.Equal(t, sessionpb.EventKind_EVENT_KIND_ACTIVATION_RESULT, got.GetKind())
@@ -1344,7 +1670,7 @@ func TestParticipantsToProto_Populated(t *testing.T) {
 // Body is an ADDITIONAL carrier, not a replacement for the passthrough law.
 func TestEventToProto_TypedBodies(t *testing.T) {
 	t.Run("TurnEnded", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventTurnEnded, Payload: []byte("x"),
 			Body: sdk.TurnEndedBody{Member: "char-1", Next: "goblin-1"},
 		})
@@ -1354,12 +1680,12 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	})
 
 	t.Run("Downed", func(t *testing.T) {
-		got := eventToProto(sdk.Event{Kind: sdk.EventDowned, Body: sdk.DownedBody{Member: "goblin-1"}})
+		got := mustEventToProto(t, sdk.Event{Kind: sdk.EventDowned, Body: sdk.DownedBody{Member: "goblin-1"}})
 		require.Equal(t, "goblin-1", got.GetDowned().GetMember())
 	})
 
 	t.Run("Struck", func(t *testing.T) {
-		s := eventToProto(richStruckEvent()).GetStruck()
+		s := mustEventToProto(t, richStruckEvent()).GetStruck()
 		require.NotNil(t, s)
 		require.Equal(t, "char-1", s.GetAttacker())
 		require.Equal(t, "goblin-1", s.GetTarget())
@@ -1395,16 +1721,26 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 		require.NotNil(t, immunity.Multiplier)
 		require.Zero(t, immunity.GetMultiplier())
 
-		require.Len(t, s.GetAdvantageSources(), 1)
-		require.Equal(t, "dnd5e:conditions:hidden", s.GetAdvantageSources()[0].GetSourceRef())
-		require.Equal(t, "char-1", s.GetAdvantageSources()[0].GetSourceId())
-		require.Len(t, s.GetDisadvantageSources(), 1)
-		require.Equal(t, "dnd5e:conditions:dodging", s.GetDisadvantageSources()[0].GetSourceRef())
-		require.Equal(t, "goblin-1", s.GetDisadvantageSources()[0].GetSourceId())
+		// The deprecated lists are never written, even though the wire still
+		// carries the fields for payloads persisted before the keep record
+		// existed. Two places to read one fact is two places that can
+		// disagree (rpg-project#462, R1).
+		require.Empty(t, s.GetAdvantageSources())    //nolint:staticcheck // Pins that the deprecated field stays empty.
+		require.Empty(t, s.GetDisadvantageSources()) //nolint:staticcheck // Pins that the deprecated field stays empty.
+
+		keep := s.GetCalculation().GetComponents()[0].GetDice().GetKeep()
+		require.NotNil(t, keep, "the swing's attribution rides the pool it decided")
+		require.Equal(t, sessionpb.KeepRule_KEEP_RULE_CANCELLED, keep.GetRule())
+		require.Equal(t, "dnd5e:conditions:hidden", keep.GetGranted()[0].GetRef())
+		require.Equal(t, "Hidden", keep.GetGranted()[0].GetName())
+		require.Equal(t, "char-1", keep.GetGranted()[0].GetSourceId())
+		require.Equal(t, "dnd5e:conditions:dodging", keep.GetImposed()[0].GetRef())
+		require.Equal(t, "Dodging", keep.GetImposed()[0].GetName())
+		require.Equal(t, "goblin-1", keep.GetImposed()[0].GetSourceId())
 	})
 
 	t.Run("Missed", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventMissed,
 			Body: sdk.MissedBody{
 				Attacker: "char-1", Target: "goblin-1", Roll: 4, Total: 7, Against: 13,
@@ -1418,7 +1754,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	})
 
 	t.Run("FightStarted", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventFightStarted,
 			Body: sdk.FightStartedBody{Members: []string{"char-1", "goblin-1"}},
 		})
@@ -1426,7 +1762,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	})
 
 	t.Run("FightEnded", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventFightEnded,
 			Body: sdk.FightEndedBody{Cause: sdk.DissolveByDefeat},
 		})
@@ -1434,7 +1770,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	})
 
 	t.Run("FightEnded by stance", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventFightEnded,
 			Body: sdk.FightEndedBody{Cause: sdk.DissolveByStance},
 		})
@@ -1445,7 +1781,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	// entered the run, what it is -- a closed enum, mapped by name -- and
 	// the cell it stands on now.
 	t.Run("Arrived", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventArrived,
 			Body: sdk.ArrivedBody{ID: "reinforcement-1", Kind: sdk.PlacementMonster, Cell: spatial.Position{X: 1, Y: 4}},
 		})
@@ -1455,7 +1791,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 		require.Equal(t, 1.0, got.GetArrived().GetCell().GetX())
 		require.Equal(t, 4.0, got.GetArrived().GetCell().GetY())
 
-		prop := eventToProto(sdk.Event{
+		prop := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventArrived,
 			Body: sdk.ArrivedBody{ID: "letter", Kind: sdk.PlacementProp, Cell: spatial.Position{X: 0, Y: 3}},
 		})
@@ -1464,19 +1800,38 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	})
 
 	// The stance beat (rpg-project#375, design §6): kind and body, verbatim
-	// -- the pair as the session sorted it, the stance as the author's word.
+	// -- the pair as the session sorted it, the stance as the author's word,
+	// and the composition's own sentence for why (rpg-api-protos#354).
 	t.Run("StanceChanged", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventStanceChanged,
-			Body: sdk.StanceChangedBody{Between: []string{"party", "raiders"}, Stance: "neutral"},
+			Body: sdk.StanceChangedBody{
+				Between: []string{"party", "raiders"}, Stance: "hostile", Cause: "attacked by alice",
+			},
 		})
 		require.Equal(t, sessionpb.EventKind_EVENT_KIND_STANCE_CHANGED, got.GetKind())
 		require.Equal(t, []string{"party", "raiders"}, got.GetStanceChanged().GetBetween())
+		require.Equal(t, "hostile", got.GetStanceChanged().GetStance())
+		require.Equal(t, "attacked by alice", got.GetStanceChanged().GetCause(),
+			"the sentence the composition wrote, not one composed here")
+	})
+
+	// A pair that a mind's knowledge turned carries no sentence, and the
+	// converter leaves it that way. Substituting a default would hand every
+	// client a reason no author wrote; the emptiness is what tells a reader
+	// to say only that the pair turned.
+	t.Run("StanceChangedWithoutACause", func(t *testing.T) {
+		got := mustEventToProto(t, sdk.Event{
+			Kind: sdk.EventStanceChanged,
+			Body: sdk.StanceChangedBody{Between: []string{"party", "raiders"}, Stance: "neutral"},
+		})
 		require.Equal(t, "neutral", got.GetStanceChanged().GetStance())
+		require.Empty(t, got.GetStanceChanged().GetCause(),
+			"the hold-out beat writes no cause, and nothing here invents one")
 	})
 
 	t.Run("Moved", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventMoved,
 			Body: sdk.MovedBody{Member: "char-1", To: spatial.Position{X: 3, Y: 4}},
 		})
@@ -1486,7 +1841,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	})
 
 	t.Run("Joined", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventJoined,
 			Body: sdk.JoinedBody{Member: "char-1"},
 		})
@@ -1494,83 +1849,172 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	})
 
 	t.Run("Exited", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventExited,
 			Body: sdk.ExitedBody{Member: "char-1"},
 		})
 		require.Equal(t, "char-1", got.GetExited().GetMember())
 	})
 
-	// DoorRevealed (rpg-project#350/#351): the flat door/state/approaches
-	// DoorRevealedBody carries grouped into the same nested DoorInfo shape
-	// GetDoors returns, plus the doorways that patch the recipient's cached
-	// atlas. A locked door's approaches list rides through; an unlocked one
-	// (see the RegionRevealed case below) carries no lock at all.
-	t.Run("DoorRevealed", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
-			Kind: sdk.EventDoorRevealed,
-			Body: sdk.DoorRevealedBody{
-				Door:  "hall-tomb",
-				State: "locked",
-				Doorways: []sdk.AtlasDoorway{
-					{Door: "hall-tomb", From: spatial.Position{X: 15, Y: 4}, To: spatial.Position{X: 16, Y: 4}},
-				},
-				Approaches: []sdk.DoorApproach{{Ability: "dex", DC: 12}},
-			},
-		})
-		d := got.GetDoorRevealed()
-		require.NotNil(t, d)
-		require.Equal(t, "hall-tomb", d.GetDoor().GetDoor())
-		require.Equal(t, sessionpb.DoorState_DOOR_STATE_LOCKED, d.GetDoor().GetState())
-		require.Len(t, d.GetDoor().GetLock().GetApproaches(), 1)
-		require.Equal(t, "dex", d.GetDoor().GetLock().GetApproaches()[0].GetAbility())
-		require.Equal(t, int32(12), d.GetDoor().GetLock().GetApproaches()[0].GetDc())
-		require.Len(t, d.GetDoorways(), 1)
-		require.Equal(t, "hall-tomb", d.GetDoorways()[0].GetConnection())
-	})
-
-	// An unlocked reveal carries no lock -- doorRevealedInfoToProto's
-	// presence law (Approaches empty means Lock unset), matching
-	// doorToProto's own convention field-for-field.
-	t.Run("DoorRevealed_Unlocked_CarriesNoLock", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
-			Kind: sdk.EventDoorRevealed,
-			Body: sdk.DoorRevealedBody{Door: "entrance-hall", State: "open"},
-		})
-		require.Nil(t, got.GetDoorRevealed().GetDoor().GetLock())
-	})
-
-	// RegionRevealed (rpg-project#350/#351): the region's whole atlas slice
-	// -- region entry, props, and every boundary touching its cells -- reuses
-	// atlasRegionToProto and the shared atlasPropsToProto AtlasToProto itself
-	// uses, verbatim.
-	t.Run("RegionRevealed", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
-			Kind: sdk.EventRegionRevealed,
-			Body: sdk.RegionRevealedBody{
-				Region: sdk.AtlasRegion{
-					ID: "tomb", Name: "Tomb", Archetype: "crypt",
-					Cells:    []spatial.Position{{X: 16, Y: 0}},
+	// ConcealmentRevealed (design rpg-project#490, E4): ONE beat for one
+	// authored secret, where DoorRevealed and RegionRevealed were two. Every
+	// field the SDK body carries has to reach the wire, because this payload
+	// IS the client's patch for two cached reads -- a list dropped here
+	// leaves a revealed room drawn with no walls, or a door on the map that
+	// no verb can open, and neither failure looks like a converter bug.
+	//
+	// THE DOORWAYS COME OFF THE DOORS. The SDK hangs each door's edges on the
+	// door; the wire carries one flat doorway list beside the door list,
+	// because those are the two shapes GetDoors and GetAtlas answer in. A
+	// wide door's edges arrive together and each names its own door.
+	t.Run("ConcealmentRevealed_CarriesEveryField", func(t *testing.T) {
+		got := mustEventToProto(t, sdk.Event{
+			Kind: sdk.EventConcealmentRevealed,
+			Body: sdk.ConcealmentRevealedBody{
+				Concealment: "reference-tomb/vault",
+				Cells:       []spatial.Position{{X: 28, Y: 2}, {X: 29, Y: 2}},
+				Props: []sdk.AtlasProp{{
+					ID: "heirloom", Ref: "dnd5e:props:coffin", Holdable: true,
+					At: spatial.Position{X: 28, Y: 2}, BlocksMovement: true,
+				}},
+				Doors: []sdk.RevealedDoor{{
+					Door: "reference-tomb/vault-door", State: "locked",
+					Doorways: []sdk.AtlasDoorway{
+						{Door: "reference-tomb/vault-door", From: spatial.Position{X: 27, Y: 2}, To: spatial.Position{X: 28, Y: 2}},
+						{Door: "reference-tomb/vault-door", From: spatial.Position{X: 27, Y: 3}, To: spatial.Position{X: 28, Y: 3}},
+					},
+					Approaches: []sdk.DoorApproach{{Ability: "dex", Tool: "thieves-tools", DC: 12}},
+				}},
+				Regions: []sdk.AtlasRegion{{
+					ID: "vault", Name: "The Vault", Archetype: "crypt",
+					Cells:    []spatial.Position{{X: 28, Y: 2}, {X: 29, Y: 2}},
 					Lighting: sdk.Lighting{Intensity: 0.15},
-				},
-				Props: []sdk.AtlasProp{
-					{Ref: "dnd5e:props:coffin", At: spatial.Position{X: 22, Y: 3}, BlocksMovement: true},
-				},
-				Boundaries: []sdk.AtlasBoundary{
-					{From: spatial.Position{X: 15, Y: 0}, To: spatial.Position{X: 16, Y: 0}, BlocksMovement: true, BlocksLineOfSight: true},
-				},
+				}},
+				Boundaries: []sdk.AtlasBoundary{{
+					From: spatial.Position{X: 27, Y: 4}, To: spatial.Position{X: 28, Y: 4},
+					BlocksMovement: true, BlocksLineOfSight: true, Height: 0.7,
+				}},
+				Segments: []sdk.AtlasSegment{{
+					From: sdk.AxialPointF{Q: 27.25, R: 7.375}, To: sdk.AxialPointF{Q: 27.75, R: 0.625}, Height: 0.7,
+				}},
+				Sealed: []spatial.Position{{X: 29, Y: 2}},
 			},
 		})
-		r := got.GetRegionRevealed()
-		require.NotNil(t, r)
-		require.Equal(t, "tomb", r.GetRegion().GetId())
-		require.Equal(t, "crypt", r.GetRegion().GetArchetype())
-		require.Equal(t, 0.15, r.GetRegion().GetLighting().GetIntensity())
-		require.Len(t, r.GetProps(), 1)
-		require.Equal(t, "dnd5e:props:coffin", r.GetProps()[0].GetRef())
-		require.True(t, r.GetProps()[0].GetBlocksMovement())
-		require.Len(t, r.GetBoundaries(), 1)
-		require.True(t, r.GetBoundaries()[0].GetBlocksLineOfSight())
+
+		require.Equal(t, sessionpb.EventKind_EVENT_KIND_CONCEALMENT_REVEALED, got.GetKind())
+		c := got.GetConcealmentRevealed()
+		require.NotNil(t, c, "the one reveal kind carries the one reveal body")
+		require.Equal(t, "reference-tomb/vault", c.GetConcealment(),
+			"the secret's own id, which is what a client keys its patch on")
+
+		// THE FLOOR IT HID, in order, and the one cell of it nobody stands on.
+		// Sealed is a subset of cells rather than a second list of places, so
+		// a client applying the patch cannot end up with a cell it has sealed
+		// and never added.
+		require.Equal(t, [][2]float64{{28, 2}, {29, 2}}, projected(c.GetCells(), wireXY))
+		require.Equal(t, [][2]float64{{29, 2}}, projected(c.GetSealed(), wireXY))
+
+		// EVERY REGION IT TOUCHED, WHOLE -- archetype and lighting with it, so
+		// a room withheld entirely is dressed and lit the moment it arrives
+		// instead of rendering as bare floor until the next GetAtlas.
+		regions := c.GetRegions()
+		require.Equal(t, []string{"vault"},
+			projected(regions, func(r *sessionpb.AtlasRegion) string { return r.GetId() }))
+		require.Equal(t, "The Vault", regions[0].GetName())
+		require.Equal(t, "crypt", regions[0].GetArchetype())
+		require.Equal(t, 0.15, regions[0].GetLighting().GetIntensity())
+		require.Equal(t, [][2]float64{{28, 2}, {29, 2}}, projected(regions[0].GetCells(), wireXY))
+
+		// THE PROPS STANDING ON THAT FLOOR, through the same converter
+		// AtlasToProto uses, holdability and all.
+		props := c.GetProps()
+		require.Equal(t, []string{"heirloom"},
+			projected(props, func(p *sessionpb.AtlasProp) string { return p.GetId() }))
+		require.Equal(t, "dnd5e:props:coffin", props[0].GetRef())
+		require.True(t, props[0].GetHoldable())
+		require.True(t, props[0].GetBlocksMovement())
+
+		// THE DOOR, in the nested DoorInfo shape GetDoors answers in, its
+		// lock's approaches riding with it.
+		doors := c.GetDoors()
+		require.Equal(t, []string{"reference-tomb/vault-door"},
+			projected(doors, func(d *sessionpb.DoorInfo) string { return d.GetDoor() }))
+		require.Equal(t, sessionpb.DoorState_DOOR_STATE_LOCKED, doors[0].GetState())
+		approaches := doors[0].GetLock().GetApproaches()
+		require.Equal(t, []string{"dex"},
+			projected(approaches, func(a *sessionpb.CheckApproach) string { return a.GetAbility() }))
+		require.Equal(t, "thieves-tools", approaches[0].GetTool())
+		require.Equal(t, int32(12), approaches[0].GetDc())
+
+		// ITS EDGES, FLATTENED OUT of the door and onto the wire's own doorway
+		// list -- both of them, each still naming the door it belongs to.
+		doorways := c.GetDoorways()
+		require.Equal(t, []string{"reference-tomb/vault-door", "reference-tomb/vault-door"},
+			projected(doorways, func(d *sessionpb.AtlasDoorway) string { return d.GetConnection() }))
+		require.Equal(t, [][2]float64{{27, 2}, {27, 3}},
+			projected(doorways, func(d *sessionpb.AtlasDoorway) [2]float64 { return wireXY(d.GetFrom()) }))
+		require.Equal(t, [][2]float64{{28, 2}, {28, 3}},
+			projected(doorways, func(d *sessionpb.AtlasDoorway) [2]float64 { return wireXY(d.GetTo()) }))
+
+		// THE MECHANICAL TRUTH AT THE REVEALED SEAMS, and the walls as the
+		// author drew them. Boundaries say what may cross; segments are the
+		// line a client draws, in the fractional axial frame the atlas already
+		// carries them in.
+		boundaries := c.GetBoundaries()
+		require.Equal(t, [][2]float64{{27, 4}},
+			projected(boundaries, func(b *sessionpb.AtlasBoundary) [2]float64 { return wireXY(b.GetFrom()) }))
+		require.Equal(t, [][2]float64{{28, 4}},
+			projected(boundaries, func(b *sessionpb.AtlasBoundary) [2]float64 { return wireXY(b.GetTo()) }))
+		require.True(t, boundaries[0].GetBlocksMovement())
+		require.True(t, boundaries[0].GetBlocksLineOfSight())
+		require.Equal(t, float32(0.7), boundaries[0].GetHeight())
+
+		segments := c.GetSegments()
+		require.Equal(t, [][2]float64{{27.25, 7.375}},
+			projected(segments, func(s *sessionpb.AtlasSegment) [2]float64 { return wireQR(s.GetFrom()) }))
+		require.Equal(t, [][2]float64{{27.75, 0.625}},
+			projected(segments, func(s *sessionpb.AtlasSegment) [2]float64 { return wireQR(s.GetTo()) }))
+		require.Equal(t, float32(0.7), segments[0].GetHeight())
+	})
+
+	// An unlocked door carries no lock -- revealedDoorToProto's presence law
+	// (Approaches empty means Lock unset), matching doorToProto's own
+	// convention field-for-field rather than re-deriving it from State.
+	t.Run("ConcealmentRevealed_UnlockedDoorCarriesNoLock", func(t *testing.T) {
+		got := mustEventToProto(t, sdk.Event{
+			Kind: sdk.EventConcealmentRevealed,
+			Body: sdk.ConcealmentRevealedBody{
+				Concealment: "reference-tomb/vault",
+				Doors:       []sdk.RevealedDoor{{Door: "entrance-hall", State: "open"}},
+			},
+		})
+		require.Nil(t, got.GetConcealmentRevealed().GetDoors()[0].GetLock())
+	})
+
+	// A CELL-LESS CONCEALMENT IS LEGAL and means a hidden crossing: a door
+	// alone, hiding no floor. Empty cells here is an answer rather than a
+	// gap, and the doors are the whole patch -- which is the shape the v2
+	// lowering gives a concealed door touching no concealed region.
+	t.Run("ConcealmentRevealed_CellLessIsADoorAlone", func(t *testing.T) {
+		got := mustEventToProto(t, sdk.Event{
+			Kind: sdk.EventConcealmentRevealed,
+			Body: sdk.ConcealmentRevealedBody{
+				Concealment: "reference-tomb/hidden-crossing",
+				Doors: []sdk.RevealedDoor{{
+					Door: "reference-tomb/hidden-crossing", State: "closed",
+					Doorways: []sdk.AtlasDoorway{
+						{Door: "reference-tomb/hidden-crossing", From: spatial.Position{X: 4, Y: 1}, To: spatial.Position{X: 5, Y: 1}},
+					},
+				}},
+			},
+		})
+		c := got.GetConcealmentRevealed()
+		require.Empty(t, c.GetCells(), "a hidden crossing hides no floor")
+		require.Empty(t, c.GetRegions(), "and so trims no region to put back")
+		require.Equal(t, []string{"reference-tomb/hidden-crossing"},
+			projected(c.GetDoors(), func(d *sessionpb.DoorInfo) string { return d.GetDoor() }))
+		require.Equal(t, []string{"reference-tomb/hidden-crossing"},
+			projected(c.GetDoorways(), func(d *sessionpb.AtlasDoorway) string { return d.GetConnection() }))
 	})
 
 	// Sighted: a change in ONE recipient's own perception, passed through as
@@ -1579,7 +2023,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	// member-scoped, by GetView, and minting it here would be a second
 	// computation of that same answer.
 	t.Run("Sighted_CarriesNamesVerbatim", func(t *testing.T) {
-		got := eventToProto(sdk.Event{
+		got := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventSighted,
 			Body: sdk.SightedBody{Gained: []string{"goblin-2", "orc-1"}, Lost: []string{"wolf-3"}},
 		})
@@ -1597,14 +2041,14 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	// whether the question was asked -- so this side must not turn an absent
 	// list into a present empty one, nor the reverse.
 	t.Run("Sighted_TheHalfThatDidNotHappenStaysAbsent", func(t *testing.T) {
-		arrived := eventToProto(sdk.Event{
+		arrived := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventSighted,
 			Body: sdk.SightedBody{Gained: []string{"goblin-2"}},
 		}).GetSighted()
 		require.Equal(t, []string{"goblin-2"}, arrived.GetGained())
 		require.Empty(t, arrived.GetLost(), "nobody left, so nothing is named as leaving")
 
-		departed := eventToProto(sdk.Event{
+		departed := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventSighted,
 			Body: sdk.SightedBody{Lost: []string{"wolf-3"}},
 		}).GetSighted()
@@ -1622,7 +2066,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	// recipient. It crosses beside the two transitions rather than instead of
 	// them, because one pass can carry all three.
 	t.Run("Sighted_CarriesTheChangedHalf", func(t *testing.T) {
-		sighted := eventToProto(sdk.Event{
+		sighted := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventSighted,
 			Body: sdk.SightedBody{Changed: []string{"goblin-2"}},
 		}).GetSighted()
@@ -1630,7 +2074,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 		require.Empty(t, sighted.GetGained(), "nobody arrived — it was already in view")
 		require.Empty(t, sighted.GetLost())
 
-		all := eventToProto(sdk.Event{
+		all := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventSighted,
 			Body: sdk.SightedBody{
 				Gained: []string{"orc-1"}, Lost: []string{"wolf-3"}, Changed: []string{"goblin-2"},
@@ -1649,7 +2093,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	// illusion must be able to lie about, and a fact on the wire is true for
 	// everybody by construction.
 	t.Run("Sighted_SaysWhoChangedAndNeverWhat", func(t *testing.T) {
-		sighted := eventToProto(sdk.Event{
+		sighted := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventSighted,
 			Body: sdk.SightedBody{Changed: []string{"goblin-2"}},
 		}).GetSighted()
@@ -1660,7 +2104,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 	})
 
 	t.Run("Sighted_MemberIdsAreNotAssetRefs", func(t *testing.T) {
-		sighted := eventToProto(sdk.Event{
+		sighted := mustEventToProto(t, sdk.Event{
 			Kind: sdk.EventSighted,
 			Body: sdk.SightedBody{Gained: []string{"goblin-2"}},
 		}).GetSighted()
@@ -1677,7 +2121,7 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 // no typed session.EventBody at all, so this stays a clean "no arm claims
 // this kind" case rather than "the SDK happened to hand back a nil body".
 func TestEventToProto_UntypedKind_BodyStaysNilPayloadCarries(t *testing.T) {
-	got := eventToProto(sdk.Event{Kind: sdk.EventEnded, Payload: []byte("ended-payload"), Body: nil})
+	got := mustEventToProto(t, sdk.Event{Kind: sdk.EventEnded, Payload: []byte("ended-payload"), Body: nil})
 	require.Equal(t, []byte("ended-payload"), got.GetPayload())
 	require.Nil(t, got.GetTurnEnded())
 	require.Nil(t, got.GetDowned())
@@ -1832,7 +2276,7 @@ func TestDeclarationToProto_OmitsTheSpellOnAnOrdinaryRow(t *testing.T) {
 // the fight paused, and the log says whose step, between which cells, who is
 // being asked, and with what.
 func TestEventWindowOpened_ReachesTheWireTyped(t *testing.T) {
-	got := eventToProto(sdk.Event{
+	got := mustEventToProto(t, sdk.Event{
 		Session: "sess-1",
 		Kind:    sdk.EventWindowOpened,
 		Body: sdk.WindowOpenedBody{
@@ -1865,12 +2309,12 @@ func TestEventWindowOpened_ReachesTheWireTyped(t *testing.T) {
 func TestStruckAndMissedCarryThePresentationToken(t *testing.T) {
 	const token = "presentation_2f1c8b4a-0d6e-4a1b-9c3f-5e7a1b2c3d4e"
 
-	struck := eventToProto(sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
+	struck := mustEventToProto(t, sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
 		Attacker: "char-1", Target: "skel-1", PresentationID: token,
 	}}).GetStruck()
 	require.Equal(t, token, struck.GetPresentationId())
 
-	missed := eventToProto(sdk.Event{Kind: sdk.EventMissed, Body: sdk.MissedBody{
+	missed := mustEventToProto(t, sdk.Event{Kind: sdk.EventMissed, Body: sdk.MissedBody{
 		Attacker: "char-1", Target: "skel-1", PresentationID: token,
 	}}).GetMissed()
 	require.Equal(t, token, missed.GetPresentationId())
@@ -1878,7 +2322,7 @@ func TestStruckAndMissedCarryThePresentationToken(t *testing.T) {
 	// A beat recorded before the field existed carries nothing, and empty is
 	// the truth: the client reads it as "this roll has no shared presentation"
 	// and narrates the swing alone rather than treating it as an error.
-	old := eventToProto(sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
+	old := mustEventToProto(t, sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
 		Attacker: "char-1", Target: "skel-1",
 	}}).GetStruck()
 	require.Empty(t, old.GetPresentationId())
@@ -1887,19 +2331,19 @@ func TestStruckAndMissedCarryThePresentationToken(t *testing.T) {
 func TestStruckAndMissedCarryTheReaction(t *testing.T) {
 	oa := &sdk.ReactionRef{Ref: "dnd5e:conditions:opportunity_attack", Name: "Opportunity Attack"}
 
-	struck := eventToProto(sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
+	struck := mustEventToProto(t, sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
 		Attacker: "char-1", Target: "skel-1", Reaction: oa,
 	}}).GetStruck()
 	require.Equal(t, "Opportunity Attack", struck.GetReaction().GetName())
 
-	missed := eventToProto(sdk.Event{Kind: sdk.EventMissed, Body: sdk.MissedBody{
+	missed := mustEventToProto(t, sdk.Event{Kind: sdk.EventMissed, Body: sdk.MissedBody{
 		Attacker: "char-1", Target: "skel-1", Reaction: oa,
 	}}).GetMissed()
 	require.Equal(t, "Opportunity Attack", missed.GetReaction().GetName())
 
 	// An ordinary swing on the actor's own turn was taken as nothing, and
 	// absent is the truth. False-vs-absent is the whole point of the field.
-	plain := eventToProto(sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
+	plain := mustEventToProto(t, sdk.Event{Kind: sdk.EventStruck, Body: sdk.StruckBody{
 		Attacker: "char-1", Target: "skel-1",
 	}}).GetStruck()
 	require.Nil(t, plain.GetReaction())
@@ -1914,7 +2358,7 @@ func TestStruckAndMissedCarryTheReaction(t *testing.T) {
 // carries a mover and two cells; this one has neither, and the assertion that
 // the movement body is absent is what keeps the two from being conflated.
 func TestEventRollWindowOpened_ReachesTheWireTyped(t *testing.T) {
-	got := eventToProto(sdk.Event{
+	got := mustEventToProto(t, sdk.Event{
 		Session: "sess-1",
 		Kind:    sdk.EventRollWindowOpened,
 		Body: sdk.RollWindowOpenedBody{
@@ -1948,7 +2392,7 @@ func TestEventRollWindowOpened_ReachesTheWireTyped(t *testing.T) {
 // nil. A break that arrives as a beat the client cannot read is exactly the
 // silence the dedicated kind exists to prevent.
 func TestEventToProto_CarriesTheConcentrationBreak(t *testing.T) {
-	out := eventToProto(sdk.Event{
+	out := mustEventToProto(t, sdk.Event{
 		Session: "sess-1",
 		Seq:     7,
 		Kind:    sdk.EventConcentrationEnded,
@@ -2173,7 +2617,7 @@ func TestDeclarationToProto_CarriesNoMenuOnARowThatOffersNoChoice(t *testing.T) 
 // Command holds a creature, and which of two Banes ended when one caster's
 // concentration broke.
 func TestConditionAppliedToProto_NamesWhoIsResponsible(t *testing.T) {
-	got := eventToProto(sdk.Event{
+	got := mustEventToProto(t, sdk.Event{
 		Kind: sdk.EventActivationResult,
 		Body: sdk.ActivationResultBody{
 			Actor: "char_bard",
@@ -2204,7 +2648,7 @@ func TestConditionAppliedToProto_NamesWhoIsResponsible(t *testing.T) {
 // rulebook does not attribute -- would then be blamed on whoever was standing
 // there.
 func TestConditionAppliedToProto_LeavesAnUnattributedConditionUnattributed(t *testing.T) {
-	got := eventToProto(sdk.Event{
+	got := mustEventToProto(t, sdk.Event{
 		Kind: sdk.EventActivationResult,
 		Body: sdk.ActivationResultBody{
 			Actor: "char_bard",
@@ -2220,7 +2664,7 @@ func TestConditionAppliedToProto_LeavesAnUnattributedConditionUnattributed(t *te
 // it in the same way. Without it "a Bane ended on the fighter" cannot say
 // WHICH Bane, so a client holding two would have to guess which row to strike.
 func TestConditionRemovedToProto_NamesWhoIsResponsible(t *testing.T) {
-	got := eventToProto(sdk.Event{
+	got := mustEventToProto(t, sdk.Event{
 		Kind: sdk.EventActivationResult,
 		Body: sdk.ActivationResultBody{
 			Actor: "char_bard",
@@ -2239,4 +2683,245 @@ func TestConditionRemovedToProto_NamesWhoIsResponsible(t *testing.T) {
 	require.Equal(t, "char_bard", condition.GetSourceId(),
 		"which instance ended is the source plus the target plus the ref")
 	require.Equal(t, "concentration ended", condition.GetReason())
+}
+
+// TestIntimidatedBodyToProto_CarriesTheWholeRollBothWays is the beat half of
+// the first shenanigan (rpg-project#454), and the missed case is the one that
+// matters most: IntimidateResponse carries no beaten, total or dc, so this
+// beat is the ONLY account of the roll and the actor reads it here like every
+// other witness. A body that failed to cross would leave the person who threw
+// the die with nothing at all.
+//
+// FALSE IS AN ANSWER. The SDK writes beaten, dc and total with no omitempty
+// precisely because `beaten: false` is the whole content of a missed threat,
+// and this converter must not reintroduce the absence its author removed.
+func TestIntimidatedBodyToProto_CarriesTheWholeRollBothWays(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		beaten bool
+		total  int
+	}{
+		{name: "beaten", beaten: true, total: 14},
+		{name: "missed", beaten: false, total: 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			event := &sessionpb.Event{}
+			setEventBody(event, sdk.IntimidatedBody{
+				Actor: "char-alice", Target: "goblin-2", DC: 9, Total: tc.total, Beaten: tc.beaten,
+			})
+
+			got := event.GetIntimidated()
+			require.NotNil(t, got, "a threat that reached this seam must reach the wire")
+			require.Equal(t, "char-alice", got.GetActor())
+			require.Equal(t, "goblin-2", got.GetTarget())
+			require.Equal(t, int32(9), got.GetDc())
+			require.Equal(t, int32(tc.total), got.GetTotal())
+			require.Equal(t, tc.beaten, got.GetBeaten())
+		})
+	}
+}
+
+// TestIntimidatedBodyToProto_BeatenIsCopiedNeverDerived pins the reading as
+// the provider's. A 20 the rulebook says did not beat a DC 9 crosses as
+// beaten=false, because the day a rule changes what beating a DC means, every
+// reader that compared total against dc would be wrong at once -- the law
+// Saved.succeeded and DoorChanged.beaten already keep.
+func TestIntimidatedBodyToProto_BeatenIsCopiedNeverDerived(t *testing.T) {
+	event := &sessionpb.Event{}
+	setEventBody(event, sdk.IntimidatedBody{
+		Actor: "char-alice", Target: "goblin-2", DC: 9, Total: 20, Beaten: false,
+	})
+	require.False(t, event.GetIntimidated().GetBeaten())
+	require.Equal(t, int32(20), event.GetIntimidated().GetTotal())
+	require.Equal(t, int32(9), event.GetIntimidated().GetDc())
+}
+
+// TestEventIntimidatedKindToProto is the kind half. An unmapped kind does not
+// fail -- it demotes to EVENT_KIND_UNKNOWN and the body stays nil -- so a
+// missing arm here would lose the die for the whole table rather than degrade
+// one field of it.
+func TestEventIntimidatedKindToProto(t *testing.T) {
+	require.Equal(t,
+		sessionpb.EventKind_EVENT_KIND_INTIMIDATED,
+		eventKindToProto(sdk.EventIntimidated))
+}
+
+// mustEventToProto is eventToProto for a scene that pins a PROJECTION rather
+// than the refusal (rpg-project#458). The converter grew an error return when
+// the `answered` beat arrived, because an outcome word this build cannot spell
+// must not be demoted to ANSWER_WORD_UNSPECIFIED -- which is the wire's way of
+// saying "the creature only spoke", a positive and false claim.
+//
+// THE REFUSAL HAS ITS OWN SCENES and they call the converter directly. Every
+// other scene in this file is about a body that cannot fail, so it says so
+// here once instead of forty-eight times, and a body that starts failing
+// silently fails the scene that was not asking about it -- which is what a
+// t.Fatal here is for.
+func mustEventToProto(t *testing.T, e sdk.Event) *sessionpb.Event {
+	t.Helper()
+	evt, err := eventToProto(e)
+	require.NoError(t, err, "this scene pins a projection, not a refusal")
+	return evt
+}
+
+// mustEventsToProto is mustEventToProto's plural, for the catch-up read.
+func mustEventsToProto(t *testing.T, es []sdk.Event) []*sessionpb.Event {
+	t.Helper()
+	out, err := eventsToProto(es)
+	require.NoError(t, err, "this scene pins a projection, not a refusal")
+	return out
+}
+
+// projected maps a wire list through one fact about each element, so a test
+// can assert a repeated field by what it carries -- ids, coordinates -- in one
+// comparison that pins CONTENT AND ORDER together. Asserting a length beside
+// the elements would be a second, weaker statement of the same thing, and the
+// kind that gets bumped rather than read when the list changes.
+func projected[T any, R any](in []T, fact func(T) R) []R {
+	out := make([]R, len(in))
+	for i, v := range in {
+		out[i] = fact(v)
+	}
+	return out
+}
+
+// wireXY and wireQR read one wire point as a comparable pair. Position is
+// dungeon-absolute cell space; AxialPoint is the fractional axial frame a wall
+// segment's ends live in. They are deliberately separate: the two frames are
+// not interchangeable and a test that mixed them would compare a cell against
+// a wall corner.
+func wireXY(p *sessionpb.Position) [2]float64 { return [2]float64{p.GetX(), p.GetY()} }
+
+func wireQR(p *sessionpb.AxialPoint) [2]float64 { return [2]float64{p.GetQ(), p.GetR()} }
+
+// TestAtlasToProto_APlacedFootprintCrossesTheSeamWhole is the wire half of
+// rpg-api-protos#351: every field of one placement reaches GetAtlasResponse,
+// and none of them is derived here.
+//
+// EVERY NUMBER IS DIFFERENT, on purpose. Width and depth are the pair a
+// converter is most likely to swap -- the authored dialect really does swap
+// those names one layer down -- and a rectangle three feet across by seven
+// deep fails loudly where a square one would pass a converter that drew the
+// table turned ninety degrees. The same holds for the origin against the
+// local offset, and for x against y inside each of them.
+//
+// MUTATION-CHECKED on `cells`, which is the field the wire exists for:
+// dropping the `Cells:` line from atlasPlacedPropToProto fails the cells
+// assertions below, and dropping the whole `Placed:` line from AtlasToProto
+// fails the length assertion.
+func TestAtlasToProto_APlacedFootprintCrossesTheSeamWhole(t *testing.T) {
+	got := AtlasToProto(&sdk.Atlas{
+		Grid:  sdk.GridHex,
+		Cells: []spatial.Position{{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 1, Y: 1}},
+		Placed: []sdk.AtlasPlacedProp{{
+			ID: "long-table",
+			Placement: sdk.FootprintPlacement{
+				Width:       3,
+				Depth:       7,
+				Origin:      sdk.FootprintPoint{X: 11, Y: 13},
+				Facing:      29,
+				LocalOffset: sdk.FootprintPoint{X: 2, Y: -5},
+			},
+			BlocksMovement:    true,
+			BlocksLineOfSight: false,
+			Holdable:          true,
+			Cells:             []spatial.Position{{X: 1, Y: 0}, {X: 1, Y: 1}},
+		}},
+	})
+
+	require.Len(t, got.GetPlaced(), 1)
+	placed := got.GetPlaced()[0]
+	require.Equal(t, "long-table", placed.GetId(),
+		"the author's name is the only handle Hold can use")
+
+	// The pose. Across-the-facing is 3 and along-it is 7; a converter that
+	// re-swapped the pair the authored dialect already swapped fails here.
+	pose := placed.GetPlacement()
+	require.NotNil(t, pose, "a placement always carries its rectangle")
+	require.Equal(t, 3.0, pose.GetWidth(), "width lies ACROSS the facing")
+	require.Equal(t, 7.0, pose.GetDepth(), "depth lies ALONG it")
+	require.Equal(t, 29.0, pose.GetFacing(), "degrees from east, verbatim -- nothing snaps to a hex edge")
+	require.Equal(t, 11.0, pose.GetOrigin().GetX())
+	require.Equal(t, 13.0, pose.GetOrigin().GetY())
+	require.Equal(t, 2.0, pose.GetLocalOffset().GetX())
+	require.Equal(t, -5.0, pose.GetLocalOffset().GetY(),
+		"the offset is a real nudge in the placement's own axes, not decoration")
+
+	// The two blocking answers are independent, and this table is the pair
+	// that proves it: walked around, seen over. A converter that copied one
+	// bool into both passes neither assertion.
+	require.True(t, placed.GetBlocksMovement())
+	require.False(t, placed.GetBlocksLineOfSight())
+	require.True(t, placed.GetHoldable(),
+		"the author's flag, verbatim -- a client offers Hold only where it is true")
+
+	// THE FIELD THE WIRE EXISTS FOR. Standing is a trace of the rectangle
+	// against the floor, and it is carried so nobody runs that geometry a
+	// second time. Both cells, in the atlas's own order.
+	require.Len(t, placed.GetCells(), 2, "the rectangle stands on two cells")
+	require.Equal(t, 1.0, placed.GetCells()[0].GetX())
+	require.Equal(t, 0.0, placed.GetCells()[0].GetY())
+	require.Equal(t, 1.0, placed.GetCells()[1].GetX())
+	require.Equal(t, 1.0, placed.GetCells()[1].GetY())
+}
+
+// TestAtlasToProto_PlacedAbsenceIsFalseAndEmpty pins the two shapes that a
+// converter is tempted to spell as "nothing": a map with no placements at
+// all, and a placement nobody declared anything about.
+//
+// FALSE IS AN ANSWER on all three flags. A rectangle nobody declared holdable
+// is scenery, and a rectangle nobody declared blocking is walked through and
+// seen over -- those are facts the author gave, not facts nobody gave, and a
+// converter that filtered such an entry out of the list would tell a client
+// the thing is not on the floor.
+//
+// An empty list is the repeated field's own empty, matching every other list
+// on this message rather than inventing a nil-versus-empty distinction the
+// wire cannot carry anyway.
+func TestAtlasToProto_PlacedAbsenceIsFalseAndEmpty(t *testing.T) {
+	bare := AtlasToProto(&sdk.Atlas{Grid: sdk.GridHex, Cells: []spatial.Position{{X: 0, Y: 0}}})
+	require.Empty(t, bare.GetPlaced(), "a map with no placements carries an empty list")
+
+	quiet := AtlasToProto(&sdk.Atlas{
+		Grid:   sdk.GridHex,
+		Cells:  []spatial.Position{{X: 0, Y: 0}},
+		Placed: []sdk.AtlasPlacedProp{{ID: "rug", Cells: []spatial.Position{{X: 0, Y: 0}}}},
+	})
+	require.Len(t, quiet.GetPlaced(), 1,
+		"a placement nobody declared anything about is still standing there")
+	rug := quiet.GetPlaced()[0]
+	require.False(t, rug.GetBlocksMovement())
+	require.False(t, rug.GetBlocksLineOfSight())
+	require.False(t, rug.GetHoldable())
+	require.NotNil(t, rug.GetPlacement(),
+		"a zero pose is a real pose -- a rectangle anchored at the origin, facing east")
+	require.NotNil(t, rug.GetPlacement().GetOrigin(),
+		"the source carries a VALUE, so there is no absence here to translate")
+	require.NotNil(t, rug.GetPlacement().GetLocalOffset())
+	require.Len(t, rug.GetCells(), 1)
+}
+
+// TestAtlasToProto_PlacedIsNotFoldedIntoProps pins the one collapse that
+// would look tidy and lose the run: the two lists are different KINDS of
+// thing, and a placement has no cell to be "at".
+//
+// A converter that appended placements to `props` would hand a client a prop
+// carrying no ref -- nothing to draw -- standing at whichever cell somebody
+// picked out of its footprint, and the client's Hold offer would then be
+// keyed off a list whose ids the engine's prop verbs do not answer to.
+func TestAtlasToProto_PlacedIsNotFoldedIntoProps(t *testing.T) {
+	got := AtlasToProto(&sdk.Atlas{
+		Grid:  sdk.GridHex,
+		Cells: []spatial.Position{{X: 0, Y: 0}},
+		Props: []sdk.AtlasProp{{ID: "urn", Ref: "dnd5e:props:urn", At: spatial.Position{X: 0, Y: 0}}},
+		Placed: []sdk.AtlasPlacedProp{{
+			ID:    "bookcase",
+			Cells: []spatial.Position{{X: 0, Y: 0}},
+		}},
+	})
+
+	require.Len(t, got.GetProps(), 1, "the cell prop is alone on its own list")
+	require.Equal(t, "urn", got.GetProps()[0].GetId())
+	require.Len(t, got.GetPlaced(), 1, "and the rectangle is alone on its own")
+	require.Equal(t, "bookcase", got.GetPlaced()[0].GetId())
 }

@@ -1,7 +1,7 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-09-08
+updated: 2026-09-22
 confidence: high — #938 trusted guild-derived composition world context is verified through auth/provider/cache/interceptor/handler/registration tests, race detection, and real miniredis stored-world checks; #921 local-dev composition Create/Get/List/Delete remains covered; #895 explicit Death Save RPC/progress projection verified through handler, owner-view, adapter, and real released-provider acceptance; #891 activation/result event passthrough verified through converter RED/GREEN and real SessionService live/catch-up acceptance; #882 first-admission normal-rest ownership verified through Lobby StartEncounter against released providers; #870 Martial Arts Quarterstaff→bonus Unarmed Strike handler journey verified against released providers and focused RED/GREEN acceptance; #897 complete Appearance ownership/conversion/delegation verified through focused RED/GREEN and Docker-backed integration tests; #852 shared dice presentation wiring verified against RED/GREEN cross-instance Redis integration, focused lint, and race-stressed package gate; #844 field-complete owner projection and atomic equipment patch verified against focused handler/orchestrator/repository tests and lint; Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #687 region/theme wire projection verified against passing unit (-race) + a real-RPC integration gate proving connect-time AND incremental-reveal zone_id/zones/theme projection against the real Redis harness, full `go test`/`golangci-lint` green against the published `rpg-api-protos` generated branch + `rpg-toolkit/encounter v0.35.0`; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`; #694 crypt dungeon-key consumes the toolkit's own `CryptDungeonParams` (obstacles included) verified against passing unit (-race) against published `rpg-toolkit/encounter v0.38.0`; #689 deterministic crypt monster composition verified against passing unit (-race, 1000-seed x 4-party-size zero-error matrix against the real production registry) + real-Redis integration (composition + seed-determinism + party-size-invariance) + the updated dungeon_crypt_test.go gate, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.38.0` + `rulebooks/dnd5e v0.68.0`, zero new lint issues versus main — **#694 and #689 merged together (this doc's own "Deterministic crypt monster composition, integrated with toolkit CryptDungeonParams" entry, 2026-07-23) close out rpg-api#696** (the out-of-sight goblin-placement collision #694 alone surfaced): #689's deterministic `FixedPositions` composition retires the search path that could fail, so the merged 1..1000-seed x party-1..4 matrix is 0/4000 errors, not a tuned-down failure rate
 ---
 
@@ -10,6 +10,203 @@ confidence: high — #938 trusted guild-derived composition world context is ver
 This is a living doc. Edit it in the same PR that invalidates a line. Don't let it rot.
 
 ## Active work
+
+**The atlas carries placed props (rpg-api-protos#351)** — The World Builder's
+authored footprints — the rectangles a door, a table or a bookcase is drawn
+as — reached no client. `GetAtlasResponse` carried `props`, `doorways`,
+`exits`, `regions`, `segments`, `sealed` and `start` and no placed list, so
+the web drew a placement out of the World Builder's own scene bytes, which
+say nothing about the run. `AtlasToProto` now copies `sdk.Atlas.Placed` onto
+`GetAtlasResponse.placed`: the author's `id`, the canonical `placement`
+(width, depth, origin, facing, local offset, in feet on the continuous
+plane), `blocks_movement`, `blocks_line_of_sight`, `holdable`, and `cells`.
+Nothing is derived here — `cells` in particular is COPIED, because standing
+is a trace of the rectangle against the floor and it is the same set `Hold`'s
+reach judges, so re-measuring it at this seam would be a second geometry one
+layer before the client's. Absence stays the whole vocabulary: a placement in
+reserve, one somebody is holding, and one standing on floor this member
+cannot see are each simply off the list, and this converter adds no flag to
+that. `placed` is a separate list from `props` and the two never share an id —
+a prop occupies a cell and names content, a placement occupies an area and
+names none. `internal/dungeons/testdata/placed-table-room.yaml` is the v4
+fixture the acceptance scene drives: a holdable table and a bench nobody
+declared holdable, with the second member seated on a cell THE ATLAS ITSELF
+NAMED so an offer made off the wire and the reach the engine judges are
+proven to be the same set. Pins: `rpg-api-protos/gen/go` the pseudo-version
+of `cb1dfcd8`, which is release `v0.1.207`'s commit on the `generated`
+branch (rpg-api-protos#353) — the bare release tag versions the repo-root
+module and cannot version the `gen/go` submodule, so this module has always
+been pinned by pseudo-version; `rulebooks/dnd5e/encounter` **v0.102.1**,
+`rulebooks/dnd5e/session` **v0.104.0** and `rulebooks/dnd5e` **v0.189.0**,
+all released tags and all the latest of their module. The placed work
+itself landed at encounter v0.101.0 (toolkit#1866) and session v0.103.0
+(toolkit#1867); the two tags above it carry the R5 provocation fix
+(toolkit#1868) and the Tempest lane `dev` already adopted, which this
+branch takes along rather than pinning behind.
+
+**One concealment, one reveal (rpg-project#490, E4)** — The engine hid doors
+and regions behind two separate flags, so one authored secret arrived as two
+kinds with two payloads. It is one noun now, and the SDK emits one
+`concealment_revealed` beat carrying everything that secret was withholding
+from its recipient: the cells, the props standing on them, the member doors
+with their crossings, the boundaries and wall segments at the revealed seams,
+the sealed cells inside it, and every touched region whole. `convert.go` maps
+`session.ConcealmentRevealedBody` onto `EVENT_KIND_CONCEALMENT_REVEALED`
+field for field, splitting the SDK's per-door doorway lists onto the wire's
+flat `doorways` because that is the shape a client's cached atlas patches
+from. The `DoorRevealedBody` and `RegionRevealedBody` conversions are deleted
+with the SDK types they read; `EVENT_KIND_DOOR_REVEALED` and
+`EVENT_KIND_REGION_REVEALED` stay on the proto, deprecated, and nothing
+produces them. Intel points at a concealment rather than a door
+(`encounter.IntelData.Concealment`), and the v2 dialect is unchanged for
+authors: `regions[].concealed: true` and `doors[].concealed: [...]` lower onto
+the one primitive, so every shipped reference dungeon compiles and loads as
+before. Recipient projection is untouched — the toolkit decides audiences and
+rpg-api neither filters nor re-derives them. Pins: `rpg-api-protos/gen/go`
+`v0.0.0-20260921225916-7ed49839b5e8`, which is tag `v0.1.206`'s commit on the
+`generated` branch (rpg-api-protos#352) — the bare release tag versions the
+repo-root module and cannot version the `gen/go` submodule, so this module has
+always been pinned by pseudo-version; `rulebooks/dnd5e/encounter` **v0.99.0**
+(toolkit#1862) and `rulebooks/dnd5e/session` **v0.101.0** (toolkit#1863), both
+released tags.
+
+**The gate is on the write, not on the grade (rpg-project#481, slice 2)** —
+`FileRegistry.Put` returned `ErrAuthoringDisabled` at the top of the method,
+ahead of its `ValidateOnly` branch, so a registry constructed read-only could
+not grade a file at all. It now refuses the **store** alone: a validate-only
+`Put` compiles and answers with the engine's `FieldError`s or the atlas
+whether or not the registry may write, because a grade touches no file and no
+entry. The write refusal is unchanged. No orchestrator or handler code moved
+and no pin changed. A new real-registry wire suite drives
+`PutDungeon{validate_only}` over a read-only registry on the shipped front
+room and reproduces the design's three probes verbatim —
+`place[0].faction` for a placement in an undeclared faction,
+`factions[0].on.intimdate_failed` for a misspelled trigger, and
+`factions[0].tempre` for an unknown key. That third one is pathed because
+this slice also lifts `rulebooks/dnd5e/encounter` to **v0.94.1**
+(toolkit#1843, rpg-project#481 slice 1), which walks the v2 shape instead of
+reporting a decode line and a Go type name; session stays at v0.99.0 and no
+other pin moved. Its whole message is pinned in the test, because what the
+lift fixed is that nothing but the key and the legal keys is left in the
+refusal. Note that `cmd/server` still derives both the service
+registration and the registry's writability from `RPG_AUTHORING_ENABLED`, so a
+deployed client with the gate off still sees `Unimplemented` rather than a
+grade; this slice makes the registry's contract true and leaves the wiring
+question to whoever wants a preview-only server.
+
+**War Domain proficiency correction (#1014)** — Toolkit #1837 released as
+root v0.187.1 (merge 671bee80), now pinned here, applies heavy armor and
+martial weapons when a new War Cleric is finalized.
+Native creation integration coverage verifies repository persistence, a fresh
+character load, martial melee/ranged coverage, and character-response categories;
+Life does not gain martial weapons. Existing characters are not rewritten.
+War Priest and general nonproficient-armor penalties remain outside this fix.
+
+
+**Divine Favor adoption (#1013)** — Pins toolkit #1835's released root
+v0.187.0 (merge da0efa08). A native War Cleric receives Divine Favor as a
+domain grant; the existing public self-cast spends its bonus action and one
+slot, retains its action, and persists concentration. API integration tests
+cover cast live/Story equality, reload, hit/miss/critical radiant components,
+concentration replacement, and leveled-action refusal without payment. The user confirmed manual browser combat acceptance on the local
+`rpg-api:divine-favor` image built from the provider draft; the released pin
+now replaces that pseudo-version for merge.
+
+
+**Cleric preparation adoption (#1012)** — Adopts toolkit #1833's released root
+v0.186.0: new Clerics choose four level-one preparations, with domain spell and
+cantrip grants additive. Creation/finalization/storage and live Cast offers use
+the provider's existing spell-access list. Bard keeps four known spells; other
+classes are unchanged. Light remains a selectable/granted cantrip without Cast
+until objects can be targeted and illuminated. Existing characters are not
+rewritten; long-rest re-preparation is future work. The API session integration
+suite covers native creation, persisted owner reads, grants reaching Cast,
+unselected spells excluded, and Bard creation isolation. Local browser creation passed for Bard and Light Cleric; persisted records confirm
+four Bard spells and four Cleric preparations plus two grants and bonus Light.
+The creation catalog also projects toolkit domain grants separately from selectable
+refs, with source names for locked picker rows (protos#348). The user confirmed
+the grant display; provider #1833 is merged and its release pin is adopted.
+
+**Sanctuary release adoption (#1006)** — Toolkit PRs #1811–#1814 are merged. Pins now use root v0.181.0, resolution v0.54.0, encounter v0.89.0, and session v0.96.0 with proto SDK v0.1.201. Ward response/event mappings and native creation/cast/live/Story tests cover the integration. The user confirmed recipient immunity and recast refusal in the earlier development build; manual timer expiry remains unverified. See [pins and local testing](how-to/sanctuary-test-build.md).
+
+**Single-room World Builder adoption (rpg-api#1003)** — the API leg of one
+playable authored room. `sessionworld.Compile` dispatches through
+`dungeonspec.Load`: legacy v2 files compile exactly as before, a v3
+single-room file lowers its gameplay keys and, per DECLARED prop, the three
+numbers the engine reads out of the authored scene, into the existing field
+contract; every monster ref is resolved against the rulebook registry before
+the dungeon is accepted, so an unknown ref cannot become an entry or a
+launch. The atlas names its content rather than carrying it: `AtlasToProto`
+copies `sdk.Atlas.DungeonKey` into `GetAtlasResponse.dungeon_key` — the
+shared producer for `PutDungeon`'s preview and `GetAtlas` — and leaves the
+deprecated `room_scene_json` unset (presentation-is-content,
+rpg-project#479). Semantic suites prove the real loop end to end on
+miniredis-backed stores: registry byte/metadata/key preservation (including
+across a fresh registry), a failing real save keeping the prior bytes and
+entry, launch with member atlas and per-actor cells — a negative odd axial
+row included — SDK-owned monster defaults on the persisted sheet, a
+fresh-manager reload of the persisted field, author-edit isolation (a
+republished room's GEOMETRY reaches only future launches), and the
+seat-capacity refusal writing nothing (no session,
+no world, no character bytes, no `EncounterStarted`). Browser rendering and
+the real Save/Play walk remain explicitly pending; API success is not
+browser acceptance.
+
+**Level-up system, API leg (rpg-project#452)** — Experience, the entitled level
+and the next threshold are projected read-only onto the v1alpha1 `Character`;
+nothing on the served API writes experience, by design (R4.12). `GetNextLevel`
+and `LevelUp` are implemented on the v1alpha1 `CharacterService`, both gated by
+an ownership check that returns NOT_FOUND rather than PERMISSION_DENIED.
+
+**They call the session SDK; there is no advancement orchestrator.** Kirk's
+ruling after the walk (design R6.1): *"the API is dumb... we should not need an
+orchestrator in API anymore and our level up should be contained in our session
+package."* The first build put the verb in
+`internal/orchestrators/character/level_up.go` with a `Config.Roller`; all of
+it was deleted, not deprecated, and the handler now calls two Manager verbs and
+projects. The SDK error table moved out of the session handler into
+`internal/handlers/dnd5e/sdkerr` so both callers share one table rather than
+keeping two free to disagree. `cmd/sandboxseed`'s default fixture set adds
+`level-up-fighter` (Arthur) and `level-up-bard` (Scanlan), created through the
+production RPCs and then seeded to 300 experience through the character
+repository — the only place experience can be written. Seeding requires a
+reachable Redis, so `sandboxseed` now needs `-redis-address` for the default
+fixture as well as the weapon gallery.
+
+A third fixture set, `-fixture level-up-classes`, creates one level-1 character
+per class at 300 experience, driven from `ListClasses` rather than from
+per-class code, so every class can be walked through the real level-up screen.
+It is deliberately not in the default set. Two engine findings came out of it,
+both recorded with the defect in `internal/integration/character`:
+
+- **A ranger could not be created at all, by any client — FIXED.** rpg-toolkit's
+  `getClassSubmissions` built the fighting-style submission with the *fighter's*
+  choice id (its own comment read "Would need mapping for other classes"), so
+  `ranger-fighting-style` never read as answered, `IsClassComplete` was false
+  forever and the draft could not be finalized. rpg-toolkit#1781 routes the
+  draft's class choices through `choices.SubmissionsFrom`, so each submission
+  carries the requirement's own id. All twelve classes now seed.
+- **Expertise is offered as all eighteen skills.** The toolkit's
+  `ExpertiseRequirement` is `{ID, Count, Label}` and names no options, so this
+  repo's catalog converter fills the wire with `skills.List()`. The engine then
+  refuses any skill the character is not proficient in, so most of the offered
+  menu is illegal. A client can only answer by intersecting with the skills it
+  picked in the same submission.
+
+**Every toolkit pin is a released tag.** `rulebooks/dnd5e` v0.175.0,
+`rulebooks/dnd5e/session` v0.91.0 (rpg-toolkit#1787, merged), and
+`rulebooks/dnd5e/resolution` v0.50.0. No toolkit pseudo-version remains, so
+this is no longer a draft on an unreleased engine.
+
+Protos are on the generated-branch head `4915e3ed`, taken from `dev` when this
+branch merged it — newer than the `654b73a1` this branch had pinned, and kept
+because a merge must not walk either side's pin backwards. A generated-branch
+head is how this repo consumes protos by design rather than a pin awaiting a
+tag; see "Proto Updates" in `CLAUDE.md`.
+
+The expertise intersection above is tracked as **rpg-toolkit#1794**: the
+options belong on the character-aware next-level view, and closing it deletes
+the client-side workaround.
 
 **Spare the Dying stabilization (#982)** — Published session v0.86.1 and proto SDK v0.1.190 are adopted through the shared live/Story ActivationResult converter. API cast acceptance covers dying and already-stable recipients, action-only payment with no dice, owner-private refresh, per-recipient replay and stable turn advancement. Existing private fields and privacy checks are reused. Browser acceptance remains separate; see the [handoff](how-to/spare-the-dying-web-handoff.md).
 

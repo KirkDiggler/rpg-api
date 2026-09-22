@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
@@ -108,4 +109,44 @@ func TestAttack_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	_, err := h.Attack(ctx, &sessionpb.AttackRequest{Session: "sess-1", Attacker: "goblin-1", Target: "char-1"})
 	requireCode(t, err, codes.FailedPrecondition)
+}
+
+// TestAttack_NotATarget_IsAWorldRefusalNotAnInternalError pins the refusal
+// rpg-project#493 R4 brought to this verb: the swing named a placed world
+// NPC, and a merchant is not a thing you attack.
+//
+// FAILED_PRECONDITION, AND THE CODE IS THE POINT. The request is well-formed
+// and names real things: a real session, a real attacker, a target the roster
+// carries and the map draws. It is the KIND of that target that refuses the
+// swing, exactly as ErrNotAVendor refuses a trade with a real, visible NPC.
+// Internal would tell a client this server broke over an ordinary authoring
+// fact, and NotFound would lie about a member the player can see standing
+// there.
+//
+// SEPARATE FROM ErrStaleDeclaration ON PURPOSE, which is the sentence this
+// used to answer. Stale tells a host to re-read the offers and try again;
+// re-reading answers the same thing forever, because a world NPC is never in
+// the SDK's candidate universe. The one thing that changes the answer is
+// authoring the creature as a monster with a disposition, which is what the
+// SDK's own message says. This test is what stops the two being folded back
+// together at this seam.
+func TestAttack_NotATarget_IsAWorldRefusalNotAnInternalError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Attack(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNotATarget)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	_, err := h.Attack(ctx, &sessionpb.AttackRequest{
+		Session: "sess-1", Attacker: "char-1", Target: "merchant-1",
+	})
+	requireCode(t, err, codes.FailedPrecondition)
+
+	// The SDK's sentence is the whole remedy -- "author it as a monster to
+	// make it a target" -- so the message has to survive the translation
+	// rather than be replaced by a generic one. A client that showed only
+	// the code would send a builder looking for a rule that does not exist.
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Contains(t, st.Message(), sdk.ErrNotATarget.Error())
 }

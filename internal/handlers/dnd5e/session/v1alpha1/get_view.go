@@ -3,6 +3,8 @@ package sessionv1alpha1
 import (
 	"context"
 
+	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sdkerr"
+
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
@@ -17,13 +19,21 @@ func (h *Handler) GetView(ctx context.Context, req *sessionpb.GetViewRequest) (*
 		return nil, err
 	}
 
-	sightings, err := h.manager.View(ctx, &sdk.ViewInput{
+	viewInput := &sdk.ViewInput{
 		Session: req.GetSession(),
 		Member:  req.GetMember(),
-	})
+	}
+	sightings, err := h.manager.View(ctx, viewInput)
 	if err != nil {
-		return nil, statusError(err)
+		return nil, sdkerr.StatusError(err)
+	}
+	areas, err := h.manager.Areas(ctx, viewInput)
+	if err != nil {
+		return nil, sdkerr.StatusError(err)
 	}
 
-	return &sessionpb.GetViewResponse{Sightings: sightingsToProto(sightings)}, nil
+	return &sessionpb.GetViewResponse{
+		Sightings: sightingsToProto(sightings),
+		Areas:     sightAreasToProto(areas),
+	}, nil
 }

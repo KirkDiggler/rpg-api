@@ -71,6 +71,21 @@ func (mr *MockManagerMockRecorder) Afford(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Afford", reflect.TypeOf((*MockManager)(nil).Afford), ctx, in)
 }
 
+// Areas mocks base method.
+func (m *MockManager) Areas(ctx context.Context, in *session.ViewInput) ([]session.SightArea, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Areas", ctx, in)
+	ret0, _ := ret[0].([]session.SightArea)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Areas indicates an expected call of Areas.
+func (mr *MockManagerMockRecorder) Areas(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Areas", reflect.TypeOf((*MockManager)(nil).Areas), ctx, in)
+}
+
 // Atlas mocks base method.
 func (m *MockManager) Atlas(ctx context.Context, in *session.AtlasInput) (*session.Atlas, error) {
 	m.ctrl.T.Helper()
@@ -236,6 +251,21 @@ func (mr *MockManagerMockRecorder) Interact(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Interact", reflect.TypeOf((*MockManager)(nil).Interact), ctx, in)
 }
 
+// Intimidate mocks base method.
+func (m *MockManager) Intimidate(ctx context.Context, in *session.IntimidateInput) (*session.IntimidateOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Intimidate", ctx, in)
+	ret0, _ := ret[0].(*session.IntimidateOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Intimidate indicates an expected call of Intimidate.
+func (mr *MockManagerMockRecorder) Intimidate(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Intimidate", reflect.TypeOf((*MockManager)(nil).Intimidate), ctx, in)
+}
+
 // Join mocks base method.
 func (m *MockManager) Join(ctx context.Context, in *session.JoinInput) (*session.JoinOutput, error) {
 	m.ctrl.T.Helper()
@@ -294,6 +324,21 @@ func (m *MockManager) OpenDoor(ctx context.Context, in *session.OpenDoorInput) (
 func (mr *MockManagerMockRecorder) OpenDoor(ctx, in any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OpenDoor", reflect.TypeOf((*MockManager)(nil).OpenDoor), ctx, in)
+}
+
+// Persuade mocks base method.
+func (m *MockManager) Persuade(ctx context.Context, in *session.PersuadeInput) (*session.PersuadeOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Persuade", ctx, in)
+	ret0, _ := ret[0].(*session.PersuadeOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Persuade indicates an expected call of Persuade.
+func (mr *MockManagerMockRecorder) Persuade(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Persuade", reflect.TypeOf((*MockManager)(nil).Persuade), ctx, in)
 }
 
 // React mocks base method.

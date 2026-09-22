@@ -4,6 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells"
+
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
@@ -22,7 +25,7 @@ func TestAcceptance_ClericAcquisitionPersistsOpenSpellRefs(t *testing.T) {
 	createNativeCleric(t, h)
 }
 
-func createNativeCleric(t *testing.T, h *acceptanceHarness) string {
+func createNativeCleric(t *testing.T, h *acceptanceHarness, preferred ...spells.Spell) string {
 	t.Helper()
 	handler := newCharacterCreationHandler(t, h)
 	ctx := auth.WithPlayerID(context.Background(), "cleric-player")
@@ -38,9 +41,13 @@ func createNativeCleric(t *testing.T, h *acceptanceHarness) string {
 	}
 	require.NotNil(t, listed)
 	require.True(t, proto.Equal(listed, details.GetClass()))
+	wantedDomain := pb.Subclass_SUBCLASS_LIFE_DOMAIN
+	if len(preferred) > 0 && preferred[0] == spells.DivineFavor {
+		wantedDomain = pb.Subclass_SUBCLASS_WAR_DOMAIN
+	}
 	var selectedDomain pb.Subclass
 	for _, domain := range listed.GetSubclasses() {
-		if domain.GetSubclassId() == pb.Subclass_SUBCLASS_LIFE_DOMAIN {
+		if domain.GetSubclassId() == wantedDomain {
 			selectedDomain = domain.GetSubclassId()
 		}
 	}
@@ -54,7 +61,19 @@ func createNativeCleric(t *testing.T, h *acceptanceHarness) string {
 		RaceChoices: []*pb.ChoiceData{{Category: pb.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES, Source: pb.ChoiceSource_CHOICE_SOURCE_RACE,
 			Selection: &pb.ChoiceData_Languages{Languages: &pb.LanguageSelection{Languages: []pb.Language{pb.Language_LANGUAGE_DWARVISH}}}}}})
 	require.NoError(t, err)
-	spellRefs := []string{"dnd5e:spells:bane", "dnd5e:spells:bless", "dnd5e:spells:command", "dnd5e:spells:cure-wounds", "dnd5e:spells:healing-word"}
+	selected := []spells.Spell{spells.Bane, spells.Command, spells.HealingWord, spells.Sanctuary}
+	if len(preferred) > 0 && preferred[0] != spells.DivineFavor {
+		selected[0] = preferred[0]
+	}
+	spellRefs := make([]string, 0, len(selected))
+	for _, spell := range selected {
+		spellRefs = append(spellRefs, refs.Spells.ByID(spell).String())
+	}
+	accessRefs := append(append([]string(nil), spellRefs...), refs.Spells.Bless().String(), refs.Spells.CureWounds().String())
+	if wantedDomain == pb.Subclass_SUBCLASS_WAR_DOMAIN {
+		accessRefs = append(append([]string(nil), spellRefs...), refs.Spells.DivineFavor().String(), refs.Spells.ShieldOfFaith().String())
+	}
+
 	classChoices := make([]*pb.ChoiceData, 0, 8)
 	classChoices = append(classChoices, []*pb.ChoiceData{
 		{Category: pb.ChoiceCategory_CHOICE_CATEGORY_SKILLS, Source: pb.ChoiceSource_CHOICE_SOURCE_CLASS, ChoiceId: "cleric-skills",
@@ -88,9 +107,9 @@ func createNativeCleric(t *testing.T, h *acceptanceHarness) string {
 	handler = newCharacterCreationHandler(t, h)
 	draft, err := handler.GetDraft(ctx, &pb.GetDraftRequest{DraftId: id})
 	require.NoError(t, err)
-	require.Equal(t, pb.Subclass_SUBCLASS_LIFE_DOMAIN, draft.GetDraft().GetSubclass())
+	require.Equal(t, wantedDomain, draft.GetDraft().GetSubclass())
 	require.NotNil(t, draft.GetDraft().GetClassInfo().GetSpellcasting())
-	var resumedChoices []*pb.ChoiceData
+	resumedChoices := make([]*pb.ChoiceData, 0, len(draft.GetDraft().GetChoices()))
 	for _, choice := range draft.GetDraft().GetChoices() {
 		if choice.GetSource() != pb.ChoiceSource_CHOICE_SOURCE_CLASS {
 			continue
@@ -109,10 +128,10 @@ func createNativeCleric(t *testing.T, h *acceptanceHarness) string {
 	require.NoError(t, err)
 	finalized, err := handler.FinalizeDraft(ctx, &pb.FinalizeDraftRequest{DraftId: id})
 	require.NoError(t, err)
-	require.ElementsMatch(t, spellRefs, finalized.GetCharacter().GetKnownSpells())
+	require.ElementsMatch(t, accessRefs, finalized.GetCharacter().GetKnownSpells())
 	stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: finalized.GetCharacter().GetId()})
 	require.NoError(t, err)
-	require.ElementsMatch(t, spellRefs, stored.Character.Data.KnownSpells)
+	require.ElementsMatch(t, accessRefs, stored.Character.Data.KnownSpells)
 	require.Equal(t, 2, stored.Character.Data.Resources[resources.SpellSlotLevel1].Current)
 	return finalized.GetCharacter().GetId()
 }

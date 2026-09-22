@@ -63,11 +63,45 @@ func (s *ConvertersTestSuite) TestClericCatalogUsesProviderDomainsAndSpellcastin
 	}
 	s.Require().NotNil(got.GetSpellcasting())
 	s.Equal(string(data.SpellcastingAbility), got.Spellcasting.GetSpellcastingAbility())
-	s.Equal(int32(data.CantripsKnown), got.Spellcasting.GetCantripsKnown())
-	s.Equal(int32(data.SpellsKnown), got.Spellcasting.GetSpellsKnown())
-	s.Equal(int32(data.SpellSlots[0]), got.Spellcasting.GetSpellSlotsLevel_1())
+	// Level 1's progression row is what ClassInfo describes (rpg-toolkit#1781
+	// moved these three numbers off classes.Data). Reading row 1 here rather
+	// than the class's own level keeps the assertion falsifiable: projecting
+	// any other row would fail it.
+	progression := classes.SpellProgressionAtLevel(data.ID, 1)
+	s.Require().NotEmpty(progression.SpellSlots, "%s must have level-1 slots for this assertion to mean anything", data.ID)
+	s.Equal(int32(progression.CantripsKnown), got.Spellcasting.GetCantripsKnown())
+	s.Equal(int32(progression.SpellsKnown), got.Spellcasting.GetSpellsKnown())
+	s.Equal(int32(progression.SpellSlots[0]), got.Spellcasting.GetSpellSlotsLevel_1())
 	s.Equal(dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS, convertChoiceCategoryToProto(shared.ChoiceSpells))
 	s.Equal(dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS, convertChoiceCategoryToProto(shared.ChoiceCantrips))
+}
+
+// TestSubclassesAreOmittedBeforeTheirLevel pins rpg-toolkit#1760: a class
+// whose subclass is not a level-1 choice must not project any Subclasses at
+// all, so the web form (which requires a selection whenever that list is
+// non-empty) never asks for one that does not exist yet. Cleric's Divine
+// Domain is the one level-1 exception today; every other supported class
+// with a subclass catalog waits until level 2 or 3, and there is no
+// level-up mechanic yet for a later level to become reachable.
+func (s *ConvertersTestSuite) TestSubclassesAreOmittedBeforeTheirLevel() {
+	for _, classID := range []classes.Class{
+		classes.Fighter, classes.Wizard, classes.Rogue, classes.Barbarian, classes.Bard, classes.Druid,
+	} {
+		data := classes.ClassData[classID]
+		s.Require().Greater(data.SubclassLevel, 1, "%s must actually be a level>1 case for this test to mean anything", classID)
+		got := convertClassDataToProto(data)
+		s.Empty(got.GetSubclasses(), "%s's subclass is a level %d choice, not offered at creation (level 1)",
+			classID, data.SubclassLevel)
+	}
+
+	// The control: Cleric's Divine Domain is a level-1 choice and must still
+	// be offered, exactly as TestClericCatalogUsesProviderDomainsAndSpellcasting
+	// already pins — asserted again here, briefly, so this test alone proves
+	// the gate discriminates rather than always emptying the list.
+	cleric := classes.ClassData[classes.Cleric]
+	s.Require().Equal(1, cleric.SubclassLevel)
+	got := convertClassDataToProto(cleric)
+	s.NotEmpty(got.GetSubclasses(), "Cleric's Divine Domain is a level-1 choice and must still be offered")
 }
 
 func (s *ConvertersTestSuite) TestClericDomainMappings() {
@@ -1361,4 +1395,85 @@ func (s *ConvertersTestSuite) TestLoadAllClassChoices_Bard_OffersTheEighteenSkil
 	assert.Contains(s.T(), available, dnd5ev1alpha1.Skill_SKILL_PERFORMANCE)
 	assert.Contains(s.T(), available, dnd5ev1alpha1.Skill_SKILL_PERSUASION)
 	assert.Contains(s.T(), available, dnd5ev1alpha1.Skill_SKILL_SURVIVAL)
+}
+
+// TestConvertCharacterDataToProto_ProjectsExperienceReadOnly pins design R4.10
+// and R4.12: "Experience is read-only over the wire: it reaches the client as
+// the total plus the derived entitled level, and no service call writes it."
+//
+// The three rows are the three readings that mean different things. A fresh
+// character shows the true state of a game that awards no experience yet
+// (done-when 7: "shows 0 of 300 and no prompt"). At 300 the gap between
+// entitled_level 2 and level 1 opens, and that gap IS the level-up signal
+// (R4.10) -- there is no flag to assert instead. At the top of the table the
+// next threshold is 0, meaning there is no next level rather than a free one.
+//
+// Every expected number is written out rather than computed from the same
+// toolkit call the converter makes: a test that re-derives cannot fail when
+// the derivation is wrong.
+func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ProjectsExperienceReadOnly() {
+	for _, tc := range []struct {
+		name               string
+		experience         int
+		entitledLevel      int32
+		nextLevelThreshold int32
+	}{
+		{"a fresh character owes the first 300", 0, 1, 300},
+		{"the level-2 threshold entitles and points at 900", 300, 2, 900},
+		{"the top of the table has no next level", 355000, 20, 0},
+	} {
+		s.Run(tc.name, func() {
+			got := ConvertCharacterDataToProto(&toolkitchar.Data{
+				ID:         "char-xp",
+				Name:       "Arthur",
+				Level:      1,
+				Levels:     []toolkitchar.LevelEntry{{Level: 1, ClassID: classes.Fighter}},
+				ClassID:    classes.Fighter,
+				Experience: tc.experience,
+			})
+
+			s.Require().NotNil(got)
+			s.Equal(int32(tc.experience), got.GetExperiencePoints())
+			s.Equal(tc.entitledLevel, got.GetEntitledLevel())
+			s.Equal(tc.nextLevelThreshold, got.GetNextLevelThreshold())
+		})
+	}
+}
+
+func (s *ConvertersTestSuite) TestDomainGrantsAreVisibleOutsideSelectableOptions() {
+	for _, test := range []struct {
+		domain   classes.Subclass
+		category dnd5ev1alpha1.ChoiceCategory
+		expected []string
+	}{
+		{classes.LifeDomain, dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS, []string{"dnd5e:spells:bless", "dnd5e:spells:cure-wounds"}},
+		{classes.LightDomain, dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS, []string{"dnd5e:spells:light"}},
+	} {
+		s.Run(test.domain, func() {
+			var found bool
+			for _, choice := range subclassChoicesToProto(classes.Cleric, 1, test.domain) {
+				if choice.GetChoiceType() != test.category {
+					continue
+				}
+				found = true
+				options := choice.GetSpellOptions()
+				got := make([]string, 0, len(options.GetGrants()))
+				for _, grant := range options.GetGrants() {
+					got = append(got, grant.GetSpellRef())
+					s.Equal(classes.SubClassName(test.domain), grant.GetSourceName())
+					s.NotContains(options.GetAvailableRefs(), grant.GetSpellRef())
+				}
+				s.ElementsMatch(test.expected, got)
+				if test.category == dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SPELLS {
+					s.Equal(int32(4), choice.GetChooseCount())
+				} else {
+					s.Equal(int32(3), choice.GetChooseCount())
+				}
+			}
+			s.True(found)
+		})
+	}
+	for _, choice := range loadAllClassChoices(classes.Bard) {
+		s.Empty(choice.GetSpellOptions().GetGrants())
+	}
 }

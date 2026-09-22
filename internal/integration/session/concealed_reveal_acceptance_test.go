@@ -106,11 +106,12 @@ func offsetCells(pairs [][2]int) cellSet {
 // views of one projection, and a client that patches its cache from the beat
 // must end up where a refetch would have put it.
 //
-// OPENING IS THE CAUSE, not crossing. The composition reveals a region to
-// whoever perceives its door open, which is one of three causes it recognizes
-// (the others being standing inside the room and walking through its door),
-// and it is the one that fires first here. Measured rather than assumed: with
-// the open removed and only the search left, no reveal arrives at all.
+// OPENING IS THE CAUSE, not crossing. The composition reveals a concealment
+// to whoever perceives one of its doors open, which is one of the causes it
+// recognizes (the others being standing inside its cells, walking through its
+// door, and intel that names it), and it is the one that fires first here.
+// Measured rather than assumed: with the open removed and only the search
+// left, no reveal arrives at all.
 func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 	h := newAcceptanceHarness(t)
 	ctx := auth.WithPlayerID(context.Background(), "player-alice")
@@ -179,14 +180,34 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	var revealed *sessionpb.RegionRevealed
+	// ONE BEAT FOR ONE SECRET (design rpg-project#490, E4). What arrived as a
+	// region reveal, with the door's own reveal beside it, is one
+	// concealment_revealed now: the room, its floor, its walls and the door
+	// that guarded it, all on the beat that names the secret.
+	var revealed *sessionpb.ConcealmentRevealed
 	for _, e := range story.GetEntries() {
-		if e.GetKind() == sessionpb.EventKind_EVENT_KIND_REGION_REVEALED {
-			revealed = e.GetRegionRevealed()
+		if e.GetKind() == sessionpb.EventKind_EVENT_KIND_CONCEALMENT_REVEALED {
+			revealed = e.GetConcealmentRevealed()
 		}
 	}
-	require.NotNil(t, revealed, "opening the hidden door reveals the room it guards")
-	require.Equal(t, "vault", revealed.GetRegion().GetId())
+	require.NotNil(t, revealed, "opening the hidden door reveals the secret it guarded")
+	require.Equal(t, "concealed-vault/vault", revealed.GetConcealment(),
+		"the compiled id of the concealment the v2 lowering built from the concealed region")
+
+	// The room arrives WHOLE, as the region entry a refetch would carry --
+	// and the door arrives with it, which is the whole difference from the
+	// two beats this replaced.
+	var vaultRegion *sessionpb.AtlasRegion
+	for _, r := range revealed.GetRegions() {
+		if r.GetId() == "vault" {
+			vaultRegion = r
+		}
+	}
+	require.NotNil(t, vaultRegion, "the touched region rides the reveal")
+	require.Equal(t, []string{"concealed-vault/vault-door"}, doorIDsOf(revealed.GetDoors()),
+		"the door it hid, on the same beat, in the shape GetDoors answers in")
+	require.Equal(t, []string{"concealed-vault/vault-door"}, doorwayConnectionsOf(revealed.GetDoorways()),
+		"and its crossing, for the cached atlas")
 
 	after, err := h.handler.GetAtlas(ctx, &sessionpb.GetAtlasRequest{
 		Session: "reveal-run", Member: "alice",
@@ -203,8 +224,11 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 	require.Equal(t, offsetCells(dungeonstest.ConcealedVaultVaultCells), afterOwned,
 		"the vault's own cells, all twelve of them")
 	require.Equal(t, offsetCells(dungeonstest.ConcealedVaultVaultCells),
-		setOfPositions(revealed.GetRegion().GetCells()),
+		setOfPositions(vaultRegion.GetCells()),
 		"and the beat said the same twelve, which is what lets a client patch instead of refetch")
+	require.Equal(t, offsetCells(dungeonstest.ConcealedVaultVaultCells),
+		setOfPositions(revealed.GetCells()),
+		"the concealment's own floor list says the same twelve, so the patch cannot disagree with itself")
 
 	// SEGMENTS ADD. The beat hands over the walls she did not have, nothing
 	// ever leaves, and a client that appends them to its cache lands exactly
@@ -233,4 +257,25 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 		"sealed after a reveal is sealed before it, less the revealed room's cells, plus the beat's")
 	require.NotEmpty(t, beforeSealed.without(afterSealed),
 		"cells have to LEAVE the sealed list, or this assertion would pass on an append too")
+}
+
+// doorIDsOf and doorwayConnectionsOf read a reveal's door and doorway lists by
+// the name each entry carries, so the assertion pins WHICH doors arrived and
+// in what order rather than how many -- a count would pass on the wrong door.
+func doorIDsOf(ds []*sessionpb.DoorInfo) []string {
+	out := make([]string, len(ds))
+	for i, d := range ds {
+		out[i] = d.GetDoor()
+	}
+
+	return out
+}
+
+func doorwayConnectionsOf(ds []*sessionpb.AtlasDoorway) []string {
+	out := make([]string, len(ds))
+	for i, d := range ds {
+		out[i] = d.GetConnection()
+	}
+
+	return out
 }

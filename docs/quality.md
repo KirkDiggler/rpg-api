@@ -15,6 +15,8 @@ as work lands and as the boundary violations are addressed.
 
 ## Handlers
 
+Sanctuary (#1006): native Cleric/warded attack/hostile cantrip acceptance and shared live/Story mapping now target released toolkit providers. The user confirmed recipient immunity and recast refusal in the earlier development build; full timer expiry has provider regression coverage but no manual browser verification; see [test build](how-to/sanctuary-test-build.md).
+
 Spare the Dying (#982): mapping regression and public-handler acceptance cover stabilization, zero/false progress presence, existing result arms, no dice or slot payment, both life states, owner privacy and per-recipient live/Story equality. Browser verification is a separate [handoff](how-to/spare-the-dying-web-handoff.md); no broader grade increase.
 
 Cleric/Bless consumer (#975/#978): boundary coverage now selects a returned Life Domain, resumes saved spell choices, finalizes natively, enters combat from world mode, and casts Bless and both heals with spending/live/reloaded Story assertions. Both stale-target policies use that native character. Owner-private data now passes its native regression with root v0.165.1; Knowledge Domain extra choices still need provider input support. No broader grade increase or UI/deployment claim; see the [handoff](how-to/cleric-bless-web-handoff.md).
@@ -99,6 +101,16 @@ its size. Its `EquipItem`/`UnequipItem` RPCs now delegate to the rules-correct
 orchestrator method (rpg-api#680, see "Character orchestrator" below) — that
 specific gap is closed even though the surrounding stub/TODO debt isn't.
 
+**Update (rpg-project#452, 2026-09-16):** the advancement RPCs live in their own
+`level_up.go` rather than growing `handler.go`, with their own ownership gate
+(NOT_FOUND, never PERMISSION_DENIED) and their own tests. They are the
+cleanest thing in this package: each binds the caller, calls exactly one
+session SDK verb, and projects — no loading, no decisions, no ordering of
+toolkit steps. The proto-to-toolkit `ChoiceData` reader an earlier draft needed
+is deleted; knowing a toolkit choice's shape is no longer this layer's job.
+Grade remains C, because the converter/TODO debt above is untouched and is
+what earns the C.
+
 **Update (rpg-api#897, 2026-09-03):** complete Appearance now converts field-for-field
 to toolkit customization data. `UpdateAppearance` delegates once and returns the
 service's complete DraftData without a second Get; malformed semantics reach
@@ -148,6 +160,14 @@ equipment path.
 updates with `draft.ToData()`, and returns stored DraftData. Redis and session-save
 paths use nested toolkit state without a sibling envelope. The grade remains B- because
 older draft/catalog TODO debt below is unchanged.
+
+**Update (rpg-project#452, 2026-09-16):** advancement was BUILT here and then
+REMOVED, and the removal is the improvement. `level_up.go`, both service
+methods, their IO types and `Config.Roller` are gone; the toolkit session SDK
+owns the verb and the handler calls it (design R6.1). Nothing about level-up
+remains in this orchestrator. The grade is unchanged at B- because the
+draft/catalog TODO debt below is untouched, but the surface this orchestrator
+is responsible for got smaller, which is the direction it should move.
 
 **Update (rpg-api#680/#844, 2026-08-25):** `EquipItem`/`UnequipItem` strictly
 load/attach, call the toolkit's rules-aware verbs, precompose complete post-views, and
@@ -200,8 +220,13 @@ test pins that placements are projected by the composition, not copied: the
 entrance literal moved from `(1,-4)` to `(0,-3)` when rpg-toolkit#1141
 corrected the hex convention, with no code change here (rpg-api#802). The borrowed-projection step (a throwaway encounter) is gone
 with dungeonspec v2 (rpg-project#256): the one conversion is
-`encounter.HexCellAt`, asked for, not reimplemented. Below A only until the
-toolkit pins are real tags rather than pseudo-versions.
+`encounter.HexCellAt`, asked for, not reimplemented. Since rpg-api#1003 the
+compile dispatches on the file's version — legacy v2 unchanged (its nil scene
+pinned), single-room v3 adopted via `dungeonspec.Load`, with every monster
+ref resolved against the rulebook registry before acceptance; the workshop
+suite pins the authored axial cells (a negative odd row included), the full
+retained scene, and the refusals. Below A until an authored room is walked
+in a real browser.
 
 ### Dungeon content registry + authoring — B+ (new, 2026-08-23)
 
@@ -212,7 +237,12 @@ writes, per-key serialization proven under `-race`, verbatim bytes back — and
 the handler's transport rules (status for a malformed request, body for a file
 that does not compile) are unit-tested; the lobby suite pins that a `Put`
 dungeon starts and its `GetAtlas` is cell-for-cell the atlas `Put` answered.
-Held below A until Kirk's walk and the toolkit tags. See
+Since rpg-api#1003 the single-room suite pins the whole v3 loop: exact-byte
+save/Get/List and a fresh registry's full decoded scene, a failing real save
+keeping the prior bytes and entry, an unknown monster ref refused before any
+entry, and the scene riding both `PutDungeonResponse.atlas` and `GetAtlas`
+through the shared converter. Held below A until Kirk's walk and a real
+browser launch of an authored room. See
 `docs/architecture/components/authoring-service.md`.
 
 ## Components
