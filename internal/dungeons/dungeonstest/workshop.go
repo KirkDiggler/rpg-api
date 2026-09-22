@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// The single-room v3 fixtures (internal/dungeons/testdata): shared YAML, one
+// The single-room fixtures (internal/dungeons/testdata): shared YAML, one
 // copy, so no Go test file carries the authored source as a raw string. The
 // `play.standing` value these rooms declare is the provider-owned contract
 // literal and is deliberately NOT respelled here.
@@ -36,7 +36,8 @@ func WorkshopOneSeatYAML(t testing.TB) []byte {
 	return roomFixture(t, WorkshopOneSeatKey)
 }
 
-// roomFixture reads one testdata room by the key its file is named for.
+// roomFixture reads one testdata room by the key its file is named for --
+// any single-room dialect, since the reader only names the file.
 // The directory is anchored on the repo root through the content tree
 // (ContentDir's own walk), not on the caller's cwd: a suite in ANY package
 // runs this helper with its own working directory, and a relative "../"
@@ -48,7 +49,7 @@ func roomFixture(t testing.TB, key string) []byte {
 	path := filepath.Clean(filepath.Join(root, "internal", "dungeons", "testdata", key+".yaml"))
 	raw, err := os.ReadFile(path) //nolint:gosec // path is the repo's own testdata dir joined with a named constant key
 	if err != nil {
-		t.Fatalf("dungeonstest: read the shared v3 fixture %s: %v", key, err)
+		t.Fatalf("dungeonstest: read the shared single-room fixture %s: %v", key, err)
 	}
 
 	return raw
