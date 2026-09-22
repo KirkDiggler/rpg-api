@@ -317,3 +317,61 @@ func (s *SessionStackSuite) TestStartEncounter_SingleRoomInsufficientSeatsWrites
 	s.Require().NoError(err)
 	s.Empty(sessionKeys, "and still no session record")
 }
+
+// TestStartEncounter_TheGarrisonIsOnTheBoardBeforeThePartyArrives pins the
+// launch's ORDER, and it is a rules claim rather than a tidy-up
+// (rpg-api#1029).
+//
+// Every call the launch makes is its own load-act-save against a LIVE world.
+// The moment a member is placed where something hostile can see them the
+// composition forms the fight, and if initiative rolls an unplayed member
+// first it drives that member's whole turn inside the verb that placed
+// somebody (rpg-toolkit#1162). So a launch that seats the party first starts
+// the fight PARTWAY THROUGH placing the garrison: the first skeleton rolled
+// initiative against the party alone, the second was transferred into a
+// bubble already running rather than rolling with everybody, and roughly one
+// launch in a hundred the first skeleton won initiative, critted the only
+// level-1 character for more than her hit points, left nobody conscious
+// (`party_defeated`) and the SECOND skeleton's spawn was refused with
+// "encounter closed" over a session record that had already been written.
+//
+// What this asserts is the consequence, not the mechanism: the launch
+// produces exactly ONE fight and the whole cast rolled initiative in it. That
+// is false for any ordering that lets contact happen before the board is
+// finished, and it is what makes the refusal above unreachable.
+func (s *SessionStackSuite) TestStartEncounter_TheGarrisonIsOnTheBoardBeforeThePartyArrives() {
+	registry, _ := dungeonstest.Scratch(s.T())
+	put, err := registry.Put(s.ctx, &dungeons.PutInput{
+		Key: dungeonstest.WorkshopRoomKey, YAML: dungeonstest.WorkshopRoomYAML(s.T()),
+	})
+	s.Require().NoError(err)
+	s.Require().Empty(put.Errors)
+
+	orch := s.lobbyOver(registry)
+	s.seedCharacter("char-alice", "alice", "Alice")
+	s.seedReadyLobby("lobby-1", "alice")
+	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: lobbyorch.DungeonKey(dungeonstest.WorkshopRoomKey),
+	})
+	s.Require().NoError(err)
+
+	story, err := s.sessOrch.Manager.Story(s.ctx, &sdk.StoryInput{Session: out.EncounterID, Member: "char-alice"})
+	s.Require().NoError(err)
+
+	fights := make([]sdk.FightStartedBody, 0, 1)
+	for _, event := range story {
+		if event.Kind != sdk.EventFightStarted {
+			continue
+		}
+		body, ok := event.Body.(sdk.FightStartedBody)
+		s.Require().Truef(ok, "a fight_started event carries a FightStartedBody, got %T", event.Body)
+		fights = append(fights, body)
+	}
+
+	// The workshop room seats the party two hexes from its garrison in plain
+	// sight, so a fight is certain -- which is what makes this room the one
+	// that catches the ordering at all.
+	s.Require().Len(fights, 1, "the launch forms exactly one fight, not one per monster placed")
+	s.ElementsMatch([]string{"char-alice", "skeleton-a", "skeleton-b"}, fights[0].Members,
+		"every member of the run rolled initiative in it -- no monster was placed after the fight had already started")
+}
