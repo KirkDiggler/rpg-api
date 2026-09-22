@@ -248,11 +248,12 @@ place:
   # THE FRONT ROOM GOBLIN. One creature the party talks to, and every half of
   # the conversation is on its placement.
   #
-  # `intimidate:` at DC 12 is the author saying this one is harder to lean on
-  # than its stat block suggests — its derived number would be 9 (10 plus a
-  # goblin's -1 Wisdom). `persuade:` at DC 10 is deliberately EASIER than the
-  # threat: this goblin would rather be talked to than shouted at, which is a
-  # thing an author can now say and the engine now hears.
+  # `intimidate:` at DC 12 and `persuade:` at DC 10 are what MAKE this goblin
+  # talkable at all (rpg-project#494): the offer comes from the NPC, so a
+  # creature with no entries carries no social verb and there is no default
+  # behind the silence. The appeal is deliberately EASIER than the threat —
+  # this goblin would rather be talked to than shouted at, which is a thing an
+  # author can say and the engine hears.
   #
   # A CHARACTER WITHOUT THE SKILL ROLLS AT DISADVANTAGE (R2), so against DC
   # 10 the party's face and the party's barbarian are playing two different
@@ -274,14 +275,21 @@ place:
 
   # THE OTHER THREE, AND THEY ARE DELIBERATELY PLAIN. Same ref, same faction,
   # no `on:`, no `temper:`, no priced check — nothing distinguishes them from
-  # the one above except that nobody wrote them a DC, so each is checked
-  # against its own stat block's passive Insight (9) rather than the author's
-  # 12 and 10.
+  # the one above except that nobody wrote them a DC.
   #
-  # WHICH IS THE CONTROL THE WALK NEEDS. Four identical goblins, one inherited
-  # table, one faction mix: every difference the table shows is the die, and a
-  # `temper:` written on any of these would be the author answering the
-  # question the mix exists to ask.
+  # SO THEY CANNOT BE INTIMIDATED OR PERSUADED AT ALL (rpg-project#494 R1).
+  # They used to be talked to on a DERIVED DC of 9, their stat block's passive
+  # Insight; that approach is retired, and absence now means what an author
+  # saying nothing has always meant — this creature does not do that. Afford
+  # lists only front-goblin as a candidate for either verb, and aiming a verb
+  # at one of these three is refused by name. Authoring an `intimidate:` block
+  # on any of them is all it takes to change that, which is the point.
+  #
+  # THEY ARE STILL THE CONTROL THE WALK NEEDS, for the `time` table rather
+  # than for the social verbs. Four identical goblins, one inherited table, one
+  # faction mix: every difference the table shows is the die, and a `temper:`
+  # written on any of these would be the author answering the question the mix
+  # exists to ask.
   #
   # Spread across the room rather than in a line, so one can be out of the
   # pillar's sightline while another is not.
