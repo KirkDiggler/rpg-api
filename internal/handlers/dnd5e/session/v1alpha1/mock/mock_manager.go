@@ -71,6 +71,21 @@ func (mr *MockManagerMockRecorder) Afford(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Afford", reflect.TypeOf((*MockManager)(nil).Afford), ctx, in)
 }
 
+// Areas mocks base method.
+func (m *MockManager) Areas(ctx context.Context, in *session.ViewInput) ([]session.SightArea, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Areas", ctx, in)
+	ret0, _ := ret[0].([]session.SightArea)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Areas indicates an expected call of Areas.
+func (mr *MockManagerMockRecorder) Areas(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Areas", reflect.TypeOf((*MockManager)(nil).Areas), ctx, in)
+}
+
 // Atlas mocks base method.
 func (m *MockManager) Atlas(ctx context.Context, in *session.AtlasInput) (*session.Atlas, error) {
 	m.ctrl.T.Helper()
@@ -474,21 +489,6 @@ func (m *MockManager) View(ctx context.Context, in *session.ViewInput) ([]sessio
 func (mr *MockManagerMockRecorder) View(ctx, in any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "View", reflect.TypeOf((*MockManager)(nil).View), ctx, in)
-}
-
-// Areas mocks base method.
-func (m *MockManager) Areas(ctx context.Context, in *session.ViewInput) ([]session.SightArea, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Areas", ctx, in)
-	ret0, _ := ret[0].([]session.SightArea)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Areas indicates an expected call of Areas.
-func (mr *MockManagerMockRecorder) Areas(ctx, in any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Areas", reflect.TypeOf((*MockManager)(nil).Areas), ctx, in)
 }
 
 // Where mocks base method.
