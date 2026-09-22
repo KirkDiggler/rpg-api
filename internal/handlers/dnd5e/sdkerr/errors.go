@@ -233,6 +233,31 @@ func StatusError(err error) error {
 		// ErrOutOfReach, and collapsing them here would undo the split one
 		// seam out.
 		errors.Is(err, sdk.ErrUnwitnessed),
+		// ErrNoSocialEntry (rpg-project#494) -- the target is a real member,
+		// standing there in plain sight, whose binding authored no
+		// `intimidate:` / `persuade:` entries. The offer comes from the NPC:
+		// a creature the World Builder did not give the verb to cannot be
+		// given it by a caller, and there is no derived difficulty behind the
+		// silence any more.
+		//
+		// THE SAME FAMILY AS EVERY ROW ABOVE IT, and for the plainest reason:
+		// the call is well-formed, it names real members, and what refuses it
+		// is a fact about the world. Afford already withholds that creature
+		// from the row's candidates, so the only caller who reaches this is a
+		// stale one echoing a row from before the world changed -- which is
+		// exactly the case ErrStaleDeclaration is this bucket for.
+		//
+		// NOT NOT_FOUND, and the distinction is the probe law's. The target
+		// is not hidden: the member can see it, its id is on the roster, and
+		// collapsing this to "no such member" would tell a client the
+		// creature is not there when the player is looking straight at it.
+		//
+		// NOT ErrUnwitnessed EITHER, one row up. That one means make yourself
+		// seen -- step out, open the door -- and the remedy is a sightline.
+		// This one has no remedy the player can reach at all: the creature
+		// was never written to be talked to, and telling them to move would
+		// be the wrong instruction twice over.
+		errors.Is(err, sdk.ErrNoSocialEntry),
 		// Three more arrive with the holdings verbs (rpg-project#368), and
 		// all three are this bucket by the same test every row above meets:
 		// the request is well-formed and names real things, and it is the

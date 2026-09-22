@@ -118,6 +118,14 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// the two as one would tell the player to step closer when what they
 		// need is to be seen.
 		{"ErrUnwitnessed", sdk.ErrUnwitnessed, codes.FailedPrecondition},
+		// The social offer comes from the NPC (rpg-project#494): a real,
+		// visible creature whose binding authored no entries for the verb.
+		// FAILED_PRECONDITION with the rows around it, and NOT NotFound --
+		// the creature is on the roster and in plain sight, so answering
+		// "no such member" would deny something the player can see. Without
+		// this row the refusal falls through to Internal, and an ordinary
+		// "you cannot talk to that one" reads to a client as a server fault.
+		{"ErrNoSocialEntry", sdk.ErrNoSocialEntry, codes.FailedPrecondition},
 		// Holdings (rpg-project#368): Loot's and Hold's own state refusals,
 		// each reachable only about a body or prop the member can SEE --
 		// for anything they cannot, the composition collapses the refusal
