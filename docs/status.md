@@ -39,9 +39,9 @@ repo-root module and cannot version the `gen/go` submodule, so this module has
 always been pinned by pseudo-version; `rulebooks/dnd5e` **v0.190.0**
 (toolkit#1873, the monster's worth and `AddExperience`/`ExperienceShare`),
 `rulebooks/dnd5e/encounter` **v0.103.0** (toolkit#1874, the
-`experience_gained` outcome) and `rulebooks/dnd5e/session`
-**v0.105.1-0.20260922081522-c6093fc8f5cf**, a branch pseudo-version of
-toolkit#1875 — this PR stays DRAFT until that merges and is retagged.
+`experience_gained` outcome) and `rulebooks/dnd5e/session` **v0.106.0**
+(toolkit#1875, the fall settlement) — all released tags, and the session tag
+carries the same dnd5e and encounter pins this module holds.
 
 **The atlas carries placed props (rpg-api-protos#351)** — The World Builder's
 authored footprints — the rectangles a door, a table or a bookcase is drawn
