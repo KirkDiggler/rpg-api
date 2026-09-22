@@ -432,6 +432,8 @@ func TestAcceptance_TheLetterCarriedToTheChiefTurnsTheCamp(t *testing.T) {
 	stance := entries[stanceChanged].GetStanceChanged()
 	require.Equal(t, []string{"party", "raiders"}, stance.GetBetween(), "the pair, sorted, in the file's words")
 	require.Equal(t, "neutral", stance.GetStance(), "not hostile -- design R2")
+	require.Empty(t, stance.GetCause(),
+		"a mind's knowledge turned this pair, so no sentence was ever written")
 	require.Equal(t, sessionpb.DissolveKind_DISSOLVE_KIND_BY_STANCE, entries[fightEnded].GetFightEnded().GetCause(),
 		"the fight ended because its sides stopped being sides, and the wire says so")
 	require.Equal(t, "hold-out", entries[endedAt].GetEnded().GetEnding(),
