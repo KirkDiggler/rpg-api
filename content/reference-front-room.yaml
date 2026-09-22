@@ -196,29 +196,50 @@ factions:
 # the default stance between `party` and any declared faction is HOSTILE, so
 # without this the goblin attacks on frame one and there is no front room.
 # Neutral means no fight forms, the creature is never driven, and it stands
-# there while the WORLD clock runs — which is the entire slice.
+# there while the WORLD clock runs — which is the entire slice. True FROM FRAME
+# ONE and not forever: see the aggression note below.
 #
 # The bandits are HOSTILE from frame one, but they are not in the room yet;
 # see `arrives` below.
 #
 # WHAT IS NOT HERE, AND WHY. The design writes this pair as
 # `stance: neutral, until: { fact: goblin-cowed }, then: allied` — cow the
-# goblin and it stops being an enemy. THAT IS NOT BUILT at these pins and the
-# dialect refuses both halves of it by name:
+# goblin and it stops being an enemy. THAT IS STILL NOT BUILT, and the reason
+# is now only half what it was.
 #
-#   - `then:` is not a field on a disposition at all;
-#   - an `until` on a non-hostile pair is refused ("only a hostile pair has
-#     something to stop doing"), and the one flip the engine authors is
-#     hostile → NEUTRAL. `encounter.StanceAllied`'s own doc says it: "Authorable
-#     only as a static stance; no predicate turns a pair allied (R2)."
+# RE-SEATED at encounter v0.100.0 (rpg-project#493, dispositions turn both
+# ways). This block used to refuse the design in two sentences and one of them
+# has been retired:
 #
-# So there is no spelling of "a neutral creature becomes friendlier". Starting
-# the goblin hostile to get a flip would destroy the premise — a hostile goblin
-# forms a fight, takes a turn and swings, and the front room stops being a
-# front room. The honest authoring is a static neutral, and `goblin-cowed` is
-# taught and read by nobody: allowed by R8 ("the dungeon allows; the scenario
-# refuses"), visible in the intel log and on the answered beat, and changing no
-# stance. Filed rather than faked.
+#   - `then:` is still not a field on a disposition at all. Unchanged.
+#   - "an `until` on a non-hostile pair is refused (only a hostile pair has
+#     something to stop doing)" IS GONE. R1 ruled `until` runs both ways, so
+#     an `until` on THIS pair is legal now — and it turns the goblins HOSTILE,
+#     which is the one outcome that destroys the front room. The refusal moved
+#     to allied only ("an allied pair has nothing to become"), and the half of
+#     the old note that survives verbatim is `encounter.StanceAllied`'s own
+#     doc: "Authorable only as a static stance; no predicate turns a pair
+#     allied."
+#
+# SO THE CONCLUSION IS UNCHANGED AND THE HAZARD IS NEW. There is still no
+# spelling of "a neutral creature becomes friendlier" — nothing turns a pair
+# allied, and starting the goblin hostile to get a flip would destroy the
+# premise the other way, since a hostile goblin forms a fight, takes a turn and
+# swings. A static neutral is still the honest authoring. What changed is that
+# writing the `until` anyway no longer fails loudly at compile: it now compiles
+# into the opposite scene.
+#
+# `goblin-cowed` is still taught and read by nobody: allowed by R8 ("the
+# dungeon allows; the scenario refuses"), visible in the intel log and on the
+# answered beat, and changing no stance. Filed rather than faked.
+#
+# ONE THING ABOUT THIS SCENE IS GENUINELY DIFFERENT AT THESE PINS. R3 made
+# aggression a law rather than an authored trigger: swing at the front-room
+# goblin and the whole `goblins` pair turns hostile at once, all four of them,
+# and the fight forms in that same settle. Nothing in this file asks for that
+# and nothing in this file can turn it off — it is what a neutral faction
+# somebody attacks now does everywhere. The front room is a room you can ruin,
+# which is the point of the ruling and worth knowing before a walk.
 dispositions:
   - { between: [goblins, party], stance: neutral }
   - { between: [bandits, party], stance: hostile }

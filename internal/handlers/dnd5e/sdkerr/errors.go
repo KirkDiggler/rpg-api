@@ -318,6 +318,29 @@ func StatusError(err error) error {
 		// ErrNotAVendor above: the item exists, it's just the wrong kind
 		// for this verb.
 		errors.Is(err, sdk.ErrNotAPack),
+		// ErrNotATarget (rpg-project#493 R4, Attack) -- the swing named a
+		// placed world NPC. The member is real, visible, and standing right
+		// there; a merchant is simply not a thing you attack.
+		//
+		// FAILED_PRECONDITION for ErrNotAVendor's and ErrNotAPack's exact
+		// reason: the target exists and every read verb describes it happily,
+		// it is just the wrong KIND for this verb. Not NotFound, which would
+		// lie about a member the roster carries and the map draws.
+		//
+		// NOT INVALID_ARGUMENT, and the remedy is what settles it. The request
+		// is well formed -- a real session, a real member, a real target -- and
+		// no rewriting of it helps. What changes the answer is the CONTENT:
+		// authoring the creature as a monster with a disposition, which is the
+		// sentence the SDK's message carries. That is a precondition about the
+		// world, not a defect in the message.
+		//
+		// It is also why this is no longer ErrStaleDeclaration, which it used
+		// to be and which sits above. Stale tells a host to re-read the offers
+		// and try again, and re-reading answers the same thing forever -- the
+		// SDK's candidate universe never contains a world NPC. The sentinel was
+		// split off to end that loop, and giving it its predecessor's code here
+		// would keep the loop running while looking correct.
+		errors.Is(err, sdk.ErrNotATarget),
 		// ErrCannotActivate is ErrCannotAfford's shape one verb further out:
 		// an ability that could have run and said no. The SDK documents it as
 		// not currently reachable through Activate -- Afford consults the same
