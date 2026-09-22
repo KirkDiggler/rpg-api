@@ -1086,18 +1086,54 @@ func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
 	require.Equal(t, "boss-down", statusResp.GetOutcome().GetEnding())
 
 	beats := storyBeats(ctx, t, h.handler, "doom-run", "alice")
-	require.GreaterOrEqual(t, len(beats), 4)
-	tail := beats[len(beats)-3:]
-	require.Equal(t, []string{"down", "bubble-dissolved", "ended"}, tail,
-		"the ruled order: the body is news, the fight ends, and only then the run")
+	require.GreaterOrEqual(t, len(beats), 5)
+	tail := beats[len(beats)-4:]
+	require.Equal(t, []string{"down", "bubble-dissolved", "ended", "experience_gained"}, tail,
+		"the ruled order: the body is news, the fight ends, then the run -- "+
+			"and the party's receipt closes the act, because the settlement is "+
+			"written at commit time after every beat the verb itself produced "+
+			"(rpg-project#496, R5)")
 
-	// The typed ended body carries the key a client maps to its sentence.
+	// The typed ended body carries the key a client maps to its sentence. It
+	// is FOUND, not read off the end: since the experience settlement lands
+	// after it, "ended" is no longer the last entry in the story, and a test
+	// that assumed so would be asserting the settlement's position rather
+	// than the ending's content.
 	events, err = h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: "doom-run", Member: "alice"})
 	require.NoError(t, err)
-	last := events.GetEntries()[len(events.GetEntries())-1]
-	require.Equal(t, sessionpb.EventKind_EVENT_KIND_ENDED, last.GetKind())
-	require.Equal(t, "boss-down", last.GetEnded().GetEnding(),
+	var ended *sessionpb.Ended
+	var gained *sessionpb.ExperienceGained
+	for _, e := range events.GetEntries() {
+		switch e.GetKind() {
+		case sessionpb.EventKind_EVENT_KIND_ENDED:
+			ended = e.GetEnded()
+		case sessionpb.EventKind_EVENT_KIND_EXPERIENCE_GAINED:
+			gained = e.GetExperienceGained()
+		}
+	}
+	require.NotNil(t, ended)
+	require.Equal(t, "boss-down", ended.GetEnding(),
 		"a client following the stream finally hears HOW the run ended")
+
+	// -- and it hears that the fall PAID (rpg-project#496). The skeleton's
+	// authored worth is 50 and alice is the whole roster, so she takes all of
+	// it; the beat names the monster as the cause and carries her new total,
+	// which is the number the store now holds. Nothing she did asked for
+	// this and no RPC could: experience is read-only over the wire, so this
+	// beat is the only way the table learns the sheet moved.
+	require.NotNil(t, gained, "the receipt reaches the wire typed")
+	require.Equal(t, "skel-1", gained.GetMember(), "the cause is the monster that fell")
+	require.Len(t, gained.GetGrants(), 1, "one player on the roster, one share")
+	require.Equal(t, "alice", gained.GetGrants()[0].GetCharacter())
+	require.Equal(t, int32(50), gained.GetGrants()[0].GetAmount(), "a skeleton's whole worth, undivided")
+	require.Equal(t, int32(50), gained.GetGrants()[0].GetTotal())
+
+	// The total is not a claim the wire makes alone: the sheet was saved
+	// before the beat was ever written, so the store agrees with it.
+	stored, err := h.charRepo.Get(context.Background(), characterrepo.GetInput{ID: "alice"})
+	require.NoError(t, err)
+	require.Equal(t, 50, stored.Character.Data.Experience,
+		"the beat's total is what the character store holds, not a number only the stream believes")
 
 	// A closed run refuses verbs in FAILED_PRECONDITION's vocabulary.
 	_, err = h.handler.Move(ctx, &sessionpb.MoveRequest{

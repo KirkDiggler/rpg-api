@@ -1684,6 +1684,42 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 		require.Equal(t, "goblin-1", got.GetDowned().GetMember())
 	})
 
+	// The fall's receipt (rpg-project#496, R5). Kind and body are asserted
+	// together here because they were written together: a kind this build did
+	// not know would demote to EVENT_KIND_UNKNOWN and take the body with it,
+	// and no RPC exists to ask what the demotion swallowed.
+	t.Run("ExperienceGained", func(t *testing.T) {
+		got := mustEventToProto(t, sdk.Event{
+			Kind: sdk.EventExperienceGained,
+			Body: sdk.ExperienceGainedBody{
+				Member: "goblin-1",
+				Grants: []sdk.ExperienceGrant{
+					{Character: "alice", Amount: 25, Total: 325},
+					{Character: "bob", Amount: 25, Total: 25},
+				},
+			},
+		})
+		require.Equal(t, sessionpb.EventKind_EVENT_KIND_EXPERIENCE_GAINED, got.GetKind())
+
+		x := got.GetExperienceGained()
+		require.NotNil(t, x)
+		require.Equal(t, "goblin-1", x.GetMember(),
+			"member is the CAUSE -- the monster that fell -- never one of the paid")
+
+		// Everyone on the roster rides every copy of the beat, in the SDK's
+		// own order: this converter sorts nothing and drops nobody, so a
+		// client can narrate the whole party's share from one beat.
+		require.Len(t, x.GetGrants(), 2)
+		require.Equal(t, "alice", x.GetGrants()[0].GetCharacter())
+		require.Equal(t, int32(25), x.GetGrants()[0].GetAmount())
+		require.Equal(t, int32(325), x.GetGrants()[0].GetTotal(),
+			"total is the sheet AFTER the grant, not the share again")
+		require.Equal(t, "bob", x.GetGrants()[1].GetCharacter())
+		require.Equal(t, int32(25), x.GetGrants()[1].GetAmount())
+		require.Equal(t, int32(25), x.GetGrants()[1].GetTotal(),
+			"a first kill leaves a total that happens to equal the share -- still the total")
+	})
+
 	t.Run("Struck", func(t *testing.T) {
 		s := mustEventToProto(t, richStruckEvent()).GetStruck()
 		require.NotNil(t, s)

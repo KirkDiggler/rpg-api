@@ -20,6 +20,16 @@
 // code path that writes it." That is why Seed needs a CharacterStore as well
 // as a client, and why adding an AwardExperience RPC to make this easier would
 // be the exact shortcut the design refuses (§8: "Not built, deliberately").
+//
+// EXPERIENCE IS GRANTED IN THE GAME NOW (rpg-project#496), and none of the
+// above is obsolete. A monster's authored worth is divided among the party
+// when it falls, applied to each sheet and saved inside the toolkit's session
+// SDK before the experience_gained beat is written; rpg-api carries that beat
+// to the wire and still writes no experience of its own. What has not changed
+// is the only thing this tool depends on: no RPC grants experience, so a
+// fixture that must sit one level-up away cannot ask to be put there -- it
+// would have to go fight something -- and reaching past the API to the
+// repository is still the honest way to write one.
 package sandboxseed
 
 import (
@@ -50,9 +60,10 @@ const (
 	// They are separate identities rather than experience written onto the
 	// three above, because a fixture that is ALWAYS one click from leveling
 	// is the wrong default for every other walk: done-when 7 is "a freshly
-	// created character shows 0 of 300 and no prompt -- the true state of a
-	// game that awards no experience yet", and the sandbox fighter is that
-	// character.
+	// created character shows 0 of 300 and no prompt", and the sandbox fighter
+	// is that character. It stays true now that falls pay (rpg-project#496)
+	// for the reason it was written: a character who has fought nothing has
+	// earned nothing, and that is the state a walk should open on.
 	// levelUpIdentityPrefix is shared with the per-class fixture set, which
 	// builds level-up-<class> for every class in the catalog. The two below
 	// are spelled out rather than composed so a grep for either identity finds
@@ -127,10 +138,11 @@ type SeedInput struct {
 	Client CharacterRPC
 
 	// Store writes experience onto an already-created sheet. REQUIRED: the
-	// two level-up fixtures exist to be one level-up away, and the served API
-	// has no code path that grants experience (R4.12). A nil store here would
-	// mean two fixtures that look correct until someone clicks "level up" and
-	// is told they have not earned it.
+	// two level-up fixtures exist to be one level-up away, and no RPC grants
+	// experience (R4.12). The game's one source is a monster's fall, settled
+	// inside the toolkit (rpg-project#496), and a seeder cannot fight one. A
+	// nil store here would mean two fixtures that look correct until someone
+	// clicks "level up" and is told they have not earned it.
 	Store CharacterStore
 }
 

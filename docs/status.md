@@ -11,6 +11,38 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**The party's share reaches the stream (rpg-project#496)** — Experience is
+granted in the game now, and the only thing rpg-api does about it is carry the
+receipt. A monster's authored worth is divided equally among the players on
+the roster when it falls, applied to each sheet and saved inside the toolkit's
+session SDK before the beat is written; no RPC grants experience and rpg-api
+writes none. `convert.go` maps `session.EventExperienceGained` onto
+`EVENT_KIND_EXPERIENCE_GAINED` and `session.ExperienceGainedBody` onto the
+`ExperienceGained` oneof arm: the fallen monster as the `member` (the CAUSE,
+not a recipient) and every grant's `character`, `amount` and `total` widened
+to int32, in the SDK's own order. Nothing is filtered — the SDK hands every
+recipient the whole party's grant so a client can narrate "50 each" from one
+beat, and re-deriving a per-reader slice here would be a second answer to a
+question the toolkit already answered. `Character.experience_points`,
+`entitled_level` and `next_level_threshold` are unchanged: they were already
+projected from the stored sheet and simply start moving.
+`TestTheRunEndsWhenTheBossFalls` is the acceptance proof — the skeleton is
+worth 50, alice is the whole roster, and the test reads her stored sheet back
+to show the beat's total is what the store holds rather than a number only
+the stream believes. THE RECEIPT CLOSES THE ACT: the settlement runs at commit
+time, after every beat the verb itself produced, so the story now ends
+`down` → `bubble-dissolved` → `ended` → `experience_gained` and `ended` is no
+longer the last entry. Pins: `rpg-api-protos/gen/go`
+`v0.0.0-20260922075143-dad03ea0f335`, which is tag `v0.1.209`'s commit on the
+`generated` branch (rpg-api-protos#357) — the bare release tag versions the
+repo-root module and cannot version the `gen/go` submodule, so this module has
+always been pinned by pseudo-version; `rulebooks/dnd5e` **v0.190.0**
+(toolkit#1873, the monster's worth and `AddExperience`/`ExperienceShare`),
+`rulebooks/dnd5e/encounter` **v0.103.0** (toolkit#1874, the
+`experience_gained` outcome) and `rulebooks/dnd5e/session` **v0.106.0**
+(toolkit#1875, the fall settlement) — all released tags, and the session tag
+carries the same dnd5e and encounter pins this module holds.
+
 **The atlas carries placed props (rpg-api-protos#351)** — The World Builder's
 authored footprints — the rectangles a door, a table or a bookcase is drawn
 as — reached no client. `GetAtlasResponse` carried `props`, `doorways`,
@@ -154,7 +186,8 @@ browser acceptance.
 
 **Level-up system, API leg (rpg-project#452)** — Experience, the entitled level
 and the next threshold are projected read-only onto the v1alpha1 `Character`;
-nothing on the served API writes experience, by design (R4.12). `GetNextLevel`
+no RPC writes experience and rpg-api writes none of its own, by design
+(R4.12) — falls pay, inside the toolkit (see the entry above). `GetNextLevel`
 and `LevelUp` are implemented on the v1alpha1 `CharacterService`, both gated by
 an ownership check that returns NOT_FOUND rather than PERMISSION_DENIED.
 
@@ -169,7 +202,8 @@ projects. The SDK error table moved out of the session handler into
 keeping two free to disagree. `cmd/sandboxseed`'s default fixture set adds
 `level-up-fighter` (Arthur) and `level-up-bard` (Scanlan), created through the
 production RPCs and then seeded to 300 experience through the character
-repository — the only place experience can be written. Seeding requires a
+repository — the only place a FIXTURE's experience can be written, since no
+RPC grants any and a seeder cannot go fight for it. Seeding requires a
 reachable Redis, so `sandboxseed` now needs `-redis-address` for the default
 fixture as well as the weapon gallery.
 

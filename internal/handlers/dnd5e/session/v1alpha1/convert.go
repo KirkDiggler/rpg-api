@@ -685,6 +685,16 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_FIGHT_STARTED
 	case sdk.EventDowned:
 		return sessionpb.EventKind_EVENT_KIND_DOWNED
+	// The fall's receipt (rpg-project#496, R5). It lands beside the beat that
+	// causes it, and in the same change as its body below for the cast door's
+	// reason: an unmapped kind demotes to EVENT_KIND_UNKNOWN with a nil body,
+	// and this beat is the ONLY account anyone gets that the party was paid.
+	// Experience is read-only over the wire (R4) -- there is no RPC a client
+	// could call to ask what it missed -- so a demoted arm would leave a
+	// client reconstructing the grant from the monster's worth and the
+	// roster, and a reconstruction lies the moment either one moves.
+	case sdk.EventExperienceGained:
+		return sessionpb.EventKind_EVENT_KIND_EXPERIENCE_GAINED
 	case sdk.EventFightEnded:
 		return sessionpb.EventKind_EVENT_KIND_FIGHT_ENDED
 	case sdk.EventStruck:
@@ -891,6 +901,16 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 		evt.Body = &sessionpb.Event_TurnEnded{TurnEnded: &sessionpb.TurnEnded{Member: b.Member, Next: b.Next}}
 	case sdk.DownedBody:
 		evt.Body = &sessionpb.Event_Downed{Downed: &sessionpb.Downed{Member: b.Member}}
+	case sdk.ExperienceGainedBody:
+		evt.Body = &sessionpb.Event_ExperienceGained{ExperienceGained: &sessionpb.ExperienceGained{
+			// Member is the CAUSE, not a recipient: the fallen monster whose
+			// worth this paid, the same id the downed beat beside it carries.
+			// The recipients are in Grants, all of them, on every copy of the
+			// beat -- the SDK body is the whole grant rather than one
+			// reader's slice of it, so this converter has nothing to filter.
+			Member: b.Member,
+			Grants: experienceGrantsToProto(b.Grants),
+		}}
 	case sdk.DeathSaveBody:
 		calculation, err := rollCalculationToProto(b.Calculation)
 		if err != nil {
@@ -2954,6 +2974,27 @@ func participantsToProto(ps []sdk.Participant) []*sessionpb.Participant {
 	out := make([]*sessionpb.Participant, len(ps))
 	for i, p := range ps {
 		out[i] = participantToProto(p)
+	}
+	return out
+}
+
+// experienceGrantsToProto mirrors one grant's per-character shares
+// (rpg-project#496, R5), keeping the SDK's own sort by character -- this
+// converter reorders nothing, so two clients reading the same beat narrate
+// the party in the same order.
+//
+// The amounts widen int -> int32 like every other count on this wire. A share
+// is a monster's authored worth divided among the players and a total is what
+// one sheet holds, so neither can approach that ceiling in a game anyone
+// plays; the SDK, not this file, is where a number that could would be caught.
+func experienceGrantsToProto(gs []sdk.ExperienceGrant) []*sessionpb.ExperienceGrant {
+	out := make([]*sessionpb.ExperienceGrant, len(gs))
+	for i, g := range gs {
+		out[i] = &sessionpb.ExperienceGrant{
+			Character: g.Character,
+			Amount:    int32(g.Amount),
+			Total:     int32(g.Total),
+		}
 	}
 	return out
 }
