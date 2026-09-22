@@ -593,7 +593,8 @@ func convertChoiceSourceToProto(source shared.ChoiceSource) dnd5ev1alpha1.Choice
 		return dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_RACE
 	case shared.SourceSubrace:
 		return dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_SUBRACE
-	case shared.SourceClass:
+	case shared.SourceClass, shared.SourceSubclass:
+		// The wire groups subclass answers under class; requirement IDs retain identity.
 		return dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_CLASS
 	case shared.SourceBackground:
 		return dnd5ev1alpha1.ChoiceSource_CHOICE_SOURCE_BACKGROUND
@@ -1254,7 +1255,11 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 
 	// Convert proficiencies using nested structure
 	skillList := make([]dnd5ev1alpha1.Skill, 0)
+	expertiseSkills := make([]dnd5ev1alpha1.Skill, 0)
 	for skill, profLevel := range data.Skills {
+		if profLevel == shared.Expert {
+			expertiseSkills = append(expertiseSkills, convertSkillToProtoEnum(skill))
+		}
 		if profLevel != shared.NotProficient {
 			skillList = append(skillList, convertSkillToProtoEnum(skill))
 		}
@@ -1317,6 +1322,7 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 	// Set proficiencies structure
 	char.Proficiencies = &dnd5ev1alpha1.Proficiencies{
 		Skills:           skillList,
+		ExpertiseSkills:  expertiseSkills,
 		SavingThrows:     savingThrows,
 		Tools:            toolProfs,
 		ArmorCategories:  armorCats,
@@ -1326,8 +1332,9 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 
 	// Convert languages to enum
 	char.Languages = make([]dnd5ev1alpha1.Language, 0, len(data.Languages))
-	// TODO: Convert string to Language enum when we have the mapping
-	// For now, skip languages
+	for _, language := range data.Languages {
+		char.Languages = append(char.Languages, convertLanguageToProtoEnum(language))
+	}
 
 	// Convert inventory
 	char.Inventory = make([]*dnd5ev1alpha1.InventoryItem, 0, len(data.Inventory))

@@ -299,8 +299,35 @@ func (h *Handler) UpdateClass(
 
 	// Convert proto choices to toolkit format
 	var classChoices toolkitchar.ClassChoices
+	var baseSkillID choices.ChoiceID
+	if reqs := choices.GetClassRequirements(convertProtoClassToToolkit(req.Class)); reqs != nil && reqs.Skills != nil {
+		baseSkillID = reqs.Skills.ID
+	}
 	if len(req.ClassChoices) > 0 {
 		for _, choice := range req.ClassChoices {
+			if choice == nil {
+				continue
+			}
+			// Requirement identity separates subclass answers from the base
+			// class pick. Toolkit validates IDs, values, counts, and grants.
+			if choice.Category == dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_LANGUAGES ||
+				(choice.Category == dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS && choice.ChoiceId != "" &&
+					choices.ChoiceID(choice.ChoiceId) != baseSkillID) {
+				sub := choices.Submission{ChoiceID: choices.ChoiceID(choice.ChoiceId), Source: shared.SourceSubclass}
+				if choice.Category == dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS {
+					sub.Category = shared.ChoiceSkills
+					for _, skill := range choice.GetSkills().GetSkills() {
+						sub.Values = append(sub.Values, convertProtoSkillToToolkit(skill))
+					}
+				} else {
+					sub.Category = shared.ChoiceLanguages
+					for _, language := range choice.GetLanguages().GetLanguages() {
+						sub.Values = append(sub.Values, convertProtoLanguageToToolkit(language))
+					}
+				}
+				classChoices.SubclassChoices = append(classChoices.SubclassChoices, sub)
+				continue
+			}
 			switch choice.Category {
 			case dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_SKILLS:
 				if skills := choice.GetSkills(); skills != nil {

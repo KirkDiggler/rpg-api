@@ -11,6 +11,8 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Knowledge creation adoption** — Subclass skill/language answers retain their requirement IDs through save/reload/finalize. Character responses expose languages and shared doubled proficiency ranks using proto SDK v0.1.211. Real-service integration covers the completed Knowledge sheet; browser acceptance remains separate.
+
 **The party's share reaches the stream (rpg-project#496)** — Experience is
 granted in the game now, and the only thing rpg-api does about it is carry the
 receipt. A monster's authored worth is divided equally among the players on
