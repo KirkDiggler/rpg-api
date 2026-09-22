@@ -33,9 +33,10 @@ fixture the acceptance scene drives: a holdable table and a bench nobody
 declared holdable, with the second member seated on a cell THE ATLAS ITSELF
 NAMED so an offer made off the wire and the reach the engine judges are
 proven to be the same set. Pins: `rpg-api-protos/gen/go` the pseudo-version
-of `cb1dfcd8` (release `v0.1.207`, rpg-api-protos#353), with
-`rulebooks/dnd5e/encounter` and `rulebooks/dnd5e/session` on the
-pseudo-versions of rpg-toolkit#1866 and #1867 until those release.
+of `cb1dfcd8` (release `v0.1.207`, rpg-api-protos#353) and
+`rulebooks/dnd5e/encounter` **v0.101.0** (toolkit#1866, merged and tagged),
+with `rulebooks/dnd5e/session` still on the pseudo-version of toolkit#1867
+until that releases.
 
 **One concealment, one reveal (rpg-project#490, E4)** — The engine hid doors
 and regions behind two separate flags, so one authored secret arrived as two
