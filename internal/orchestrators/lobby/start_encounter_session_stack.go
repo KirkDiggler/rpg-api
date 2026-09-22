@@ -66,12 +66,18 @@ type StartEncounterOutput struct {
 //
 // # What is still narrow here, stated rather than implied
 //
-//   - NO MONSTER BEHAVIOR. session.Spawn takes no decider, by its own
-//     design ("behavior arrives with the wave that brings it"), so the
-//     garrison is placed, perceived and remembered correctly and does
-//     not act. It DOES carry the intel records the author placed in it
-//     (rpg-project#368, #372): a monster arrives holding what it was
-//     authored to know, so a body can be worth looting.
+//   - THE GARRISON ACTS AT LAUNCH, and this bullet used to say the
+//     opposite. It read "NO MONSTER BEHAVIOR ... the garrison is placed,
+//     perceived and remembered correctly and does not act", which was true
+//     while session.Spawn took no decider and stopped being true when the
+//     creature's table shipped with the monster (rpg-project#465). A room
+//     that seats the party in sight of its garrison forms a fight inside
+//     this call, and a monster that wins initiative takes its whole turn
+//     before this function returns — which is why the placement order
+//     below is load-bearing (rpg-api#1029). It DOES also carry the intel
+//     records the author placed in it (rpg-project#368, #372): a monster
+//     arrives holding what it was authored to know, so a body can be worth
+//     looting.
 //   - The authored endings are BOTH declared now (rpg-project#268): the
 //     party withdrawing (sessionworld.EndingWithdrawn, external) and the
 //     boss going down (sessionworld.EndingBossDown, TriggerMemberDown over
@@ -171,14 +177,35 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		return nil, fmt.Errorf("start session %q on new stack: %w", encID, err)
 	}
 
-	for i, m := range members {
-		if _, err := o.sessionManager.Join(ctx, &sdk.JoinInput{
-			Session: encID, Member: m.CharacterID, Position: dungeon.PartySeats[i],
-		}); err != nil {
-			return nil, fmt.Errorf("join %q to session %q on new stack: %w", m.CharacterID, encID, err)
-		}
-	}
-
+	// THE GARRISON GOES DOWN BEFORE THE PARTY DOES, and the order is the
+	// whole point rather than a tidy-up (rpg-api#1029).
+	//
+	// Every call below is its own load-act-save against a LIVE world: the
+	// moment a member is placed where something hostile can see them, the
+	// composition forms the fight, and if initiative rolls an unplayed member
+	// first it drives that member's turn inside the very verb that placed
+	// somebody (rpg-toolkit#1162, encounter's form). So a launch that seats
+	// the party first is running the game while it is still setting the
+	// table: the first monster placed in sight of a seat fought a party
+	// standing next to half a garrison, the monsters still to be placed
+	// missed the initiative roll and were transferred into a bubble already
+	// running, and a skeleton that won initiative and critted the only
+	// level-1 character left nobody conscious -- `party_defeated`, the run
+	// closed, and the NEXT monster's spawn refused with ErrClosed while a
+	// session record was already written.
+	//
+	// Placing the whole garrison first makes "the board is finished" and "the
+	// fight may start" the same moment: nothing here is hostile to anything
+	// else on the board until the party arrives, so no verb below can form a
+	// fight, and the party's own arrival forms exactly one with everybody in
+	// it.
+	//
+	// WHAT THIS DOES NOT REACH, said plainly rather than left to be
+	// rediscovered: a dungeon that declares two factions hostile to EACH
+	// OTHER would form a fight partway through this loop the same way, and no
+	// ordering this host can choose fixes that -- it needs a session verb that
+	// places a whole board in one load-act-save. No authored dungeon does that
+	// today.
 	for _, monster := range dungeon.Monsters {
 		arrives, err := arrivalOf(monster.Arrives)
 		if err != nil {
@@ -285,6 +312,15 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		})
 		if err != nil {
 			return nil, fmt.Errorf("spawn %q into session %q on new stack: %w", monster.MemberID, encID, err)
+		}
+	}
+
+	// AND THE PARTY ARRIVES LAST, onto a finished board.
+	for i, m := range members {
+		if _, err := o.sessionManager.Join(ctx, &sdk.JoinInput{
+			Session: encID, Member: m.CharacterID, Position: dungeon.PartySeats[i],
+		}); err != nil {
+			return nil, fmt.Errorf("join %q to session %q on new stack: %w", m.CharacterID, encID, err)
 		}
 	}
 
