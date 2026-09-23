@@ -9,6 +9,19 @@ confidence: medium-high — #897 complete Appearance conversion/delegation and D
 
 The character handler is the gRPC adapter for `CharacterService`. It covers the full character creation lifecycle (draft → finalize), character management (equip/unequip), and data loading for the character creation UI (list races, classes, backgrounds, equipment, spells).
 
+## Subclass choices and sheet proficiency ranks
+
+`UpdateClass` preserves the IDs of subclass skill and language answers in toolkit
+`ClassChoices.SubclassChoices`; base class skills keep their existing path.
+Draft responses expose subclass answers in the class choice envelope so clients
+can reload and resubmit them without losing their origin. Toolkit owns eligibility,
+counts, and grants. Character responses retain languages and the provider's
+`shared.Expert` rank through `Proficiencies.expertise_skills`, alongside the existing
+skills list. This shared mapping also covers Bard/Rogue expertise.
+
+The Knowledge creation integration test exercises save, reload, resubmit,
+finalization, and returned languages, spells, and doubled skill ranks.
+
 ## Dwarf race tool choices (#728)
 
 `UpdateRace` translates `CHOICE_CATEGORY_TOOLS` through the same canonical proto-to-toolkit tool converter used by class choices and passes the resulting selection IDs into `RaceChoices.Tools`. The toolkit remains responsible for validating Dwarf choice eligibility and completeness. Handler coverage pins Smith's Tools translation, while the character integration suite drives Dwarf race selection through `FinalizeDraft` to prevent a successful-but-discarded choice regression.
