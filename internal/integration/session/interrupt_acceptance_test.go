@@ -341,7 +341,7 @@ func TestAcceptance_ReactionWindowCrossesTheWire(t *testing.T) {
 
 	require.Equal(t, at(0, 0), whereIs(t, h, sessionID, "skel-2"),
 		"the second skeleton's turn finishes from where it stopped -- the blow it took on the way out did not stop it")
-	require.Equal(t, 0, reactionsLeft(t, h.charRepo, "alice"), "spent once, by the swing she took")
+	require.Equal(t, 1, reactionsLeft(t, h.charRepo, "alice"), "the reaction refreshes when her next turn starts")
 	require.Nil(t, reactRow(ctx, t, h, sessionID, "alice"), "nothing is being asked any more")
 
 	backToAlice, err := h.handler.Turn(ctx, &sessionpb.TurnRequest{Session: sessionID, Member: "alice"})
