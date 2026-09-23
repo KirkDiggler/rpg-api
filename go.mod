@@ -3,16 +3,16 @@ module github.com/KirkDiggler/rpg-api
 go 1.25.14
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260922234628-03c4203ebcc1
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20260923004604-7cce97f7654b
 	github.com/KirkDiggler/rpg-toolkit/core v0.12.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.3
 	github.com/KirkDiggler/rpg-toolkit/npc v0.2.0
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.191.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.191.1-0.20260923004705-b2f2726165fb
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.103.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.106.0
-	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.15.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.106.1-0.20260923005530-de7a51f69fff
+	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.15.1-0.20260923004706-d56849f0f010
 	github.com/KirkDiggler/rpg-toolkit/world v0.4.1
 	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/google/uuid v1.6.0

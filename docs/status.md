@@ -11,6 +11,13 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Burning Hands draft adoption** — The API forwards the released triangle
+footprint enum and uses the draft session provider for caster-tip aiming and
+50% coverage. Native Light cleric creation-to-cast acceptance verifies domain
+acquisition, full/half fire damage, action/slot payment, and identical live and
+reopened Story results. Provider commit pins must become release tags before
+merge; browser acceptance remains pending.
+
 **Knowledge creation adoption** — Subclass skill/language answers retain their requirement IDs through save/reload/finalize. Character responses expose languages and shared doubled proficiency ranks using proto SDK v0.1.211. Real-service integration covers the completed Knowledge sheet; browser acceptance remains separate.
 
 **The party's share reaches the stream (rpg-project#496)** — Experience is
