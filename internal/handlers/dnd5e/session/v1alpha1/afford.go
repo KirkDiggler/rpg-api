@@ -21,9 +21,14 @@ func (h *Handler) Afford(ctx context.Context, req *sessionpb.AffordRequest) (*se
 		return nil, err
 	}
 
+	var aim *sdk.CastAim
+	if req.GetCastAim() != nil {
+		aim = &sdk.CastAim{DeclarationID: req.GetCastAim().GetDeclaration(), Cell: positionPtrFromProto(req.GetCastAim().GetCell())}
+	}
 	out, err := h.manager.Afford(ctx, &sdk.AffordInput{
 		Session: req.GetSession(),
 		Member:  req.GetMember(),
+		CastAim: aim,
 	})
 	if err != nil {
 		return nil, sdkerr.StatusError(err)
@@ -32,5 +37,20 @@ func (h *Handler) Afford(ctx context.Context, req *sessionpb.AffordRequest) (*se
 	return &sessionpb.AffordResponse{
 		Clock:        clockKindToProto(out.Clock),
 		Declarations: declarationsToProto(out.Declarations),
+		CastAim:      castAimPreviewToProto(out.CastAim),
 	}, nil
+}
+
+func castAimPreviewToProto(in *sdk.CastAimPreview) *sessionpb.CastAimPreview {
+	if in == nil {
+		return nil
+	}
+	aim := &sessionpb.CastAim{Declaration: in.Aim.DeclarationID}
+	if in.Aim.Cell != nil {
+		aim.Cell = &sessionpb.Position{X: in.Aim.Cell.X, Y: in.Aim.Cell.Y}
+	}
+	return &sessionpb.CastAimPreview{
+		Aim: aim, Available: in.Available, Why: shortfallToProto(in.Why),
+		AffectedMembers: append([]string{}, in.AffectedMembers...),
+	}
 }
