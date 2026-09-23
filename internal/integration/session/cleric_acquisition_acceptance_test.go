@@ -45,7 +45,7 @@ func createNativeCleric(t *testing.T, h *acceptanceHarness, preferred ...spells.
 	if len(preferred) > 0 && preferred[0] == spells.DivineFavor {
 		wantedDomain = pb.Subclass_SUBCLASS_WAR_DOMAIN
 	}
-	if len(preferred) > 0 && preferred[0] == spells.BurningHands {
+	if len(preferred) > 0 && (preferred[0] == spells.BurningHands || preferred[0] == spells.FaerieFire) {
 		wantedDomain = pb.Subclass_SUBCLASS_LIGHT_DOMAIN
 	}
 	var selectedDomain pb.Subclass
@@ -65,7 +65,7 @@ func createNativeCleric(t *testing.T, h *acceptanceHarness, preferred ...spells.
 			Selection: &pb.ChoiceData_Languages{Languages: &pb.LanguageSelection{Languages: []pb.Language{pb.Language_LANGUAGE_DWARVISH}}}}}})
 	require.NoError(t, err)
 	selected := []spells.Spell{spells.Bane, spells.Command, spells.HealingWord, spells.Sanctuary}
-	if len(preferred) > 0 && preferred[0] != spells.DivineFavor && preferred[0] != spells.BurningHands {
+	if len(preferred) > 0 && preferred[0] != spells.DivineFavor && preferred[0] != spells.BurningHands && preferred[0] != spells.FaerieFire {
 		selected[0] = preferred[0]
 	}
 	spellRefs := make([]string, 0, len(selected))
