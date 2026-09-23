@@ -1,0 +1,70 @@
+# The creature-facts walk (rpg-project#498, rpg-toolkit#1883/#1885).
+#
+# A v4 single room that authors BOTH new readings, so a walk can watch them
+# fire. Three things this file exists to say:
+#
+#   1. a faction's own members are its side, so a blow to one is a blow to the
+#      others' side — `on: ally` — and the watch reacts to a comrade falling;
+#   2. a creature can read what IT did — `as: actor` — which is a pause: strike,
+#      then stand still for two rounds;
+#   3. a NEUTRAL pair carrying an `until` is legal (rpg-project#493 R1), which
+#      the World Builder currently refuses (rpg-dnd5e-web#1197).
+#
+# The watch is one faction of three, so `on: ally` has somebody to be about.
+# The wolves are a second faction, allied to nobody, so the control is in the
+# file: their wounds are nobody's side.
+version: 4
+key: creature-facts-walk
+play: {void: transparent, lighting: bright, standing: centre-covered}
+factions:
+  - id: watch
+    temper: soldier
+  - id: wolves
+    temper: aggressive
+dispositions:
+  # THE NEUTRAL PAIR WITH AN UNTIL: civil until the fight starts in earnest.
+  - {between: [wolves, party], stance: neutral, until: {round: 3}}
+  - {between: [watch, party], stance: hostile}
+room:
+  version: 3
+  id: room-1
+  name: The Watch Post
+  coordinateFrame: {hexRadius: 1}
+  workspace: {hexRadius: 6}
+  scene:
+    version: 1
+    id: scene-1
+    name: The Watch Post
+    items: []
+    groups: []
+  room:
+    implicitRegionId: room-1-region
+    walkableHexes: [{q: 0, r: 0}, {q: 1, r: 0}, {q: 2, r: 0}, {q: 3, r: 0},
+      {q: -1, r: 0}, {q: -2, r: 0},
+      {q: 0, r: 1}, {q: 1, r: 1}, {q: -1, r: 1},
+      {q: 0, r: -1}, {q: 1, r: -1}, {q: 2, r: -1}]
+    propDeclarations: {}
+    arrangementDeclarations: {}
+    partyStart: {q: -2, r: 0}
+    monsters:
+      - {id: guard-1, ref: 'dnd5e:monsters:thug', cell: {q: 2, r: 0}, faction: watch}
+      - {id: guard-2, ref: 'dnd5e:monsters:thug', cell: {q: 1, r: 1}, faction: watch}
+      - {id: wolf-1, ref: 'dnd5e:monsters:wolf', cell: {q: 2, r: -1}, faction: wolves}
+    monsterBindings:
+      guard-1:
+        on:
+          time:
+            # THE PAUSE: after this creature has itself struck, stand still
+            # for two rounds. `as: actor` reads what the creature DID.
+            - {when: {attacked: {within: 2, as: actor}}, hold: {}, weight: 100}
+            # MORALE: a comrade struck in the last three rounds, close on the
+            # intruder. `on: ally` reads a blow to its own side.
+            - {when: {attacked: {within: 3, on: ally}}, toward: enemy, weight: 50}
+            - {when: {enemy: reach}, attack: enemy, weight: 10}
+            - {when: {enemy: seen}, toward: enemy}
+            - {when: {enemy: none}, hold: {}}
+      # NO BINDING FOR guard-2 OR wolf-1, and that is the control: a creature
+      # with no orders block is not "declared with nothing" — it is not
+      # declared at all, and it answers its kind's default table with its
+      # kind's own actions. The walk should see these two fight normally while
+      # guard-1 pauses and avenges.
