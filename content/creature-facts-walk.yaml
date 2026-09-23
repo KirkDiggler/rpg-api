@@ -52,7 +52,6 @@ room:
       - {id: wolf-1, ref: 'dnd5e:monsters:wolf', cell: {q: 2, r: -1}, faction: wolves}
     monsterBindings:
       guard-1:
-        actions: ['dnd5e:weapons:scimitar']
         on:
           time:
             # THE PAUSE: after this creature has itself struck, stand still
@@ -64,10 +63,8 @@ room:
             - {when: {enemy: reach}, attack: enemy, weight: 10}
             - {when: {enemy: seen}, toward: enemy}
             - {when: {enemy: none}, hold: {}}
-      guard-2:
-        actions: ['dnd5e:weapons:scimitar']
-        # NO TABLE OF ITS OWN: it answers its kind's default, which is the
-        # control — the walk should see this one fighting normally while
-        # guard-1 pauses and avenges.
-      wolf-1:
-        actions: ['dnd5e:weapons:bite']
+      # NO BINDING FOR guard-2 OR wolf-1, and that is the control: a creature
+      # with no orders block is not "declared with nothing" — it is not
+      # declared at all, and it answers its kind's default table with its
+      # kind's own actions. The walk should see these two fight normally while
+      # guard-1 pauses and avenges.
