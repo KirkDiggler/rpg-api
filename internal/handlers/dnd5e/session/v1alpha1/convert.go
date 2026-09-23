@@ -2462,6 +2462,8 @@ func footprintShapeToProto(shape sdk.FootprintShape) sessionpb.FootprintShape {
 	switch shape {
 	case sdk.FootprintShapeRadius:
 		return sessionpb.FootprintShape_FOOTPRINT_SHAPE_RADIUS
+	case sdk.FootprintShapeTriangle:
+		return sessionpb.FootprintShape_FOOTPRINT_SHAPE_TRIANGLE
 	case sdk.FootprintShapeBox:
 		return sessionpb.FootprintShape_FOOTPRINT_SHAPE_BOX
 	default:

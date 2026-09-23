@@ -11,6 +11,15 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Burning Hands adoption** — Uses released session v0.107.0, D&D root
+v0.192.0, spatial v0.16.0, and proto SDK v0.1.213. The API maps triangle
+footprints and optional owner-authorized Afford aim previews. Native Light
+cleric creation-to-cast acceptance verifies domain acquisition, fractional
+preview/cast agreement, full/half fire damage, action/slot payment, and identical
+live/reopened Story results. Manual casting acceptance is complete; browser
+outline on/off and persisted damage Story were also verified. Web #1195 is the
+remaining consumer PR after this API merge.
+
 **Knowledge creation adoption** — Subclass skill/language answers retain their requirement IDs through save/reload/finalize. Character responses expose languages and shared doubled proficiency ranks using proto SDK v0.1.211. Real-service integration covers the completed Knowledge sheet; browser acceptance remains separate.
 
 **The party's share reaches the stream (rpg-project#496)** — Experience is

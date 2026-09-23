@@ -45,6 +45,9 @@ func createNativeCleric(t *testing.T, h *acceptanceHarness, preferred ...spells.
 	if len(preferred) > 0 && preferred[0] == spells.DivineFavor {
 		wantedDomain = pb.Subclass_SUBCLASS_WAR_DOMAIN
 	}
+	if len(preferred) > 0 && preferred[0] == spells.BurningHands {
+		wantedDomain = pb.Subclass_SUBCLASS_LIGHT_DOMAIN
+	}
 	var selectedDomain pb.Subclass
 	for _, domain := range listed.GetSubclasses() {
 		if domain.GetSubclassId() == wantedDomain {
@@ -62,7 +65,7 @@ func createNativeCleric(t *testing.T, h *acceptanceHarness, preferred ...spells.
 			Selection: &pb.ChoiceData_Languages{Languages: &pb.LanguageSelection{Languages: []pb.Language{pb.Language_LANGUAGE_DWARVISH}}}}}})
 	require.NoError(t, err)
 	selected := []spells.Spell{spells.Bane, spells.Command, spells.HealingWord, spells.Sanctuary}
-	if len(preferred) > 0 && preferred[0] != spells.DivineFavor {
+	if len(preferred) > 0 && preferred[0] != spells.DivineFavor && preferred[0] != spells.BurningHands {
 		selected[0] = preferred[0]
 	}
 	spellRefs := make([]string, 0, len(selected))
@@ -74,18 +77,25 @@ func createNativeCleric(t *testing.T, h *acceptanceHarness, preferred ...spells.
 		accessRefs = append(append([]string(nil), spellRefs...), refs.Spells.DivineFavor().String(), refs.Spells.ShieldOfFaith().String())
 	}
 
+	cantrips := []string{"dnd5e:spells:sacred-flame", "dnd5e:spells:guidance", "dnd5e:spells:light"}
+	armorOption := choices.ClericArmorChainMail
+	if wantedDomain == pb.Subclass_SUBCLASS_LIGHT_DOMAIN {
+		accessRefs = append(append([]string(nil), spellRefs...), refs.Spells.BurningHands().String(), refs.Spells.FaerieFire().String())
+		cantrips[2] = "dnd5e:spells:resistance" // Light is granted separately.
+		armorOption = choices.ClericArmorScale
+	}
 	classChoices := make([]*pb.ChoiceData, 0, 8)
 	classChoices = append(classChoices, []*pb.ChoiceData{
 		{Category: pb.ChoiceCategory_CHOICE_CATEGORY_SKILLS, Source: pb.ChoiceSource_CHOICE_SOURCE_CLASS, ChoiceId: "cleric-skills",
 			Selection: &pb.ChoiceData_Skills{Skills: &pb.SkillSelection{Skills: []pb.Skill{pb.Skill_SKILL_MEDICINE, pb.Skill_SKILL_RELIGION}}}},
 		{Category: pb.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS, Source: pb.ChoiceSource_CHOICE_SOURCE_CLASS, ChoiceId: string(choices.ClericCantrips1),
-			Selection: &pb.ChoiceData_Spells{Spells: &pb.SpellSelection{SpellRefs: []string{"dnd5e:spells:sacred-flame", "dnd5e:spells:guidance", "dnd5e:spells:light"}}}},
+			Selection: &pb.ChoiceData_Spells{Spells: &pb.SpellSelection{SpellRefs: cantrips}}},
 		{Category: pb.ChoiceCategory_CHOICE_CATEGORY_SPELLS, Source: pb.ChoiceSource_CHOICE_SOURCE_CLASS, ChoiceId: string(choices.ClericSpells1),
 			Selection: &pb.ChoiceData_Spells{Spells: &pb.SpellSelection{SpellRefs: spellRefs}}},
 	}...)
 	for _, equipment := range []struct{ choice, option string }{
 		{string(choices.ClericWeapons), choices.ClericWeaponMace},
-		{string(choices.ClericArmor), choices.ClericArmorChainMail},
+		{string(choices.ClericArmor), armorOption},
 		{string(choices.ClericSecondaryWeapon), choices.ClericSecondaryShortbow},
 		{string(choices.ClericPack), choices.ClericPackExplorer},
 		{string(choices.ClericHolySymbol), choices.ClericHolyAmulet},

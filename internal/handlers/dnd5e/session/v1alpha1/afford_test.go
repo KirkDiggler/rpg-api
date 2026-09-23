@@ -300,3 +300,10 @@ func TestAfford_MoveAndEndTurnDeclarations(t *testing.T) {
 	require.Nil(t, end.Remaining)
 	require.Equal(t, sessionpb.TargetKind_TARGET_KIND_NONE, end.GetTargetKind())
 }
+
+func TestAfford_AimPreviewRequiresOwner(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
+	_, err := h.Afford(auth.WithPlayerID(context.Background(), "bob"), &sessionpb.AffordRequest{Session: "sess", Member: "char-1", CastAim: &sessionpb.CastAim{Declaration: "offer", Cell: &sessionpb.Position{X: 1.25, Y: 2}}})
+	requireCode(t, err, codes.PermissionDenied)
+}
