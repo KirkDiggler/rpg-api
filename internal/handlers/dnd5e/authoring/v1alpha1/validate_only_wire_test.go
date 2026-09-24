@@ -136,18 +136,26 @@ func (s *ValidateOnlyWireSuite) TestTypoedTriggerKeyNamesTheKey() {
 // path, as the single-room dialect already did, so both halves of the
 // grammar refuse in one voice.
 //
-// THE WHOLE MESSAGE IS PINNED HERE where the two probes above match on a
-// substring, and the difference is the point: what this slice fixed is not
-// that the refusal mentions the key — it always did — but that nothing else
-// is left in it. An exact match is the only assertion that fails if a line
-// number or a Go type name comes back.
+// THE PASSTHROUGH CONTRACT, not the engine's sentence. What api owns here is
+// that the defect SURFACES at the toolkit's path, naming the key the author
+// typed, free of a line number or a Go type name. The engine's full
+// vocabulary is the toolkit's to change — a word added there must not break
+// this passthrough — so the message is probed for those three properties
+// rather than pinned to the exact string.
 func (s *ValidateOnlyWireSuite) TestUnknownKeyIsPathed() {
 	resp := s.grade(s.mutate("temper: { coward: 2", "tempre: { coward: 2"))
 
 	s.Require().Len(resp.GetErrors(), 1)
 	s.Equal("factions[0].tempre", resp.GetErrors()[0].GetPath())
-	s.Equal(`"tempre" is not a key this build reads: they are id, mind, on, temper`,
-		resp.GetErrors()[0].GetMessage())
+	msg := resp.GetErrors()[0].GetMessage()
+	s.Contains(msg, "tempre",
+		"the refusal names the key the author typed, so the builder needs no dictionary")
+	s.Contains(msg, "not a key this build reads",
+		"the sentence is the engine's named-key refusal, carried through unchanged")
+	s.NotContains(msg, "dungeonspec.",
+		"the author never sees a Go type name")
+	s.NotContains(msg, "line ",
+		"nor a line number — the path is the only location an author needs")
 	s.Nil(resp.GetAtlas())
 }
 
