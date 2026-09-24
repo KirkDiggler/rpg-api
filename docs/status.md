@@ -1,7 +1,7 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-09-22
+updated: 2026-09-24
 confidence: high — #938 trusted guild-derived composition world context is verified through auth/provider/cache/interceptor/handler/registration tests, race detection, and real miniredis stored-world checks; #921 local-dev composition Create/Get/List/Delete remains covered; #895 explicit Death Save RPC/progress projection verified through handler, owner-view, adapter, and real released-provider acceptance; #891 activation/result event passthrough verified through converter RED/GREEN and real SessionService live/catch-up acceptance; #882 first-admission normal-rest ownership verified through Lobby StartEncounter against released providers; #870 Martial Arts Quarterstaff→bonus Unarmed Strike handler journey verified against released providers and focused RED/GREEN acceptance; #897 complete Appearance ownership/conversion/delegation verified through focused RED/GREEN and Docker-backed integration tests; #852 shared dice presentation wiring verified against RED/GREEN cross-instance Redis integration, focused lint, and race-stressed package gate; #844 field-complete owner projection and atomic equipment patch verified against focused handler/orchestrator/repository tests and lint; Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #687 region/theme wire projection verified against passing unit (-race) + a real-RPC integration gate proving connect-time AND incremental-reveal zone_id/zones/theme projection against the real Redis harness, full `go test`/`golangci-lint` green against the published `rpg-api-protos` generated branch + `rpg-toolkit/encounter v0.35.0`; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`; #694 crypt dungeon-key consumes the toolkit's own `CryptDungeonParams` (obstacles included) verified against passing unit (-race) against published `rpg-toolkit/encounter v0.38.0`; #689 deterministic crypt monster composition verified against passing unit (-race, 1000-seed x 4-party-size zero-error matrix against the real production registry) + real-Redis integration (composition + seed-determinism + party-size-invariance) + the updated dungeon_crypt_test.go gate, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.38.0` + `rulebooks/dnd5e v0.68.0`, zero new lint issues versus main — **#694 and #689 merged together (this doc's own "Deterministic crypt monster composition, integrated with toolkit CryptDungeonParams" entry, 2026-07-23) close out rpg-api#696** (the out-of-sight goblin-placement collision #694 alone surfaced): #689's deterministic `FixedPositions` composition retires the search path that could fail, so the merged 1..1000-seed x party-1..4 matrix is 0/4000 errors, not a tuned-down failure rate
 ---
 
@@ -10,6 +10,39 @@ confidence: high — #938 trusted guild-derived composition world context is ver
 This is a living doc. Edit it in the same PR that invalidates a line. Don't let it rot.
 
 ## Active work
+
+**Lobby SDK test boundary (rpg-api#1046, 2026-09-24)** — Lobby unit tests now
+prove storage, conversion and correct toolkit invocation rather than toolkit
+rules. `internal/orchestrators/lobby/session_manager.go` declares the six-method
+`SessionManager` interface (`StartSession`, `Spawn`, `Join`, `PlaceNPC`,
+`Status`, `End`) the orchestrator consumes, with a `go:generate` mock at
+`internal/orchestrators/lobby/mock/mock_session_manager.go`; the real `*sdk.Manager`
+still satisfies it structurally, so production wiring is unchanged (no adapter,
+no second manager, no provider-pin change). `LobbySuite` and the new
+`StartContractSuite` run on that mock, a registry mock, the in-memory lobby
+repository and the broker — no miniredis, no shipped YAML, no session
+orchestrator, no playable character — and pin exact launch inputs and the
+required order: `StartSession` → every `Spawn` → every `Join` → default-key
+`PlaceNPC` → `Save` → `Publish`, plus refusal/partial-failure gates asserting no
+SDK call, no final write and no `EncounterStarted` event. This is a bounded
+pilot, not finished migration: `SessionStackSuite` and the lobby handler suite
+keep their real miniredis-backed `session.Manager` and remain active, so not
+every lobby/API test is isolated. Four real-stack gate cases were removed only
+after each mapped to a `StartContractSuite` case; coverage disposition:
+
+| Old coverage | Replacement/disposition |
+| --- | --- |
+| Shared live/ended fixtures | Mocked Status/End with current API expectations retained |
+| Constructor real SDK setup | Compile-time manager compatibility + constructor mock tests |
+| Four real-stack gate cases named above | StartContractSuite gate cases with no SDK/no-write/no-event assertions |
+| Other real-stack lobby cases | Retained unchanged pending #1049 ownership mapping |
+
+The four removed cases map as `NotHost`→`NonHost_Refused`,
+`NotAllReady`→`NotReadyMember_Refused`,
+`LobbyNotFound`→`MissingLobby_Refused`, and
+`UnknownDungeonKeyIsRefused`→`UnknownDungeonKey_Refused`; `arrival_test.go` and
+the pure social-approach spelling tests are unchanged. Assertion-level
+ownership mapping for the retained broader suites is rpg-api#1049.
 
 **Burning Hands adoption** — Uses released session v0.107.0, D&D root
 v0.192.0, spatial v0.16.0, and proto SDK v0.1.213. The API maps triangle
@@ -347,7 +380,8 @@ upstream's newer generated commit `883dd221a6cd` through pseudo-version
 rpg-project#341/#343, 2026-09-02)** — the API now pins root D&D `v0.128.0`,
 resolution `v0.30.0`, and session `v0.48.0` (current receipts above). Lobby
 `StartEncounter` remains a
-thin `StartSession → Join → Spawn` consumer: its complete runtime-character /
+thin `StartSession → Spawn → Join → Save → Publish` consumer (the reference tomb
+adds one demo `PlaceNPC` after the joins): its complete runtime-character /
 event-bus / rest / reserialization / character-update loop is deleted. The
 Session SDK uses persisted `EverMembers` to identify first admission and
 persists the normal-rest result through the existing character repository
@@ -383,7 +417,7 @@ condition, capacity, targeting, or damage rule is implemented in rpg-api.
 
 **Complete Appearance and roster toolkit ownership (rpg-api#897, 2026-09-03)** — the API now converts the complete proto Appearance to/from toolkit `customization.Appearance` without validation, provider interpretation, defaults, or path construction. Deprecated wire strings remain inert; nil/empty messages, scalp/facial-hair style/none/malformed oneofs, optional roughness, and primary/secondary RGB24 channels including explicit zero are preserved. `UpdateAppearance` authenticates before delegation; the orchestrator receives that player ID and makes missing and foreign drafts the same `draft not found` refusal before `Draft.SetAppearance` or persistence. Toolkit `Draft.SetAppearance` still owns semantic refusal.
 
-`entities.Character` and `CharacterDraft` are thin wrappers around toolkit `Data`/`DraftData`, so Redis, finalization, Get/List, equipment, Session SDK saves, and sandbox clones use nested `Data.Appearance` without sibling preservation. `GetRoster` sends the authenticated principal in one `session.Manager.Roster` call, then mechanically maps the SDK public members and flat customization values while preserving nil/present-zero fidelity. Lobby launch is only `StartSession` → `Join` → `Spawn`; session access reads the SDK roster through a narrow interface, and rpg-api has no duplicate roster store. Focused converter, handler, orchestrator, Redis, session-adapter, roster, sandbox, Session, Lobby, sessionworld, and Docker-backed character integration tests pass. Proto generated dependency is pinned exactly to `883dd221a6cdf724df8d5d993d897e0c8a3358ab` / `v0.1.158`, D&D to `v0.137.0`, Encounter to `v0.53.0`, Session to `v0.53.1`, and Resolution to `v0.32.1`.
+`entities.Character` and `CharacterDraft` are thin wrappers around toolkit `Data`/`DraftData`, so Redis, finalization, Get/List, equipment, Session SDK saves, and sandbox clones use nested `Data.Appearance` without sibling preservation. `GetRoster` sends the authenticated principal in one `session.Manager.Roster` call, then mechanically maps the SDK public members and flat customization values while preserving nil/present-zero fidelity. Lobby launch is only `StartSession` → `Spawn` per monster → `Join` per member → `Save` → `Publish` (the reference tomb adds one demo `PlaceNPC` after the joins); session access reads the SDK roster through a narrow interface, and rpg-api has no duplicate roster store. Focused converter, handler, orchestrator, Redis, session-adapter, roster, sandbox, Session, Lobby, sessionworld, and Docker-backed character integration tests pass. Proto generated dependency is pinned exactly to `883dd221a6cdf724df8d5d993d897e0c8a3358ab` / `v0.1.158`, D&D to `v0.137.0`, Encounter to `v0.53.0`, Session to `v0.53.1`, and Resolution to `v0.32.1`.
 
 **Shared dice presentation live side channel (rpg-api#852, rpg-project#289/#303, 2026-08-28)** — `SessionPresentationService` v1alpha1 is now wired in production and in the integration harness at `dnd5e.api.session.presentation.v1alpha1.SessionPresentationService` (same exact string is marked SERVING in health). The service is deliberately presentation-only: `PublishDiceThrow` validates a bounded client draft, binds `session`/`roller` server-side, stores/fans out through Redis, and never calls the toolkit session manager, dice, combat, movement, or Story APIs. `StreamDiceThrows` is live-only Redis Pub/Sub with no replay promise; the 2-minute Redis accept key only de-duplicates/conflicts `(session, presentation_id, attempt)`.
 

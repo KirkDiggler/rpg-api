@@ -177,7 +177,7 @@ stale equipment is aborted. The orchestrator returns the actual patched entity a
 matching detached View. Grade held at B- because older draft/catalog TODO debt elsewhere
 in this large orchestrator is unchanged.
 
-### Lobby orchestrator — B+ (new, 2026-07-07)
+### Lobby orchestrator — B+ (updated 2026-09-24)
 
 `internal/orchestrators/lobby/` — party assembly (join refs, membership,
 ready flags, lifecycle) plus `StartEncounter`, the sole encounter-construction
@@ -189,8 +189,18 @@ the v2 encounter broker wiring makes), so a Go-level lock is sufficient
 without a Redis WATCH/MULTI transaction. One known leak: the mutex map never
 evicts per-lobby entries — slow and usage-bounded (one UUID per lobby ever
 created), not a hot-loop concern, called out as a follow-up rather than fixed
-here. Full RPC-level unit coverage (create/join/rebind/ready/leave incl. host
-migration/start incl. HP seeding and persist-then-emit ordering).
+here. Full RPC-level **isolated** unit coverage (create/join/rebind/ready/leave
+incl. host migration, plus `StartEncounter`'s exact-input, call-order and
+gate/partial-failure contracts) runs on the six-method `SessionManager` mock
+(`session_manager.go`, `mock/mock_session_manager.go`), a registry mock, the
+in-memory lobby repository and the broker — no miniredis, no shipped content,
+no playable session (rpg-api#1046), so the API's own behavior is proven rather
+than toolkit rules. HP seeding is no longer part of this layer: `Join` loads the
+character through the host's character repository. A retained miniredis-backed
+`SessionStackSuite` still proves the real start path and broader trade/rest/
+reload/geometry/content coverage, active pending #1049 assertion mapping — not
+ratified as a permanent API test (the real `End` path remains covered by the
+lobby handler suite, which still runs on a miniredis-backed manager).
 
 ### Session orchestrator — B (new, 2026-08-21)
 
@@ -290,7 +300,8 @@ its replacement, which is already Redis-backed.
 along with the v2 encounter handler/orchestrator it backed (see "Encounter v2
 handler" above). The lobby orchestrator's `StartEncounter` no longer persists
 through a repository of its own — it builds directly onto the
-`rulebooks/dnd5e/session` SDK's `sdk.Manager`, which owns its own session/
+`rulebooks/dnd5e/session` SDK's `sdk.Manager` through the lobby's six-method
+`SessionManager` interface, which owns its own session/
 encounter persistence (`internal/orchestrators/session`'s Redis-backed
 repositories), not graded in this doc.
 
