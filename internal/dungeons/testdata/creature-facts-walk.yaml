@@ -47,9 +47,9 @@ room:
     arrangementDeclarations: {}
     partyStart: {q: -2, r: 0}
     monsters:
-      - {id: guard-1, ref: 'dnd5e:monsters:thug', cell: {q: 2, r: 0}, faction: watch}
-      - {id: guard-2, ref: 'dnd5e:monsters:thug', cell: {q: 1, r: 1}, faction: watch}
-      - {id: wolf-1, ref: 'dnd5e:monsters:wolf', cell: {q: 2, r: -1}, faction: wolves}
+      - {id: guard-1, ref: 'dnd5e:monsters:thug', startingCell: { location: { q: 2, r: 0 } }, faction: watch}
+      - {id: guard-2, ref: 'dnd5e:monsters:thug', startingCell: { location: { q: 1, r: 1 } }, faction: watch}
+      - {id: wolf-1, ref: 'dnd5e:monsters:wolf', startingCell: { location: { q: 2, r: -1 } }, faction: wolves}
     monsterBindings:
       guard-1:
         on:
