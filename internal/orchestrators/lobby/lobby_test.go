@@ -5,44 +5,44 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alicebob/miniredis/v2"
-	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
-
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
-	"github.com/KirkDiggler/rpg-api/internal/dungeons"
-	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
+	dungeonsmock "github.com/KirkDiggler/rpg-api/internal/dungeons/mock"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
-	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
+	lobbymock "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby/mock"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
-	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 // LobbySuite is the shared fixture for every lobby-orchestrator RPC test
 // file in this package (create_lobby_test.go, join_lobby_test.go, etc.) —
 // one Go type whose methods live across files, avoiding six copies of the
-// same Config wiring. sessOrch is a real, miniredis-backed session.Manager
-// (mirroring internal/integration/session's harness) — StartEncounter's
-// sole remaining stack — rather than a mock, because Join genuinely loads
-// and reconstitutes a character; a mock EXPECT() would only prove the call
-// happened, not that a real sheet round-trips.
+// same Config wiring.
+//
+// The session SDK is mocked (manager), not built: these tests prove what the
+// lobby asks the SDK to do and how it reads the SDK's answer back, not that
+// a session really persists — that is the SDK's own suite. The dungeon
+// registry is mocked for the same reason: no shipped YAML is loaded and no
+// compiled world is constructed here. Both mocks are controller-isolated per
+// test, so an SDK or registry call a test did not expect FAILS that test —
+// there is no permissive AnyTimes default to hide an unauthorized or
+// premature call.
 type LobbySuite struct {
 	suite.Suite
 
 	ctx       context.Context
 	ctrl      *gomock.Controller
 	charRepo  *charactermock.MockRepository
+	manager   *lobbymock.MockSessionManager
+	registry  *dungeonsmock.MockRegistry
 	lobbyRepo lobbyrepo.Repository
 	broker    *lobbyorch.Broker
-	sessOrch  *sessionorch.Orchestrator
 	orch      *lobbyorch.Orchestrator
 }
 
@@ -50,9 +50,10 @@ func (s *LobbySuite) SetupTest() {
 	s.ctx = context.Background()
 	s.ctrl = gomock.NewController(s.T())
 	s.charRepo = charactermock.NewMockRepository(s.ctrl)
+	s.manager = lobbymock.NewMockSessionManager(s.ctrl)
+	s.registry = dungeonsmock.NewMockRegistry(s.ctrl)
 	s.lobbyRepo = lobbyrepo.NewInMemory()
 	s.broker = lobbyorch.NewBroker()
-	s.sessOrch = s.newSessionOrchestrator()
 
 	orch, err := lobbyorch.New(&lobbyorch.Config{
 		LobbyRepo:            s.lobbyRepo,
@@ -62,8 +63,8 @@ func (s *LobbySuite) SetupTest() {
 		JoinRefGenerator:     idgen.NewSequential("ref"),
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
-		SessionManager:       s.sessOrch.Manager,
-		Dungeons:             dungeonstest.Shipped(s.T()),
+		SessionManager:       s.manager,
+		Dungeons:             s.registry,
 	})
 	s.Require().NoError(err)
 	s.orch = orch
@@ -71,40 +72,6 @@ func (s *LobbySuite) SetupTest() {
 
 func (s *LobbySuite) TearDownTest() {
 	s.ctrl.Finish()
-}
-
-// newSessionOrchestrator builds a fresh miniredis-backed session
-// orchestrator sharing s.charRepo as its character store.
-func (s *LobbySuite) newSessionOrchestrator() *sessionorch.Orchestrator {
-	mr := miniredis.RunT(s.T())
-	client := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
-	s.T().Cleanup(func() { _ = client.Close() })
-	sessOrch, err := sessionorch.New(sessionorch.Config{
-		Redis: client, Characters: s.charRepo, TTL: 24 * time.Hour,
-		PresentationIDs: idgen.NewSequential("presentation"),
-	})
-	s.Require().NoError(err)
-	return sessOrch
-}
-
-// seedLiveSession starts a real, open session under id on s.sessOrch —
-// for tests that need GetMyActiveLobby/AbandonEncounter to see a genuinely
-// live session without going through the full StartEncounter flow.
-func (s *LobbySuite) seedLiveSession(id string) {
-	entry, err := dungeonstest.Shipped(s.T()).Get(s.ctx, dungeons.DefaultKey)
-	s.Require().NoError(err)
-	_, err = s.sessOrch.Manager.StartSession(s.ctx, &sdk.StartSessionInput{
-		Session: id, Encounter: id, World: entry.Dungeon.World,
-	})
-	s.Require().NoError(err)
-}
-
-// seedEndedSession starts then immediately ends a real session under id —
-// for tests of the "session exists but is no longer open" case.
-func (s *LobbySuite) seedEndedSession(id string) {
-	s.seedLiveSession(id)
-	_, err := s.sessOrch.Manager.End(s.ctx, &sdk.EndInput{Session: id, Ending: sessionworld.EndingWithdrawn})
-	s.Require().NoError(err)
 }
 
 // expectCharacter arms s.charRepo to return, on the next Get(characterID), a
@@ -142,8 +109,8 @@ func (s *LobbySuite) newOrchestratorWithLobbyRepo(repo lobbyrepo.Repository) *lo
 		JoinRefGenerator:     idgen.NewSequential("ref"),
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
-		SessionManager:       s.sessOrch.Manager,
-		Dungeons:             dungeonstest.Shipped(s.T()),
+		SessionManager:       s.manager,
+		Dungeons:             s.registry,
 	})
 	s.Require().NoError(err)
 	return orch
