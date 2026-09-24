@@ -189,13 +189,16 @@ the v2 encounter broker wiring makes), so a Go-level lock is sufficient
 without a Redis WATCH/MULTI transaction. One known leak: the mutex map never
 evicts per-lobby entries — slow and usage-bounded (one UUID per lobby ever
 created), not a hot-loop concern, called out as a follow-up rather than fixed
-here. Full RPC-level **isolated** unit coverage (create/join/rebind/ready/leave
-incl. host migration, plus `StartEncounter`'s exact-input, call-order and
+here. Broad **isolated** unit coverage (create/join/rebind/ready/leave incl.
+host migration, plus `StartEncounter`'s exact-input, call-order and
 gate/partial-failure contracts) runs on the six-method `SessionManager` mock
 (`session_manager.go`, `mock/mock_session_manager.go`), a registry mock, the
 in-memory lobby repository and the broker — no miniredis, no shipped content,
 no playable session (rpg-api#1046), so the API's own behavior is proven rather
-than toolkit rules. HP seeding is no longer part of this layer: `Join` loads the
+than toolkit rules. Isolation is not yet every RPC: `ListDungeons` is covered
+only by `TestSessionStackSuite/TestListDungeons_ReadsTheRegistry`, which uses the
+retained real-stack fixture and shipped registry. HP seeding is no longer part
+of this layer: `Join` loads the
 character through the host's character repository. A retained miniredis-backed
 `SessionStackSuite` still proves the real start path and broader trade/rest/
 reload/geometry/content coverage, active pending #1049 assertion mapping — not

@@ -42,7 +42,13 @@ The four removed cases map as `NotHost`→`NonHost_Refused`,
 `LobbyNotFound`→`MissingLobby_Refused`, and
 `UnknownDungeonKeyIsRefused`→`UnknownDungeonKey_Refused`; `arrival_test.go` and
 the pure social-approach spelling tests are unchanged. Assertion-level
-ownership mapping for the retained broader suites is rpg-api#1049.
+ownership mapping for the retained broader suites is rpg-api#1049. The design's
+separately-required provider/consumer note is now a component known gap: the
+authored monster `Facing` word is compiled onto `sessionworld.Monster`
+(`internal/sessionworld/sessionworld.go:127`) but the consumed SDK's
+`SpawnInput` has no `Facing` field, so the launch cannot forward it — see
+[`architecture/components/lobby-service.md`](architecture/components/lobby-service.md)
+Known gaps. No forwarding was added in this behavior-preserving refactor.
 
 **Burning Hands adoption** — Uses released session v0.107.0, D&D root
 v0.192.0, spatial v0.16.0, and proto SDK v0.1.213. The API maps triangle

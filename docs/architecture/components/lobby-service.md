@@ -234,6 +234,20 @@ needs to.
   the Session SDK's `SaveError`/`SaveReport`, not rolled back by the lobby.
 - **Authorization on the session verbs themselves** — rpg-api#803; the lobby's
   host check on `AbandonEncounter` is not mirrored by `SessionService.End`.
+- **Authored monster facing reaches the carrier but not the session** — the
+  compiled placement carries the authored `startingCell.facing` word
+  (`sessionworld.Monster.Facing`, `internal/sessionworld/sessionworld.go:127`,
+  filled by the compiler in the same file, rpg-toolkit#1899), but
+  `StartEncounter`'s Spawn construction
+  (`internal/orchestrators/lobby/start_encounter_session_stack.go`) never sets a
+  facing, and it cannot: the consumed SDK's `SpawnInput`
+  (`rulebooks/dnd5e/session` v0.109.0, `write.go`) has no `Facing` field. So a
+  launched monster's authored direction is dropped at this seam. This is the
+  separately-recorded provider/consumer gap the rpg-api#1046 design called for
+  ("carried in sessionworld but is not currently forwarded by this launch",
+  `docs/superpowers/specs/2026-09-24-lobby-sdk-test-boundary-design.md`):
+  closing it needs a toolkit placement field, not a behavior change in this
+  refactor.
 
 ## Verify
 

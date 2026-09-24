@@ -22,13 +22,16 @@ import (
 // the exact input each verb receives, and the save-then-publish ordering of the
 // lobby record and the EncounterStarted event.
 //
-// It embeds LobbySuite for the shared fixture — the generated SDK mock, the
-// dungeon registry mock, the API-owned in-memory lobby repository, the broker
-// and the deterministic generators — and adds no production behavior of its
-// own. Both mocks are controller-isolated per test, so an SDK or registry call
-// a case did not expect FAILS that case.
+// It composes lobbyFixture for the shared dependencies — the generated SDK
+// mock, the dungeon registry mock, the API-owned in-memory lobby repository,
+// the broker and the deterministic generators — and adds no production
+// behavior of its own. The fixture declares no Test* method, so
+// TestStartContractSuite runs exactly this file's launch-contract cases and the
+// failure cases in start_encounter_failure_test.go, never LobbySuite's
+// lifecycle cases. Both mocks are controller-isolated per test, so an SDK or
+// registry call a case did not expect FAILS that case.
 type StartContractSuite struct {
-	LobbySuite
+	lobbyFixture
 }
 
 func TestStartContractSuite(t *testing.T) {
@@ -353,10 +356,11 @@ func (s *StartContractSuite) TestStartEncounter_OmittedKey_ResolvesTheTombAndPla
 
 // TestStartEncounter_ExplicitlyEmptySlices_ArriveEmptyNotNil pins the other side
 // of the nil/empty distinction: an author's explicitly empty list is forwarded
-// as an explicitly empty list, never collapsed to nil. The SDK reads nil as
-// "derive one from the stat block", so the two are different claims. Every
-// optional slice on the first monster is authored empty here; the second keeps
-// the nil case covered by the other cases in this file.
+// as an explicitly empty list, never collapsed to nil. Preserving the authored
+// representation is the API's whole claim here — what the SDK later makes of
+// nil versus empty is the provider's rule, not this test's. Every optional
+// slice on the first monster is authored empty here; the second keeps the nil
+// case covered by the other cases in this file.
 func (s *StartContractSuite) TestStartEncounter_ExplicitlyEmptySlices_ArriveEmptyNotNil() {
 	const key = "empty-slices"
 

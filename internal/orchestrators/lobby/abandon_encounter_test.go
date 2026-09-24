@@ -31,11 +31,13 @@ func (s *LobbySuite) seedStartedLobby(lobbyID, host, hostCharacterID, encID stri
 // repository serializes on every write and every read (see
 // lobbyrepo.NewInMemory), so the returned value is an independent copy —
 // comparing one taken before a call with one taken after is a real deep
-// check that the call did not touch the record.
-func (s *LobbySuite) snapshotLobby(id string) *lobbyrepo.Data {
-	s.T().Helper()
-	data, err := s.lobbyRepo.Get(s.ctx, id)
-	s.Require().NoError(err)
+// check that the call did not touch the record. It lives on the shared
+// fixture so both the lifecycle suite and the launch-contract suite can use
+// it.
+func (f *lobbyFixture) snapshotLobby(id string) *lobbyrepo.Data {
+	f.T().Helper()
+	data, err := f.lobbyRepo.Get(f.ctx, id)
+	f.Require().NoError(err)
 	return data
 }
 
