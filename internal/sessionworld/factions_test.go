@@ -145,3 +145,20 @@ func TestADungeonAuthoredBeforeFactionsSpawnsAsItDid(t *testing.T) {
 		require.Empty(t, m.Faction, "%s names no faction, so the composition puts it where it always was", m.MemberID)
 	}
 }
+
+// TestADungeonAuthoredBeforeFacingsSpawnsLookingItsOwnWay is the default
+// that keeps every existing dungeon unchanged (rpg-toolkit#1899): a monster
+// with no authored facing carries the EMPTY string to the seam, which the
+// renderer reads as the asset's own default facing -- and the tomb's
+// garrison, authored before the word existed, is exactly that.
+func TestADungeonAuthoredBeforeFacingsSpawnsLookingItsOwnWay(t *testing.T) {
+	raw, err := os.ReadFile(referenceTombPath)
+	require.NoError(t, err)
+	tomb, err := Compile(raw)
+	require.NoError(t, err)
+
+	require.NotEmpty(t, tomb.Monsters)
+	for _, m := range tomb.Monsters {
+		require.Empty(t, m.Facing, "%s names no facing, so the model keeps its own default", m.MemberID)
+	}
+}

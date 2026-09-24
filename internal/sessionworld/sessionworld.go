@@ -117,6 +117,15 @@ type Monster struct {
 	// At is its cell, dungeon-absolute.
 	At spatial.Position
 
+	// Facing is the direction the monster faces when it arrives, verbatim
+	// from the authored `startingCell.facing` word (rpg-toolkit#1899), or
+	// empty when the author stated none — the asset's own default facing.
+	// It is the authored word, never an angle, and this package never turns
+	// it into one: which way the model is turned at spawn is a render
+	// concern. Carried to the seam that holds the authored record, exactly
+	// as Targeting is — never acted on here.
+	Facing string
+
 	// Boss is whether this is the monster whose death ends things.
 	//
 	// ACTED ON since rpg-project#268 — this was "carried and not yet acted
@@ -369,7 +378,7 @@ func Compile(raw []byte) (*Dungeon, error) {
 		}
 		claimed[id] = i
 		monsters[i] = Monster{
-			Ref: m.Ref, MemberID: id, At: cellOf(orientation, m.At),
+			Ref: m.Ref, MemberID: id, At: cellOf(orientation, m.At), Facing: m.Facing,
 			Boss: m.Boss, Targeting: m.Targeting, Actions: m.Actions,
 			PlacementID: m.ID, Holds: m.Holds, Faction: m.Faction,
 			Arrives: m.Arrives,
