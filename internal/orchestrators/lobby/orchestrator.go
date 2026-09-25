@@ -20,8 +20,6 @@ import (
 	"errors"
 	"time"
 
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
-
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -65,10 +63,11 @@ type Config struct {
 	// (e.g. abandonment metrics).
 	Now func() time.Time
 
-	// SessionManager is the toolkit's rulebooks/dnd5e/session SDK entry
-	// point StartEncounter builds onto, and GetMyActiveLobby/AbandonEncounter
-	// query/close through (Manager.Status / Manager.End). Required.
-	SessionManager *sdk.Manager
+	// SessionManager is the toolkit's rulebooks/dnd5e/session SDK surface
+	// StartEncounter builds onto, and GetMyActiveLobby/AbandonEncounter
+	// query/close through (Status / End). Required. The real *sdk.Manager
+	// satisfies this interface structurally; see session_manager.go.
+	SessionManager SessionManager
 
 	// Dungeons is the content registry StartEncounter resolves dungeon_key
 	// against and ListDungeons reads. Required.
@@ -91,7 +90,7 @@ type Orchestrator struct {
 
 	// sessionManager is Config.SessionManager — StartEncounter builds onto
 	// it, and GetMyActiveLobby/AbandonEncounter query/close through it.
-	sessionManager *sdk.Manager
+	sessionManager SessionManager
 
 	// dungeons is Config.Dungeons.
 	dungeons dungeons.Registry
