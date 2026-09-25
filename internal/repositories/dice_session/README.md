@@ -8,7 +8,9 @@ The dice session repository provides storage interface and types for managing di
 supplied roll preservation, ordinary entity/context isolation, detached reads, TTL,
 delete counts and errors without generating dice results. Update replaces the stored
 record and uses its remaining lifetime; it does not enforce roll immutability or
-check that the key already exists. Exact-deadline resurrection without a TTL is a
+check that the key already exists. Delete's RollsDeleted is best-effort: a failed
+pre-count Get followed by successful DEL returns zero and no error; only the delete's
+own error propagates. Exact-deadline resurrection without a TTL is a
 known defect tracked in #1055, not an accepted contract. See the
 [method inventory](../../../docs/quality/repository-contracts.md) for coverage limits.
 

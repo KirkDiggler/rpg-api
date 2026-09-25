@@ -18,7 +18,10 @@ TTL, detached-read, equipment-version, and failure contracts; no integration tes
 production behavior is removed. See the [method-level inventory](quality/repository-contracts.md)
 for exact scope and limits, including historical #141 reconciliation. A controlled-clock
 probe found exact-expiry dice Update can recreate a key without TTL (#1055); the fix is
-separate from this tests-only slice. Character CRUD maintains player indexes, not the
+separate from this tests-only slice. Independent review also exposed a malformed stored
+character envelope that panics in Update (#1057) and a cross-owner supplied draft-ID
+collision (#1058); these are reproduced and tracked, not silently fixed or endorsed.
+Character CRUD maintains player indexes, not the
 legacy session index; the latter's tests explicitly seed its read-side contract.
 
 **Lobby SDK test boundary (rpg-api#1046, 2026-09-24)** — Lobby unit tests now

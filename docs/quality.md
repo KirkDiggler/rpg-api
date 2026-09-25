@@ -378,7 +378,8 @@ read-side session-index resolution, detached reads, successful patch preservatio
 and storage/decode error contracts. The [method inventory](quality/repository-contracts.md)
 bounds that claim: character CRUD does not maintain the session index. Held below A
 because general full-record Update callers have not been redesigned and real concurrent
-WATCH retry/exhaustion is not newly covered.
+WATCH retry/exhaustion is not newly covered. Null-Data stored envelopes can still panic
+in Update (#1057); the guarded equipment-patch refusal is tested.
 
 ### Character draft repository — B-
 
@@ -389,7 +390,8 @@ nested toolkit Appearance JSON round trips, detached nested pointer assertions, 
 present-zero optional scalar coverage. #1047 adds populated choices/scores,
 replacement, lookup/delete mapping maintenance, 24-hour expiry and update refresh,
 and storage/decode error coverage. Player mappings have no TTL and are lazily cleaned
-by lookup after draft expiry; owner reassignment is not maintained by Update. See the
+by lookup after draft expiry; owner reassignment is not maintained by Update. Distinct-ID
+player isolation is tested, but cross-owner supplied-ID collisions overwrite records (#1058). See the
 [method inventory](quality/repository-contracts.md). The grade remains unchanged.
 
 ### Dice session repository — B-

@@ -127,6 +127,14 @@ func (s *CharacterRedisContractSuite) TestUpdateMovesPlayerIndex_AndDeleteRemove
 	deleted, err := s.repo.Delete(s.ctx, characterrepo.DeleteInput{ID: "char-a"})
 	s.Require().NoError(err)
 	s.NotNil(deleted)
+	// Assert the write's effect BEFORE ListByPlayerID can lazily repair a stale
+	// member. A list-only assertion passes even if Delete forgets its SRem.
+	remaining, indexErr := s.client.SMembers(s.ctx, "character:player:owner-b").Result()
+	s.Require().NoError(indexErr)
+	s.Empty(remaining)
+	neighbors, indexErr := s.client.SMembers(s.ctx, "character:player:owner-a").Result()
+	s.Require().NoError(indexErr)
+	s.Equal([]string{"char-b"}, neighbors)
 	missing, err := s.repo.Get(s.ctx, characterrepo.GetInput{ID: "char-a"})
 	s.True(apierr.IsNotFound(err))
 	s.Nil(missing)
@@ -212,6 +220,21 @@ func (s *CharacterRedisContractSuite) TestMissingRecordsKeepNotFoundIdentity() {
 	s.True(apierr.IsNotFound(err))
 	_, err = s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{CharacterID: "missing", ExpectedVersion: "version"})
 	s.True(apierr.IsNotFound(err))
+}
+
+func (s *CharacterRedisContractSuite) TestPatchRejectsNullDataWithoutWriting() {
+	const corruptRecord = `{"data":null}`
+	s.Require().NoError(s.server.Set("character:char-a", corruptRecord))
+	out, err := s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{
+		CharacterID: "char-a", ExpectedVersion: "version", ArmorClass: 31,
+	})
+	s.Require().True(apierr.IsInternal(err), "%v", err)
+	s.Nil(out)
+	stored, readErr := s.server.Get("character:char-a")
+	s.Require().NoError(readErr)
+	s.Equal(corruptRecord, stored)
+	// Update does not share this guard: its pre-existing panic is #1057,
+	// not a behavior this test should endorse.
 }
 
 func (s *CharacterRedisContractSuite) TestMalformedPayloadIsNotMissing_AndListDoesNotDiscardIt() {

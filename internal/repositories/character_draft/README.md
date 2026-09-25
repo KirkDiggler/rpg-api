@@ -5,8 +5,10 @@
 The Character Draft repository manages temporary character creation data with the following design goals:
 
 ### 1. Single Draft per Player
-- Each player can have **exactly one** draft at a time
-- Creating a new draft automatically replaces any existing draft
+- Each player mapping points to one draft at a time
+- Creating a new draft automatically replaces that player's existing draft
+- Isolation assumes distinct draft IDs: a supplied ID colliding with another owner's
+  record currently overwrites it and leaves both mappings pointing there (#1058)
 - Replacement updates the player mapping and removes the previous draft
 
 ### 2. Simple Access Patterns
