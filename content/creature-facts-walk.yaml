@@ -46,12 +46,13 @@ room:
     propDeclarations: {}
     arrangementDeclarations: {}
     partyStart: {q: -2, r: 0}
-    monsters:
-      - {id: guard-1, ref: 'dnd5e:monsters:thug', startingCell: { location: { q: 2, r: 0 } }, faction: watch}
-      - {id: guard-2, ref: 'dnd5e:monsters:thug', startingCell: { location: { q: 1, r: 1 } }, faction: watch}
-      - {id: wolf-1, ref: 'dnd5e:monsters:wolf', startingCell: { location: { q: 2, r: -1 } }, faction: wolves}
+    monsterDeclarations:
+      - {id: guard-1, ref: 'dnd5e:monsters:thug', startingCell: { location: { q: 2, r: 0 } }}
+      - {id: guard-2, ref: 'dnd5e:monsters:thug', startingCell: { location: { q: 1, r: 1 } }}
+      - {id: wolf-1, ref: 'dnd5e:monsters:wolf', startingCell: { location: { q: 2, r: -1 } }}
     monsterBindings:
       guard-1:
+        faction: watch
         on:
           time:
             # THE PAUSE: after this creature has itself struck, stand still
@@ -63,8 +64,8 @@ room:
             - {when: {enemy: reach}, attack: enemy, weight: 10}
             - {when: {enemy: seen}, toward: enemy}
             - {when: {enemy: none}, hold: {}}
-      # NO BINDING FOR guard-2 OR wolf-1, and that is the control: a creature
-      # with no orders block is not "declared with nothing" — it is not
-      # declared at all, and it answers its kind's default table with its
-      # kind's own actions. The walk should see these two fight normally while
-      # guard-1 pauses and avenges.
+      # FACTION-ONLY BINDINGS are the control: neither creature overrides
+      # its orders or actions. Both answer the default table with their kind's
+      # own actions while guard-1 pauses and avenges.
+      guard-2: {faction: watch}
+      wolf-1: {faction: wolves}

@@ -2,6 +2,8 @@ package dungeons_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -28,13 +30,14 @@ type CreatureFactsWalkSuite struct {
 	ctx      context.Context
 	registry *dungeons.FileRegistry
 	raw      []byte
+	dir      string
 }
 
 func TestCreatureFactsWalkSuite(t *testing.T) { suite.Run(t, new(CreatureFactsWalkSuite)) }
 
 func (s *CreatureFactsWalkSuite) SetupTest() {
 	s.ctx = context.Background()
-	s.registry, _ = dungeonstest.Scratch(s.T())
+	s.registry, s.dir = dungeonstest.Scratch(s.T())
 	s.raw = dungeonstest.CreatureFactsWalkYAML(s.T())
 }
 
@@ -69,6 +72,43 @@ func (s *CreatureFactsWalkSuite) TestBothDeedScopesReachTheCompiledTable() {
 	stored := string(out.Entry.YAML)
 	s.Contains(stored, "as: actor", "the pause's reading survives the compile")
 	s.Contains(stored, "on: ally", "the ally reading survives the compile")
+}
+
+// TestRetiredDeclarationKeysCannotOverwriteTheSavedRoom exercises the
+// toolkit's migration diagnostics through the API's actual save boundary.
+func (s *CreatureFactsWalkSuite) TestRetiredDeclarationKeysCannotOverwriteTheSavedRoom() {
+	before, err := s.registry.Put(s.ctx, &dungeons.PutInput{
+		Key: dungeonstest.CreatureFactsWalkKey, YAML: s.raw,
+	})
+	s.Require().NoError(err)
+	s.Require().Empty(before.Errors)
+
+	for _, tc := range []struct {
+		name, old, replacement, path, message string
+	}{
+		{"old list", "    monsterDeclarations:", "    monsters:", "room.room.monsters",
+			"monsters has been renamed to monsterDeclarations; rename this key"},
+		{"old membership", "id: guard-1,", "id: guard-1, faction: watch,", "room.room.monsterDeclarations[0].faction",
+			"faction belongs in monsterBindings, keyed by this monster's id; move it there"},
+	} {
+		s.Run(tc.name, func() {
+			bad := strings.Replace(string(s.raw), tc.old, tc.replacement, 1)
+			s.Require().NotEqual(string(s.raw), bad)
+			out, putErr := s.registry.Put(s.ctx, &dungeons.PutInput{
+				Key: dungeonstest.CreatureFactsWalkKey, YAML: []byte(bad),
+			})
+			s.Require().NoError(putErr)
+			s.Nil(out.Entry)
+			s.Contains(out.Errors, dungeons.FieldError{Path: tc.path, Message: tc.message})
+			after, getErr := s.registry.Get(s.ctx, dungeonstest.CreatureFactsWalkKey)
+			s.Require().NoError(getErr)
+			s.Equal(before.Entry.YAML, after.YAML)
+			s.Equal(before.Entry.Atlas, after.Atlas)
+			onDisk, readErr := os.ReadFile(filepath.Join(s.dir, dungeonstest.CreatureFactsWalkKey+".yaml"))
+			s.Require().NoError(readErr)
+			s.Equal(s.raw, onDisk)
+		})
+	}
 }
 
 // TestANeutralPairCarriesAnUntil records the rule the World Builder still
