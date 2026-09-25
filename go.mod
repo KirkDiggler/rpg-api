@@ -8,6 +8,8 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.3
 	github.com/KirkDiggler/rpg-toolkit/npc v0.2.0
+	github.com/KirkDiggler/rpg-toolkit/play/clock v0.1.0
+	github.com/KirkDiggler/rpg-toolkit/play/interrupt v0.1.0
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.194.0
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.106.0
@@ -35,9 +37,7 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1 // indirect
 	github.com/KirkDiggler/rpg-toolkit/mind/behavior v0.6.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/mind/perception v0.3.0 // indirect
-	github.com/KirkDiggler/rpg-toolkit/play/clock v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/play/intel v0.4.0 // indirect
-	github.com/KirkDiggler/rpg-toolkit/play/interrupt v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/play/record v0.1.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.58.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect

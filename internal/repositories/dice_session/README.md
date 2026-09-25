@@ -2,6 +2,16 @@
 
 The dice session repository provides storage interface and types for managing dice roll sessions with TTL support. Sessions group related dice rolls by entity and context, enabling complex rolling workflows like character creation.
 
+## Current adapter evidence (#1047)
+
+`redis_contract_test.go` uses miniredis and a controlled application clock to verify
+supplied roll preservation, ordinary entity/context isolation, detached reads, TTL,
+delete counts and errors without generating dice results. Update replaces the stored
+record and uses its remaining lifetime; it does not enforce roll immutability or
+check that the key already exists. Exact-deadline resurrection without a TTL is a
+known defect tracked in #1055, not an accepted contract. See the
+[method inventory](../../../docs/quality/repository-contracts.md) for coverage limits.
+
 ## Core Concepts
 
 ### DiceSession
@@ -144,8 +154,8 @@ All operations use dedicated Input/Output types:
 
 ### Error Handling
 Repository returns standard errors:
-- `ErrNotFound` for missing sessions
-- `ErrExpired` for TTL exceeded
+- `apierr.NotFound` for missing sessions or an expired Get
+- `apierr.InvalidArgument` for an Update strictly past its deadline
 - Wrapped storage errors with context
 
 ### Mock Generation

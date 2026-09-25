@@ -373,8 +373,12 @@ patch. Redis WATCH/MULTI guards the record, expected equipment rejects stale equ
 writers with ABORTED, unrelated record revisions are returned without writing, and the
 successful transaction changes only EquipmentSlots plus cached ArmorClass on the latest
 entity. Miniredis regressions cover concurrent combat-state preservation and stale
-expected-equipment refusal. Held below A because general full-record Update callers have
-not been redesigned and TTL/stale-character lifecycle remains unchanged.
+expected-equipment refusal. #1047 adds populated CRUD, player-index maintenance,
+read-side session-index resolution, detached reads, successful patch preservation,
+and storage/decode error contracts. The [method inventory](quality/repository-contracts.md)
+bounds that claim: character CRUD does not maintain the session index. Held below A
+because general full-record Update callers have not been redesigned and real concurrent
+WATCH retry/exhaustion is not newly covered.
 
 ### Character draft repository — B-
 
@@ -382,15 +386,21 @@ not been redesigned and TTL/stale-character lifecycle remains unchanged.
 
 Redis-backed. Handles in-progress character creation state. #897 adds complete
 nested toolkit Appearance JSON round trips, detached nested pointer assertions, and
-present-zero optional scalar coverage. Broad repository lifecycle coverage remains
-thinner than the character repository, so the grade does not change. No known
-correctness gaps.
+present-zero optional scalar coverage. #1047 adds populated choices/scores,
+replacement, lookup/delete mapping maintenance, 24-hour expiry and update refresh,
+and storage/decode error coverage. Player mappings have no TTL and are lazily cleaned
+by lookup after draft expiry; owner reassignment is not maintained by Update. See the
+[method inventory](quality/repository-contracts.md). The grade remains unchanged.
 
 ### Dice session repository — B-
 
 `internal/repositories/dice_session/redis.go`
 
-Redis-backed. Narrow scope. No observed gaps. Low risk.
+Redis-backed. #1047 adds supplied-roll preservation, ordinary entity/context-key
+isolation, detached reads, default/custom TTL, remaining-lifetime update, delete counts,
+and error contracts. An exact-expiry update can resurrect a key without TTL; this is
+tracked in #1055, not fixed or blessed by these tests. See the
+[method inventory](quality/repository-contracts.md) for remaining limits.
 
 ## Testing
 
