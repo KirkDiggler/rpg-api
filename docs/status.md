@@ -11,6 +11,19 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Repository persistence contracts (rpg-api#1047, 2026-09-24)** — New miniredis
+suites cover populated character/draft/dice records and strengthen session/encounter
+round trips without toolkit gameplay setup. They cover the applicable CRUD/index,
+TTL, detached-read, equipment-version, and failure contracts; no integration test or
+production behavior is removed. See the [method-level inventory](quality/repository-contracts.md)
+for exact scope and limits, including historical #141 reconciliation. A controlled-clock
+probe found exact-expiry dice Update can recreate a key without TTL (#1055); the fix is
+separate from this tests-only slice. Independent review also exposed a malformed stored
+character envelope that panics in Update (#1057) and a cross-owner supplied draft-ID
+collision (#1058); these are reproduced and tracked, not silently fixed or endorsed.
+Character CRUD maintains player indexes, not the
+legacy session index; the latter's tests explicitly seed its read-side contract.
+
 **Lobby SDK test boundary (rpg-api#1046, 2026-09-24)** — Lobby unit tests now
 prove storage, conversion and correct toolkit invocation rather than toolkit
 rules. `internal/orchestrators/lobby/session_manager.go` declares the six-method
@@ -1273,7 +1286,7 @@ See [quality.md](quality.md) for grade and rationale.
 | Character orchestrator | Medium-high — smaller, well-tested |
 | Dungeon component | Medium — good tests, wrong repo; toolkit boundary violation (unaffected by #227 — a separate, pre-existing legacy component) |
 | Spawner component | Medium — thin, functional |
-| Character repository (Redis) | High — equipment has WATCH/MULTI optimistic concurrency regressions; CRUD and indexes retain the existing Redis implementation |
+| Character repository (Redis) | High for tested contracts — #1047 populated CRUD/player indexes, detached reads and failure cases complement equipment version/conflict tests; session-index writing and real concurrent WATCH retries remain outside that evidence |
 | Integration test harness | Medium-high — character/lobby/session/presentation clients are wired through real bufconn; #852 proves two TestServers over one Redis for roster access and Pub/Sub |
 | Session presentation service | Medium-high — handler/orchestrator/repository unit coverage plus #852 cross-instance Redis integration; live-only, no Story/toolkit mutation, no browser walkthrough yet |
 | Services layer (sandboxroom) | Low — sparse; most business logic lives in orchestrators |
