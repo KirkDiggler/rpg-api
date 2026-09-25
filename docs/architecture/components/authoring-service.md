@@ -158,6 +158,18 @@ fetched by `dungeon_key` through the ungated `GetDungeon`.
 
 ## Toolkit pins
 
+Encounter **v0.107.0** (rpg-api#1053, toolkit#1902) adopts the in-place
+v4 declarations-and-bindings cleanup. Single-room documents now write
+`room.room.monsterDeclarations`; faction membership lives under
+`room.room.monsterBindings.<id>.faction`. Old key locations are rejected by
+the toolkit with migration diagnostics, passed through by the registry.
+The v2 region dialect (including `reference-front-room.yaml`) is unchanged.
+`creature-facts-walk.yaml` and the single-room test fixtures use the new shape;
+operator-owned saved compositions must be migrated separately. Rejected saves
+preserve the previous registry entry and disk bytes, covered by
+`CreatureFactsWalkSuite/TestRetiredDeclarationKeysCannotOverwriteTheSavedRoom`.
+No runtime snapshot rewrite or API-side schema alias is introduced.
+
 The single-room slice (rpg-api#1003) landed on `rulebooks/dnd5e/encounter`
 v0.87.0 and `rulebooks/dnd5e/session` v0.94.0, which carried the authored
 scene through the engine. Presentation-is-content (rpg-project#479) took it
