@@ -5,9 +5,11 @@
 The Character Draft repository manages temporary character creation data with the following design goals:
 
 ### 1. Single Draft per Player
-- Each player can have **exactly one** draft at a time
-- Creating a new draft automatically replaces any existing draft
-- This eliminates index cleanup issues and simplifies the mental model
+- Each player mapping points to one draft at a time
+- Creating a new draft automatically replaces that player's existing draft
+- Isolation assumes distinct draft IDs: a supplied ID colliding with another owner's
+  record currently overwrites it and leaves both mappings pointing there (#1058)
+- Replacement updates the player mapping and removes the previous draft
 
 ### 2. Simple Access Patterns
 - `Create` - Creates or replaces the player's draft
@@ -17,7 +19,7 @@ The Character Draft repository manages temporary character creation data with th
 - `Delete` - Removes a draft (usually when finalized)
 
 ### 3. Automatic Expiration
-- Drafts expire after 24 hours of inactivity
+- Drafts expire 24 hours after Create or the latest Update; reads do not refresh TTL
 - Redis handles expiration automatically via TTL
 - No background cleanup needed due to single-draft design
 
@@ -31,7 +33,7 @@ Originally designed to support multiple drafts per player with index sets, but t
 
 The single-draft approach eliminates these issues:
 - Indexes have at most one entry per player
-- No stale data accumulation
+- Expired draft mappings are lazily removed on GetByPlayerID
 - Clear UX: "Continue your character or start over?"
 - Natural cleanup when creating new drafts
 
@@ -41,7 +43,13 @@ draft:{id}                    # The draft data (with TTL)
 draft:player:{playerID}       # Points to the player's current draft ID
 ```
 
-That's it! Just two keys per draft. No sets, no indexes, no cleanup needed.
+The player mapping has no TTL. GetByPlayerID removes it when the referenced draft
+is missing; Delete removes both keys. Update refreshes the draft's TTL but does not
+migrate the mapping if PlayerID changes. #1047 tests same-owner lifecycle behavior,
+not ownership reassignment.
+
+See [the method inventory](../../../docs/quality/repository-contracts.md) for populated
+round trips, replacement/isolation, controlled expiry, malformed data, and failure tests.
 
 Note: All keys are prefixed with `draft:` to group them together for easier management and potential scanning.
 
