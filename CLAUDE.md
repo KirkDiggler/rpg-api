@@ -1,10 +1,15 @@
-# Claude AI Development Guidelines - rpg-api
+# rpg-api
 
-**Note**: General development guidelines are in `/home/kirk/personal/CLAUDE.md`. This file contains rpg-api specific instructions.
+rpg-api is the game server for the D&D 5e dungeon crawler: it orchestrates by
+key and stores data. It knows feature keys, not behavior. **rpg-api stores
+data. rpg-toolkit handles rules.**
+
+House truth — the lens, working agreements, wave law — lives in
+`rpg-project/CLAUDE.md`. This file carries what is specific to rpg-api.
+`AGENTS.md` is a symlink to this file so every agent runtime boots from the
+same instructions.
 
 ## Where things live
-
-Active docs — read these to orient before touching code:
 
 - `docs/status.md` — current health: active work, paused items, known rough edges, per-subsystem confidence
 - `docs/quality.md` — A-D scorecard with rationale per component
@@ -14,67 +19,31 @@ Active docs — read these to orient before touching code:
 - `docs/how-to/` — task guides: `add-handler-method`, `run-integration-tests`, `run-locally`, `update-proto-dependency`, `local-toolkit-override` (iterate on rpg-toolkit changes in the local Docker loop without publish → tag → `go get`)
 - `docs/archive/` — pre-PR #470 historical docs (old ADRs, journey narratives, plans, design notes, session handoffs); read for context, not current state
 
-## Dependency Management
+## The law: no game logic in the API
 
-### Proto Updates
-To get the latest compiled protos, pull from the `generated` branch:
-```bash
-GOPROXY=direct go get github.com/KirkDiggler/rpg-api-protos/gen/go@generated
-```
+If it is a game mechanic or calculation → rpg-toolkit. If it is data storage
+or API orchestration → rpg-api.
 
-### Toolkit Updates
-```bash
-GOPROXY=direct go get github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e@latest
-```
+**Adding game logic here is a smell that the toolkit is missing something.**
+The toolkit provides the function that takes the entity directly; the API
+passes the entity through:
 
-## Core Philosophy
-
-**rpg-api stores data. rpg-toolkit handles rules.**
-
-This separation is fundamental. When in doubt:
-- If it's a game mechanic or calculation → rpg-toolkit
-- If it's data storage or API orchestration → rpg-api
-
-### Code Smell: Game Logic in the API
-
-**If you find yourself adding game logic in rpg-api, STOP.** This is a smell that the toolkit is missing something.
-
-**Examples of game logic that does NOT belong here:**
-- Checking weapon properties (is it light? is it a shield?)
-- Determining if conditions are met for abilities
-- Calculating bonuses or modifiers
-- Knowing what slots weapons go in
-
-**What rpg-api SHOULD do:**
-- Load data from repositories
-- Pass entities to toolkit functions
-- Persist results back to repositories
-- Convert between proto and domain types
-
-**When you hit this smell:**
-1. Create an issue in rpg-toolkit for the missing helper
-2. The toolkit should provide a function that takes the entity directly
-3. The API just passes the entity through
-
-**Example - Wrong (game logic in API):**
 ```go
-// BAD: API is checking game rules
+// BAD: the API checking game rules
 mainHandID := slots.Get(character.SlotMainHand)
 offHandID := slots.Get(character.SlotOffHand)
 if mainHandID != "" && offHandID != "" && offHandID != armor.Shield {
     // extract weapon IDs, check conditions...
 }
-```
 
-**Example - Right (toolkit handles logic):**
-```go
-// GOOD: API just passes the character, toolkit knows the rules
+// GOOD: the API passes the character; the toolkit knows the rules
 result, err := actions.CheckAndGrantOffHandStrikeForCharacter(ctx, char, attackHand, bus)
 ```
 
-## Project Structure
+When you hit the smell: open the issue in rpg-toolkit for the missing helper,
+then pass the entity through here. Never reconstruct the rule in the API.
 
-Our battle-tested structure from production gRPC services:
+## Project structure
 
 ```
 /cmd/server/              # Cobra commands
@@ -98,412 +67,124 @@ Our battle-tested structure from production gRPC services:
   └── engine/             # rpg-toolkit integration
 ```
 
-## Development Approach: Outside-In
+## Development approach: outside-in
 
-**Always work from the API inward:**
+1. **Start with gRPC handlers** — return `codes.Unimplemented`. Validates the
+   proto, the server starts, services register; no logic, no dependencies.
+2. **Define service interfaces** with Input/Output types; generate mocks for
+   the handler tests.
+3. **Write handler tests** against the mocked services — request validation,
+   response mapping, error handling.
+4. **Implement orchestrators** — the business logic, wired to repositories and
+   engine, tested with mocked dependencies.
+5. **Implement repositories** last, when you know what you need.
 
-1. **Start with gRPC handlers** - Just return `codes.Unimplemented`
-   - Validates proto definitions work
-   - Ensures server can start and register services
-   - No business logic or dependencies yet
+Why: the API is usable before implementation exists, interfaces are driven by
+real need, and contracts stay refactorable.
 
-2. **Define service interfaces** - With Input/Output types
-   - Create the contract for business logic
-   - Generate mocks for testing handlers
-   - Still no implementation
+## Laws
 
-3. **Write handler tests** - Using mocked services
-   - Test request validation
-   - Test response mapping
-   - Test error handling
-
-4. **Implement orchestrators** - The actual business logic
-   - Wire up repositories, engine, external services
-   - Test with mocked dependencies
-
-5. **Implement repositories** - Last, when you know what you need
-
-This approach ensures:
-- API is usable before implementation starts
-- Interfaces are driven by actual needs
-- Easy to refactor without breaking contracts
-- Clear separation of concerns
-
-## Code Patterns
-
-### Avoid Magic Strings
-
-**Extract all string literals to constants.** This prevents typos and makes refactoring easier:
+**Explicit > implicit — Input/Output types on every function, at every layer.**
+Handlers: Request/Response. Orchestrators: Input/Output. Repositories:
+Input/Output. Even helpers. Why: adding a field never changes an interface,
+never regenerates a mock, and is future-proof for pagination.
 
 ```go
-// ❌ BAD: Magic strings scattered throughout code
-if source == "class" {
-    // ...
-}
-
-// ✅ GOOD: Named constants
-const (
-    skillSourceClass      = "class"
-    skillSourceBackground = "background"
-)
-
-if source == skillSourceClass {
-    // ...
-}
-```
-
-This applies to:
-- Entity types and sources
-- Error codes and messages
-- Configuration keys
-- Status values
-- Any repeated string literal
-
-### Always Use Input/Output Types
-
-**This is our #1 principle.** Every function at every layer:
-
-```go
-// ❌ BAD
+// BAD
 func CreateSession(name string, dmID string, maxPlayers int) (*Session, error)
-
-// ✅ GOOD  
+// GOOD
 func CreateSession(ctx context.Context, input *CreateSessionInput) (*CreateSessionOutput, error)
 ```
 
-This applies everywhere:
-- Handlers: Request/Response
-- Orchestrators: Input/Output
-- Repositories: Input/Output
-- Even helpers: Input/Output
+**No magic strings.** Every repeated string literal becomes a named constant —
+entity types and sources, error codes and messages, configuration keys,
+status values.
 
-### Repository Pattern
+**Entities are data structs.** No business logic on them; calculations belong
+in the toolkit (proficiency bonuses, ability modifiers, condition checks).
+Test entities through usage in handler/service tests, not standalone.
 
-```go
-type Repository interface {
-    Get(ctx context.Context, id string) (*entities.Session, error)
-    Save(ctx context.Context, session *entities.Session) error
-    List(ctx context.Context, input *ListInput) (*ListOutput, error)
-}
-
-type ListInput struct {
-    Limit  int
-    Offset int
-    Filter *FilterOptions
-}
-
-type ListOutput struct {
-    Sessions  []*entities.Session
-    NextToken string
-    Total     int
-}
-```
-
-Benefits:
-- No interface changes when adding fields
-- No mock regeneration
-- Future-proof for pagination
-
-### Entity Design
-
-Keep entities simple - they're just data:
+**Never return `(nil, nil)`** — a valid object or an error:
 
 ```go
-// entities/character.go
-type Character struct {
-    ID         string
-    Name       string
-    Level      int
-    RaceID     string
-    ClassID    string
-    BaseStats  Stats  // Just the numbers
-}
-
-// NO business logic on entities
-// This goes in rpg-toolkit:
-// - CalculateProficiencyBonus(level)
-// - CalculateAbilityModifier(score)
-```
-
-### Testing Approach
-
-- **Uber's gomock** (not mockery)
-- **Always use test suites**
-- **Real Redis when safe** (miniredis)
-
-```go
-type OrchestratorTestSuite struct {
-    suite.Suite
-    mockRepo     *mocks.MockRepository
-    mockEngine   *mocks.MockEngine
-    orchestrator *Orchestrator
-}
-
-func (s *OrchestratorTestSuite) SetupTest() {
-    ctrl := gomock.NewController(s.T())
-    s.mockRepo = mocks.NewMockRepository(ctrl)
-    s.mockEngine = mocks.NewMockEngine(ctrl)
-    s.orchestrator = NewOrchestrator(s.mockRepo, s.mockEngine)
-}
-```
-
-### Mock Organization
-
-Following rpg-toolkit's pattern for consistency:
-
-- **Location**: Mocks go in a `mock/` subdirectory next to the interface
-- **Package naming**: Use `<parent>mock` (e.g., `charactermock`, `sessionmock`)
-- **File naming**: Use `mock_<interface>.go` (e.g., `mock_service.go`)
-- **Generation**: Place `//go:generate` above the interface definition
-
-```go
-// In service.go:
-//go:generate mockgen -destination=mock/mock_service.go -package=charactermock github.com/KirkDiggler/rpg-api/internal/services/character Service
-
-type Service interface {
-    // ...
-}
-
-// Usage in tests:
-mockService := charactermock.NewMockService(ctrl)
-```
-
-Benefits:
-- Mocks are close to their interfaces
-- Clear package names (`charactermock.NewMock...`)
-- Easy to find and maintain
-- Consistent with rpg-toolkit patterns
-
-### Development Workflow
-
-**Always work in a worktree**, one per line of work — never a bare
-`git checkout -b` in the shared clone:
-```bash
-git fetch origin
-git worktree add .worktrees/feat-character-creation -b feat/character-creation origin/dev
-```
-New work bases off `origin/dev`. See `rpg-project/CLAUDE.md` for the rule.
-
-**Always run pre-commit:**
-```bash
-make pre-commit
-```
-
-
-### Error Handling
-
-**NEVER return (nil, nil) - Always return a valid object or an error**
-
-```go
-// ❌ BAD - Never do this
 if input == nil {
-    return nil, nil
+    return nil, errors.New("input is required")   // invalid input → error
 }
-
-// ✅ GOOD - Return error for invalid input
-if input == nil {
-    return nil, errors.New("input is required")
-}
-
-// ✅ GOOD - Return empty/default object if that's the valid behavior
 if items == nil {
-    return &ListOutput{Items: []*Item{}, Total: 0}, nil
+    return &ListOutput{Items: []*Item{}, Total: 0}, nil   // valid emptiness → default
 }
 ```
 
-Define errors at package level:
-```go
-var (
-    ErrSessionNotFound = errors.New("session not found")
-    ErrPlayerNotInSession = errors.New("player not in session")
-)
+Define errors at package level (`ErrSessionNotFound`,
+`ErrPlayerNotInSession`) and wrap with context:
+`fmt.Errorf("failed to get session %s: %w", id, ErrSessionNotFound)`.
 
-// Wrap with context
-return fmt.Errorf("failed to get session %s: %w", id, ErrSessionNotFound)
-```
+**API versioning is external, through handlers** — `/handlers/sessionv1alpha1/`,
+`sessionv1beta1/`, `sessionv1/` — while internal package shape stays stable.
 
-### API Versioning
+**Storage has no database preference.** The repository pattern carries the
+flexibility; Redis is the start, adapters arrive as needed.
 
-External versioning through handlers:
-- `/handlers/sessionv1alpha1/`
-- `/handlers/sessionv1beta1/`
-- `/handlers/sessionv1/`
+**Documentation is living.** The shape is described in "Where things live"
+and maintained in the same PR that invalidates a line. `status.md` and
+`quality.md` reflect actual code, not stale snapshots. Cite `file:line` when
+describing code; verify before asserting; surface gaps honestly. Historical
+journey/ADR content lives under `docs/archive/`.
 
-Internal stays stable while external evolves.
+**Standards are tool-enforced, not memorized.** golangci-lint and the git
+hooks say what needs fixing; when CI finds a new failure pattern, add its
+detection to `scripts/ci-checks.sh` so it is caught locally forever after.
 
-## Storage Philosophy
+## Testing
 
-- **No database preferences** - users choose
-- **Repository pattern** enables flexibility
-- **Start with Redis** - simple, fast
-- **Add adapters as needed**
+- **Uber's gomock** (not mockery); **always test suites**; **real Redis when
+  safe** (miniredis). Establish mocks in `SetupTest` with
+  `gomock.NewController(s.T())`; use explicit EXPECT matching and complete
+  entities so conversions get checked.
+- **Mocks live beside their interface**: a `mock/` subdirectory, package
+  `<parent>mock` (`charactermock`), file `mock_<interface>.go`, generated by
+  the `//go:generate` directive above the interface.
+- Coverage measures internal code only (`/gen/`, `/mock/`, `/cmd/` excluded):
+  handlers 40–50% (mostly translation), services 80%+ (business logic).
+  0% new-code coverage is fine during outside-in contract work.
+- Integration tests: `docs/how-to/run-integration-tests`.
 
-## Documentation Philosophy
+## Hard rules
 
-The current shape is described in **"Where things live"** at the top of this file. Maintain it in the same PR that invalidates a line — `status.md` and `quality.md` are living docs and must reflect the actual code, not stale snapshots. Cite `file:line` when describing code; verify before asserting; surface gaps honestly.
+- **Work in a worktree**, one per line of work — never a bare
+  `git checkout -b` in the shared clone:
+  ```bash
+  git fetch origin
+  git worktree add .worktrees/feat-character-creation -b feat/character-creation origin/dev
+  ```
+- **New work bases off `origin/dev`, never `main`.** `dev` is the actual
+  current working state; `main` is periodically promoted and can sit tens of
+  commits behind in between — including real toolkit dependency bumps and
+  fixes. Branching from `main` makes already-resolved work look like fresh
+  breakage. Confirm before assuming otherwise:
+  `git log origin/main..origin/dev --oneline`.
+- **NEVER use `git commit --no-verify`.** The same checks run in CI — fix
+  issues locally; if the linter seems wrong, fix the config, not the check.
+- **Run `make ci-check` before pushing.** When it finds a failure pattern,
+  add the detection to `scripts/ci-checks.sh` — every CI failure becomes a
+  local check that catches it forever.
+- **`make pre-commit` is check-only** — it never changes tracked files or the
+  index. Prepare deliberate source changes with `make fix`; regenerate mocks
+  explicitly with `make generate` when interfaces changed; tools install only
+  via `make install-tools`.
 
-Older guidance (per-repo `journey/` and `adr/` as primary doc types) has been retired in favor of the platform-mcp shape. Historical journey/ADR content lives under `docs/archive/`.
+## Dependency updates
 
-## Development Workflow
-
-### Feature Release Workflow
-
-**Every feature follows this workflow to ensure quality and catch CI issues early:**
-
-1. **Always start from latest `dev`, not `main`**
-
-   `dev` is the actual current working state for this repo. `main` is only
-   periodically promoted from `dev` (see commits like "promote: the session
-   stack to production") and can sit tens of commits behind in between —
-   including real toolkit dependency bumps and fixes. Branching from `main`
-   makes already-resolved `dev` work look like fresh, unexplained breakage.
-   Confirm before assuming otherwise: `git log origin/main..origin/dev --oneline`.
-
-   ```bash
-   git checkout dev
-   git pull
-   ```
-
-2. **Create feature branch (from `dev`)**
-   ```bash
-   git checkout -b feat/spell-selection
-   ```
-
-3. **Develop the feature**
-   - Write tests first (TDD) or alongside code
-   - Follow existing patterns in the codebase
-   - Keep commits focused and atomic
-
-4. **Run tests locally**
-   ```bash
-   go test ./...                # Run all tests
-   go test ./internal/orchestrators/character -v  # Run specific package tests
-   ```
-
-5. **Run CI checks locally BEFORE pushing**
-   ```bash
-   make ci-check               # Detect CI failures before push
-   make ci-fix                 # Auto-fix what can be fixed
-   ```
-
-6. **When CI fails, learn from it**
-   - Add the failure pattern to `scripts/ci-checks.sh`
-   - Document why it failed in comments
-   - Next time, the local check will catch it
-   - Eventually we'll catch all common CI failures locally
-
-7. **Create PR**
-   ```bash
-   git push origin feat/spell-selection
-   gh pr create
-   ```
-
-8. **Address review feedback**
-   - Check inline comments: `gh api repos/KirkDiggler/rpg-api/pulls/<number>/comments`
-   - Fix issues and push updates
-   - Thank reviewers for catching issues
-
-9. **Merge when approved**
-   - Let the PR author or reviewer merge
-   - Delete branch after merge
-
-**Key principle**: Every CI failure is a learning opportunity. Add detection for it locally so it never happens again.
-
-### Pre-commit Workflow
-**ALWAYS** run before committing:
-```bash
-make pre-commit
-```
-This is check-only: it verifies release pins, CI-script safety, formatting,
-imports, module tidiness, EOF newlines, lint, and the short test suite without
-changing tracked files or the Git index. Prepare deliberate source changes first
-with `make fix` and regenerate mocks explicitly with `make generate`. Required
-tools are installed only by an explicit `make install-tools`.
-
-### 🚨 CRITICAL RULE: NEVER USE --no-verify 🚨
-**NEVER, EVER, EVER use `git commit --no-verify`**
-- CI will fail anyway - same checks run there
-- Fix issues locally - it's faster than fixing in PR
-- If linter seems wrong, fix the config, don't skip the check
-- See IMPORTANT_NEVER_SKIP_PRECOMMIT.md for details
-
-### Linting Setup
-Based on rpg-toolkit's proven configuration:
-- **golangci-lint**: Comprehensive linting with 20+ linters
-- **Git hooks**: Automatic pre-commit checks via `.githooks/pre-commit`
-- **Auto-formatting**: gofmt with simplify + goimports with local prefixes
-
-Install git hooks once:
-```bash
-make install-hooks
-```
-
-Install development tools:
-```bash
-make install-tools
-```
-
-## Testing & Coverage Philosophy
-
-### Entity Testing Decision
-- **Entities are data structs**: Test them through usage in handler/service tests
-- **Use explicit EXPECT matching**: Return complete entities in mocks for better coverage
-- **Check response thoroughly**: Verify multiple fields to ensure conversions work
-- **Postpone dedicated entity tests**: Until entities have behavior (validation, methods)
-
-### Coverage Focus
-- **Internal code only**: Exclude `/gen/`, `/mock/`, `/cmd/` from coverage metrics
-- **Handler coverage target**: 40-50% is good (mostly translation logic)
-- **Service coverage target**: 80%+ (business logic lives here)
-- **0% new code coverage is OK**: During outside-in development when adding contracts
-
-## CI/CD Patterns & Common Failures
-
-### Pre-Flight CI Checks
-**ALWAYS run `make ci-check` before pushing** to detect CI failures locally:
-
-```bash
-make generate  # Explicitly regenerate mocks when interfaces changed
-make fix       # Explicitly format, tidy, and repair EOF newlines
-make ci-check  # Comprehensive non-mutating CI validation
-```
-
-`make ci-check`, `make pre-commit`, `make lint`, and formatting checks never
-install tools or restore/reset the worktree. If a tool is missing, run
-`make install-tools` explicitly. Hosted workflows retain an explicit generation
-step and fail if it changes committed mock files.
-
-### Staying Current with Standards
-
-We follow **industry-standard Go practices** rather than maintaining custom rules:
-- Use `golangci-lint` with recommended linters enabled
-- Follow Go's official style guide and effective Go principles
-- Let tooling enforce standards, not manual rules
-
-The key is: **If CI fails locally with `make ci-check`, fix it before pushing.**
-
-Common patterns that cause CI failures:
-- Generated code out of sync → run `make generate`
-- Formatting issues → run `make fmt`
-- Linting issues → run `make lint` and fix what it reports
-- Test failures → ensure tests pass with race detection enabled
-
-Don't memorize specific rules - let the tools tell you what needs fixing.
-
-### CI Check Script
-We maintain `scripts/ci-checks.sh` that catches these issues before push.
-Update it when we discover new CI failure patterns.
+- Protos: `GOPROXY=direct go get github.com/KirkDiggler/rpg-api-protos/gen/go@generated`
+- Toolkit: `GOPROXY=direct go get github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e@latest`
+- Iterating on local toolkit changes without publish → tag → `go get`:
+  `docs/how-to/local-toolkit-override`
 
 ## Remember
 
-- Explicit > Implicit (always use Input/Output types)
-- Simple > Complex (entities are just data)
-- rpg-api orchestrates, rpg-toolkit calculates
-- Test with real dependencies when safe
-- Document the why alongside the what; status.md and quality.md are the living record
-- Tests should be thorough and "set and forget"
-- **ALWAYS question data structures** - No guarantees we did it correctly
-- **Trust your instincts** - If something feels wrong, it probably is
-- **Verify assumptions** - Check actual API responses and data flows
-- **Don't blindly follow existing patterns** - They might be wrong
-- **Run CI checks locally** - Don't let CI be the first to find issues
+- Explicit > implicit; simple > complex; rpg-api orchestrates, rpg-toolkit calculates.
+- **ALWAYS question data structures** — there are no guarantees we did it correctly.
+- **Trust your instincts** — if something feels wrong, it probably is. Verify
+  assumptions against actual API responses and data flows.
+- **Don't blindly follow existing patterns** — they might be wrong.
+- Tests are thorough and "set and forget".
