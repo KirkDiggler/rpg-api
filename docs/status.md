@@ -11,6 +11,17 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Nature cantrips preview (2026-09-28)** — Adopts toolkit root #1905's pushed
+commit for Poison Spray, Shillelagh and Nature utility NYIs. Shared cast options
+already carry the selected held weapon; no new proto contract is needed.
+Equipment patches now include toolkit-authored post-mutation conditions under
+the same expected-version check, so releasing an enchanted weapon remains
+released after reload without overwriting concurrent combat state. Draft commit
+pin must be replaced with the root release before merge. Local compilation and
+manual browser acceptance are tracked separately; automated tests are not being
+run in the requested manual-first workflow.
+
+
 **Repository persistence contracts (rpg-api#1047, 2026-09-24)** — New miniredis
 suites cover populated character/draft/dice records and strengthen session/encounter
 round trips without toolkit gameplay setup. They cover the applicable CRUD/index,

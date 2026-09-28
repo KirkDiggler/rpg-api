@@ -122,6 +122,9 @@ func (s *EquipItemTestSuite) appliedPatch(
 	patchedData := *entity.Data
 	patchedData.EquipmentSlots = maps.Clone(input.EquipmentSlots)
 	patchedData.ArmorClass = input.ArmorClass
+	if input.Conditions != nil {
+		patchedData.Conditions = *input.Conditions
+	}
 	return &characterrepo.PatchEquipmentOutput{
 		Character: &entities.Character{Data: &patchedData},
 		Version:   "patched-version",
@@ -942,4 +945,26 @@ func (s *EquipItemTestSuite) TestEquipItem_AVersionRaceTellsNobodyUntilTheWriteL
 
 	s.Len(s.notified.calls, 1,
 		"the rejected attempt wrote nothing and said nothing; the retry wrote once and said once")
+}
+
+func (s *EquipItemTestSuite) TestUnequipPersistsToolkitRemovalOfWeaponEnchantment() {
+	entity := s.fighterWithLongswordAndShield()
+	entity.Data.Inventory = append(entity.Data.Inventory, character.InventoryItemData{Type: "weapon", ID: "club", Quantity: 1})
+	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotMainHand: "club"}
+	effect, err := conditions.NewShillelaghCondition(s.testCharacterID, conditions.ShillelaghConfig{Weapons: []conditions.HeldWeapon{{Slot: string(character.SlotMainHand), ItemID: "club"}}, WeaponSlot: string(character.SlotMainHand), Ability: abilities.WIS})
+	s.Require().NoError(err)
+	raw, err := effect.ToJSON()
+	s.Require().NoError(err)
+	entity.Data.Conditions = []json.RawMessage{raw}
+	s.mockCharacterRepo.EXPECT().Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
+	s.mockCharacterRepo.EXPECT().PatchEquipment(s.ctx, gomock.Any()).DoAndReturn(func(_ context.Context, in characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
+		s.Require().NotNil(in.Conditions)
+		s.Empty(*in.Conditions, "toolkit removal must be included in the same atomic equipment write")
+		s.Empty(in.EquipmentSlots)
+		return s.appliedPatch(entity, in), nil
+	})
+	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{CharacterID: s.testCharacterID, Slot: character.SlotMainHand})
+	s.Require().NoError(err)
+	s.Require().NotNil(out)
+	s.Len(entity.Data.Conditions, 1, "the repository's read snapshot must not be mutated")
 }

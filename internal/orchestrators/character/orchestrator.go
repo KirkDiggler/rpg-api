@@ -955,6 +955,7 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 			Slot:        input.Slot,
 			Current:     current,
 			Slots:       maps.Clone(char.ToData().EquipmentSlots),
+			Conditions:  char.ToData().Conditions,
 			ArmorClass:  breakdown.Total,
 		})
 		if patchErr != nil {
@@ -1017,7 +1018,9 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 		if equipped := char.GetEquippedSlot(input.Slot); equipped != nil {
 			unequippedItemID = equipped.Item.EquipmentID()
 		}
-		char.UnequipItem(input.Slot)
+		if unequipErr := char.UnequipItem(input.Slot); unequipErr != nil {
+			return nil, mapEquipError(unequipErr)
+		}
 
 		post, projectErr := o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char})
 		if projectErr != nil {
@@ -1037,6 +1040,7 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 			Slot:        input.Slot,
 			Current:     current,
 			Slots:       maps.Clone(char.ToData().EquipmentSlots),
+			Conditions:  char.ToData().Conditions,
 			ArmorClass:  breakdown.Total,
 		})
 		if patchErr != nil {

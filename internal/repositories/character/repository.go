@@ -5,6 +5,7 @@ package character
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -85,13 +86,17 @@ type UpdateOutput struct {
 }
 
 // PatchEquipmentInput contains the optimistic revision/equipment expectation
-// and the only two fields the repository is permitted to change.
+// and equipment-derived fields the repository is permitted to change.
 type PatchEquipmentInput struct {
 	CharacterID            string
 	ExpectedVersion        string
 	ExpectedEquipmentSlots tkcharacter.EquipmentSlots
 	EquipmentSlots         tkcharacter.EquipmentSlots
 	ArmorClass             int
+	// Conditions is the toolkit's post-equipment state. Nil preserves conditions;
+	// a present empty slice clears them. The expected version protects concurrent
+	// combat changes before this replacement is accepted.
+	Conditions *[]json.RawMessage
 }
 
 // PatchEquipmentOutput contains the actual latest persisted entity. Applied is

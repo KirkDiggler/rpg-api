@@ -1,10 +1,13 @@
 package character
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 
@@ -100,6 +103,7 @@ type equipmentWriteInput struct {
 	Current    *characterrepo.GetOutput
 	Slots      character.EquipmentSlots
 	ArmorClass int
+	Conditions []json.RawMessage
 }
 
 // writeEquipment persists one equipment change and, WHEN AND ONLY WHEN the
@@ -134,12 +138,17 @@ type equipmentWriteInput struct {
 func (o *Orchestrator) writeEquipment(
 	ctx context.Context, in *equipmentWriteInput,
 ) (*characterrepo.PatchEquipmentOutput, *characterrepo.GetOutput, error) {
+	var changedConditions *[]json.RawMessage
+	if !slices.EqualFunc(in.Current.Character.Data.Conditions, in.Conditions, func(a, b json.RawMessage) bool { return bytes.Equal(a, b) }) {
+		changedConditions = &in.Conditions
+	}
 	patch, err := o.characterRepo.PatchEquipment(ctx, characterrepo.PatchEquipmentInput{
 		CharacterID:            in.CharacterID,
 		ExpectedVersion:        in.Current.Version,
 		ExpectedEquipmentSlots: maps.Clone(in.Current.Character.Data.EquipmentSlots),
 		EquipmentSlots:         in.Slots,
 		ArmorClass:             in.ArmorClass,
+		Conditions:             changedConditions,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to patch character equipment: %w", err)

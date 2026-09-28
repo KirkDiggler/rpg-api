@@ -249,6 +249,12 @@ func (r *redisRepository) PatchEquipment(
 
 			current.Data.EquipmentSlots = maps.Clone(input.EquipmentSlots)
 			current.Data.ArmorClass = input.ArmorClass
+			if input.Conditions != nil {
+				current.Data.Conditions = make([]json.RawMessage, len(*input.Conditions))
+				for i, condition := range *input.Conditions {
+					current.Data.Conditions[i] = append(json.RawMessage(nil), condition...)
+				}
+			}
 			patched, marshalErr := json.Marshal(&current)
 			if marshalErr != nil {
 				return apierr.Wrapf(marshalErr, "failed to marshal character equipment patch")
