@@ -783,8 +783,8 @@ func TestFightEndsByDecisionWhenThePartyWalksAway(t *testing.T) {
 //
 // Row 2 is the assertion. The entrance-hall door is on row 1, so (5,2)->(6,2)
 // is a pair of adjacent cells with a wall between them: adjacency is not
-// permission. The whole Move is refused rather than partially walked, which is
-// the right answer for a path whose author was wrong about the map.
+// permission. The walk retains completed steps and stops before the crossing;
+// an ordinary obstruction does not discard movement already performed.
 func TestAWalkCannotCrossAWallWhereThereIsNoDoorway(t *testing.T) {
 	h := newAcceptanceHarness(t)
 	ctx := auth.WithPlayerID(context.Background(), "player-alice")
