@@ -507,6 +507,7 @@ func sightingToProto(s sdk.Sighting) *sessionpb.Sighting {
 		Name:       s.Name,
 		Kind:       memberKindToProto(s.Kind),
 		Stance:     s.Stance,
+		Passage:    passageToProto(s.Passage),
 		Payload:    s.Payload,
 		Channel:    s.Channel,
 		At:         s.At,
@@ -3140,5 +3141,18 @@ func unresolvedReasonToProto(r sdk.UnresolvedReason) sessionpb.UnresolvedReason 
 		return sessionpb.UnresolvedReason_UNRESOLVED_REASON_NO_SHEET
 	default:
 		return sessionpb.UnresolvedReason_UNRESOLVED_REASON_UNSPECIFIED
+	}
+}
+
+func passageToProto(p sdk.Passage) sessionpb.Passage {
+	switch p {
+	case sdk.PassageBlocked:
+		return sessionpb.Passage_PASSAGE_BLOCKED
+	case sdk.PassagePassThrough:
+		return sessionpb.Passage_PASSAGE_PASS_THROUGH
+	case sdk.PassageStandable:
+		return sessionpb.Passage_PASSAGE_STANDABLE
+	default:
+		return sessionpb.Passage_PASSAGE_UNSPECIFIED
 	}
 }

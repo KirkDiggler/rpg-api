@@ -53,3 +53,15 @@ func TestMove_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	_, err := h.Move(ctx, &sessionpb.MoveRequest{Session: "sess-1", Member: "char-1", Path: []*sessionpb.Position{{X: 1, Y: 1}}})
 	requireCode(t, err, codes.InvalidArgument)
 }
+
+func TestMove_JoinsCombatWithoutInventingAStep(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Move(gomock.Any(), gomock.Any()).Return(&sdk.MoveOutput{JoinedCombat: true, Status: sdk.MovementStopped}, nil)
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	out, err := h.Move(auth.WithPlayerID(context.Background(), "alice"), &sessionpb.MoveRequest{Session: "sess", Member: "char-1", Path: []*sessionpb.Position{{X: 1}}})
+	require.NoError(t, err)
+	require.True(t, out.GetJoinedCombat())
+	require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_STOPPED, out.GetStatus())
+	require.Empty(t, out.GetSteps())
+}

@@ -33,11 +33,27 @@ func (h *Handler) Move(ctx context.Context, req *sessionpb.MoveRequest) (*sessio
 	}
 
 	return &sessionpb.MoveResponse{
-		Steps:      stepsToProto(out.Steps),
-		Discovered: discoveriesToProto(out.Discovered),
-		Outcome:    outcomeToProto(out.Outcome),
-		Formed:     formedToProto(out.Formed),
-		Saved:      saveReportToProto(out.Saved),
-		Delivery:   deliveryReportToProto(out.Delivery),
+		JoinedCombat: out.JoinedCombat,
+		Status:       movementStatusToProto(out.Status),
+		StopReason:   out.StopReason,
+		Steps:        stepsToProto(out.Steps),
+		Discovered:   discoveriesToProto(out.Discovered),
+		Outcome:      outcomeToProto(out.Outcome),
+		Formed:       formedToProto(out.Formed),
+		Saved:        saveReportToProto(out.Saved),
+		Delivery:     deliveryReportToProto(out.Delivery),
 	}, nil
+}
+
+func movementStatusToProto(status sdk.MovementStatus) sessionpb.MovementStatus {
+	switch status {
+	case sdk.MovementCompleted:
+		return sessionpb.MovementStatus_MOVEMENT_STATUS_COMPLETED
+	case sdk.MovementPaused:
+		return sessionpb.MovementStatus_MOVEMENT_STATUS_PAUSED
+	case sdk.MovementStopped:
+		return sessionpb.MovementStatus_MOVEMENT_STATUS_STOPPED
+	default:
+		return sessionpb.MovementStatus_MOVEMENT_STATUS_UNSPECIFIED
+	}
 }

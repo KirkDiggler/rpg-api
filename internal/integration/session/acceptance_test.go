@@ -811,16 +811,17 @@ func TestAWalkCannotCrossAWallWhereThereIsNoDoorway(t *testing.T) {
 		Session: "wall-run", Member: "alice",
 		Path: []*sessionpb.Position{pbAt(2, 2), pbAt(3, 2), pbAt(4, 2), pbAt(5, 2), pbAt(6, 2)},
 	})
-	requireGRPCCode(t, err, codes.InvalidArgument)
-	require.Empty(t, resp.GetSteps(), "a path whose author was wrong about the map is refused whole, not walked partway")
+	require.NoError(t, err)
+	require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_STOPPED, resp.GetStatus())
+	require.Len(t, resp.GetSteps(), 4, "the completed prefix is retained")
 
-	// And she has not moved: the refusal is not a half-applied walk.
+	// The persisted position agrees with the last completed step.
 	whereResp, err := h.handler.GetWhere(ctx, &sessionpb.GetWhereRequest{
 		Session: "wall-run", Member: "alice",
 	})
 	require.NoError(t, err)
-	require.Equal(t, at(1, 2).X, whereResp.GetPosition().GetX())
-	require.Equal(t, at(1, 2).Y, whereResp.GetPosition().GetY())
+	require.Equal(t, at(5, 2).X, whereResp.GetPosition().GetX())
+	require.Equal(t, at(5, 2).Y, whereResp.GetPosition().GetY())
 }
 
 // storyBeats reads a session's whole story for member and returns just the
@@ -1010,21 +1011,15 @@ func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
 	require.Len(t, byID["hall-tomb"].GetLock().GetApproaches(), 1)
 	require.Equal(t, int32(12), byID["hall-tomb"].GetLock().GetApproaches()[0].GetDc(), "the DC is public — full data until v1.0")
 
-	// -- the walk is refused as FICTION, not as a bad cell (rpg-toolkit#1135) --
-	_, err = h.handler.Move(ctx, &sessionpb.MoveRequest{
+	// The locked crossing stops the route after its first completed step.
+	stopped, err := h.handler.Move(ctx, &sessionpb.MoveRequest{
 		Session: "doom-run", Member: "alice", Path: []*sessionpb.Position{pbAt(13, 3), pbAt(14, 3)},
 	})
-	requireGRPCCode(t, err, codes.FailedPrecondition)
-	require.Contains(t, err.Error(), "hall-tomb", "the refusal names the door that stopped her")
-	require.Contains(t, err.Error(), "DC 12", "and what it would take")
-
-	// She walked one step before the door refused the second — nothing is
-	// saved on a mid-walk rejection, so she still stands at (12,3). Step to
-	// the door's own cell first, then try the lock.
-	_, err = h.handler.Move(ctx, &sessionpb.MoveRequest{
-		Session: "doom-run", Member: "alice", Path: []*sessionpb.Position{pbAt(13, 3)},
-	})
 	require.NoError(t, err)
+	require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_STOPPED, stopped.GetStatus())
+	require.Len(t, stopped.GetSteps(), 1)
+	require.Contains(t, stopped.GetStopReason(), "hall-tomb")
+	require.Contains(t, stopped.GetStopReason(), "DC 12")
 
 	// -- the check rolls server-side: d20 max face 20 + dex 2 beats DC 12,
 	// and a beaten lock OPENS the door --
