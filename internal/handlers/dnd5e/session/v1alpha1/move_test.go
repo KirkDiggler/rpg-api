@@ -65,3 +65,15 @@ func TestMove_JoinsCombatWithoutInventingAStep(t *testing.T) {
 	require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_STOPPED, out.GetStatus())
 	require.Empty(t, out.GetSteps())
 }
+
+func TestMove_PreservesReactionPause(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Move(gomock.Any(), gomock.Any()).Return(&sdk.MoveOutput{Status: sdk.MovementPaused}, nil)
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	out, err := h.Move(auth.WithPlayerID(context.Background(), "alice"), &sessionpb.MoveRequest{Session: "sess", Member: "char-1", Path: []*sessionpb.Position{{X: 1}}})
+	require.NoError(t, err)
+	require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_PAUSED, out.GetStatus())
+	require.False(t, out.GetJoinedCombat())
+	require.Empty(t, out.GetSteps())
+}

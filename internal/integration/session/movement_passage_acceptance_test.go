@@ -30,15 +30,23 @@ func (s *MovementPassageSuite) TestDefeatedMonsterCellCanBeOccupiedAndReloaded()
 		Session: scene.session, Member: scene.actor,
 	})
 	s.Require().NoError(err)
-	// The scene places the skeleton at (19,3) and both party members to
-	// its left. Route through any intervening ally and stop on the body.
-	path := []*sessionpb.Position{pbAt(19, 3)}
-	if proto.Equal(where.GetPosition(), pbAt(17, 3)) {
-		path = []*sessionpb.Position{pbAt(18, 3), pbAt(19, 3)}
-	} else {
-		s.Require().True(proto.Equal(where.GetPosition(), pbAt(18, 3)))
+	// The deterministic actor is adjacent to the defeated skeleton. This
+	// scenario pins standing on its cell and persistence across requests.
+	s.Require().True(proto.Equal(where.GetPosition(), pbAt(18, 3)))
+	view, err := scene.h.handler.GetView(scene.ctx, &sessionpb.GetViewRequest{
+		Session: scene.session, Member: scene.actor,
+	})
+	s.Require().NoError(err)
+	var body *sessionpb.Sighting
+	for _, sighting := range view.GetSightings() {
+		if sighting.GetSubject() == "skel-1" {
+			body = sighting
+			break
+		}
 	}
-	s.Require().NotEmpty(path)
+	s.Require().NotNil(body)
+	s.Equal(sessionpb.Passage_PASSAGE_STANDABLE, body.GetPassage())
+	path := []*sessionpb.Position{pbAt(19, 3)}
 	moved, err := scene.h.handler.Move(scene.ctx, &sessionpb.MoveRequest{
 		Session: scene.session, Member: scene.actor, Path: path,
 	})
