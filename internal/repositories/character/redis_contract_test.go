@@ -358,3 +358,42 @@ func (s *CharacterRedisContractSuite) TestStorageReadFailuresAreNotNotFound() {
 		s.False(apierr.IsNotFound(err))
 	}
 }
+
+func (s *CharacterRedisContractSuite) TestEquipmentConditionReplacementIsAtomicAndVersionProtected() {
+	original := populatedCharacter()
+	s.create(original)
+	before, err := s.repo.Get(s.ctx, characterrepo.GetInput{ID: original.Data.ID})
+	s.Require().NoError(err)
+	concurrent := *before.Character.Data
+	concurrent.HitPoints = 3
+	concurrent.Conditions = append(concurrent.Conditions, json.RawMessage(`{"new":"combat-condition"}`))
+	_, err = s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: &entities.Character{Data: &concurrent}})
+	s.Require().NoError(err)
+	cleared := []json.RawMessage{}
+	input := characterrepo.PatchEquipmentInput{CharacterID: original.Data.ID, ExpectedVersion: before.Version, ExpectedEquipmentSlots: original.Data.EquipmentSlots, EquipmentSlots: tkcharacter.EquipmentSlots{}, ArmorClass: 12, Conditions: &cleared}
+	raced, err := s.repo.PatchEquipment(s.ctx, input)
+	s.Require().NoError(err)
+	s.False(raced.Applied)
+	s.Len(raced.Character.Data.Conditions, 2, "stale equipment projection cannot erase a new combat effect")
+	preserved := []json.RawMessage{concurrent.Conditions[1]}
+	input.ExpectedVersion = raced.Version
+	input.Conditions = &preserved
+	patched, err := s.repo.PatchEquipment(s.ctx, input)
+	s.Require().NoError(err)
+	s.True(patched.Applied)
+	stored, err := s.repo.Get(s.ctx, characterrepo.GetInput{ID: original.Data.ID})
+	s.Require().NoError(err)
+	s.Equal(preserved, stored.Character.Data.Conditions)
+	s.Equal(3, stored.Character.Data.HitPoints)
+	s.Equal(concurrent.Resources, stored.Character.Data.Resources)
+	s.Equal(concurrent.ActionEconomy, stored.Character.Data.ActionEconomy)
+	input.ExpectedVersion = stored.Version
+	input.ExpectedEquipmentSlots = stored.Character.Data.EquipmentSlots
+	input.Conditions = &cleared
+	patched, err = s.repo.PatchEquipment(s.ctx, input)
+	s.Require().NoError(err)
+	s.True(patched.Applied)
+	stored, err = s.repo.Get(s.ctx, characterrepo.GetInput{ID: original.Data.ID})
+	s.Require().NoError(err)
+	s.Empty(stored.Character.Data.Conditions)
+}

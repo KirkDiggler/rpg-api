@@ -299,13 +299,24 @@ func (h *Handler) UpdateClass(
 
 	// Convert proto choices to toolkit format
 	var classChoices toolkitchar.ClassChoices
-	var baseSkillID choices.ChoiceID
+	var baseSkillID, baseCantripID choices.ChoiceID
 	if reqs := choices.GetClassRequirements(convertProtoClassToToolkit(req.Class)); reqs != nil && reqs.Skills != nil {
 		baseSkillID = reqs.Skills.ID
+	}
+	if reqs := choices.GetClassRequirements(convertProtoClassToToolkit(req.Class)); reqs != nil && reqs.Cantrips != nil {
+		baseCantripID = reqs.Cantrips.ID
 	}
 	if len(req.ClassChoices) > 0 {
 		for _, choice := range req.ClassChoices {
 			if choice == nil {
+				continue
+			}
+			if choice.Category == dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS &&
+				choice.ChoiceId != "" && choices.ChoiceID(choice.ChoiceId) != baseCantripID {
+				classChoices.SubclassChoices = append(classChoices.SubclassChoices, choices.Submission{
+					ChoiceID: choices.ChoiceID(choice.ChoiceId), Source: shared.SourceSubclass,
+					Category: shared.ChoiceCantrips, Values: selectedSpells(choice.GetSpells()),
+				})
 				continue
 			}
 			// Requirement identity separates subclass answers from the base

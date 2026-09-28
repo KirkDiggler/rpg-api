@@ -52,6 +52,13 @@ func (s *ConvertersTestSuite) TestClericCatalogUsesProviderDomainsAndSpellcastin
 			s.Len(byID[string(equipment.ID)].GetEquipmentOptions().GetBundles(), len(equipment.Options))
 		}
 		s.Equal(int32(resolved.Cantrips.Count), byID[string(resolved.Cantrips.ID)].GetChooseCount())
+		for _, bonus := range resolved.AdditionalCantrips {
+			choice := byID[string(bonus.ID)]
+			s.Require().NotNil(choice)
+			s.Equal(int32(bonus.Count), choice.GetChooseCount())
+			s.Equal(spellRefStrings(bonus.Options), choice.GetSpellOptions().GetAvailableRefs())
+			s.Equal(dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS, choice.GetChoiceType())
+		}
 		// Keep additional requirements visible even when acquisition needs provider work.
 		for _, skill := range resolved.AdditionalSkills {
 			s.Equal(int32(skill.Count), byID[string(skill.ID)].GetChooseCount())

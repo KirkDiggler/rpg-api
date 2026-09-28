@@ -43,3 +43,11 @@ See [the method inventory](../../../docs/quality/repository-contracts.md) for ex
 coverage, known limits, and #141 reconciliation. In particular, these tests do not
 establish atomic create-if-absent under concurrent writers, arbitrary transaction
 rollback, or real concurrent WATCH retry/exhaustion behavior.
+
+### Equipment-bound conditions
+
+`PatchEquipmentInput.Conditions` optionally carries the toolkit's post-equipment
+condition blobs. The same full-record expected version guards slots, derived AC
+and conditions together. A stale version must be reprojected; a nil conditions
+pointer preserves them, while a present empty slice explicitly clears them.
+No HP, resource or action-economy field is written by this patch.
