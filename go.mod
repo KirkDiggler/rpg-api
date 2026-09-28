@@ -12,7 +12,7 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/play/interrupt v0.1.0
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.196.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.108.1-0.20260928095419-99390d135f1a
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.108.1
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.110.0
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.16.1
 	github.com/KirkDiggler/rpg-toolkit/world v0.4.1
