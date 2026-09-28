@@ -1,9 +1,22 @@
 package lobby_test
 
 import (
+	"errors"
+	"fmt"
+
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 )
+
+// The Status paths below are scripted through s.manager: GetMyActiveLobby is
+// a read, so its whole session dependency is one Status call, and the SDK's
+// liveness verdict is the input under test rather than something this suite
+// has to make true by starting a real session. Any test that does NOT arm a
+// Status expectation (waiting or missing lobby, stale index) proves its
+// "Status is not consulted" claim by construction: the controller-isolated
+// mock fails the test on an unexpected call.
 
 func (s *LobbySuite) TestGetMyActiveLobby_NoActiveLobby_ReturnsEmptyOutput() {
 	out, err := s.orch.GetMyActiveLobby(s.ctx, &lobbyorch.GetMyActiveLobbyInput{PlayerID: "stranger"})
@@ -28,7 +41,9 @@ func (s *LobbySuite) TestGetMyActiveLobby_WaitingLobby_ReturnsLobbyOnly() {
 }
 
 func (s *LobbySuite) TestGetMyActiveLobby_StartedWithLiveEncounter_ReturnsBothIDs() {
-	s.seedLiveSession("enc-live")
+	s.manager.EXPECT().
+		Status(s.ctx, &sdk.StatusInput{Session: "enc-live"}).
+		Return(&sdk.Status{Open: true}, nil)
 	s.seedLobby(&lobbyrepo.Data{
 		ID: "lobby-g2", HostPlayerID: "alice", Status: lobbyrepo.StatusStarted, EncounterID: "enc-live",
 		Members:     map[string]*lobbyrepo.Member{"alice": {PlayerID: "alice", IsHost: true}},
@@ -43,7 +58,9 @@ func (s *LobbySuite) TestGetMyActiveLobby_StartedWithLiveEncounter_ReturnsBothID
 }
 
 func (s *LobbySuite) TestGetMyActiveLobby_StartedWithTerminalEncounter_ReturnsEmptyOutput() {
-	s.seedEndedSession("enc-ended")
+	s.manager.EXPECT().
+		Status(s.ctx, &sdk.StatusInput{Session: "enc-ended"}).
+		Return(&sdk.Status{Open: false}, nil)
 	s.seedLobby(&lobbyrepo.Data{
 		ID: "lobby-g3", HostPlayerID: "alice", Status: lobbyrepo.StatusStarted, EncounterID: "enc-ended",
 		Members:     map[string]*lobbyrepo.Member{"alice": {PlayerID: "alice", IsHost: true}},
@@ -56,9 +73,14 @@ func (s *LobbySuite) TestGetMyActiveLobby_StartedWithTerminalEncounter_ReturnsEm
 	s.Require().Empty(out.EncounterID)
 }
 
-func (s *LobbySuite) TestGetMyActiveLobby_StartedWithMissingEncounter_ReturnsEmptyOutput() {
+func (s *LobbySuite) TestGetMyActiveLobby_StartedWithMissingSession_ReturnsEmptyOutput() {
 	// Started lobby whose session record is simply gone (e.g. expired) —
-	// same "nothing to resume" outcome as an explicitly ended one.
+	// same "nothing to resume" outcome as an explicitly ended one. The SDK
+	// reports the missing session, this package treats it as a normal empty
+	// answer rather than an error.
+	s.manager.EXPECT().
+		Status(s.ctx, &sdk.StatusInput{Session: "enc-missing"}).
+		Return(nil, fmt.Errorf("provider: %w", sdk.ErrNoSession))
 	s.seedLobby(&lobbyrepo.Data{
 		ID: "lobby-g4", HostPlayerID: "alice", Status: lobbyrepo.StatusStarted, EncounterID: "enc-missing",
 		Members:     map[string]*lobbyrepo.Member{"alice": {PlayerID: "alice", IsHost: true}},
@@ -69,6 +91,47 @@ func (s *LobbySuite) TestGetMyActiveLobby_StartedWithMissingEncounter_ReturnsEmp
 	s.Require().NoError(err)
 	s.Require().Empty(out.LobbyID)
 	s.Require().Empty(out.EncounterID)
+}
+
+func (s *LobbySuite) TestGetMyActiveLobby_StartedWithMissingEncounter_ReturnsEmptyOutput() {
+	// The session exists but the encounter record it references does not.
+	// Distinct SDK sentinel (ErrNoEncounter), same caller-visible outcome:
+	// the lobby is a dead husk, so the whole Output is zeroed.
+	s.manager.EXPECT().
+		Status(s.ctx, &sdk.StatusInput{Session: "enc-dangling"}).
+		Return(nil, fmt.Errorf("provider: %w", sdk.ErrNoEncounter))
+	s.seedLobby(&lobbyrepo.Data{
+		ID: "lobby-g6", HostPlayerID: "alice", Status: lobbyrepo.StatusStarted, EncounterID: "enc-dangling",
+		Members:     map[string]*lobbyrepo.Member{"alice": {PlayerID: "alice", IsHost: true}},
+		MemberOrder: []string{"alice"},
+	})
+
+	out, err := s.orch.GetMyActiveLobby(s.ctx, &lobbyorch.GetMyActiveLobbyInput{PlayerID: "alice"})
+	s.Require().NoError(err)
+	s.Require().Empty(out.LobbyID)
+	s.Require().Empty(out.EncounterID)
+}
+
+// TestGetMyActiveLobby_StatusFails_ReturnsWrappedError is the non-sentinel
+// control: an SDK failure this package does NOT recognize as "no such
+// session" must surface as an error, not be folded into the empty-success
+// answer above. A transient provider outage reported to the client as
+// "you have no active lobby" would strand the player outside an encounter
+// that is still running.
+func (s *LobbySuite) TestGetMyActiveLobby_StatusFails_ReturnsWrappedError() {
+	boom := errors.New("provider unavailable")
+	s.manager.EXPECT().
+		Status(s.ctx, &sdk.StatusInput{Session: "enc-boom"}).
+		Return(nil, boom)
+	s.seedLobby(&lobbyrepo.Data{
+		ID: "lobby-g7", HostPlayerID: "alice", Status: lobbyrepo.StatusStarted, EncounterID: "enc-boom",
+		Members:     map[string]*lobbyrepo.Member{"alice": {PlayerID: "alice", IsHost: true}},
+		MemberOrder: []string{"alice"},
+	})
+
+	out, err := s.orch.GetMyActiveLobby(s.ctx, &lobbyorch.GetMyActiveLobbyInput{PlayerID: "alice"})
+	s.Require().ErrorIs(err, boom, "an unrecognized SDK failure must survive the wrapping")
+	s.Require().Nil(out, "there is no empty-success fallback for an arbitrary Status failure")
 }
 
 func (s *LobbySuite) TestGetMyActiveLobby_PlayerNoLongerMember_SelfHealsStaleIndex() {

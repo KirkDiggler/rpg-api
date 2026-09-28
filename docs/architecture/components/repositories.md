@@ -1,7 +1,7 @@
 ---
 name: repositories
 description: All data access components — interface definitions, implementations, and storage schemas
-updated: 2026-09-06
+updated: 2026-09-24
 confidence: high — #921 simple composition persistence is verified through focused Redis repository tests; older repository notes retain stated caveats
 ---
 
@@ -38,13 +38,17 @@ expected version/equipment plus only the proposed EquipmentSlots and cached Armo
 
 **Storage:** `character:{id}` — JSON-serialized `entities.Character`, whose only
 field is toolkit `character.Data` (including nested `Data.Appearance`), with
-player/session index keys.
+a maintained player index and a legacy session-index read path. Character CRUD does
+not populate or migrate session membership.
 
 `PatchEquipment` uses Redis WATCH/MULTI. A stale equipment map returns ABORTED. A changed
 version with unchanged equipment returns the latest entity without writing so the
 orchestrator can strictly reproject; a successful transaction changes only the two
 allowed fields and returns the actual patched entity. Miniredis tests cover concurrent
-combat-state preservation and stale equipment refusal.
+combat-state preservation and stale equipment refusal. #1047 adds populated round trips,
+CRUD/player-index lifecycle, read-side session-index cleanup, detached reads, successful
+patch preservation and failure contracts. See the [coverage inventory](../../quality/repository-contracts.md)
+for remaining limits, including real concurrent WATCH retry coverage.
 
 Used by: character, lobby, and session orchestration plus owner/public projections.
 
@@ -52,11 +56,15 @@ Used by: character, lobby, and session orchestration plus owner/public projectio
 
 **Path:** `repositories/character_draft/`
 
-Interface methods: `Create`, `Get`, `List`, `Update`, `Delete`.
+Interface methods: `Create`, `Get`, `GetByPlayerID`, `Update`, `Delete`.
 
 **Storage:** Redis keys per draft. JSON stores the thin `entities.CharacterDraft`
 wrapper around toolkit `character.DraftData`, including nested Appearance. Focused
-Redis tests cover complete Appearance and present-zero optional values.
+Redis tests cover complete Appearance and present-zero optional values. #1047 adds
+populated choices/scores, replacement per player, delete/mapping maintenance, decode and
+write failures, and controlled 24-hour expiry/update refresh. Player mappings have no
+TTL: GetByPlayerID removes a stale mapping after the draft expires. Update does not
+migrate a draft to a different owner's mapping.
 
 ## Composition repository
 
@@ -80,13 +88,19 @@ repository itself remains authorization-agnostic and unchanged.
 
 **Path:** `repositories/dice_session/`
 
-Narrow scope: tracks ability score dice rolls during character creation before they are assigned to a draft. Redis-backed, simple interface.
+Narrow scope: stores supplied dice results grouped by entity/context. #1047 tests
+preservation without rolling or recalculating, detached reads, default/custom expiry,
+remaining TTL on update, deletion counts and failures. Exact-deadline update resurrection
+is a known defect (#1055), not corrected by the tests-only cleanup.
 
 ## ~~Encounter repository (v2)~~ DELETED
 
 `repositories/encounters/v2/` is deleted with the old v1alpha2 encounter stack.
 Toolkit session state is now owned by `rulebooks/dnd5e/session.Manager`, wired by
-`internal/orchestrators/session` over Redis-backed toolkit repositories.
+`internal/orchestrators/session` over Redis-backed toolkit repositories. #1047 strengthens
+those adapters' populated session/encounter round trips, independent keys, overwrites,
+optional zero versus absence, detached reads, configured TTL and serialization/storage
+errors. They preserve canonical data without invoking the SDK's gameplay/loading rules.
 
 ## Session roster
 

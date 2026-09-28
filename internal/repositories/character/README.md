@@ -1,90 +1,45 @@
 # Character Repository
 
-## Goals
+The Redis adapter stores `entities.Character`, a wrapper around canonical toolkit
+`character.Data`. It does not load a playable character or calculate equipment effects.
 
-The Character repository manages persistent character data with the following design goals:
+## Current contract
 
-### 1. Full CRUD Operations
-- `Create` - Creates a new character
-- `Get` - Retrieves a character by ID
-- `Update` - Updates an existing character
-- `Delete` - Removes a character
+- `Create` requires a supplied ID, refuses an existing record, and adds the player index
+  when PlayerID is nonempty. Characters have no TTL.
+- `Get` returns a deserialized record plus an opaque version of its stored bytes.
+- `Update` replaces an existing record and moves/removes/adds its **player** index when
+  PlayerID changes. It is a full-record update, not a compare-and-swap operation.
+- `Delete` removes an existing record and its player-index membership.
+- `ListByPlayerID` and `ListBySessionID` resolve members from their respective Redis sets.
+  Missing record IDs are lazily removed; malformed records return an error. List order
+  is not promised.
+- `PatchEquipment` changes only supplied EquipmentSlots and cached ArmorClass. WATCH
+  guards the transaction. Stale equipment returns ABORTED; a changed version with the
+  same equipment returns the latest record with Applied=false so the caller can
+  reproject; success returns the patched record/version. No AC calculation occurs here.
 
-### 2. Efficient Listing
-- `ListByPlayerID` - Get all characters owned by a player
-- `ListBySessionID` - Get all characters in a session
+## Redis keys
 
-### 3. Index Management
-Characters are indexed by:
-- Player ID - for quick retrieval of a player's characters
-- Session ID - for quick retrieval of session participants
-
-## Implementation Notes
-
-### Redis Key Structure
-```
-character:{id}                    # The character data (no TTL)
-character:player:{playerID}       # Set of character IDs owned by player
-character:session:{sessionID}     # Set of character IDs in session
-```
-
-### Key Design Decisions
-
-1. **No TTL on Characters**: Unlike drafts, characters are permanent
-2. **Set-based Indexes**: Using Redis sets for efficient membership operations
-3. **Atomic Updates**: All index updates happen in transactions
-4. **Lazy Cleanup**: Stale index entries are cleaned up during list operations
-
-### Index Management
-
-When a character's player or session changes:
-1. Remove from old index
-2. Add to new index
-3. Both operations in a single transaction
-
-This ensures indexes stay consistent even if:
-- A character moves between sessions
-- A character changes ownership
-- Multiple updates happen concurrently
-
-### Performance Considerations
-
-- List operations fetch all characters individually
-- For large character sets, consider pagination in the future
-- Index cleanup is lazy to avoid performance impact
-
-## Usage Example
-
-```go
-// Create a character
-char := &dnd5e.Character{
-    ID:        "char_123",
-    PlayerID:  "player_456",
-    SessionID: "session_789",
-    Name:      "Thorin",
-    Level:     5,
-}
-err := repo.Create(ctx, CreateInput{Character: char})
-
-// List player's characters
-output, err := repo.ListByPlayerID(ctx, ListByPlayerIDInput{
-    PlayerID: "player_456",
-})
-
-// Update character (e.g., level up)
-char.Level = 6
-err = repo.Update(ctx, UpdateInput{Character: char})
-
-// Move character to different session
-char.SessionID = "session_999"
-err = repo.Update(ctx, UpdateInput{Character: char})
+```text
+character:{id}                 JSON record, no TTL
+character:player:{playerID}     maintained set of character IDs
+character:session:{sessionID}   legacy read-side set of character IDs
 ```
 
-## Future Considerations
+**Correction to the historical README:** character CRUD does not write or migrate
+session-index membership. The former SessionID example and claim of automatic session
+index maintenance did not describe the current adapter. Tests seed that index explicitly
+when exercising its existing list/cleanup path, rather than inventing a writer.
 
-1. **Pagination**: Add limit/offset to list operations
-2. **Sorting**: Add ability to sort by name, level, etc.
-3. **Filtering**: Add filters for class, race, level range
-4. **Bulk Operations**: Support creating/updating multiple characters
-5. **Change History**: Track character modifications over time
+## Evidence
 
+`redis_equipment_test.go` retains the non-equipment-revision/reprojection and
+stale-equipment refusal regressions. `redis_contract_test.go` adds populated persistence,
+player-index lifecycle, detached reads, successful equipment-patch preservation,
+validation, malformed data, and bounded storage failures using miniredis.
+
+See [the method inventory](../../../docs/quality/repository-contracts.md) for exact
+coverage, known limits, and #141 reconciliation. In particular, these tests do not
+establish atomic create-if-absent under concurrent writers, arbitrary transaction
+rollback, or real concurrent WATCH retry/exhaustion behavior.

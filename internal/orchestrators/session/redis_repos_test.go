@@ -47,13 +47,12 @@ func TestRedisReposSuite(t *testing.T) {
 }
 
 func (s *RedisReposTestSuite) TestSession_SaveThenGet_RoundTrips() {
-	in := &sdk.SessionData{ID: "sess-1", Encounter: "enc-1"}
+	in := populatedStoredSession()
 	s.Require().NoError(s.sessions.SaveSession(s.ctx, in))
 
-	got, err := s.sessions.GetSession(s.ctx, "sess-1")
+	got, err := s.sessions.GetSession(s.ctx, in.ID)
 	s.Require().NoError(err)
-	s.Equal(in.ID, got.ID)
-	s.Equal(in.Encounter, got.Encounter)
+	s.Equal(in, got)
 }
 
 func (s *RedisReposTestSuite) TestSession_Get_Missing_IsSDKNotFound() {
@@ -73,12 +72,12 @@ func (s *RedisReposTestSuite) TestSession_Save_EmptyID_Errors() {
 }
 
 func (s *RedisReposTestSuite) TestEncounter_SaveThenGet_RoundTrips() {
-	in := &tkencounter.EncounterData{}
+	in := populatedStoredEncounter()
 	s.Require().NoError(s.encs.SaveEncounter(s.ctx, "enc-1", in))
 
 	got, err := s.encs.GetEncounter(s.ctx, "enc-1")
 	s.Require().NoError(err)
-	s.NotNil(got)
+	s.Equal(in, got)
 }
 
 func (s *RedisReposTestSuite) TestEncounter_Get_Missing_IsSDKNotFound() {

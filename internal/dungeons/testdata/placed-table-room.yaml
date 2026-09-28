@@ -55,4 +55,4 @@ room:
     propBindings:
       table: {holdable: true}
     partyStart: {q: -2, r: 0}
-    monsters: []
+    monsterDeclarations: []

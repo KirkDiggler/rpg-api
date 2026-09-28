@@ -177,7 +177,7 @@ stale equipment is aborted. The orchestrator returns the actual patched entity a
 matching detached View. Grade held at B- because older draft/catalog TODO debt elsewhere
 in this large orchestrator is unchanged.
 
-### Lobby orchestrator — B+ (new, 2026-07-07)
+### Lobby orchestrator — B+ (updated 2026-09-24)
 
 `internal/orchestrators/lobby/` — party assembly (join refs, membership,
 ready flags, lifecycle) plus `StartEncounter`, the sole encounter-construction
@@ -189,8 +189,21 @@ the v2 encounter broker wiring makes), so a Go-level lock is sufficient
 without a Redis WATCH/MULTI transaction. One known leak: the mutex map never
 evicts per-lobby entries — slow and usage-bounded (one UUID per lobby ever
 created), not a hot-loop concern, called out as a follow-up rather than fixed
-here. Full RPC-level unit coverage (create/join/rebind/ready/leave incl. host
-migration/start incl. HP seeding and persist-then-emit ordering).
+here. Broad **isolated** unit coverage (create/join/rebind/ready/leave incl.
+host migration, plus `StartEncounter`'s exact-input, call-order and
+gate/partial-failure contracts) runs on the six-method `SessionManager` mock
+(`session_manager.go`, `mock/mock_session_manager.go`), a registry mock, the
+in-memory lobby repository and the broker — no miniredis, no shipped content,
+no playable session (rpg-api#1046), so the API's own behavior is proven rather
+than toolkit rules. Isolation is not yet every RPC: `ListDungeons` is covered
+only by `TestSessionStackSuite/TestListDungeons_ReadsTheRegistry`, which uses the
+retained real-stack fixture and shipped registry. HP seeding is no longer part
+of this layer: `Join` loads the
+character through the host's character repository. A retained miniredis-backed
+`SessionStackSuite` still proves the real start path and broader trade/rest/
+reload/geometry/content coverage, active pending #1049 assertion mapping — not
+ratified as a permanent API test (the real `End` path remains covered by the
+lobby handler suite, which still runs on a miniredis-backed manager).
 
 ### Session orchestrator — B (new, 2026-08-21)
 
@@ -290,7 +303,8 @@ its replacement, which is already Redis-backed.
 along with the v2 encounter handler/orchestrator it backed (see "Encounter v2
 handler" above). The lobby orchestrator's `StartEncounter` no longer persists
 through a repository of its own — it builds directly onto the
-`rulebooks/dnd5e/session` SDK's `sdk.Manager`, which owns its own session/
+`rulebooks/dnd5e/session` SDK's `sdk.Manager` through the lobby's six-method
+`SessionManager` interface, which owns its own session/
 encounter persistence (`internal/orchestrators/session`'s Redis-backed
 repositories), not graded in this doc.
 
@@ -359,8 +373,13 @@ patch. Redis WATCH/MULTI guards the record, expected equipment rejects stale equ
 writers with ABORTED, unrelated record revisions are returned without writing, and the
 successful transaction changes only EquipmentSlots plus cached ArmorClass on the latest
 entity. Miniredis regressions cover concurrent combat-state preservation and stale
-expected-equipment refusal. Held below A because general full-record Update callers have
-not been redesigned and TTL/stale-character lifecycle remains unchanged.
+expected-equipment refusal. #1047 adds populated CRUD, player-index maintenance,
+read-side session-index resolution, detached reads, successful patch preservation,
+and storage/decode error contracts. The [method inventory](quality/repository-contracts.md)
+bounds that claim: character CRUD does not maintain the session index. Held below A
+because general full-record Update callers have not been redesigned and real concurrent
+WATCH retry/exhaustion is not newly covered. Null-Data stored envelopes can still panic
+in Update (#1057); the guarded equipment-patch refusal is tested.
 
 ### Character draft repository — B-
 
@@ -368,15 +387,22 @@ not been redesigned and TTL/stale-character lifecycle remains unchanged.
 
 Redis-backed. Handles in-progress character creation state. #897 adds complete
 nested toolkit Appearance JSON round trips, detached nested pointer assertions, and
-present-zero optional scalar coverage. Broad repository lifecycle coverage remains
-thinner than the character repository, so the grade does not change. No known
-correctness gaps.
+present-zero optional scalar coverage. #1047 adds populated choices/scores,
+replacement, lookup/delete mapping maintenance, 24-hour expiry and update refresh,
+and storage/decode error coverage. Player mappings have no TTL and are lazily cleaned
+by lookup after draft expiry; owner reassignment is not maintained by Update. Distinct-ID
+player isolation is tested, but cross-owner supplied-ID collisions overwrite records (#1058). See the
+[method inventory](quality/repository-contracts.md). The grade remains unchanged.
 
 ### Dice session repository — B-
 
 `internal/repositories/dice_session/redis.go`
 
-Redis-backed. Narrow scope. No observed gaps. Low risk.
+Redis-backed. #1047 adds supplied-roll preservation, ordinary entity/context-key
+isolation, detached reads, default/custom TTL, remaining-lifetime update, delete counts,
+and error contracts. An exact-expiry update can resurrect a key without TTL; this is
+tracked in #1055, not fixed or blessed by these tests. See the
+[method inventory](quality/repository-contracts.md) for remaining limits.
 
 ## Testing
 

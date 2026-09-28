@@ -411,59 +411,6 @@ func (s *SessionStackSuite) TestStartEncounter_GetAtlasServesTheSeamsAsTwoLines(
 		"and the tomb door [15,5]-[16,4]")
 }
 
-func (s *SessionStackSuite) TestStartEncounter_NotHost_Errors() {
-	s.seedCharacter("char-alice", "alice", "Alice")
-	s.seedCharacter("char-bob", "bob", "Bob")
-	s.seedReadyLobby("lobby-1", "alice", "bob")
-
-	_, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
-		PlayerID: "bob", LobbyID: "lobby-1",
-	})
-	s.Require().ErrorIs(err, lobbyorch.ErrNotHost)
-}
-
-func (s *SessionStackSuite) TestStartEncounter_NotAllReady_Errors() {
-	s.seedCharacter("char-alice", "alice", "Alice")
-	members := map[string]*lobbyrepo.Member{
-		"alice": {PlayerID: "alice", CharacterID: "char-alice", IsHost: true, IsReady: false},
-	}
-	s.Require().NoError(s.lobbyRepo.Save(s.ctx, &lobbyrepo.Data{
-		ID: "lobby-1", HostPlayerID: "alice", Status: lobbyrepo.StatusWaiting,
-		Members: members, MemberOrder: []string{"alice"},
-	}))
-
-	_, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
-		PlayerID: "alice", LobbyID: "lobby-1",
-	})
-	s.Require().ErrorIs(err, lobbyorch.ErrNotAllReady)
-}
-
-func (s *SessionStackSuite) TestStartEncounter_LobbyNotFound_Errors() {
-	_, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
-		PlayerID: "alice", LobbyID: "does-not-exist",
-	})
-	s.Require().ErrorIs(err, lobbyorch.ErrLobbyNotFound)
-}
-
-// TestStartEncounter_UnknownDungeonKeyIsRefused pins design §3c: a key the
-// registry does not have is ErrDungeonNotFound, never silently the tomb. The
-// lobby is untouched -- still WAITING, no encounter -- because the refusal
-// happens before anything is written.
-func (s *SessionStackSuite) TestStartEncounter_UnknownDungeonKeyIsRefused() {
-	s.seedCharacter("char-alice", "alice", "Alice")
-	s.seedReadyLobby("lobby-1", "alice")
-
-	_, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
-		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: "nope",
-	})
-	s.Require().ErrorIs(err, lobbyorch.ErrDungeonNotFound)
-
-	data, err := s.lobbyRepo.Get(s.ctx, "lobby-1")
-	s.Require().NoError(err)
-	s.Equal(lobbyrepo.StatusWaiting, data.Status, "nothing was written")
-	s.Empty(data.EncounterID)
-}
-
 // TestStartEncounter_ExplicitDefaultKeyIsTheTomb: naming the tomb and naming
 // nothing are the same dungeon.
 func (s *SessionStackSuite) TestStartEncounter_ExplicitDefaultKeyIsTheTomb() {

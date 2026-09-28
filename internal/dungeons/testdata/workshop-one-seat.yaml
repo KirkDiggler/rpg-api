@@ -21,4 +21,4 @@ room:
     propDeclarations: {}
     arrangementDeclarations: {}
     partyStart: {q: 0, r: 0}
-    monsters: []
+    monsterDeclarations: []
