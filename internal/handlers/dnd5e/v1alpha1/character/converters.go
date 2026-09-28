@@ -2517,6 +2517,12 @@ func classRequirementsToProto(requirements *choices.Requirements) []*dnd5ev1alph
 		}
 	}
 
+	for _, req := range requirements.AdditionalCantrips {
+		if choice := createCantripChoice(req); choice != nil {
+			result = append(result, choice)
+		}
+	}
+
 	// SelectionType remains unset until the provider distinguishes known-spell
 	// and Wizard-spellbook semantics; the API does not infer class policy from
 	// the requirement's Go type name.

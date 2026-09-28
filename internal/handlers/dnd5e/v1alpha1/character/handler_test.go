@@ -571,3 +571,26 @@ func (s *HandlerTestSuite) TestEquipmentProjectionErrorsAreSanitized() {
 func TestHandlerSuite(t *testing.T) {
 	suite.Run(t, new(HandlerTestSuite))
 }
+
+func (s *HandlerTestSuite) TestUpdateClassKeepsNatureCantripSeparate() {
+	stop := errors.New("captured submission")
+	s.mockService.EXPECT().SetClass(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, in *character.SetClassInput) (*character.SetClassOutput, error) {
+			s.Equal([]string{refs.Spells.Guidance().ID}, in.Input.Choices.Cantrips)
+			s.Require().Len(in.Input.Choices.SubclassChoices, 1)
+			bonus := in.Input.Choices.SubclassChoices[0]
+			s.Equal(choices.ClericNatureCantrip, bonus.ChoiceID)
+			s.Equal(shared.SourceSubclass, bonus.Source)
+			s.Equal(shared.ChoiceCantrips, bonus.Category)
+			s.Equal([]string{refs.Spells.ThornWhip().ID}, bonus.Values)
+			return nil, stop
+		})
+	_, err := s.handler.UpdateClass(s.ctx, &dnd5ev1alpha1.UpdateClassRequest{
+		DraftId: "nature", Class: dnd5ev1alpha1.Class_CLASS_CLERIC, Subclass: dnd5ev1alpha1.Subclass_SUBCLASS_NATURE_DOMAIN,
+		ClassChoices: []*dnd5ev1alpha1.ChoiceData{
+			{Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS, ChoiceId: string(choices.ClericCantrips1), Selection: &dnd5ev1alpha1.ChoiceData_Spells{Spells: &dnd5ev1alpha1.SpellSelection{SpellRefs: []string{refs.Spells.Guidance().String()}}}},
+			{Category: dnd5ev1alpha1.ChoiceCategory_CHOICE_CATEGORY_CANTRIPS, ChoiceId: string(choices.ClericNatureCantrip), Selection: &dnd5ev1alpha1.ChoiceData_Spells{Spells: &dnd5ev1alpha1.SpellSelection{SpellRefs: []string{refs.Spells.ThornWhip().String()}}}},
+		},
+	})
+	s.ErrorIs(err, stop)
+}
