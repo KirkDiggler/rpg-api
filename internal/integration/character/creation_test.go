@@ -1772,9 +1772,9 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	}
 	s.Require().NotNil(cantripChoice, "a bard is asked for cantrips")
 	s.Equal(int32(2), cantripChoice.GetChooseCount())
-	s.Equal([]string{bladeWardRef, "dnd5e:spells:light", trueStrikeRef, viciousMockeryRef, thunderclapRef},
+	s.Equal([]string{bladeWardRef, "dnd5e:spells:light", "dnd5e:spells:mending", trueStrikeRef, viciousMockeryRef, thunderclapRef},
 		cantripChoice.GetSpellOptions().GetAvailableRefs(),
-		"the shared options include explicitly catalog-only Light without changing the pick count")
+		"the shared options include catalog-only Light and Mending without changing the pick count")
 	s.Empty(cantripChoice.GetSpellOptions().GetAvailable(), //nolint:staticcheck // Asserting the deprecated field stays unwritten.
 		"the deprecated enum field is not written beside the refs")
 	s.Require().NotNil(spellChoice, "a bard is asked for the provider's leveled spell choice")
