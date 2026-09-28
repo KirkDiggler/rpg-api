@@ -74,8 +74,14 @@ authored monster `Facing` word is compiled onto `sessionworld.Monster`
 [`architecture/components/lobby-service.md`](architecture/components/lobby-service.md)
 Known gaps. No forwarding was added in this behavior-preserving refactor.
 
+**Connected footprint sight** — Encounter v0.108.1 and spatial v0.16.1
+require a clear connection from an observer or target to any alternate sight
+origin. An authored rectangle can therefore block sight across a wall inside a
+hex while leaving its center standable. The geometry checkbox and physical
+attack obstruction remain separate work (rpg-project#506).
+
 **Burning Hands adoption** — Uses released session v0.107.0, D&D root
-v0.192.0, spatial v0.16.0, and proto SDK v0.1.213. The API maps triangle
+v0.192.0, spatial v0.16.1, and proto SDK v0.1.213. The API maps triangle
 footprints and optional owner-authorized Afford aim previews. Native Light
 cleric creation-to-cast acceptance verifies domain acquisition, fractional
 preview/cast agreement, full/half fire damage, action/slot payment, and identical
