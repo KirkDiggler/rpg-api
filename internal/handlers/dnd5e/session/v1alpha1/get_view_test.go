@@ -27,7 +27,7 @@ func TestGetView_HappyPath(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	viewInput := &sdk.ViewInput{Session: "sess-1", Member: "char-1"}
 	mgr.EXPECT().View(gomock.Any(), viewInput).Return(
-		[]sdk.Sighting{{Subject: "goblin-1"}}, nil,
+		[]sdk.Sighting{{Subject: "goblin-1", Passage: sdk.PassageStandable}}, nil,
 	)
 	mgr.EXPECT().Areas(gomock.Any(), viewInput).Return(
 		[]sdk.SightArea{{ID: "area-1", Name: "Fog", Ref: "spell:fog", RadiusFeet: 15}}, nil,
@@ -38,6 +38,7 @@ func TestGetView_HappyPath(t *testing.T) {
 	resp, err := h.GetView(ctx, &sessionpb.GetViewRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
 	require.Len(t, resp.GetSightings(), 1)
+	require.Equal(t, sessionpb.Passage_PASSAGE_STANDABLE, resp.GetSightings()[0].GetPassage())
 	require.Len(t, resp.GetAreas(), 1)
 	require.Equal(t, "area-1", resp.GetAreas()[0].GetId())
 	require.Equal(t, "spell:fog", resp.GetAreas()[0].GetSourceRef())

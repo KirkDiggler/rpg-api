@@ -280,7 +280,7 @@ func assertOrdinarySuccessResponse(t *testing.T, s *deathSaveScene, response *se
 		"opaque token remains separate from numeric authority")
 	require.Equal(t, []string{"character:" + s.actor, "encounter:death-save-encounter", "session:" + s.session}, response.GetSaved().GetWritten())
 	require.Empty(t, response.GetSaved().GetFailed())
-	require.Equal(t, int32(6), response.GetDelivery().GetEvents(), "Death Save plus newly-observed Down are delivered to all three roster members")
+	require.Equal(t, int32(8), response.GetDelivery().GetEvents(), "Death Save and Down reach the roster; two witnesses also receive refreshed sight testimony")
 	require.False(t, response.GetDelivery().GetFailed())
 }
 
