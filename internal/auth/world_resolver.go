@@ -12,11 +12,15 @@ import (
 // ResolveWorldInput contains the untrusted, already syntax-validated selector.
 type ResolveWorldInput struct {
 	GuildID string
+	// ForceRefresh is used for live stream admission and renewal so an old
+	// cached snapshot cannot extend an already-running stream's authority.
+	ForceRefresh bool
 }
 
 // ResolveWorldOutput contains only the trusted toolkit-domain identity.
 type ResolveWorldOutput struct {
-	WorldID string
+	WorldID         string
+	AssignedRoleIDs []string
 }
 
 // WorldResolver derives a trusted world for an authenticated request.
@@ -30,6 +34,7 @@ type WorldResolverConfig struct {
 	IdentityCache      *TokenCache
 	MembershipCache    *MembershipCache
 	DevWorldID         string
+	DevelopmentRoles   map[string][]string
 }
 
 type worldResolver struct {
@@ -37,6 +42,7 @@ type worldResolver struct {
 	identityCache      *TokenCache
 	membershipCache    *MembershipCache
 	devWorldID         string
+	developmentRoles   map[string][]string
 }
 
 // NewWorldResolver creates the narrow resolver used by composition requests.
@@ -53,7 +59,12 @@ func NewWorldResolver(cfg *WorldResolverConfig) (WorldResolver, error) {
 	if cfg.MembershipCache == nil {
 		return nil, fmt.Errorf("membership cache is required")
 	}
+	roles := make(map[string][]string, len(cfg.DevelopmentRoles))
+	for player, assigned := range cfg.DevelopmentRoles {
+		roles[player] = append([]string(nil), assigned...)
+	}
 	return &worldResolver{
+		developmentRoles:   roles,
 		membershipVerifier: cfg.MembershipVerifier,
 		identityCache:      cfg.IdentityCache,
 		membershipCache:    cfg.MembershipCache,
@@ -76,7 +87,7 @@ func (r *worldResolver) Resolve(ctx context.Context, input *ResolveWorldInput) (
 		if r.devWorldID == "" {
 			return nil, status.Error(codes.FailedPrecondition, "development world is not configured")
 		}
-		return &ResolveWorldOutput{WorldID: r.devWorldID}, nil
+		return &ResolveWorldOutput{WorldID: r.devWorldID, AssignedRoleIDs: append([]string(nil), r.developmentRoles[playerID]...)}, nil
 	case authSchemeDiscord:
 		return r.resolveDiscord(ctx, input, request.value, playerID)
 	default:
@@ -88,9 +99,9 @@ func (r *worldResolver) resolveDiscord(ctx context.Context, input *ResolveWorldI
 	if input == nil || input.GuildID == "" {
 		return nil, status.Error(codes.FailedPrecondition, "guild selector is required")
 	}
-	if decision, ok := r.membershipCache.Get(token, input.GuildID); ok &&
+	if decision, ok := r.membershipCache.Get(token, input.GuildID); !input.ForceRefresh && ok &&
 		decision.PlayerID == playerID && decision.WorldID == input.GuildID {
-		return &ResolveWorldOutput{WorldID: decision.WorldID}, nil
+		return &ResolveWorldOutput{WorldID: decision.WorldID, AssignedRoleIDs: decision.AssignedRoleIDs}, nil
 	}
 
 	member, err := r.membershipVerifier.GetCurrentUserGuildMember(ctx, &GetCurrentUserGuildMemberInput{
@@ -112,7 +123,7 @@ func (r *worldResolver) resolveDiscord(ctx context.Context, input *ResolveWorldI
 		return nil, status.Error(codes.Unavailable, "Discord returned unusable membership data")
 	}
 
-	decision := MembershipDecision{PlayerID: playerID, WorldID: input.GuildID}
+	decision := MembershipDecision{PlayerID: playerID, WorldID: input.GuildID, AssignedRoleIDs: append([]string(nil), member.Roles...)}
 	r.membershipCache.Set(token, input.GuildID, decision)
-	return &ResolveWorldOutput{WorldID: input.GuildID}, nil
+	return &ResolveWorldOutput{WorldID: input.GuildID, AssignedRoleIDs: decision.AssignedRoleIDs}, nil
 }

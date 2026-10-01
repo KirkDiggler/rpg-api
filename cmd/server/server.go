@@ -58,6 +58,7 @@ import (
 	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 	sessionpresentationrepo "github.com/KirkDiggler/rpg-api/internal/repositories/sessionpresentation"
+	worldrepo "github.com/KirkDiggler/rpg-api/internal/repositories/world"
 )
 
 // lobbyTTL is long enough for any single playtest session, short enough
@@ -130,9 +131,14 @@ func runServer(_ *cobra.Command, _ []string) error {
 
 	// Check if dev mode is enabled (allows "Dev <player_id>" auth scheme)
 	authConfig := &auth.InterceptorConfig{
-		DevMode: os.Getenv(envAuthDevMode) == "true",
+		DevMode:            os.Getenv(envAuthDevMode) == "true",
+		WorldScopedStreams: true,
 	}
 	authoringEnabled := os.Getenv(envAuthoringEnabled) == "1"
+	development, err := configuredDevelopmentAccess(authConfig.DevMode)
+	if err != nil {
+		return fmt.Errorf("development access: %w", err)
+	}
 	membershipCache, err := auth.NewMembershipCache(&auth.MembershipCacheConfig{
 		TTL:        30 * time.Second,
 		MaxEntries: 1024,
@@ -146,6 +152,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 		IdentityCache:      tokenCache,
 		MembershipCache:    membershipCache,
 		DevWorldID:         configuredDevWorldID(authConfig.DevMode),
+		DevelopmentRoles:   development.Roles,
 	})
 	if err != nil {
 		return fmt.Errorf("create world resolver: %w", err)
@@ -161,21 +168,43 @@ func runServer(_ *cobra.Command, _ []string) error {
 		log.Println("⚠️  AUTH_DEV_MODE enabled - Dev authentication scheme allowed")
 	}
 
+	redisClient := mustRedisClient()
+	worldRepository, err := worldrepo.NewRedis(&worldrepo.RedisConfig{Client: redisClient})
+	if err != nil {
+		return fmt.Errorf("world repository: %w", err)
+	}
+	roleAccess, err := auth.NewRoleAccess(&auth.RoleAccessConfig{
+		Resolver: worldResolver, Worlds: worldRepository,
+		DevelopmentPermissions: development.Default, DevelopmentPlayers: development.Players,
+	})
+	if err != nil {
+		return fmt.Errorf("role access: %w", err)
+	}
+
 	srv := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
 			auth.UnaryAuthInterceptor(discordClient, tokenCache, authConfig),
-			auth.UnaryWorldContextInterceptor(worldResolver),
+			auth.UnaryWorldManagementInterceptor(&auth.WorldManagementConfig{
+				Resolver: worldResolver, Ownership: discordClient,
+				IdentityCache: tokenCache, MembershipCache: membershipCache,
+				DevelopmentOwner:         configuredDevWorldOwner(authConfig.DevMode),
+				DevelopmentOwnerPlayerID: os.Getenv(envDevWorldOwnerPlayer),
+			}),
+			roleAccess.UnaryInterceptor(),
 			grpc_logging.UnaryServerInterceptor(grpc_logging.LoggerFunc(logFunc)),
 			grpc_recovery.UnaryServerInterceptor(),
 		),
 		grpc.ChainStreamInterceptor(
 			auth.StreamAuthInterceptor(discordClient, tokenCache, authConfig),
+			roleAccess.StreamInterceptor(),
 			grpc_logging.StreamServerInterceptor(grpc_logging.LoggerFunc(logFunc)),
 			grpc_recovery.StreamServerInterceptor(),
 		),
 	)
 
-	redisClient := mustRedisClient()
+	if registrationErr := registerWorldService(srv, worldRepository); registrationErr != nil {
+		return registrationErr
+	}
 
 	charRepo, err := characterrepo.NewRedis(&characterrepo.RedisConfig{
 		Client: redisClient,

@@ -11,6 +11,15 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Configured Discord world access (rpg-api#1065, rpg-project#514)** — Draft
+consumes CI-published protos v0.1.216. WorldService persists configuration in a
+World repository (Redis, no session TTL), verifies owner bootstrap separately
+from gameplay admission, and permits delegated builder/player changes without
+changing admin authority. Repository and real gRPC/provider-fixture tests cover
+setup, denial, wrong-world requests and admin-policy revocation. Explicit gameplay
+role gates and idle-stream refresh are implemented; the paired web adds setup.
+Local-stack and real Discord proof remain separate acceptance steps. See [world-service](architecture/components/world-service.md).
+
 **Nature cantrips preview (2026-09-28)** — Adopts toolkit root #1905's pushed
 commit for Poison Spray, Shillelagh and Nature utility NYIs. Shared cast options
 already carry the selected held weapon; no new proto contract is needed.

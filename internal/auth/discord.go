@@ -19,7 +19,7 @@ type DiscordUser struct {
 	Username string `json:"username"`
 }
 
-//go:generate mockgen -destination=mock/mock_discord.go -package=authmock github.com/KirkDiggler/rpg-api/internal/auth TokenValidator,MembershipVerifier
+//go:generate mockgen -destination=mock/mock_discord.go -package=authmock github.com/KirkDiggler/rpg-api/internal/auth TokenValidator,MembershipVerifier,OwnershipVerifier
 
 // TokenValidator validates Discord tokens.
 type TokenValidator interface {
@@ -34,7 +34,8 @@ type GetCurrentUserGuildMemberInput struct {
 
 // DiscordGuildMember is the current user's guild member response.
 type DiscordGuildMember struct {
-	User *DiscordUser `json:"user"`
+	User  *DiscordUser `json:"user"`
+	Roles []string     `json:"roles"`
 }
 
 // MembershipVerifier verifies current-user membership with the same credential.

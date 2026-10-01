@@ -21,8 +21,9 @@ type MembershipCacheConfig struct {
 
 // MembershipDecision is a provider-verified world membership decision.
 type MembershipDecision struct {
-	PlayerID string
-	WorldID  string
+	PlayerID        string
+	WorldID         string
+	AssignedRoleIDs []string
 }
 
 type membershipCacheKey struct {
@@ -83,7 +84,9 @@ func (c *MembershipCache) Get(token, guildID string) (MembershipDecision, bool) 
 		delete(c.entries, key)
 		return MembershipDecision{}, false
 	}
-	return entry.decision, true
+	decision := entry.decision
+	decision.AssignedRoleIDs = append([]string(nil), decision.AssignedRoleIDs...)
+	return decision, true
 }
 
 // Set stores a positive decision without retaining the raw token.
@@ -98,6 +101,7 @@ func (c *MembershipCache) Set(token, guildID string, decision MembershipDecision
 		c.evictOldest()
 	}
 	c.sequence++
+	decision.AssignedRoleIDs = append([]string(nil), decision.AssignedRoleIDs...)
 	c.entries[key] = membershipCacheEntry{
 		decision:  decision,
 		expiresAt: now.Add(c.ttl),
