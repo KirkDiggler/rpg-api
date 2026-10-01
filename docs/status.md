@@ -16,9 +16,9 @@ consumes CI-published protos v0.1.216. WorldService persists configuration in a
 World repository (Redis, no session TTL), verifies owner bootstrap separately
 from gameplay admission, and permits delegated builder/player changes without
 changing admin authority. Repository and real gRPC/provider-fixture tests cover
-setup, denial, wrong-world requests and admin-policy revocation. Gameplay role
-enforcement, stream refresh, web configuration and live Discord proof remain
-pending. See [world-service](architecture/components/world-service.md).
+setup, denial, wrong-world requests and admin-policy revocation. Explicit gameplay
+role gates and idle-stream refresh are implemented; the paired web adds setup.
+Local-stack and real Discord proof remain separate acceptance steps. See [world-service](architecture/components/world-service.md).
 
 **Nature cantrips preview (2026-09-28)** — Adopts toolkit root #1905's pushed
 commit for Poison Spray, Shillelagh and Nature utility NYIs. Shared cast options

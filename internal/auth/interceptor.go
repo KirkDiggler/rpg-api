@@ -25,6 +25,9 @@ type InterceptorConfig struct {
 	// When true, requests with Dev scheme bypass Discord validation.
 	// NEVER enable in production!
 	DevMode bool
+	// WorldScopedStreams retains the private credential only until the next
+	// RoleAccess stream interceptor resolves the world and strips it.
+	WorldScopedStreams bool
 }
 
 // UnaryAuthInterceptor returns a gRPC unary interceptor that validates Discord tokens.
@@ -68,9 +71,13 @@ func StreamAuthInterceptor(validator TokenValidator, cache *TokenCache, cfg *Int
 		if err != nil {
 			return err
 		}
+		handlerCtx := withoutRequestAuth(newCtx)
+		if cfg != nil && cfg.WorldScopedStreams {
+			handlerCtx = newCtx
+		}
 		wrapped := &wrappedServerStream{
 			ServerStream: ss,
-			ctx:          withoutRequestAuth(newCtx),
+			ctx:          handlerCtx,
 		}
 		return handler(srv, wrapped)
 	}

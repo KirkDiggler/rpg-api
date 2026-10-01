@@ -36,14 +36,19 @@ at most 30 seconds. It does not cache configuration-derived permissions.
 ## Development and current limits
 
 `RPG_DEV_WORLD_OWNER=true` supplies an explicit development owner only when
-`AUTH_DEV_MODE=true` and the request uses the Dev scheme. Discord credentials
+`AUTH_DEV_MODE=true`, the request uses the Dev scheme, and its player ID matches
+`RPG_DEV_WORLD_OWNER_PLAYER_ID`. Discord credentials
 always take the real provider-verification path. For WorldService local setup,
 `RPG_DEV_WORLD_ID` must be a canonical nonzero numeric guild ID; the legacy
 composition default `test-world` is not valid persisted World configuration.
 
-This implementation does not yet role-gate existing gameplay services, refresh
-live stream admission, add a web configuration screen, or isolate characters,
-inventory and dungeon content between guilds. Those remain in the tracked
-role-access/isolation work; WorldService alone is not proof of multi-server
-readiness. The web must request the owner-verification OAuth scope before a real
-owner setup can succeed with its credentials.
+RoleAccess now gates explicitly classified gameplay unary and stream calls;
+stream permission refresh also covers idle subscriptions. The paired web slice
+requests the ownership scope and adds the configuration screen. Development role
+fixtures are server-controlled and ignored in production; they demonstrate local
+UI/gate behavior, not live Discord verification.
+
+This implementation does not isolate characters, inventory or dungeon content
+between guilds. WorldService and role admission are not proof of multi-server
+readiness. Real Discord owner/membership verification still needs the operator's
+walk with newly consented credentials.

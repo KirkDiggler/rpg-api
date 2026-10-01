@@ -21,7 +21,8 @@ type WorldManagementConfig struct {
 	MembershipCache *MembershipCache
 	// DevelopmentOwner is honored only for an already-authenticated Dev scheme.
 	// Production server wiring never enables it.
-	DevelopmentOwner bool
+	DevelopmentOwner         bool
+	DevelopmentOwnerPlayerID string
 }
 
 // UnaryWorldManagementInterceptor permits verified owner bootstrap without a configured game role.
@@ -56,7 +57,8 @@ func UnaryWorldManagementInterceptor(cfg *WorldManagementConfig) grpc.UnaryServe
 		if world == nil || world.WorldID == "" {
 			return nil, status.Error(codes.Internal, "world resolver returned no world")
 		}
-		owner := cfg.DevelopmentOwner && credential.scheme == authSchemeDev
+		owner := cfg.DevelopmentOwner && credential.scheme == authSchemeDev &&
+			cfg.DevelopmentOwnerPlayerID != "" && GetPlayerID(ctx) == cfg.DevelopmentOwnerPlayerID
 		if credential.scheme == authSchemeDiscord {
 			ownership, err := cfg.Ownership.GetGuildOwnership(ctx, &GetGuildOwnershipInput{Token: credential.value, GuildID: world.WorldID})
 			if err != nil {
