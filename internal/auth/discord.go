@@ -19,7 +19,7 @@ type DiscordUser struct {
 	Username string `json:"username"`
 }
 
-//go:generate mockgen -destination=mock/mock_discord.go -package=authmock github.com/KirkDiggler/rpg-api/internal/auth TokenValidator,MembershipVerifier
+//go:generate mockgen -destination=mock/mock_discord.go -package=authmock github.com/KirkDiggler/rpg-api/internal/auth TokenValidator,MembershipVerifier,OwnershipVerifier
 
 // TokenValidator validates Discord tokens.
 type TokenValidator interface {

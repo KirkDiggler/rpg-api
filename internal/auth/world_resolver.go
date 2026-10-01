@@ -16,7 +16,8 @@ type ResolveWorldInput struct {
 
 // ResolveWorldOutput contains only the trusted toolkit-domain identity.
 type ResolveWorldOutput struct {
-	WorldID string
+	WorldID         string
+	AssignedRoleIDs []string
 }
 
 // WorldResolver derives a trusted world for an authenticated request.
@@ -90,7 +91,7 @@ func (r *worldResolver) resolveDiscord(ctx context.Context, input *ResolveWorldI
 	}
 	if decision, ok := r.membershipCache.Get(token, input.GuildID); ok &&
 		decision.PlayerID == playerID && decision.WorldID == input.GuildID {
-		return &ResolveWorldOutput{WorldID: decision.WorldID}, nil
+		return &ResolveWorldOutput{WorldID: decision.WorldID, AssignedRoleIDs: decision.AssignedRoleIDs}, nil
 	}
 
 	member, err := r.membershipVerifier.GetCurrentUserGuildMember(ctx, &GetCurrentUserGuildMemberInput{
@@ -112,7 +113,7 @@ func (r *worldResolver) resolveDiscord(ctx context.Context, input *ResolveWorldI
 		return nil, status.Error(codes.Unavailable, "Discord returned unusable membership data")
 	}
 
-	decision := MembershipDecision{PlayerID: playerID, WorldID: input.GuildID}
+	decision := MembershipDecision{PlayerID: playerID, WorldID: input.GuildID, AssignedRoleIDs: append([]string(nil), member.Roles...)}
 	r.membershipCache.Set(token, input.GuildID, decision)
-	return &ResolveWorldOutput{WorldID: input.GuildID}, nil
+	return &ResolveWorldOutput{WorldID: input.GuildID, AssignedRoleIDs: decision.AssignedRoleIDs}, nil
 }

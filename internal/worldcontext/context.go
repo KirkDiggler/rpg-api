@@ -8,6 +8,9 @@ type contextKey struct{}
 // Value contains the trusted domain identity for the current request.
 type Value struct {
 	WorldID string
+	// Owner and AssignedRoleIDs are verified by the administrative auth boundary.
+	Owner           bool
+	AssignedRoleIDs []string
 }
 
 // With returns a context carrying the trusted world value.

@@ -1,6 +1,10 @@
 package auth
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/KirkDiggler/rpg-api/internal/entities"
+)
 
 // Permissions describes game capabilities, not Discord's permission bitset.
 type Permissions uint8
@@ -18,12 +22,7 @@ func (p Permissions) Allows(required Permissions) bool {
 
 // WorldRoleConfig is server-controlled configuration for one Discord guild.
 // Discord manages membership of the configured roles; the game maps them to capabilities.
-type WorldRoleConfig struct {
-	WorldID       string
-	AdminRoleID   string
-	BuilderRoleID string
-	PlayerRoleID  string
-}
+type WorldRoleConfig = entities.World
 
 // EvaluatePermissionsInput combines configuration with a verified member's roles.
 // AssignedRoleIDs must come from the membership verifier, never a request body.

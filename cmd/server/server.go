@@ -164,6 +164,11 @@ func runServer(_ *cobra.Command, _ []string) error {
 	srv := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
 			auth.UnaryAuthInterceptor(discordClient, tokenCache, authConfig),
+			auth.UnaryWorldManagementInterceptor(&auth.WorldManagementConfig{
+				Resolver: worldResolver, Ownership: discordClient,
+				IdentityCache: tokenCache, MembershipCache: membershipCache,
+				DevelopmentOwner: configuredDevWorldOwner(authConfig.DevMode),
+			}),
 			auth.UnaryWorldContextInterceptor(worldResolver),
 			grpc_logging.UnaryServerInterceptor(grpc_logging.LoggerFunc(logFunc)),
 			grpc_recovery.UnaryServerInterceptor(),
@@ -176,6 +181,9 @@ func runServer(_ *cobra.Command, _ []string) error {
 	)
 
 	redisClient := mustRedisClient()
+	if registrationErr := registerWorldService(srv, redisClient); registrationErr != nil {
+		return registrationErr
+	}
 
 	charRepo, err := characterrepo.NewRedis(&characterrepo.RedisConfig{
 		Client: redisClient,
