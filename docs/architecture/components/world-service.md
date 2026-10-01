@@ -38,6 +38,8 @@ a stale delegated write. Aborted writes require reauthorization on retry.
 
 The membership cache stores detached copies of verified role-ID snapshots for
 at most 30 seconds. It does not cache configuration-derived permissions.
+WorldService management requests bypass that cache: Discord-side removal of a
+world admin role is checked before every administrative read or mutation.
 
 ## Development and current limits
 

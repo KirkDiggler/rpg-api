@@ -26,7 +26,7 @@ type WorldManagementConfig struct {
 }
 
 // UnaryWorldManagementInterceptor permits verified owner bootstrap without a configured game role.
-// It runs after identity auth and before the composition interceptor strips the private credential.
+// It runs after identity auth and before the role gate strips the private credential.
 func UnaryWorldManagementInterceptor(cfg *WorldManagementConfig) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		switch info.FullMethod {
@@ -42,7 +42,9 @@ func UnaryWorldManagementInterceptor(cfg *WorldManagementConfig) grpc.UnaryServe
 		if !ok {
 			return nil, status.Error(codes.Unauthenticated, "authenticated request is required")
 		}
-		input := &ResolveWorldInput{}
+		// Administrative authority must not survive Discord-side role removal
+		// through an otherwise valid cached membership snapshot.
+		input := &ResolveWorldInput{ForceRefresh: true}
 		if credential.scheme != authSchemeDev {
 			guildID, err := guildSelector(ctx)
 			if err != nil {
