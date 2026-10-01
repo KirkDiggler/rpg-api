@@ -34,7 +34,8 @@ type GetCurrentUserGuildMemberInput struct {
 
 // DiscordGuildMember is the current user's guild member response.
 type DiscordGuildMember struct {
-	User *DiscordUser `json:"user"`
+	User  *DiscordUser `json:"user"`
+	Roles []string     `json:"roles"`
 }
 
 // MembershipVerifier verifies current-user membership with the same credential.
