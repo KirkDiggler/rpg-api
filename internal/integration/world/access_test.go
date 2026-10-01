@@ -52,9 +52,9 @@ func (s *WorldAccessSuite) SetupTest() {
 	var err error
 	s.repository, err = worldrepo.NewRedis(&worldrepo.RedisConfig{Client: redisClient})
 	s.Require().NoError(err)
-	service, err := worldorch.New(&worldorch.Config{Repository: s.repository})
+	orchestrator, err := worldorch.New(&worldorch.Config{Repository: s.repository})
 	s.Require().NoError(err)
-	handler, err := worldhandler.New(&worldhandler.HandlerConfig{Service: service})
+	handler, err := worldhandler.New(&worldhandler.HandlerConfig{Orchestrator: orchestrator})
 	s.Require().NoError(err)
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")

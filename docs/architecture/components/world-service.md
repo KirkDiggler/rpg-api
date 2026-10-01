@@ -10,6 +10,12 @@ credentials are never persisted in this record.
 Identity authentication -> administrative world interceptor -> WorldService
 handler -> world orchestrator -> World repository.
 
+The handler declares the narrow orchestrator interface it consumes and uses
+operation Input/Output types owned by `internal/orchestrators/world`.
+`entities.World` is the shared data shape used by the handler conversion,
+orchestrator and repository. There is no separate `services/world` package or
+second business-layer contract package.
+
 The administrative interceptor verifies same-token guild membership and actual
 Discord ownership. It uses the OAuth `guilds` scope with
 `GET /users/@me/guilds`, paginating by `after`; membership uses

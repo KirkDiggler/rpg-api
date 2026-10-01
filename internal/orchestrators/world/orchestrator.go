@@ -8,7 +8,6 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	worldrepo "github.com/KirkDiggler/rpg-api/internal/repositories/world"
-	worldservice "github.com/KirkDiggler/rpg-api/internal/services/world"
 )
 
 type Config struct{ Repository worldrepo.Repository }
@@ -21,7 +20,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 	return &Orchestrator{repository: cfg.Repository}, nil
 }
 
-func (o *Orchestrator) Get(ctx context.Context, input *worldservice.GetInput) (*worldservice.GetOutput, error) {
+func (o *Orchestrator) Get(ctx context.Context, input *GetInput) (*GetOutput, error) {
 	if input == nil {
 		return nil, apierr.InvalidArgument("get world input is required")
 	}
@@ -29,10 +28,10 @@ func (o *Orchestrator) Get(ctx context.Context, input *worldservice.GetInput) (*
 	if err != nil {
 		return nil, err
 	}
-	return &worldservice.GetOutput{World: world}, nil
+	return &GetOutput{World: world}, nil
 }
 
-func (o *Orchestrator) SetRoles(ctx context.Context, input *worldservice.SetRolesInput) (*worldservice.SetRolesOutput, error) {
+func (o *Orchestrator) SetRoles(ctx context.Context, input *SetRolesInput) (*SetRolesOutput, error) {
 	if input == nil {
 		return nil, apierr.InvalidArgument("set world roles input is required")
 	}
@@ -56,10 +55,10 @@ func (o *Orchestrator) SetRoles(ctx context.Context, input *worldservice.SetRole
 	if out == nil || out.World == nil {
 		return nil, apierr.Internal("world repository returned no configuration")
 	}
-	return &worldservice.SetRolesOutput{World: out.World}, nil
+	return &SetRolesOutput{World: out.World}, nil
 }
 
-func (o *Orchestrator) SetMemberRoles(ctx context.Context, input *worldservice.SetMemberRolesInput) (*worldservice.SetMemberRolesOutput, error) {
+func (o *Orchestrator) SetMemberRoles(ctx context.Context, input *SetMemberRolesInput) (*SetMemberRolesOutput, error) {
 	if input == nil {
 		return nil, apierr.InvalidArgument("set member roles input is required")
 	}
@@ -77,10 +76,10 @@ func (o *Orchestrator) SetMemberRoles(ctx context.Context, input *worldservice.S
 	if out == nil || out.World == nil {
 		return nil, apierr.Internal("world repository returned no configuration")
 	}
-	return &worldservice.SetMemberRolesOutput{World: out.World}, nil
+	return &SetMemberRolesOutput{World: out.World}, nil
 }
 
-func (o *Orchestrator) authorizedWorld(ctx context.Context, caller worldservice.Caller) (*entities.World, error) {
+func (o *Orchestrator) authorizedWorld(ctx context.Context, caller Caller) (*entities.World, error) {
 	if err := validateCaller(caller); err != nil {
 		return nil, err
 	}
@@ -103,7 +102,7 @@ func (o *Orchestrator) authorizedWorld(ctx context.Context, caller worldservice.
 	return out.World, nil
 }
 
-func validateCaller(caller worldservice.Caller) error {
+func validateCaller(caller Caller) error {
 	if caller.PlayerID == "" {
 		return apierr.Unauthenticated("verified player is required")
 	}

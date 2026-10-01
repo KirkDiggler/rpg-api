@@ -83,11 +83,11 @@ func configuredDevWorldOwner(devMode bool) bool {
 }
 
 func registerWorldService(registrar grpc.ServiceRegistrar, repository worldrepo.Repository) error {
-	service, err := worldorch.New(&worldorch.Config{Repository: repository})
+	orchestrator, err := worldorch.New(&worldorch.Config{Repository: repository})
 	if err != nil {
-		return fmt.Errorf("create world service: %w", err)
+		return fmt.Errorf("create world orchestrator: %w", err)
 	}
-	handler, err := worldhandler.New(&worldhandler.HandlerConfig{Service: service})
+	handler, err := worldhandler.New(&worldhandler.HandlerConfig{Orchestrator: orchestrator})
 	if err != nil {
 		return fmt.Errorf("create world handler: %w", err)
 	}

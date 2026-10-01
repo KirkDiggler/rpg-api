@@ -1,19 +1,6 @@
-// Package world defines game-facing world configuration operations.
 package world
 
-import (
-	"context"
-
-	"github.com/KirkDiggler/rpg-api/internal/entities"
-)
-
-//go:generate mockgen -destination=mock/mock_service.go -package=worldmock github.com/KirkDiggler/rpg-api/internal/services/world Service
-
-type Service interface {
-	Get(context.Context, *GetInput) (*GetOutput, error)
-	SetRoles(context.Context, *SetRolesInput) (*SetRolesOutput, error)
-	SetMemberRoles(context.Context, *SetMemberRolesInput) (*SetMemberRolesOutput, error)
-}
+import "github.com/KirkDiggler/rpg-api/internal/entities"
 
 // Caller contains API-verified identity only; handlers never construct it from body claims.
 type Caller struct {
