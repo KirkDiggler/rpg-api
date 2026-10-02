@@ -21,6 +21,7 @@ import (
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
+	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
@@ -120,7 +121,7 @@ func TestStreamEvents_CallerDoesNotOwnMember_PermissionDenied(t *testing.T) {
 func TestStreamEvents_ForwardsPublishedEventsVerbatim(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	broker := sessionorch.NewBroker()
-	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), broker: broker}
+	h := seatedStreamHandler(ctrl, broker)
 
 	ctx, cancel := context.WithCancel(auth.WithPlayerID(context.Background(), "alice"))
 	defer cancel()
@@ -155,7 +156,7 @@ func TestStreamEvents_ForwardsPublishedEventsVerbatim(t *testing.T) {
 func TestStreamEvents_DoesNotReceiveEventsAddressedToOthers(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	broker := sessionorch.NewBroker()
-	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), broker: broker}
+	h := seatedStreamHandler(ctrl, broker)
 
 	ctx, cancel := context.WithCancel(auth.WithPlayerID(context.Background(), "alice"))
 	defer cancel()
@@ -185,6 +186,13 @@ func TestStreamEvents_DoesNotReceiveEventsAddressedToOthers(t *testing.T) {
 
 	cancel()
 	<-done
+}
+
+func seatedStreamHandler(ctrl *gomock.Controller, broker *sessionorch.Broker) *Handler {
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Roster(gomock.Any(), &sdk.RosterInput{Session: "sess-1", Member: "char-1", Player: "alice"}).Return(
+		&sdk.RosterOutput{Members: []sdk.PublicMember{{ID: "char-1", Kind: sdk.KindPlayer}}}, nil)
+	return &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), manager: mgr, broker: broker}
 }
 
 // waitForPublishedEvent republishes evt on a short tick until it appears in
@@ -290,7 +298,7 @@ func TestStreamEvents_ForwardsTypedBodyPerKind(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			broker := sessionorch.NewBroker()
-			h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), broker: broker}
+			h := seatedStreamHandler(ctrl, broker)
 
 			ctx, cancel := context.WithCancel(auth.WithPlayerID(context.Background(), "alice"))
 			defer cancel()
@@ -364,7 +372,7 @@ func TestStreamEvents_SendTrace_OnlyLogsAfterASuccessfulSend(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	broker := sessionorch.NewBroker()
-	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), broker: broker}
+	h := seatedStreamHandler(ctrl, broker)
 
 	ctx, cancel := context.WithCancel(auth.WithPlayerID(context.Background(), "alice"))
 	defer cancel()
@@ -392,7 +400,7 @@ func TestStreamEvents_SendTrace_LogsFailureNotForwardedWhenSendErrors(t *testing
 
 	ctrl := gomock.NewController(t)
 	broker := sessionorch.NewBroker()
-	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), broker: broker}
+	h := seatedStreamHandler(ctrl, broker)
 
 	ctx := auth.WithPlayerID(context.Background(), "alice")
 	// A stream whose Send always fails: a zero-capacity channel nobody

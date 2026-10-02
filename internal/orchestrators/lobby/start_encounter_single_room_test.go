@@ -76,7 +76,7 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysCompleteSingleRoom() {
 	// THE ACTORS: real Spawn/Join members at their authored axial cells,
 	// asked per actor through the same verb a client uses for a token's cell.
 	roster, err := s.sessOrch.Manager.Roster(s.ctx, &sdk.RosterInput{
-		Session: out.EncounterID, Player: "alice",
+		Session: out.EncounterID, Player: "alice", Member: "char-alice",
 	})
 	s.Require().NoError(err)
 	kinds := make(map[string]sdk.MemberKind, len(roster.Members))

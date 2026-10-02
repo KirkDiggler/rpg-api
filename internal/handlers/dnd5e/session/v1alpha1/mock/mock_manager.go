@@ -281,6 +281,21 @@ func (mr *MockManagerMockRecorder) Join(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Join", reflect.TypeOf((*MockManager)(nil).Join), ctx, in)
 }
 
+// Knowledge mocks base method.
+func (m *MockManager) Knowledge(ctx context.Context, in *session.KnowledgeInput) (*session.KnowledgeOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Knowledge", ctx, in)
+	ret0, _ := ret[0].(*session.KnowledgeOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Knowledge indicates an expected call of Knowledge.
+func (mr *MockManagerMockRecorder) Knowledge(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Knowledge", reflect.TypeOf((*MockManager)(nil).Knowledge), ctx, in)
+}
+
 // Loot mocks base method.
 func (m *MockManager) Loot(ctx context.Context, in *session.LootInput) (*session.LootOutput, error) {
 	m.ctrl.T.Helper()
@@ -477,10 +492,10 @@ func (mr *MockManagerMockRecorder) Unpack(ctx, in any) *gomock.Call {
 }
 
 // View mocks base method.
-func (m *MockManager) View(ctx context.Context, in *session.ViewInput) ([]session.Sighting, error) {
+func (m *MockManager) View(ctx context.Context, in *session.ViewInput) (*session.ViewOutput, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "View", ctx, in)
-	ret0, _ := ret[0].([]session.Sighting)
+	ret0, _ := ret[0].(*session.ViewOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

@@ -49,7 +49,7 @@ func (s *PolicySuite) TestWritesRequireBuildAndRenderingReadsRequirePlay() {
 		"/api.composition.v1alpha1.CompositionService/DeleteComposition": auth.PermissionBuild,
 		"/api.composition.v1alpha1.CompositionService/GetComposition":    auth.PermissionPlay,
 		"/dnd5e.api.authoring.v1alpha1.AuthoringService/PutDungeon":      auth.PermissionBuild,
-		"/dnd5e.api.authoring.v1alpha1.AuthoringService/GetDungeon":      auth.PermissionPlay,
+		"/dnd5e.api.authoring.v1alpha1.AuthoringService/GetDungeon":      auth.PermissionBuild,
 	} {
 		permission, known := auth.GameMethodPermission(method)
 		s.True(known)

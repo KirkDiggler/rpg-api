@@ -25,8 +25,8 @@ func TestGetRoster_DelegatesOnceAndProjectsSDKOutput(t *testing.T) {
 	color := uint32(0)
 	roughness := float32(0)
 	manager.EXPECT().Roster(gomock.Any(), &sdk.RosterInput{
-		Session: "sess-1",
-		Player:  "player-1",
+		Session: "sess-1", Member: "char-1",
+		Player: "player-1",
 	}).Return(&sdk.RosterOutput{Members: []sdk.PublicMember{
 		{
 			ID: "char-1", Kind: sdk.KindPlayer, Name: "Alice",
@@ -49,7 +49,7 @@ func TestGetRoster_DelegatesOnceAndProjectsSDKOutput(t *testing.T) {
 	}}, nil)
 	h := &Handler{manager: manager}
 
-	got, err := h.GetRoster(auth.WithPlayerID(context.Background(), "player-1"), &sessionpb.GetRosterRequest{Session: "sess-1"})
+	got, err := h.GetRoster(auth.WithPlayerID(context.Background(), "player-1"), &sessionpb.GetRosterRequest{Session: "sess-1", Member: "char-1"})
 
 	require.NoError(t, err)
 	want := &sessionpb.GetRosterResponse{Members: []*sessionpb.PublicMemberInfo{
@@ -115,10 +115,10 @@ func TestGetRoster_TranslatesSDKErrors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			manager := sessionv1alpha1mock.NewMockManager(ctrl)
-			manager.EXPECT().Roster(gomock.Any(), &sdk.RosterInput{Session: "sess-1", Player: "player-1"}).Return(nil, tc.err)
+			manager.EXPECT().Roster(gomock.Any(), &sdk.RosterInput{Session: "sess-1", Player: "player-1", Member: "char-1"}).Return(nil, tc.err)
 			h := &Handler{manager: manager}
 
-			_, err := h.GetRoster(auth.WithPlayerID(context.Background(), "player-1"), &sessionpb.GetRosterRequest{Session: "sess-1"})
+			_, err := h.GetRoster(auth.WithPlayerID(context.Background(), "player-1"), &sessionpb.GetRosterRequest{Session: "sess-1", Member: "char-1"})
 
 			requireCode(t, err, tc.code)
 		})
