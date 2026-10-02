@@ -6,6 +6,11 @@ import (
 )
 
 // Character is the API storage wrapper around toolkit character data.
+//
+// WorldID is API-owned ownership metadata, not part of the toolkit payload:
+// it records which world (Discord guild or configured dev world) owns this
+// record. The toolkit character.Data is unchanged and never carries it.
 type Character struct {
-	Data *toolkitchar.Data `json:"data"`
+	WorldID string            `json:"world_id"`
+	Data    *toolkitchar.Data `json:"data"`
 }

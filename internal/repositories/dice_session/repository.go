@@ -8,8 +8,16 @@ import (
 
 //go:generate mockgen -destination=mock/mock_repository.go -package=dicesessionmock github.com/KirkDiggler/rpg-api/internal/repositories/dice_session Repository
 
-// DiceSession represents a collection of dice rolls grouped by entity and context
+// DiceSession represents a collection of dice rolls grouped by world, entity
+// and context.
+//
+// WorldID is API-owned ownership metadata. A session is uniquely identified by
+// the (WorldID, EntityID, Context) tuple; a roll stored in one world is never
+// visible to another.
 type DiceSession struct {
+	// WorldID is the owning world (Discord guild or configured dev world).
+	WorldID string `json:"world_id"`
+
 	// Entity that owns these rolls (e.g., "char_draft_123", "char_789")
 	EntityID string
 
@@ -55,6 +63,7 @@ type DiceRoll struct {
 
 // CreateInput contains parameters for creating a dice session
 type CreateInput struct {
+	WorldID  string
 	EntityID string
 	Context  string
 	Rolls    []DiceRoll
@@ -68,6 +77,7 @@ type CreateOutput struct {
 
 // GetInput contains parameters for retrieving a dice session
 type GetInput struct {
+	WorldID  string
 	EntityID string
 	Context  string
 }
@@ -79,6 +89,7 @@ type GetOutput struct {
 
 // DeleteInput contains parameters for deleting a dice session
 type DeleteInput struct {
+	WorldID  string
 	EntityID string
 	Context  string
 }
@@ -88,17 +99,20 @@ type DeleteOutput struct {
 	RollsDeleted int
 }
 
-// Repository defines the interface for dice session storage operations
+// Repository defines the interface for dice session storage operations. Every
+// operation is world-scoped: WorldID is mandatory and never inferred from
+// context inside this adapter.
 type Repository interface {
 	// Create stores a new dice session with the specified TTL
 	Create(ctx context.Context, input CreateInput) (*CreateOutput, error)
 
-	// Get retrieves a dice session by entity ID and context
+	// Get retrieves a dice session by world, entity ID and context
 	Get(ctx context.Context, input GetInput) (*GetOutput, error)
 
 	// Delete removes a dice session
 	Delete(ctx context.Context, input DeleteInput) (*DeleteOutput, error)
 
-	// Update replaces an existing dice session (used for adding rolls)
+	// Update replaces an existing dice session (used for adding rolls). The
+	// session's WorldID is mandatory and continues to scope the write.
 	Update(ctx context.Context, session *DiceSession) error
 }

@@ -38,11 +38,12 @@ func TestRedisAppearanceRoundTripStoresToolkitDraftShape(t *testing.T) {
 	}
 
 	_, err := repo.Create(ctx, characterdraft.CreateInput{Draft: &entities.CharacterDraft{
-		Data: &tkcharacter.DraftData{ID: "draft-appearance", PlayerID: "player-appearance", Appearance: appearance},
+		WorldID: worldA,
+		Data:    &tkcharacter.DraftData{ID: "draft-appearance", PlayerID: "player-appearance", Appearance: appearance},
 	}})
 	require.NoError(t, err)
 
-	reloaded, err := repo.Get(ctx, characterdraft.GetInput{ID: "draft-appearance"})
+	reloaded, err := repo.Get(ctx, characterdraft.GetInput{WorldID: worldA, ID: "draft-appearance"})
 	require.NoError(t, err)
 	require.Equal(t, appearance, reloaded.Draft.Data.Appearance)
 	requireDetachedAppearance(t, appearance, reloaded.Draft.Data.Appearance)
@@ -59,11 +60,12 @@ func TestRedisAppearanceRoundTripPreservesPresentZeroOptionals(t *testing.T) {
 	}}
 
 	_, err := repo.Create(ctx, characterdraft.CreateInput{Draft: &entities.CharacterDraft{
-		Data: &tkcharacter.DraftData{ID: "draft-zero-appearance", PlayerID: "player-zero-appearance", Appearance: appearance},
+		WorldID: worldA,
+		Data:    &tkcharacter.DraftData{ID: "draft-zero-appearance", PlayerID: "player-zero-appearance", Appearance: appearance},
 	}})
 	require.NoError(t, err)
 
-	reloaded, err := repo.Get(ctx, characterdraft.GetInput{ID: "draft-zero-appearance"})
+	reloaded, err := repo.Get(ctx, characterdraft.GetInput{WorldID: worldA, ID: "draft-zero-appearance"})
 	require.NoError(t, err)
 	require.NotNil(t, reloaded.Draft.Data.Appearance.Hair.ColorSRGB)
 	require.Zero(t, *reloaded.Draft.Data.Appearance.Hair.ColorSRGB)

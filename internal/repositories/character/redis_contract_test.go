@@ -20,6 +20,12 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
 
+// Fixture worlds. World IDs are canonical decimal guild-shaped identifiers.
+const (
+	worldA = "123456789012345678"
+	worldB = "223456789012345678"
+)
+
 // These fixtures are records, not playable characters. No constructor, rule,
 // equipment projection or dice engine is needed to specify storage behavior.
 type CharacterRedisContractSuite struct {
@@ -45,7 +51,7 @@ func (s *CharacterRedisContractSuite) SetupTest() {
 
 func populatedCharacter() *entities.Character {
 	zero := uint32(0)
-	return &entities.Character{Data: &tkcharacter.Data{
+	return &entities.Character{WorldID: worldA, Data: &tkcharacter.Data{
 		ID: "char-a", PlayerID: "owner-a", Name: "Stored name", Level: 3, ClassID: "fighter", RaceID: "human",
 		HitPoints: 7, MaxHitPoints: 23, ArmorClass: 17,
 		EquipmentSlots: tkcharacter.EquipmentSlots{tkcharacter.SlotMainHand: "item-a"},
@@ -64,7 +70,7 @@ func (s *CharacterRedisContractSuite) create(in *entities.Character) {
 }
 
 func (s *CharacterRedisContractSuite) get(id string) *characterrepo.GetOutput {
-	out, err := s.repo.Get(s.ctx, characterrepo.GetInput{ID: id})
+	out, err := s.repo.Get(s.ctx, characterrepo.GetInput{WorldID: worldA, ID: id})
 	s.Require().NoError(err)
 	s.Require().NotNil(out)
 	return out
@@ -75,6 +81,7 @@ func (s *CharacterRedisContractSuite) TestPopulatedRoundTrip_DetachedReadsAndNoE
 	s.create(in)
 	got := s.get("char-a")
 	s.Equal(in, got.Character)
+	s.Equal(worldA, got.Character.WorldID)
 	s.NotEmpty(got.Version)
 	s.Equal(got.Version, s.get("char-a").Version)
 	s.NotSame(in.Data, got.Character.Data)
@@ -88,7 +95,7 @@ func (s *CharacterRedisContractSuite) TestPopulatedRoundTrip_DetachedReadsAndNoE
 	got.Character.Data.Conditions[0][2] = 'x'
 	s.server.FastForward(365 * 24 * time.Hour)
 	s.Equal(populatedCharacter(), s.get("char-a").Character)
-	s.Zero(s.server.TTL("character:char-a"))
+	s.Zero(s.server.TTL("character:" + worldA + ":char-a"))
 }
 
 func (s *CharacterRedisContractSuite) TestCreateDuplicate_DoesNotOverwriteOrReindex() {
@@ -99,66 +106,73 @@ func (s *CharacterRedisContractSuite) TestCreateDuplicate_DoesNotOverwriteOrRein
 	s.Require().True(apierr.IsAlreadyExists(err), "%v", err)
 	s.Nil(out)
 	s.Equal(populatedCharacter(), s.get("char-a").Character)
-	other, err := s.repo.ListByPlayerID(s.ctx, characterrepo.ListByPlayerIDInput{PlayerID: "other-owner"})
+	other, err := s.repo.ListByPlayerID(s.ctx, characterrepo.ListByPlayerIDInput{WorldID: worldA, PlayerID: "other-owner"})
 	s.Require().NoError(err)
 	s.Empty(other.Characters)
 }
 
-func (s *CharacterRedisContractSuite) TestUpdateMovesPlayerIndex_AndDeleteRemovesRecordAndIndex() {
+func (s *CharacterRedisContractSuite) TestUpdateCannotMovePlayerOwnership_AndDeleteRemovesRecordAndIndex() {
 	s.create(populatedCharacter())
 	neighbor := populatedCharacter()
 	neighbor.Data.ID = "char-b"
 	s.create(neighbor)
 	before := s.get("char-a")
-	changed := populatedCharacter()
-	changed.Data.PlayerID = "owner-b"
-	changed.Data.Name = "Changed"
-	out, err := s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: changed})
+
+	// Player ownership is immutable: moving the record to another player is
+	// rejected and writes neither the record nor either player index.
+	moved := populatedCharacter()
+	moved.Data.PlayerID = "owner-b"
+	moved.Data.Name = "Changed"
+	out, err := s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: moved})
+	s.Require().True(apierr.IsInvalidArgument(err), "%v", err)
+	s.Nil(out)
+	s.Equal(before.Character, s.get("char-a").Character)
+	ownerA, err := s.repo.ListByPlayerID(s.ctx, characterrepo.ListByPlayerIDInput{WorldID: worldA, PlayerID: "owner-a"})
 	s.Require().NoError(err)
-	s.Equal(changed, out.Character)
-	s.Equal(changed, s.get("char-a").Character)
+	s.Equal([]*entities.Character{populatedCharacter(), neighbor}, ownerA.Characters)
+	ownerB, err := s.repo.ListByPlayerID(s.ctx, characterrepo.ListByPlayerIDInput{WorldID: worldA, PlayerID: "owner-b"})
+	s.Require().NoError(err)
+	s.Empty(ownerB.Characters)
+
+	renamed := populatedCharacter()
+	renamed.Data.Name = "Changed"
+	updated, err := s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: renamed})
+	s.Require().NoError(err)
+	s.Equal(renamed, updated.Character)
+	s.Equal(renamed, s.get("char-a").Character)
 	s.NotEqual(before.Version, s.get("char-a").Version)
-	old, err := s.repo.ListByPlayerID(s.ctx, characterrepo.ListByPlayerIDInput{PlayerID: "owner-a"})
-	s.Require().NoError(err)
-	s.Equal([]*entities.Character{neighbor}, old.Characters)
-	moved, err := s.repo.ListByPlayerID(s.ctx, characterrepo.ListByPlayerIDInput{PlayerID: "owner-b"})
-	s.Require().NoError(err)
-	s.Equal([]*entities.Character{changed}, moved.Characters)
-	deleted, err := s.repo.Delete(s.ctx, characterrepo.DeleteInput{ID: "char-a"})
+
+	deleted, err := s.repo.Delete(s.ctx, characterrepo.DeleteInput{WorldID: worldA, ID: "char-a"})
 	s.Require().NoError(err)
 	s.NotNil(deleted)
 	// Assert the write's effect BEFORE ListByPlayerID can lazily repair a stale
 	// member. A list-only assertion passes even if Delete forgets its SRem.
-	remaining, indexErr := s.client.SMembers(s.ctx, "character:player:owner-b").Result()
+	remaining, indexErr := s.client.SMembers(s.ctx, "character:player:"+worldA+":owner-a").Result()
 	s.Require().NoError(indexErr)
-	s.Empty(remaining)
-	neighbors, indexErr := s.client.SMembers(s.ctx, "character:player:owner-a").Result()
-	s.Require().NoError(indexErr)
-	s.Equal([]string{"char-b"}, neighbors)
-	missing, err := s.repo.Get(s.ctx, characterrepo.GetInput{ID: "char-a"})
+	s.Equal([]string{"char-b"}, remaining)
+	missing, err := s.repo.Get(s.ctx, characterrepo.GetInput{WorldID: worldA, ID: "char-a"})
 	s.True(apierr.IsNotFound(err))
 	s.Nil(missing)
-	moved, err = s.repo.ListByPlayerID(s.ctx, characterrepo.ListByPlayerIDInput{PlayerID: "owner-b"})
-	s.Require().NoError(err)
-	s.Empty(moved.Characters)
 	s.Equal(neighbor, s.get("char-b").Character)
 }
 
-func (s *CharacterRedisContractSuite) TestUpdateCanRemoveAndAssignPlayerIndex() {
+func (s *CharacterRedisContractSuite) TestUpdateRejectsRemovingOrAssigningPlayerIndex() {
 	in := populatedCharacter()
 	s.create(in)
-	in.Data.PlayerID = ""
-	_, err := s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: in})
-	s.Require().NoError(err)
-	old, err := s.repo.ListByPlayerID(s.ctx, characterrepo.ListByPlayerIDInput{PlayerID: "owner-a"})
-	s.Require().NoError(err)
-	s.Empty(old.Characters)
-	in.Data.PlayerID = "owner-b"
-	_, err = s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: in})
-	s.Require().NoError(err)
-	got, err := s.repo.ListByPlayerID(s.ctx, characterrepo.ListByPlayerIDInput{PlayerID: "owner-b"})
-	s.Require().NoError(err)
-	s.Equal([]*entities.Character{in}, got.Characters)
+
+	// Clearing ownership is a change and is rejected.
+	unowned := populatedCharacter()
+	unowned.Data.PlayerID = ""
+	_, err := s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: unowned})
+	s.True(apierr.IsInvalidArgument(err))
+	s.Equal(in, s.get("char-a").Character)
+
+	// Assigning ownership to a different player is rejected too.
+	reassigned := populatedCharacter()
+	reassigned.Data.PlayerID = "owner-b"
+	_, err = s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: reassigned})
+	s.True(apierr.IsInvalidArgument(err))
+	s.Equal(in, s.get("char-a").Character)
 }
 
 func (s *CharacterRedisContractSuite) TestListsResolveStoredRecordsAndCleanStaleIDs() {
@@ -166,20 +180,20 @@ func (s *CharacterRedisContractSuite) TestListsResolveStoredRecordsAndCleanStale
 	s.create(in)
 	// Session membership is not written by character CRUD. Seed its existing
 	// read-side contract explicitly, rather than inventing a membership writer.
-	s.server.SAdd("character:session:session-a", "char-a", "missing")
-	s.server.SAdd("character:player:owner-a", "missing")
-	bySession, err := s.repo.ListBySessionID(s.ctx, characterrepo.ListBySessionIDInput{SessionID: "session-a"})
+	s.server.SAdd("character:session:"+worldA+":session-a", "char-a", "missing")
+	s.server.SAdd("character:player:"+worldA+":owner-a", "missing")
+	bySession, err := s.repo.ListBySessionID(s.ctx, characterrepo.ListBySessionIDInput{WorldID: worldA, SessionID: "session-a"})
 	s.Require().NoError(err)
 	s.Equal([]*entities.Character{in}, bySession.Characters)
-	byPlayer, err := s.repo.ListByPlayerID(s.ctx, characterrepo.ListByPlayerIDInput{PlayerID: "owner-a"})
+	byPlayer, err := s.repo.ListByPlayerID(s.ctx, characterrepo.ListByPlayerIDInput{WorldID: worldA, PlayerID: "owner-a"})
 	s.Require().NoError(err)
 	s.Equal([]*entities.Character{in}, byPlayer.Characters)
-	for _, key := range []string{"character:session:session-a", "character:player:owner-a"} {
+	for _, key := range []string{"character:session:" + worldA + ":session-a", "character:player:" + worldA + ":owner-a"} {
 		members, membersErr := s.server.Members(key)
 		s.Require().NoError(membersErr)
 		s.Equal([]string{"char-a"}, members)
 	}
-	other, err := s.repo.ListBySessionID(s.ctx, characterrepo.ListBySessionIDInput{SessionID: "session-b"})
+	other, err := s.repo.ListBySessionID(s.ctx, characterrepo.ListBySessionIDInput{WorldID: worldA, SessionID: "session-b"})
 	s.Require().NoError(err)
 	s.Empty(other.Characters)
 	byPlayer.Characters[0].Data.Name = "not-saved"
@@ -192,7 +206,7 @@ func (s *CharacterRedisContractSuite) TestPatchChangesOnlyEquipmentAndVersion() 
 	before := s.get("char-a")
 	slots := tkcharacter.EquipmentSlots{tkcharacter.SlotOffHand: "item-b"}
 	out, err := s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{
-		CharacterID: "char-a", ExpectedVersion: before.Version, ExpectedEquipmentSlots: in.Data.EquipmentSlots,
+		WorldID: worldA, CharacterID: "char-a", ExpectedVersion: before.Version, ExpectedEquipmentSlots: in.Data.EquipmentSlots,
 		EquipmentSlots: slots, ArmorClass: 31,
 	})
 	s.Require().NoError(err)
@@ -208,51 +222,61 @@ func (s *CharacterRedisContractSuite) TestPatchChangesOnlyEquipmentAndVersion() 
 	s.Equal(out.Version, stored.Version)
 	slots[tkcharacter.SlotOffHand] = "mutated-input"
 	s.Equal(expected, s.get("char-a").Character)
-	s.Zero(s.server.TTL("character:char-a"))
+	s.Zero(s.server.TTL("character:" + worldA + ":char-a"))
 }
 
 func (s *CharacterRedisContractSuite) TestMissingRecordsKeepNotFoundIdentity() {
-	_, err := s.repo.Get(s.ctx, characterrepo.GetInput{ID: "missing"})
+	_, err := s.repo.Get(s.ctx, characterrepo.GetInput{WorldID: worldA, ID: "missing"})
 	s.True(apierr.IsNotFound(err))
-	_, err = s.repo.Delete(s.ctx, characterrepo.DeleteInput{ID: "missing"})
+	_, err = s.repo.Delete(s.ctx, characterrepo.DeleteInput{WorldID: worldA, ID: "missing"})
 	s.True(apierr.IsNotFound(err))
 	_, err = s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: populatedCharacter()})
 	s.True(apierr.IsNotFound(err))
-	_, err = s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{CharacterID: "missing", ExpectedVersion: "version"})
+	_, err = s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{WorldID: worldA, CharacterID: "missing", ExpectedVersion: "version"})
 	s.True(apierr.IsNotFound(err))
 }
 
 func (s *CharacterRedisContractSuite) TestPatchRejectsNullDataWithoutWriting() {
 	const corruptRecord = `{"data":null}`
-	s.Require().NoError(s.server.Set("character:char-a", corruptRecord))
+	s.Require().NoError(s.server.Set("character:"+worldA+":char-a", corruptRecord))
 	out, err := s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{
-		CharacterID: "char-a", ExpectedVersion: "version", ArmorClass: 31,
+		WorldID: worldA, CharacterID: "char-a", ExpectedVersion: "version", ArmorClass: 31,
 	})
 	s.Require().True(apierr.IsInternal(err), "%v", err)
 	s.Nil(out)
-	stored, readErr := s.server.Get("character:char-a")
+	stored, readErr := s.server.Get("character:" + worldA + ":char-a")
 	s.Require().NoError(readErr)
 	s.Equal(corruptRecord, stored)
-	// Update does not share this guard: its pre-existing panic is #1057,
-	// not a behavior this test should endorse.
+	// Get and Update share the same envelope guard: a null toolkit payload is
+	// storage corruption, not an empty success and not a panic (#1057).
+	_, err = s.repo.Get(s.ctx, characterrepo.GetInput{WorldID: worldA, ID: "char-a"})
+	s.True(apierr.IsInternal(err))
+	_, err = s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: populatedCharacter()})
+	s.True(apierr.IsInternal(err))
+	stored, readErr = s.server.Get("character:" + worldA + ":char-a")
+	s.Require().NoError(readErr)
+	s.Equal(corruptRecord, stored)
 }
 
 func (s *CharacterRedisContractSuite) TestMalformedPayloadIsNotMissing_AndListDoesNotDiscardIt() {
-	s.Require().NoError(s.server.Set("character:broken", "{"))
-	s.server.SAdd("character:player:owner-a", "broken")
-	s.server.SAdd("character:session:session-a", "broken")
+	s.Require().NoError(s.server.Set("character:"+worldA+":broken", "{"))
+	s.server.SAdd("character:player:"+worldA+":owner-a", "broken")
+	s.server.SAdd("character:session:"+worldA+":session-a", "broken")
 	calls := []func() error{
-		func() error { _, e := s.repo.Get(s.ctx, characterrepo.GetInput{ID: "broken"}); return e },
 		func() error {
-			_, e := s.repo.ListByPlayerID(s.ctx, characterrepo.ListByPlayerIDInput{PlayerID: "owner-a"})
+			_, e := s.repo.Get(s.ctx, characterrepo.GetInput{WorldID: worldA, ID: "broken"})
 			return e
 		},
 		func() error {
-			_, e := s.repo.ListBySessionID(s.ctx, characterrepo.ListBySessionIDInput{SessionID: "session-a"})
+			_, e := s.repo.ListByPlayerID(s.ctx, characterrepo.ListByPlayerIDInput{WorldID: worldA, PlayerID: "owner-a"})
 			return e
 		},
 		func() error {
-			_, e := s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{CharacterID: "broken", ExpectedVersion: "v"})
+			_, e := s.repo.ListBySessionID(s.ctx, characterrepo.ListBySessionIDInput{WorldID: worldA, SessionID: "session-a"})
+			return e
+		},
+		func() error {
+			_, e := s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{WorldID: worldA, CharacterID: "broken", ExpectedVersion: "v"})
 			return e
 		},
 	}
@@ -262,29 +286,37 @@ func (s *CharacterRedisContractSuite) TestMalformedPayloadIsNotMissing_AndListDo
 		s.ErrorAs(err, &syntax)
 		s.False(apierr.IsNotFound(err))
 	}
-	s.True(s.server.Exists("character:broken"))
-	members, err := s.server.Members("character:player:owner-a")
+	s.True(s.server.Exists("character:" + worldA + ":broken"))
+	members, err := s.server.Members("character:player:" + worldA + ":owner-a")
 	s.Require().NoError(err)
 	s.Equal([]string{"broken"}, members)
 }
 
 func (s *CharacterRedisContractSuite) TestInvalidInputsDoNotWrite() {
-	for _, in := range []*entities.Character{nil, {}, {Data: &tkcharacter.Data{}}} {
+	for _, in := range []*entities.Character{nil, {}, {Data: &tkcharacter.Data{}}, {WorldID: worldA}, {WorldID: worldA, Data: &tkcharacter.Data{}}} {
 		_, err := s.repo.Create(s.ctx, characterrepo.CreateInput{Character: in})
 		s.True(apierr.IsInvalidArgument(err))
 		_, err = s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: in})
 		s.True(apierr.IsInvalidArgument(err))
 	}
-	_, err := s.repo.Get(s.ctx, characterrepo.GetInput{})
-	s.True(apierr.IsInvalidArgument(err))
-	_, err = s.repo.Delete(s.ctx, characterrepo.DeleteInput{})
-	s.True(apierr.IsInvalidArgument(err))
-	_, err = s.repo.ListByPlayerID(s.ctx, characterrepo.ListByPlayerIDInput{})
-	s.True(apierr.IsInvalidArgument(err))
-	_, err = s.repo.ListBySessionID(s.ctx, characterrepo.ListBySessionIDInput{})
-	s.True(apierr.IsInvalidArgument(err))
-	for _, in := range []characterrepo.PatchEquipmentInput{{}, {CharacterID: "char-a"}} {
-		_, err = s.repo.PatchEquipment(s.ctx, in)
+	for _, in := range []characterrepo.GetInput{{}, {ID: "char-a"}, {WorldID: worldA}} {
+		_, err := s.repo.Get(s.ctx, in)
+		s.True(apierr.IsInvalidArgument(err))
+	}
+	for _, in := range []characterrepo.DeleteInput{{}, {ID: "char-a"}, {WorldID: worldA}} {
+		_, err := s.repo.Delete(s.ctx, in)
+		s.True(apierr.IsInvalidArgument(err))
+	}
+	for _, in := range []characterrepo.ListByPlayerIDInput{{}, {PlayerID: "owner-a"}, {WorldID: worldA}} {
+		_, err := s.repo.ListByPlayerID(s.ctx, in)
+		s.True(apierr.IsInvalidArgument(err))
+	}
+	for _, in := range []characterrepo.ListBySessionIDInput{{}, {SessionID: "session-a"}, {WorldID: worldA}} {
+		_, err := s.repo.ListBySessionID(s.ctx, in)
+		s.True(apierr.IsInvalidArgument(err))
+	}
+	for _, in := range []characterrepo.PatchEquipmentInput{{}, {WorldID: worldA}, {WorldID: worldA, CharacterID: "char-a"}} {
+		_, err := s.repo.PatchEquipment(s.ctx, in)
 		s.True(apierr.IsInvalidArgument(err))
 	}
 	s.Empty(s.server.Keys())
@@ -316,14 +348,18 @@ func (s *CharacterRedisContractSuite) TestTransactionFailuresPropagateWithoutCla
 	changed := populatedCharacter()
 	changed.Data.PlayerID = "owner-b"
 	_, err = s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: changed})
+	s.True(apierr.IsInvalidArgument(err), "ownership change is rejected before any write: %v", err)
+	changed.Data.PlayerID = "owner-a"
+	changed.Data.Name = "Changed"
+	_, err = s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: changed})
 	s.ErrorIs(err, cause)
-	_, err = s.repo.Delete(s.ctx, characterrepo.DeleteInput{ID: "char-a"})
+	_, err = s.repo.Delete(s.ctx, characterrepo.DeleteInput{WorldID: worldA, ID: "char-a"})
 	s.ErrorIs(err, cause)
-	_, err = s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{CharacterID: "char-a", ExpectedVersion: version, ExpectedEquipmentSlots: in.Data.EquipmentSlots, ArmorClass: 31})
+	_, err = s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{WorldID: worldA, CharacterID: "char-a", ExpectedVersion: version, ExpectedEquipmentSlots: in.Data.EquipmentSlots, ArmorClass: 31})
 	s.ErrorIs(err, cause)
 	s.Equal(in, s.get("char-a").Character)
-	s.False(s.server.Exists("character:new"))
-	s.False(s.server.Exists("character:player:owner-b"))
+	s.False(s.server.Exists("character:" + worldA + ":new"))
+	s.False(s.server.Exists("character:player:" + worldA + ":owner-b"))
 }
 
 func (s *CharacterRedisContractSuite) TestStorageReadFailuresAreNotNotFound() {
@@ -333,22 +369,28 @@ func (s *CharacterRedisContractSuite) TestStorageReadFailuresAreNotNotFound() {
 			_, e := s.repo.Create(s.ctx, characterrepo.CreateInput{Character: populatedCharacter()})
 			return e
 		},
-		func() error { _, e := s.repo.Get(s.ctx, characterrepo.GetInput{ID: "char-a"}); return e },
+		func() error {
+			_, e := s.repo.Get(s.ctx, characterrepo.GetInput{WorldID: worldA, ID: "char-a"})
+			return e
+		},
 		func() error {
 			_, e := s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: populatedCharacter()})
 			return e
 		},
-		func() error { _, e := s.repo.Delete(s.ctx, characterrepo.DeleteInput{ID: "char-a"}); return e },
 		func() error {
-			_, e := s.repo.ListByPlayerID(s.ctx, characterrepo.ListByPlayerIDInput{PlayerID: "owner-a"})
+			_, e := s.repo.Delete(s.ctx, characterrepo.DeleteInput{WorldID: worldA, ID: "char-a"})
 			return e
 		},
 		func() error {
-			_, e := s.repo.ListBySessionID(s.ctx, characterrepo.ListBySessionIDInput{SessionID: "session-a"})
+			_, e := s.repo.ListByPlayerID(s.ctx, characterrepo.ListByPlayerIDInput{WorldID: worldA, PlayerID: "owner-a"})
 			return e
 		},
 		func() error {
-			_, e := s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{CharacterID: "char-a", ExpectedVersion: "v"})
+			_, e := s.repo.ListBySessionID(s.ctx, characterrepo.ListBySessionIDInput{WorldID: worldA, SessionID: "session-a"})
+			return e
+		},
+		func() error {
+			_, e := s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{WorldID: worldA, CharacterID: "char-a", ExpectedVersion: "v"})
 			return e
 		},
 	}
@@ -362,15 +404,15 @@ func (s *CharacterRedisContractSuite) TestStorageReadFailuresAreNotNotFound() {
 func (s *CharacterRedisContractSuite) TestEquipmentConditionReplacementIsAtomicAndVersionProtected() {
 	original := populatedCharacter()
 	s.create(original)
-	before, err := s.repo.Get(s.ctx, characterrepo.GetInput{ID: original.Data.ID})
+	before, err := s.repo.Get(s.ctx, characterrepo.GetInput{WorldID: worldA, ID: original.Data.ID})
 	s.Require().NoError(err)
 	concurrent := *before.Character.Data
 	concurrent.HitPoints = 3
 	concurrent.Conditions = append(concurrent.Conditions, json.RawMessage(`{"new":"combat-condition"}`))
-	_, err = s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: &entities.Character{Data: &concurrent}})
+	_, err = s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: &entities.Character{WorldID: worldA, Data: &concurrent}})
 	s.Require().NoError(err)
 	cleared := []json.RawMessage{}
-	input := characterrepo.PatchEquipmentInput{CharacterID: original.Data.ID, ExpectedVersion: before.Version, ExpectedEquipmentSlots: original.Data.EquipmentSlots, EquipmentSlots: tkcharacter.EquipmentSlots{}, ArmorClass: 12, Conditions: &cleared}
+	input := characterrepo.PatchEquipmentInput{WorldID: worldA, CharacterID: original.Data.ID, ExpectedVersion: before.Version, ExpectedEquipmentSlots: original.Data.EquipmentSlots, EquipmentSlots: tkcharacter.EquipmentSlots{}, ArmorClass: 12, Conditions: &cleared}
 	raced, err := s.repo.PatchEquipment(s.ctx, input)
 	s.Require().NoError(err)
 	s.False(raced.Applied)
@@ -381,7 +423,7 @@ func (s *CharacterRedisContractSuite) TestEquipmentConditionReplacementIsAtomicA
 	patched, err := s.repo.PatchEquipment(s.ctx, input)
 	s.Require().NoError(err)
 	s.True(patched.Applied)
-	stored, err := s.repo.Get(s.ctx, characterrepo.GetInput{ID: original.Data.ID})
+	stored, err := s.repo.Get(s.ctx, characterrepo.GetInput{WorldID: worldA, ID: original.Data.ID})
 	s.Require().NoError(err)
 	s.Equal(preserved, stored.Character.Data.Conditions)
 	s.Equal(3, stored.Character.Data.HitPoints)
@@ -393,7 +435,7 @@ func (s *CharacterRedisContractSuite) TestEquipmentConditionReplacementIsAtomicA
 	patched, err = s.repo.PatchEquipment(s.ctx, input)
 	s.Require().NoError(err)
 	s.True(patched.Applied)
-	stored, err = s.repo.Get(s.ctx, characterrepo.GetInput{ID: original.Data.ID})
+	stored, err = s.repo.Get(s.ctx, characterrepo.GetInput{WorldID: worldA, ID: original.Data.ID})
 	s.Require().NoError(err)
 	s.Empty(stored.Character.Data.Conditions)
 }

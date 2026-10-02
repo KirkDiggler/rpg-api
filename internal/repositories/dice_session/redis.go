@@ -14,15 +14,17 @@ import (
 )
 
 const (
-	// Key pattern: dice_session:{entity_id}:{context}
+	// Key pattern: dice_session:{world_id}:{entity_id}:{context}
 	sessionKeyPrefix = "dice_session:"
 	defaultTTL       = 15 * time.Minute
 
 	// Error messages
-	errSessionNil     = "session cannot be nil"
-	errEntityIDEmpty  = "entity ID cannot be empty"
-	errContextEmpty   = "context cannot be empty"
-	errSessionExpired = "session has already expired"
+	errWorldIDEmpty        = "world ID cannot be empty"
+	errSessionNil          = "session cannot be nil"
+	errEntityIDEmpty       = "entity ID cannot be empty"
+	errContextEmpty        = "context cannot be empty"
+	errSessionExpired      = "session has already expired"
+	errStoredWorldMismatch = "stored dice session world does not match requested world"
 )
 
 // Config holds the configuration for the Redis repository
@@ -64,6 +66,9 @@ var _ Repository = (*redisRepository)(nil)
 
 // Create stores a new dice session with the specified TTL
 func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*CreateOutput, error) {
+	if input.WorldID == "" {
+		return nil, apierr.InvalidArgument(errWorldIDEmpty)
+	}
 	if input.EntityID == "" {
 		return nil, apierr.InvalidArgument(errEntityIDEmpty)
 	}
@@ -78,6 +83,7 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 	}
 
 	session := &DiceSession{
+		WorldID:   input.WorldID,
 		EntityID:  input.EntityID,
 		Context:   input.Context,
 		Rolls:     input.Rolls,
@@ -91,8 +97,8 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 		return nil, apierr.Wrapf(err, "failed to marshal session")
 	}
 
-	// Store in Redis with TTL
-	key := r.buildKey(input.EntityID, input.Context)
+	// Store in Redis with TTL under the world-scoped key
+	key := r.buildKey(input.WorldID, input.EntityID, input.Context)
 	err = r.client.Set(ctx, key, sessionJSON, ttl).Err()
 	if err != nil {
 		return nil, apierr.Wrapf(err, "failed to store session in Redis")
@@ -103,8 +109,11 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 	}, nil
 }
 
-// Get retrieves a dice session by entity ID and context
+// Get retrieves a dice session by world, entity ID and context
 func (r *redisRepository) Get(ctx context.Context, input GetInput) (*GetOutput, error) {
+	if input.WorldID == "" {
+		return nil, apierr.InvalidArgument(errWorldIDEmpty)
+	}
 	if input.EntityID == "" {
 		return nil, apierr.InvalidArgument(errEntityIDEmpty)
 	}
@@ -112,7 +121,7 @@ func (r *redisRepository) Get(ctx context.Context, input GetInput) (*GetOutput, 
 		return nil, apierr.InvalidArgument(errContextEmpty)
 	}
 
-	key := r.buildKey(input.EntityID, input.Context)
+	key := r.buildKey(input.WorldID, input.EntityID, input.Context)
 
 	// Get from Redis
 	sessionJSON, err := r.client.Get(ctx, key).Result()
@@ -129,6 +138,13 @@ func (r *redisRepository) Get(ctx context.Context, input GetInput) (*GetOutput, 
 		return nil, apierr.Wrapf(err, "failed to unmarshal session")
 	}
 
+	// A stored session whose ownership metadata contradicts the requested
+	// world is corruption, never a valid read.
+	if session.WorldID != input.WorldID {
+		return nil, apierr.Internalf("%s: requested %q, stored %q",
+			errStoredWorldMismatch, input.WorldID, session.WorldID)
+	}
+
 	// Check if session has expired
 	if r.clock.Now().After(session.ExpiresAt) {
 		// Session has expired, clean it up
@@ -143,6 +159,9 @@ func (r *redisRepository) Get(ctx context.Context, input GetInput) (*GetOutput, 
 
 // Delete removes a dice session
 func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*DeleteOutput, error) {
+	if input.WorldID == "" {
+		return nil, apierr.InvalidArgument(errWorldIDEmpty)
+	}
 	if input.EntityID == "" {
 		return nil, apierr.InvalidArgument(errEntityIDEmpty)
 	}
@@ -150,13 +169,15 @@ func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*Delet
 		return nil, apierr.InvalidArgument(errContextEmpty)
 	}
 
-	key := r.buildKey(input.EntityID, input.Context)
+	key := r.buildKey(input.WorldID, input.EntityID, input.Context)
 
-	// Get the session first to count rolls
+	// Get the session first to count rolls. Delete keeps its documented
+	// best-effort count: a failed pre-count read (including a corrupt stored
+	// envelope) still deletes the world-scoped key and reports zero, matching
+	// the #1047 contract. Only the delete's own error propagates.
 	getOutput, err := r.Get(ctx, GetInput(input))
 
 	var rollsDeleted int
-
 	if err == nil && getOutput.Session != nil {
 		// nolint:gosec // roll count is always small
 		rollsDeleted = len(getOutput.Session.Rolls)
@@ -178,6 +199,9 @@ func (r *redisRepository) Update(ctx context.Context, session *DiceSession) erro
 	if session == nil {
 		return apierr.InvalidArgument(errSessionNil)
 	}
+	if session.WorldID == "" {
+		return apierr.InvalidArgument(errWorldIDEmpty)
+	}
 	if session.EntityID == "" {
 		return apierr.InvalidArgument(errEntityIDEmpty)
 	}
@@ -193,6 +217,26 @@ func (r *redisRepository) Update(ctx context.Context, session *DiceSession) erro
 
 	remainingTTL := session.ExpiresAt.Sub(now)
 
+	key := r.buildKey(session.WorldID, session.EntityID, session.Context)
+
+	// If a record already exists at this world-scoped key, its stored
+	// ownership must agree. A contradictory envelope is corruption and is not
+	// overwritten. A missing key keeps the existing last-writer behavior.
+	stored, readErr := r.client.Get(ctx, key).Bytes()
+	switch {
+	case readErr == nil:
+		var existing DiceSession
+		if unmarshalErr := json.Unmarshal(stored, &existing); unmarshalErr != nil {
+			return apierr.Wrapf(unmarshalErr, "failed to unmarshal stored session")
+		}
+		if existing.WorldID != session.WorldID {
+			return apierr.Internalf("%s: requested %q, stored %q",
+				errStoredWorldMismatch, session.WorldID, existing.WorldID)
+		}
+	case readErr != redis.Nil:
+		return apierr.Wrapf(readErr, "failed to read existing session")
+	}
+
 	// Serialize the session
 	sessionJSON, err := json.Marshal(session)
 	if err != nil {
@@ -200,7 +244,6 @@ func (r *redisRepository) Update(ctx context.Context, session *DiceSession) erro
 	}
 
 	// Update in Redis with remaining TTL
-	key := r.buildKey(session.EntityID, session.Context)
 	err = r.client.Set(ctx, key, sessionJSON, remainingTTL).Err()
 	if err != nil {
 		return apierr.Wrapf(err, "failed to update session in Redis")
@@ -209,7 +252,9 @@ func (r *redisRepository) Update(ctx context.Context, session *DiceSession) erro
 	return nil
 }
 
-// buildKey creates the Redis key for a dice session
-func (r *redisRepository) buildKey(entityID, context string) string {
-	return fmt.Sprintf("%s%s:%s", sessionKeyPrefix, entityID, context)
+// buildKey creates the world-scoped Redis key for a dice session. World IDs
+// are canonical decimal identifiers; entity and context IDs never contain the
+// colon delimiter, so the (world, entity, context) tuple is unambiguous.
+func (r *redisRepository) buildKey(worldID, entityID, context string) string {
+	return fmt.Sprintf("%s%s:%s:%s", sessionKeyPrefix, worldID, entityID, context)
 }

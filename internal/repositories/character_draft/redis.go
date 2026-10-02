@@ -20,10 +20,14 @@ const (
 	defaultTTL          = 24 * time.Hour
 
 	// Error messages
-	errDraftNil      = "draft cannot be nil"
-	errDraftDataNil  = "draft data cannot be nil"
-	errDraftIDEmpty  = "draft ID cannot be empty"
-	errPlayerIDEmpty = "player ID cannot be empty"
+	errWorldIDEmpty             = "world ID cannot be empty"
+	errDraftNil                 = "draft cannot be nil"
+	errDraftDataNil             = "draft data cannot be nil"
+	errDraftIDEmpty             = "draft ID cannot be empty"
+	errPlayerIDEmpty            = "player ID cannot be empty"
+	errStoredWorldMismatch      = "stored draft world does not match requested world"
+	errOwnershipImmutable       = "draft world and player ownership cannot change"
+	errMappingPlayerMismatchFmt = "draft %q mapping resolves to a different player"
 )
 
 // Config holds the configuration for the Redis repository
@@ -66,9 +70,23 @@ func NewRedis(cfg *Config) (Repository, error) {
 	}, nil
 }
 
+// draftKey is the world-scoped draft record key. World IDs are canonical
+// decimal identifiers; draft IDs never contain the colon delimiter.
+func draftKey(worldID, id string) string {
+	return draftKeyPrefix + worldID + ":" + id
+}
+
+// playerMappingKey is the world-scoped single-draft mapping for a player.
+func playerMappingKey(worldID, playerID string) string {
+	return playerMappingPrefix + worldID + ":" + playerID
+}
+
 func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*CreateOutput, error) {
 	if input.Draft == nil {
 		return nil, apierr.InvalidArgument(errDraftNil)
+	}
+	if input.Draft.WorldID == "" {
+		return nil, apierr.InvalidArgument(errWorldIDEmpty)
 	}
 	if input.Draft.Data == nil {
 		return nil, apierr.InvalidArgument(errDraftDataNil)
@@ -85,8 +103,8 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 	}
 
 	isNew := true
-	// Check for existing draft for this player
-	playerKey := playerMappingPrefix + draft.Data.PlayerID
+	// Check for existing draft for this player in this world
+	playerKey := playerMappingKey(draft.WorldID, draft.Data.PlayerID)
 	existingDraftID, err := r.client.Get(ctx, playerKey).Result()
 	if err != nil {
 		if err != redis.Nil {
@@ -101,10 +119,10 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 	// Start transaction
 	pipe := r.client.TxPipeline()
 
-	// Delete existing draft if any
+	// Delete existing draft if any. The mapping is world-scoped, so this only
+	// ever removes this player's draft in this world.
 	if !isNew {
-		oldDraftKey := draftKeyPrefix + existingDraftID
-		pipe.Del(ctx, oldDraftKey)
+		pipe.Del(ctx, draftKey(draft.WorldID, existingDraftID))
 	}
 
 	data, err := json.Marshal(draft)
@@ -113,10 +131,9 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 	}
 
 	// Set draft data
-	draftKey := draftKeyPrefix + draft.Data.ID
-	pipe.Set(ctx, draftKey, data, defaultTTL)
+	pipe.Set(ctx, draftKey(draft.WorldID, draft.Data.ID), data, defaultTTL)
 
-	// Set player mapping (no TTL on this key)
+	// Set world-scoped player mapping (no TTL on this key)
 	pipe.Set(ctx, playerKey, draft.Data.ID, 0)
 
 	// Execute transaction
@@ -129,50 +146,79 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 }
 
 func (r *redisRepository) Get(ctx context.Context, input GetInput) (*GetOutput, error) {
+	if input.WorldID == "" {
+		return nil, apierr.InvalidArgument(errWorldIDEmpty)
+	}
 	if input.ID == "" {
 		return nil, apierr.InvalidArgument(errDraftIDEmpty)
 	}
 
-	key := draftKeyPrefix + input.ID
+	key := draftKey(input.WorldID, input.ID)
 	result, err := r.client.Get(ctx, key).Result()
 	if err != nil {
 		if err == redis.Nil {
-			return nil, apierr.NotFoundf("draft with ID %s not found", input.ID)
+			return nil, apierr.NotFoundf("draft with ID %s not found in world %s", input.ID, input.WorldID)
 		}
 		return nil, apierr.Wrapf(err, "failed to get draft")
 	}
 
-	var draft entities.CharacterDraft
-	if err := json.Unmarshal([]byte(result), &draft); err != nil {
-		return nil, apierr.Wrapf(err, "failed to unmarshal draft")
+	draft, err := decodeDraft([]byte(result), input.WorldID)
+	if err != nil {
+		return nil, err
 	}
 
-	return &GetOutput{Draft: &draft}, nil
+	return &GetOutput{Draft: draft}, nil
+}
+
+// decodeDraft validates a stored envelope before it is projected. A nil
+// toolkit payload or ownership metadata contradicting the requested world is
+// reported as storage corruption, never as a missing draft.
+func decodeDraft(raw []byte, worldID string) (*entities.CharacterDraft, error) {
+	var draft entities.CharacterDraft
+	if err := json.Unmarshal(raw, &draft); err != nil {
+		return nil, apierr.Wrapf(err, "failed to unmarshal draft")
+	}
+	if draft.Data == nil {
+		return nil, apierr.Internal(errDraftDataNil)
+	}
+	if draft.WorldID != worldID {
+		return nil, apierr.Internalf("%s: requested %q, stored %q", errStoredWorldMismatch, worldID, draft.WorldID)
+	}
+	return &draft, nil
 }
 
 func (r *redisRepository) GetByPlayerID(ctx context.Context, input GetByPlayerIDInput) (*GetByPlayerIDOutput, error) {
+	if input.WorldID == "" {
+		return nil, apierr.InvalidArgument(errWorldIDEmpty)
+	}
 	if input.PlayerID == "" {
 		return nil, apierr.InvalidArgument(errPlayerIDEmpty)
 	}
 
-	// Get draft ID from player mapping
-	playerKey := playerMappingPrefix + input.PlayerID
+	// Get draft ID from the world-scoped player mapping
+	playerKey := playerMappingKey(input.WorldID, input.PlayerID)
 	draftID, err := r.client.Get(ctx, playerKey).Result()
 	if err != nil {
 		if err == redis.Nil {
-			return nil, apierr.NotFoundf("no draft found for player %s", input.PlayerID)
+			return nil, apierr.NotFoundf("no draft found for player %s in world %s", input.PlayerID, input.WorldID)
 		}
 		return nil, apierr.Wrapf(err, "failed to get player draft mapping")
 	}
 
 	// Get the actual draft
-	getOutput, err := r.Get(ctx, GetInput{ID: draftID})
+	getOutput, err := r.Get(ctx, GetInput{WorldID: input.WorldID, ID: draftID})
 	if err != nil {
 		// If draft doesn't exist, clean up the mapping
 		if apierr.IsNotFound(err) {
 			r.client.Del(ctx, playerKey)
 		}
 		return nil, err
+	}
+
+	// A mapping must resolve to a draft owned by the mapped player. A
+	// contradictory record is corruption, never projected.
+	if getOutput.Draft.Data.PlayerID != input.PlayerID {
+		return nil, apierr.Internalf(errMappingPlayerMismatchFmt, draftID)
 	}
 
 	return &GetByPlayerIDOutput{Draft: getOutput.Draft}, nil
@@ -182,6 +228,9 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 	if input.Draft == nil {
 		return nil, apierr.InvalidArgument(errDraftNil)
 	}
+	if input.Draft.WorldID == "" {
+		return nil, apierr.InvalidArgument(errWorldIDEmpty)
+	}
 	if input.Draft.Data == nil {
 		return nil, apierr.InvalidArgument(errDraftDataNil)
 	}
@@ -189,15 +238,18 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 		return nil, apierr.InvalidArgument(errDraftIDEmpty)
 	}
 
-	key := draftKeyPrefix + input.Draft.Data.ID
-
-	// Check if exists
-	exists, err := r.client.Exists(ctx, key).Result()
+	// Load the owned record first. This proves the draft exists in this world
+	// and verifies the stored world metadata agrees with the key.
+	existingOutput, err := r.Get(ctx, GetInput{WorldID: input.Draft.WorldID, ID: input.Draft.Data.ID})
 	if err != nil {
-		return nil, apierr.Wrapf(err, "failed to check existence")
+		return nil, err
 	}
-	if exists == 0 {
-		return nil, apierr.NotFoundf("draft with ID %s not found", input.Draft.Data.ID)
+	existing := existingOutput.Draft
+
+	// World and player ownership are immutable: an update may replace toolkit
+	// data but must never rehome a draft.
+	if existing.WorldID != input.Draft.WorldID || existing.Data.PlayerID != input.Draft.Data.PlayerID {
+		return nil, apierr.InvalidArgument(errOwnershipImmutable)
 	}
 
 	draft := input.Draft
@@ -208,8 +260,9 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 		return nil, apierr.Wrapf(err, "failed to marshal draft")
 	}
 
-	// Update with TTL
-	if err := r.client.Set(ctx, key, data, defaultTTL).Err(); err != nil {
+	// Update with TTL. Ownership cannot move, so the world-scoped player
+	// mapping is deliberately not migrated.
+	if err := r.client.Set(ctx, draftKey(draft.WorldID, draft.Data.ID), data, defaultTTL).Err(); err != nil {
 		return nil, apierr.Wrapf(err, "failed to update draft")
 	}
 
@@ -217,12 +270,16 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 }
 
 func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*DeleteOutput, error) {
+	if input.WorldID == "" {
+		return nil, apierr.InvalidArgument(errWorldIDEmpty)
+	}
 	if input.ID == "" {
 		return nil, apierr.InvalidArgument(errDraftIDEmpty)
 	}
 
-	// Get draft to find player ID
-	getOutput, err := r.Get(ctx, GetInput(input))
+	// Get draft to find the player mapping; this also verifies stored world
+	// ownership and prevents a corrupt envelope from driving a deletion.
+	getOutput, err := r.Get(ctx, GetInput{WorldID: input.WorldID, ID: input.ID})
 	if err != nil {
 		return nil, err
 	}
@@ -230,13 +287,11 @@ func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*Delet
 	pipe := r.client.TxPipeline()
 
 	// Delete draft
-	draftKey := draftKeyPrefix + input.ID
-	pipe.Del(ctx, draftKey)
+	pipe.Del(ctx, draftKey(input.WorldID, input.ID))
 
-	// Delete player mapping
+	// Delete the world-scoped player mapping
 	if getOutput.Draft.Data != nil && getOutput.Draft.Data.PlayerID != "" {
-		playerKey := playerMappingPrefix + getOutput.Draft.Data.PlayerID
-		pipe.Del(ctx, playerKey)
+		pipe.Del(ctx, playerMappingKey(input.WorldID, getOutput.Draft.Data.PlayerID))
 	}
 
 	// Execute transaction
