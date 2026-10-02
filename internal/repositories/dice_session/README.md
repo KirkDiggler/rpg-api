@@ -16,6 +16,23 @@ same-player A/B isolation, foreign-world delete safety, legacy-key non-fallback 
 corrupt-ownership refusal. See the
 [method inventory](../../../docs/quality/repository-contracts.md) for coverage limits.
 
+### Concurrency: fixed ownership, last-writer updates
+
+Two different properties are easy to conflate here, so they are stated separately:
+
+- **World ownership is fixed.** Every key is world-scoped,
+  `(WorldID, EntityID, Context)` names exactly one session, and `Create`/`Update`
+  refuse to write an envelope whose stored `world_id` contradicts the write. No
+  update can move a session to another world.
+- **Updates are last-writer-wins, not serializable.** The ownership refusal above is a
+  read-then-`Set`, not a transaction: a concurrent writer to the same
+  `(world, entity, context)` key between the read and the `Set` is overwritten, and a
+  concurrent `Delete` can be re-created by `Update` (the adapter keeps its pre-existing
+  create-on-update behavior for a missing key). There is no WATCH/CAS on this adapter
+  (contrast `PatchEquipment` on the character repository). Preserve that expectation when
+  adding roll-append callers: read-modify-write of `session.Rolls` assumes it is the only
+  writer for that key during the call.
+
 ## Core Concepts
 
 ### DiceSession
@@ -224,7 +241,9 @@ The Redis implementation should:
 - Use composite keys: `dice_session:{world_id}:{entity_id}:{context}`
 - Leverage Redis TTL for automatic expiration
 - Store sessions as JSON for human readability
-- Support atomic updates for concurrent access
+- Not assume serializable updates: the ownership refusal on Update is a best-effort
+  read-then-write with last-writer semantics (see "Concurrency" above); there is no
+  WATCH/CAS on this adapter
 - Handle connection failures gracefully
 - Treat a stored envelope whose `world_id` contradicts the requested world as
   `Internal` corruption, never as a valid or missing session

@@ -53,6 +53,20 @@ migrate the mapping when PlayerID changes — and Update rejects a PlayerID chan
 with `InvalidArgument` because world and player ownership are immutable. #1047 tests
 same-owner lifecycle behavior, not ownership reassignment.
 
+### Concurrency: fixed ownership, last-writer updates
+
+As with the dice-session adapter, two properties are separate:
+
+- **World/player ownership is fixed.** Keys are world-scoped
+  (`draft:{worldID}:{id}`, `draft:player:{worldID}:{playerID}`), and `Update` rejects a
+  stored ownership change. No update can move a draft to another world or player.
+- **Updates are last-writer-wins, not serializable.** `Update` is Get → ownership
+  compare → `Set`, not a transaction: a concurrent `Create` that replaces the same
+  `(world, player)` draft, or a concurrent `Delete`, between the Get and the Set can be
+  overwritten or re-created by this adapter. There is no WATCH/CAS here. Callers that
+  read-modify-write one draft assume they are its only writer for the duration of the
+  call.
+
 GetByPlayerID also rejects (as `Internal` corruption) a mapping that resolves to a
 draft owned by another player, rather than projecting or deleting it. A stored draft
 whose `WorldID` disagrees with the world-scoped key is likewise `Internal` corruption.
