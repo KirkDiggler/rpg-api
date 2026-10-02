@@ -74,8 +74,8 @@ func startHeirloomRunWith(t *testing.T, captainHolds bool) *heirloomRun {
 	for _, who := range []struct{ id, player string }{
 		{"alice", "player-alice"}, {"bob", "player-bob"},
 	} {
-		_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-			Character: &entities.Character{Data: armedFighter(who.id, who.player)},
+		_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+			Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter(who.id, who.player)},
 		})
 		require.NoError(t, err)
 	}
@@ -87,7 +87,7 @@ func startHeirloomRunWith(t *testing.T, captainHolds bool) *heirloomRun {
 	dungeon, err := sessionworld.Compile([]byte(dungeonstest.HeirloomVaultYAML))
 	require.NoError(t, err, "the heirloom fixture must compile")
 
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: heirloomSession, Encounter: "heirloom-encounter", World: dungeon.World,
 	})
 	require.NoError(t, err)
@@ -102,7 +102,7 @@ func startHeirloomRunWith(t *testing.T, captainHolds bool) *heirloomRun {
 		if !captainHolds {
 			holds = nil
 		}
-		_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+		_, err = h.manager.Manager.Spawn(worldCtx(), &sdk.SpawnInput{
 			Session: heirloomSession, ID: m.MemberID, Ref: m.Ref, Position: m.At, Holds: holds,
 		})
 		require.NoError(t, err, "spawning %s", m.MemberID)
@@ -122,8 +122,8 @@ func startHeirloomRunWith(t *testing.T, captainHolds bool) *heirloomRun {
 
 	run := &heirloomRun{
 		h:     h,
-		alice: auth.WithPlayerID(context.Background(), "player-alice"),
-		bob:   auth.WithPlayerID(context.Background(), "player-bob"),
+		alice: auth.WithPlayerID(worldCtx(), "player-alice"),
+		bob:   auth.WithPlayerID(worldCtx(), "player-bob"),
 	}
 	_, err = h.handler.Join(run.alice, &sessionpb.JoinRequest{
 		Session: heirloomSession, Member: "alice", Position: pbAt(aliceSeatCol, aliceSeatRow),
@@ -142,13 +142,13 @@ func downTheGarrison(t *testing.T, h *acceptanceHarness) {
 	t.Helper()
 
 	sessions := sessionorch.NewSessionRepository(h.redis, time.Hour)
-	stored, err := sessions.GetSession(context.Background(), heirloomSession)
+	stored, err := sessions.GetSession(worldCtx(), heirloomSession)
 	require.NoError(t, err)
 	require.NotEmpty(t, stored.NPCs, "Spawn must have written a sheet for every authored monster")
 	for i := range stored.NPCs {
 		stored.NPCs[i].HitPoints = 0
 	}
-	require.NoError(t, sessions.SaveSession(context.Background(), stored))
+	require.NoError(t, sessions.SaveSession(worldCtx(), stored))
 }
 
 func (r *heirloomRun) walkWithin(t *testing.T, member string, region [][2]int, col, row int) {
@@ -736,7 +736,7 @@ func TestAcceptance_ForwardingTheAuthorsRawRecordIDIsRefusedByName(t *testing.T)
 	dungeon, err := sessionworld.Compile([]byte(dungeonstest.HeirloomVaultYAML))
 	require.NoError(t, err)
 
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: heirloomSession, Encounter: "heirloom-encounter", World: dungeon.World,
 	})
 	require.NoError(t, err)
@@ -750,7 +750,7 @@ func TestAcceptance_ForwardingTheAuthorsRawRecordIDIsRefusedByName(t *testing.T)
 	require.Equal(t, []string{dungeonstest.HeirloomIntelRecordID}, captain.Holds,
 		"the compiled id is what the launch forwards")
 
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+	_, err = h.manager.Manager.Spawn(worldCtx(), &sdk.SpawnInput{
 		Session: heirloomSession, ID: captain.MemberID, Ref: captain.Ref, Position: captain.At,
 		// The AUTHOR's spelling — what a host reaching for the file's own
 		// word instead of the compiler's would send.
@@ -762,7 +762,7 @@ func TestAcceptance_ForwardingTheAuthorsRawRecordIDIsRefusedByName(t *testing.T)
 
 	// The compiled id, on the same call, is accepted — so the refusal above
 	// is about the ID and not about anything else in this spawn.
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+	_, err = h.manager.Manager.Spawn(worldCtx(), &sdk.SpawnInput{
 		Session: heirloomSession, ID: captain.MemberID, Ref: captain.Ref, Position: captain.At,
 		Holds: captain.Holds,
 	})
@@ -991,11 +991,11 @@ func TestAcceptance_TheAtlasSaysWhereTheDungeonBeginsAndWhichWay(t *testing.T) {
 		require.NotNil(t, run.atlas(t, "alice").GetStart(), "it has one to begin with")
 
 		encounters := sessionorch.NewEncounterRepository(run.h.redis, time.Hour)
-		stored, err := encounters.GetEncounter(context.Background(), "heirloom-encounter")
+		stored, err := encounters.GetEncounter(worldCtx(), "heirloom-encounter")
 		require.NoError(t, err)
 		require.NotNil(t, stored.Field.Start, "the blob carries one before we age it")
 		stored.Field.Start = nil
-		require.NoError(t, encounters.SaveEncounter(context.Background(), "heirloom-encounter", stored))
+		require.NoError(t, encounters.SaveEncounter(worldCtx(), "heirloom-encounter", stored))
 
 		require.Nil(t, run.atlas(t, "alice").GetStart(),
 			"absence is spelled as an absent message, never as a zero-valued one")
@@ -1012,8 +1012,8 @@ func startRunOn(t *testing.T, authored string) *heirloomRun {
 	for _, who := range []struct{ id, player string }{
 		{"alice", "player-alice"}, {"bob", "player-bob"},
 	} {
-		_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-			Character: &entities.Character{Data: armedFighter(who.id, who.player)},
+		_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+			Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter(who.id, who.player)},
 		})
 		require.NoError(t, err)
 	}
@@ -1021,15 +1021,15 @@ func startRunOn(t *testing.T, authored string) *heirloomRun {
 	dungeon, err := sessionworld.Compile([]byte(authored))
 	require.NoError(t, err, "the authored fixture must compile")
 
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: heirloomSession, Encounter: "heirloom-encounter", World: dungeon.World,
 	})
 	require.NoError(t, err)
 
 	run := &heirloomRun{
 		h:     h,
-		alice: auth.WithPlayerID(context.Background(), "player-alice"),
-		bob:   auth.WithPlayerID(context.Background(), "player-bob"),
+		alice: auth.WithPlayerID(worldCtx(), "player-alice"),
+		bob:   auth.WithPlayerID(worldCtx(), "player-bob"),
 	}
 	_, err = h.handler.Join(run.alice, &sessionpb.JoinRequest{
 		Session: heirloomSession, Member: "alice", Position: pbAt(aliceSeatCol, aliceSeatRow),

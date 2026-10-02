@@ -181,6 +181,9 @@ func (o *orchestrator) rollDiceWithToolkit(ctx context.Context, count, size int,
 
 // RollDice rolls dice using the specified notation and stores the result in a session
 func (o *orchestrator) RollDice(ctx context.Context, input *RollDiceInput) (*RollDiceOutput, error) {
+	if input.WorldID == "" {
+		return nil, apierr.InvalidArgument("world ID is required")
+	}
 	if input.EntityID == "" {
 		return nil, apierr.InvalidArgument("entity ID is required")
 	}
@@ -223,6 +226,7 @@ func (o *orchestrator) RollDice(ctx context.Context, input *RollDiceInput) (*Rol
 
 	// Try to get existing session first
 	getOutput, err := o.diceSessionRepo.Get(ctx, dicesession.GetInput{
+		WorldID:  input.WorldID,
 		EntityID: input.EntityID,
 		Context:  input.Context,
 	})
@@ -240,6 +244,7 @@ func (o *orchestrator) RollDice(ctx context.Context, input *RollDiceInput) (*Rol
 		}
 
 		createOutput, err := o.diceSessionRepo.Create(ctx, dicesession.CreateInput{
+			WorldID:  input.WorldID,
 			EntityID: input.EntityID,
 			Context:  input.Context,
 			Rolls:    []dicesession.DiceRoll{*roll},
@@ -277,6 +282,9 @@ func (o *orchestrator) RollDice(ctx context.Context, input *RollDiceInput) (*Rol
 // GetRollSession retrieves an existing dice roll session.
 // If AutoCreate is true and context is ability_scores, creates a standard array session if none exists.
 func (o *orchestrator) GetRollSession(ctx context.Context, input *GetRollSessionInput) (*GetRollSessionOutput, error) {
+	if input.WorldID == "" {
+		return nil, apierr.InvalidArgument("world ID is required")
+	}
 	if input.EntityID == "" {
 		return nil, apierr.InvalidArgument("entity ID is required")
 	}
@@ -285,6 +293,7 @@ func (o *orchestrator) GetRollSession(ctx context.Context, input *GetRollSession
 	}
 
 	getOutput, err := o.diceSessionRepo.Get(ctx, dicesession.GetInput{
+		WorldID:  input.WorldID,
 		EntityID: input.EntityID,
 		Context:  input.Context,
 	})
@@ -292,6 +301,7 @@ func (o *orchestrator) GetRollSession(ctx context.Context, input *GetRollSession
 		// Auto-create with standard array if requested and context is ability_scores
 		if apierr.IsNotFound(err) && input.AutoCreate && input.Context == ContextAbilityScores {
 			rollOutput, rollErr := o.RollAbilityScores(ctx, &RollAbilityScoresInput{
+				WorldID:  input.WorldID,
 				EntityID: input.EntityID,
 				Method:   MethodStandardArray,
 			})
@@ -313,6 +323,9 @@ func (o *orchestrator) GetRollSession(ctx context.Context, input *GetRollSession
 // ClearRollSession removes a dice roll session
 func (o *orchestrator) ClearRollSession(ctx context.Context, input *ClearRollSessionInput) (
 	*ClearRollSessionOutput, error) {
+	if input.WorldID == "" {
+		return nil, apierr.InvalidArgument("world ID is required")
+	}
 	if input.EntityID == "" {
 		return nil, apierr.InvalidArgument("entity ID is required")
 	}
@@ -321,6 +334,7 @@ func (o *orchestrator) ClearRollSession(ctx context.Context, input *ClearRollSes
 	}
 
 	deleteOutput, err := o.diceSessionRepo.Delete(ctx, dicesession.DeleteInput{
+		WorldID:  input.WorldID,
 		EntityID: input.EntityID,
 		Context:  input.Context,
 	})
@@ -342,6 +356,9 @@ func (o *orchestrator) ClearRollSession(ctx context.Context, input *ClearRollSes
 // RollAbilityScores handles specialized ability score rolling for D&D character creation
 func (o *orchestrator) RollAbilityScores(ctx context.Context, input *RollAbilityScoresInput) (
 	*RollAbilityScoresOutput, error) {
+	if input.WorldID == "" {
+		return nil, apierr.InvalidArgument("world ID is required")
+	}
 	if input.EntityID == "" {
 		return nil, apierr.InvalidArgument("entity ID is required")
 	}
@@ -413,6 +430,7 @@ func (o *orchestrator) RollAbilityScores(ctx context.Context, input *RollAbility
 
 	// Store in session with ability scores context
 	createOutput, err := o.diceSessionRepo.Create(ctx, dicesession.CreateInput{
+		WorldID:  input.WorldID,
 		EntityID: input.EntityID,
 		Context:  ContextAbilityScores,
 		Rolls:    rollValues,

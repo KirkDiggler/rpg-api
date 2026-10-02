@@ -76,14 +76,14 @@ func adjacentOffHandFight(
 ) (*acceptanceHarness, context.Context) {
 	t.Helper()
 	h := newAcceptanceHarnessWithDice(t, offHandAcceptanceDice{})
-	ctx := auth.WithPlayerID(context.Background(), sheet.PlayerID)
+	ctx := auth.WithPlayerID(worldCtx(), sheet.PlayerID)
 
-	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: sheet},
+	_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: sheet},
 	})
 	require.NoError(t, err)
 	world := buildThreeRoomTomb(t)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: "off-hand-run", Encounter: "off-hand-encounter", World: world,
 	})
 	require.NoError(t, err)
@@ -91,7 +91,7 @@ func adjacentOffHandFight(
 		Session: "off-hand-run", Member: sheet.ID, Position: pbAt(18, 3),
 	})
 	require.NoError(t, err)
-	spawned, err := h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+	spawned, err := h.manager.Manager.Spawn(worldCtx(), &sdk.SpawnInput{
 		Session: "off-hand-run", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
 		Position: at(19, 3),
 	})

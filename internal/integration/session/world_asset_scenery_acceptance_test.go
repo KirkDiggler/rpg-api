@@ -1,7 +1,6 @@
 package session_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -18,17 +17,17 @@ import (
 
 func TestAcceptance_WorldAssetSceneryRefsReachStartedSession(t *testing.T) {
 	h := newAcceptanceHarness(t)
-	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+	ctx := auth.WithPlayerID(worldCtx(), "player-alice")
 
-	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+	_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter("alice", "player-alice")},
 	})
 	require.NoError(t, err)
 
 	dungeon, err := sessionworld.Compile([]byte(dungeonstest.WorldAssetSceneryYAML))
 	require.NoError(t, err, "a dungeon placing all four scenery namespaces must compile")
 
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: "world-asset-scenery-run", Encounter: "world-asset-scenery", World: dungeon.World,
 	})
 	require.NoError(t, err)

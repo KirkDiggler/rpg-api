@@ -80,7 +80,7 @@ func waitForLive(t *testing.T, broker *sessionorch.Broker, session, recipient st
 		}
 		select {
 		case <-ticker.C:
-			_ = broker.Publish(context.Background(), []sdk.Event{
+			_ = broker.Publish(worldCtx(), []sdk.Event{
 				{Session: session, Recipient: recipient, Seq: 0, Kind: sdk.EventUnknown},
 			})
 		case <-deadline:
@@ -161,21 +161,21 @@ func containsKind(events []*sessionpb.Event, kind sessionpb.EventKind) bool {
 // other subscriber, still live, keeps receiving everything without a gap.
 func TestTwoStreamEventsSubscribers(t *testing.T) {
 	h := newAcceptanceHarness(t)
-	ctxAlice := auth.WithPlayerID(context.Background(), "player-alice")
-	ctxBob := auth.WithPlayerID(context.Background(), "player-bob")
+	ctxAlice := auth.WithPlayerID(worldCtx(), "player-alice")
+	ctxBob := auth.WithPlayerID(worldCtx(), "player-bob")
 	const session = "two-sub-run"
 
-	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+	_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter("alice", "player-alice")},
 	})
 	require.NoError(t, err)
-	_, err = h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: armedFighter("bob", "player-bob")},
+	_, err = h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter("bob", "player-bob")},
 	})
 	require.NoError(t, err)
 
 	world := buildThreeRoomTomb(t)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: session, Encounter: "tomb-encounter", World: world,
 	})
 	require.NoError(t, err)
@@ -195,7 +195,7 @@ func TestTwoStreamEventsSubscribers(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	spawnResp, err := h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+	spawnResp, err := h.manager.Manager.Spawn(worldCtx(), &sdk.SpawnInput{
 		Session: session, ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
 		Position: spatial.Position{X: 19, Y: 3},
 	})
@@ -288,7 +288,7 @@ func TestTwoStreamEventsSubscribers(t *testing.T) {
 	for i := 0; i < 32; i++ {
 		fill = append(fill, sdk.Event{Session: session, Recipient: "bob", Seq: uint64(1000 + i), Kind: sdk.EventUnknown})
 	}
-	require.NoError(t, h.manager.Broker.Publish(context.Background(), fill))
+	require.NoError(t, h.manager.Broker.Publish(worldCtx(), fill))
 	require.Equal(t, uint64(0), h.manager.Broker.Dropped(session, "bob"))
 
 	// --- round 2: the next driven turn, with bob now lagging ---

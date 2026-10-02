@@ -6,6 +6,7 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 )
 
 // resolveCharacter loads characterID and validates it belongs to playerID
@@ -14,7 +15,12 @@ import (
 // character's display name on success, for server-enrichment onto
 // LobbyMember.CharacterName.
 func (o *Orchestrator) resolveCharacter(ctx context.Context, playerID, characterID string) (string, error) {
-	out, err := o.characterRepo.Get(ctx, characterrepo.GetInput{ID: characterID})
+	world, ok := worldcontext.Get(ctx)
+	if !ok || world.WorldID == "" {
+		return "", ErrCharacterNotFound
+	}
+
+	out, err := o.characterRepo.Get(ctx, characterrepo.GetInput{WorldID: world.WorldID, ID: characterID})
 	if err != nil {
 		if apierr.IsNotFound(err) {
 			return "", ErrCharacterNotFound

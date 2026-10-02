@@ -50,6 +50,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 )
 
 // SessionStackSuite proves StartEncounter's new-stack branch in isolation:
@@ -71,7 +72,7 @@ type SessionStackSuite struct {
 }
 
 func (s *SessionStackSuite) SetupTest() {
-	s.ctx = context.Background()
+	s.ctx = worldcontext.With(context.Background(), worldcontext.Value{WorldID: testWorldID})
 
 	mr := miniredis.RunT(s.T())
 	client := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
@@ -112,7 +113,7 @@ func TestSessionStackSuite(t *testing.T) {
 
 func (s *SessionStackSuite) seedCharacter(id, playerID, name string) {
 	_, err := s.charRepo.Create(s.ctx, characterrepo.CreateInput{
-		Character: &entities.Character{Data: &tkcharacter.Data{
+		Character: &entities.Character{WorldID: testWorldID, Data: &tkcharacter.Data{
 			ID: id, PlayerID: playerID, Name: name, Level: 1,
 			HitPoints: 10, MaxHitPoints: 10, ArmorClass: 10,
 		}},
@@ -126,7 +127,7 @@ func (s *SessionStackSuite) seedCharacter(id, playerID, name string) {
 // a parameter there, so every other test's zero-Wallet fixture is untouched.
 func (s *SessionStackSuite) seedCharacterWithWallet(id, playerID, name string, wallet currency.Money) {
 	_, err := s.charRepo.Create(s.ctx, characterrepo.CreateInput{
-		Character: &entities.Character{Data: &tkcharacter.Data{
+		Character: &entities.Character{WorldID: testWorldID, Data: &tkcharacter.Data{
 			ID: id, PlayerID: playerID, Name: name, Level: 1,
 			HitPoints: 10, MaxHitPoints: 10, ArmorClass: 10,
 			Wallet: wallet,
@@ -144,7 +145,7 @@ func (s *SessionStackSuite) seedCharacterWithInventory(
 	id, playerID, name string, items ...tkcharacter.InventoryItemData,
 ) {
 	_, err := s.charRepo.Create(s.ctx, characterrepo.CreateInput{
-		Character: &entities.Character{Data: &tkcharacter.Data{
+		Character: &entities.Character{WorldID: testWorldID, Data: &tkcharacter.Data{
 			ID: id, PlayerID: playerID, Name: name, Level: 1,
 			HitPoints: 10, MaxHitPoints: 10, ArmorClass: 10,
 			Inventory: items,
@@ -505,7 +506,7 @@ func (s *SessionStackSuite) TestStartEncounter_TradeBuysFromTheDemoVendor() {
 
 	// And the buyer's own stored character record actually gained it --
 	// the point of the whole verb, not just a descriptor that says so.
-	got, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-alice"})
+	got, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: "char-alice"})
 	s.Require().NoError(err)
 	s.Contains(got.Character.Data.Inventory, tkcharacter.InventoryItemData{
 		Type: shared.EquipmentTypeWeapon, ID: weapons.Longsword, Quantity: 1,
@@ -566,7 +567,7 @@ func (s *SessionStackSuite) TestStartEncounter_SellToTheDemoVendor() {
 	// And the seller's own stored character record actually lost it and
 	// actually got paid -- the point of the whole direction, not just a
 	// descriptor that says so.
-	got, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-alice"})
+	got, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: "char-alice"})
 	s.Require().NoError(err)
 	s.NotContains(got.Character.Data.Inventory, tkcharacter.InventoryItemData{
 		Type: shared.EquipmentTypeArmor, ID: armor.Shield, Quantity: 1,
@@ -601,7 +602,7 @@ func (s *SessionStackSuite) TestStartEncounter_UnpackDecomposesAnOwnedPack() {
 	})
 	s.Require().NoError(err)
 
-	got, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-alice"})
+	got, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: "char-alice"})
 	s.Require().NoError(err)
 	s.NotContains(got.Character.Data.Inventory, tkcharacter.InventoryItemData{
 		Type: shared.EquipmentTypePack, ID: packs.ExplorerPack, Quantity: 1,
@@ -748,7 +749,7 @@ func (s *SessionStackSuite) TestStartEncounter_FirstAdmissionPersistsCompleteLon
 	})
 	s.Require().NoError(err)
 
-	fighterRecord, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-p1"})
+	fighterRecord, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: "char-p1"})
 	s.Require().NoError(err)
 	gotFighter := fighterRecord.Character.Data
 	s.Nil(gotFighter.ActionEconomy, "first-admission long rest clears stale action economy")
@@ -784,7 +785,7 @@ func (s *SessionStackSuite) TestStartEncounter_FirstAdmissionPersistsCompleteLon
 	s.Equal(fighter.Data.CreatedAt, gotFighter.CreatedAt)
 	s.Equal(fighterAppearance, fighterRecord.Character.Data.Appearance)
 
-	barbarianRecord, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-p2"})
+	barbarianRecord, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: "char-p2"})
 	s.Require().NoError(err)
 	gotBarbarian := barbarianRecord.Character.Data
 	s.Equal(45, gotBarbarian.HitPoints)
@@ -820,7 +821,7 @@ func (s *SessionStackSuite) TestStartEncounter_StartSessionFailureLeavesCharacte
 	s.Require().NoError(err)
 	s.seedReadyLobby("lobby-order", "p1")
 
-	beforeRecord, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-p1"})
+	beforeRecord, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: "char-p1"})
 	s.Require().NoError(err)
 	beforeBytes, err := s.redisClient.Get(s.ctx, "character:char-p1").Bytes()
 	s.Require().NoError(err)
@@ -850,7 +851,7 @@ func (s *SessionStackSuite) TestStartEncounter_StartSessionFailureLeavesCharacte
 	})
 	s.Require().ErrorIs(err, errStartRepository)
 
-	afterRecord, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-p1"})
+	afterRecord, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: "char-p1"})
 	s.Require().NoError(err)
 	afterBytes, err := s.redisClient.Get(s.ctx, "character:char-p1").Bytes()
 	s.Require().NoError(err)
@@ -881,7 +882,7 @@ func (s *SessionStackSuite) spentFighter(id, playerID string) (*entities.Charact
 		Scalp:     &customization.StyleSelection{Kind: customization.StyleSelectionStyle, StyleRef: "dnd5e:hair:short"},
 		ColorSRGB: &color, Roughness: &roughness,
 	}}
-	return &entities.Character{Data: &tkcharacter.Data{
+	return &entities.Character{WorldID: testWorldID, Data: &tkcharacter.Data{
 		ID: id, PlayerID: playerID, Name: "Spent Fighter",
 		Level: 4, ProficiencyBonus: 2, RaceID: races.Human, ClassID: classes.Fighter,
 		Levels:       levelfixture.Synthetic(classes.Fighter, 4),
@@ -930,7 +931,7 @@ func (s *SessionStackSuite) spentBarbarian(id, playerID string) (*entities.Chara
 		},
 		ColorSRGB: &color, Roughness: &roughness,
 	}}
-	return &entities.Character{Data: &tkcharacter.Data{
+	return &entities.Character{WorldID: testWorldID, Data: &tkcharacter.Data{
 		ID: id, PlayerID: playerID, Name: "Spent Barbarian",
 		Level: 4, ProficiencyBonus: 2, RaceID: races.Dwarf, ClassID: classes.Barbarian,
 		Levels:       levelfixture.Synthetic(classes.Barbarian, 4),

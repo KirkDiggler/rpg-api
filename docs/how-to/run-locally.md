@@ -86,6 +86,24 @@ grpcurl -plaintext \
   dnd5e.api.v1alpha1.CharacterService/ListCharacters
 ```
 
+### Seeding sandbox fixtures into a world
+
+`cmd/sandboxseed` writes every fixture into one explicit world. Pass
+`-world-id <id>` or export `RPG_DEV_WORLD_ID`; there is no default world and no
+`test-world` fallback, so a fixture never lands in an ownerless or unintended
+world. The same selected world is used for the seeder's gRPC metadata
+(`x-rpg-guild-id`) and for the direct Redis repository writes that seed
+level-up experience, so both halves agree. `-health` does not require a world.
+
+```bash
+# Uses RPG_DEV_WORLD_ID for both the RPCs and the repository writes
+RPG_DEV_WORLD_ID=123456789012345678 go run ./cmd/sandboxseed ...
+
+# Or explicitly seed a second world on the same stack
+RPG_DEV_WORLD_ID=123456789012345678 RPG_DEV_WORLD_IDS=123456789012345678,223456789012345678 \
+  go run ./cmd/sandboxseed -world-id 223456789012345678 ...
+```
+
 Example with `grpcurl`, using `LobbyService.CreateLobby` (updated 2026-07-13,
 rpg-api#642 — the v1alpha1 `EncounterService` this example used to call is
 deleted; `CreateLobby` is the current sole encounter-construction entry

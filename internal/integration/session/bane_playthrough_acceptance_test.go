@@ -73,7 +73,7 @@ func newAcceptanceCharacterService(t *testing.T, h *acceptanceHarness) character
 
 func createFinalizedBaneBard(t *testing.T, h *acceptanceHarness, playerID string) string {
 	t.Helper()
-	ctx := auth.WithPlayerID(context.Background(), playerID)
+	ctx := auth.WithPlayerID(worldCtx(), playerID)
 	handler := newCharacterCreationHandler(t, h)
 
 	created, err := handler.CreateDraft(ctx, &dnd5epb.CreateDraftRequest{})
@@ -183,14 +183,14 @@ func TestAcceptance_BaneCreationCastPaymentAndAffectedRoll(t *testing.T) {
 	h := newAcceptanceHarnessWithDice(t, failedSaveDice{})
 	const bardPlayer = "player-bella"
 	bardID := createFinalizedBaneBard(t, h, bardPlayer)
-	bardCtx := auth.WithPlayerID(context.Background(), bardPlayer)
-	fighterCtx := auth.WithPlayerID(context.Background(), "player-fighter")
+	bardCtx := auth.WithPlayerID(worldCtx(), bardPlayer)
+	fighterCtx := auth.WithPlayerID(worldCtx(), "player-fighter")
 
-	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: armedFighter("fighter", "player-fighter")},
+	_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter("fighter", "player-fighter")},
 	})
 	require.NoError(t, err)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: "bane-playthrough", Encounter: "room-encounter", World: buildOpenRoom(t, 12, 6),
 	})
 	require.NoError(t, err)
@@ -200,7 +200,7 @@ func TestAcceptance_BaneCreationCastPaymentAndAffectedRoll(t *testing.T) {
 	require.NoError(t, err)
 	inCombat(t, h.charRepo, bardID, 1)
 	inCombat(t, h.charRepo, "fighter", 1)
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+	_, err = h.manager.Manager.Spawn(worldCtx(), &sdk.SpawnInput{
 		Session: "bane-playthrough", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(), Position: at(4, 0),
 	})
 	require.NoError(t, err)
@@ -226,7 +226,7 @@ func TestAcceptance_BaneCreationCastPaymentAndAffectedRoll(t *testing.T) {
 		{Currency: sessionpb.Currency_CURRENCY_CHARGES, Needed: 1, Label: "1st-level Spell Slots"},
 	}, row.GetCost())
 
-	before, err := h.charRepo.Get(context.Background(), characterrepo.GetInput{ID: bardID})
+	before, err := h.charRepo.Get(worldCtx(), characterrepo.GetInput{WorldID: sessionWorld, ID: bardID})
 	require.NoError(t, err)
 	require.Equal(t, 2, before.Character.Data.Resources[resources.SpellSlotLevel1].Current)
 	_, err = h.handler.Cast(bardCtx, &sessionpb.CastRequest{
@@ -239,7 +239,7 @@ func TestAcceptance_BaneCreationCastPaymentAndAffectedRoll(t *testing.T) {
 		Session: "bane-playthrough", Member: bardID, DeclarationId: row.GetId(), Targets: []string{"fighter"},
 	})
 	require.NoError(t, err)
-	after, err := h.charRepo.Get(context.Background(), characterrepo.GetInput{ID: bardID})
+	after, err := h.charRepo.Get(worldCtx(), characterrepo.GetInput{WorldID: sessionWorld, ID: bardID})
 	require.NoError(t, err)
 	require.Equal(t, 1, after.Character.Data.Resources[resources.SpellSlotLevel1].Current,
 		"one successful cast spends exactly one provider-owned slot")

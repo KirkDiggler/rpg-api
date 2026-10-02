@@ -21,6 +21,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 )
 
 const (
@@ -78,7 +79,7 @@ func (s *LevelUpHandlerTestSuite) SetupTest() {
 	s.ctrl = gomock.NewController(s.T())
 	s.mockService = charactermock.NewMockService(s.ctrl)
 	s.sessions = &fakeSessions{}
-	s.ctx = auth.WithPlayerID(context.Background(), levelUpPlayerID)
+	s.ctx = worldcontext.With(auth.WithPlayerID(context.Background(), levelUpPlayerID), worldcontext.Value{WorldID: testWorldID})
 
 	var err error
 	s.handler, err = NewHandler(&HandlerConfig{
@@ -107,7 +108,7 @@ func (s *LevelUpHandlerTestSuite) ownedCharacter(classID classes.Class, level in
 // expectOwned answers the ownership gate once.
 func (s *LevelUpHandlerTestSuite) expectOwned(classID classes.Class) {
 	s.mockService.EXPECT().
-		GetCharacter(gomock.Any(), &character.GetCharacterInput{CharacterID: levelUpCharacterID}).
+		GetCharacter(gomock.Any(), &character.GetCharacterInput{WorldID: testWorldID, PlayerID: levelUpPlayerID, CharacterID: levelUpCharacterID}).
 		Return(s.ownedCharacter(classID, 1), nil)
 }
 
@@ -202,7 +203,7 @@ func (s *LevelUpHandlerTestSuite) TestGetNextLevel_AConfirmationNamesWhatItBring
 // handed a character id and has no notion of who holds the connection.
 func (s *LevelUpHandlerTestSuite) TestGetNextLevel_AForeignCharacterIsNotFoundAndNeverReachesTheSDK() {
 	s.mockService.EXPECT().
-		GetCharacter(gomock.Any(), &character.GetCharacterInput{CharacterID: levelUpCharacterID}).
+		GetCharacter(gomock.Any(), &character.GetCharacterInput{WorldID: testWorldID, PlayerID: levelUpPlayerID, CharacterID: levelUpCharacterID}).
 		Return(&character.GetCharacterOutput{
 			Character: &entities.Character{Data: &toolkitchar.Data{
 				ID: levelUpCharacterID, PlayerID: "somebody-else",
@@ -221,7 +222,7 @@ func (s *LevelUpHandlerTestSuite) TestGetNextLevel_AForeignCharacterIsNotFoundAn
 // refuses the same way the read does, and for the same reason.
 func (s *LevelUpHandlerTestSuite) TestLevelUp_AForeignCharacterIsNotFoundAndNeverReachesTheSDK() {
 	s.mockService.EXPECT().
-		GetCharacter(gomock.Any(), &character.GetCharacterInput{CharacterID: levelUpCharacterID}).
+		GetCharacter(gomock.Any(), &character.GetCharacterInput{WorldID: testWorldID, PlayerID: levelUpPlayerID, CharacterID: levelUpCharacterID}).
 		Return(&character.GetCharacterOutput{
 			Character: &entities.Character{Data: &toolkitchar.Data{
 				ID: levelUpCharacterID, PlayerID: "somebody-else",
@@ -257,10 +258,10 @@ func (s *LevelUpHandlerTestSuite) TestLevelUp_UnspecifiedMethodNeverReachesTheSD
 // free to disagree with the first. What crosses is the id and the refs.
 func (s *LevelUpHandlerTestSuite) TestLevelUp_SendsTheChoiceIdAndRefsAndNoCategory() {
 	s.mockService.EXPECT().
-		GetCharacter(gomock.Any(), &character.GetCharacterInput{CharacterID: levelUpCharacterID}).
+		GetCharacter(gomock.Any(), &character.GetCharacterInput{WorldID: testWorldID, PlayerID: levelUpPlayerID, CharacterID: levelUpCharacterID}).
 		Return(s.ownedCharacter(classes.Bard, 1), nil)
 	s.mockService.EXPECT().
-		GetCharacter(gomock.Any(), &character.GetCharacterInput{CharacterID: levelUpCharacterID}).
+		GetCharacter(gomock.Any(), &character.GetCharacterInput{WorldID: testWorldID, PlayerID: levelUpPlayerID, CharacterID: levelUpCharacterID}).
 		Return(s.ownedCharacter(classes.Bard, 2), nil)
 	s.sessions.levelUp = func(*sdk.LevelUpInput) (*sdk.LevelUpOutput, error) {
 		return &sdk.LevelUpOutput{Gained: sdk.LevelGained{CharacterLevel: 2}}, nil
@@ -299,10 +300,10 @@ func (s *LevelUpHandlerTestSuite) TestLevelUp_SendsTheChoiceIdAndRefsAndNoCatego
 // would mention it unless the engine said so.
 func (s *LevelUpHandlerTestSuite) TestLevelUp_ReportsWhatTheLevelBroughtAndRereadsTheSheet() {
 	s.mockService.EXPECT().
-		GetCharacter(gomock.Any(), &character.GetCharacterInput{CharacterID: levelUpCharacterID}).
+		GetCharacter(gomock.Any(), &character.GetCharacterInput{WorldID: testWorldID, PlayerID: levelUpPlayerID, CharacterID: levelUpCharacterID}).
 		Return(s.ownedCharacter(classes.Bard, 1), nil)
 	s.mockService.EXPECT().
-		GetCharacter(gomock.Any(), &character.GetCharacterInput{CharacterID: levelUpCharacterID}).
+		GetCharacter(gomock.Any(), &character.GetCharacterInput{WorldID: testWorldID, PlayerID: levelUpPlayerID, CharacterID: levelUpCharacterID}).
 		Return(s.ownedCharacter(classes.Bard, 2), nil)
 	s.sessions.levelUp = func(*sdk.LevelUpInput) (*sdk.LevelUpOutput, error) {
 		return &sdk.LevelUpOutput{Gained: sdk.LevelGained{
@@ -381,7 +382,7 @@ func (s *LevelUpHandlerTestSuite) TestLevelUp_CarriesTheSDKRefusalWithItsOwnCode
 func (s *LevelUpHandlerTestSuite) TestLevelUp_GainedFeaturesReachTheWire() {
 	s.expectOwned(classes.Fighter)
 	s.mockService.EXPECT().
-		GetCharacter(gomock.Any(), &character.GetCharacterInput{CharacterID: levelUpCharacterID}).
+		GetCharacter(gomock.Any(), &character.GetCharacterInput{WorldID: testWorldID, PlayerID: levelUpPlayerID, CharacterID: levelUpCharacterID}).
 		Return(s.ownedCharacter(classes.Fighter, 2), nil)
 	s.sessions.levelUp = func(*sdk.LevelUpInput) (*sdk.LevelUpOutput, error) {
 		return &sdk.LevelUpOutput{Gained: sdk.LevelGained{

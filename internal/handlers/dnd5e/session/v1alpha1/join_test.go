@@ -15,7 +15,21 @@ import (
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 )
+
+// sessionTestWorldID is the trusted world the auth/role boundary installs on
+// every session request. Tests that run the real sessionaccess ownership gate
+// must carry it, exactly as production does.
+const sessionTestWorldID = "123456789012345678"
+
+// authedCtx installs the authenticated player and the trusted world.
+func authedCtx(playerID string) context.Context {
+	return worldcontext.With(
+		auth.WithPlayerID(context.Background(), playerID),
+		worldcontext.Value{WorldID: sessionTestWorldID},
+	)
+}
 
 func TestJoin_Unauthenticated_Errors(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -39,7 +53,7 @@ func TestJoin_HappyPath_TranslatesRequestAndResponse(t *testing.T) {
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Join(ctx, &sessionpb.JoinRequest{
 		Session:  "sess-1",
 		Member:   "char-1",
@@ -57,7 +71,7 @@ func TestJoin_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr.EXPECT().Join(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNoSession)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Join(ctx, &sessionpb.JoinRequest{Session: "sess-1", Member: "char-1"})
 	requireCode(t, err, codes.NotFound)
 }

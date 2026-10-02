@@ -31,6 +31,9 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/skills"
 )
 
+// testWorldID is the explicit world every seeder fixture is created in.
+const testWorldID = "123456789012345678"
+
 func TestSeedWeaponGallery_CreatesMissingGalleryCharacterThenNormalizesRepositoryInventory(t *testing.T) {
 	client := newGalleryFakeClient()
 	client.listResponses = []*dnd5ev1alpha1.ListCharactersResponse{
@@ -44,7 +47,7 @@ func TestSeedWeaponGallery_CreatesMissingGalleryCharacterThenNormalizesRepositor
 		{Type: shared.EquipmentTypePack, ID: "explorer-pack", Quantity: 1},
 	})}
 
-	out, err := SeedWeaponGallery(context.Background(), &SeedWeaponGalleryInput{Client: client, Store: store})
+	out, err := SeedWeaponGallery(context.Background(), &SeedWeaponGalleryInput{WorldID: testWorldID, Client: client, Store: store})
 
 	require.NoError(t, err)
 	require.Equal(t, &SeedWeaponGalleryOutput{CharacterID: "gallery-id", WeaponCount: 30}, out)
@@ -69,7 +72,7 @@ func TestSeedWeaponGallery_ReportsCanonicalThirtyWeaponCount(t *testing.T) {
 	}}
 	store := &galleryFakeStore{character: galleryCharacter("gallery-id", []tkcharacter.InventoryItemData{{Type: shared.EquipmentTypeItem, ID: "rope", Quantity: 1}})}
 
-	out, err := SeedWeaponGallery(context.Background(), &SeedWeaponGalleryInput{Client: client, Store: store})
+	out, err := SeedWeaponGallery(context.Background(), &SeedWeaponGalleryInput{WorldID: testWorldID, Client: client, Store: store})
 
 	require.NoError(t, err)
 	require.Equal(t, 30, out.WeaponCount)
@@ -87,7 +90,7 @@ func TestSeedWeaponGallery_MigratesExistingTwentySevenWeaponInventoryToThirty(t 
 	expected := cloneEntity(original)
 	expected.Data.Inventory = exactGalleryInventoryWithNonWeapons()
 
-	out, err := SeedWeaponGallery(context.Background(), &SeedWeaponGalleryInput{Client: client, Store: store})
+	out, err := SeedWeaponGallery(context.Background(), &SeedWeaponGalleryInput{WorldID: testWorldID, Client: client, Store: store})
 
 	require.NoError(t, err)
 	require.Equal(t, &SeedWeaponGalleryOutput{CharacterID: "stable-id", WeaponCount: 30}, out)
@@ -106,7 +109,7 @@ func TestSeedWeaponGallery_RepeatedRunPreservesStableCharacterAndSkipsExactInven
 	}}
 	store := &galleryFakeStore{character: galleryCharacter("stable-id", exactGalleryInventoryWithNonWeapons())}
 
-	out, err := SeedWeaponGallery(context.Background(), &SeedWeaponGalleryInput{Client: client, Store: store})
+	out, err := SeedWeaponGallery(context.Background(), &SeedWeaponGalleryInput{WorldID: testWorldID, Client: client, Store: store})
 
 	require.NoError(t, err)
 	require.Equal(t, &SeedWeaponGalleryOutput{CharacterID: "stable-id", WeaponCount: 30}, out)
@@ -169,7 +172,7 @@ func TestSeedWeaponGallery_NormalizesMissingDuplicateAndExtraWeaponsWhilePreserv
 		{Type: shared.EquipmentTypeAmmunition, ID: "arrows", Quantity: 20},
 	}
 
-	out, err := SeedWeaponGallery(context.Background(), &SeedWeaponGalleryInput{Client: client, Store: store})
+	out, err := SeedWeaponGallery(context.Background(), &SeedWeaponGalleryInput{WorldID: testWorldID, Client: client, Store: store})
 
 	require.NoError(t, err)
 	require.Equal(t, "gallery-id", out.CharacterID)
@@ -196,7 +199,7 @@ func TestSeedWeaponGallery_RejectsAmbiguousListedCharactersWithoutRepositoryWrit
 			client.listResponses = []*dnd5ev1alpha1.ListCharactersResponse{{Characters: tt.characters}}
 			store := &galleryFakeStore{character: galleryCharacter("id", nil)}
 
-			out, err := SeedWeaponGallery(context.Background(), &SeedWeaponGalleryInput{Client: client, Store: store})
+			out, err := SeedWeaponGallery(context.Background(), &SeedWeaponGalleryInput{WorldID: testWorldID, Client: client, Store: store})
 
 			require.Nil(t, out)
 			require.ErrorContains(t, err, tt.wantErr)
@@ -223,7 +226,7 @@ func TestSeedWeaponGallery_WrapsRepositoryErrorsWithIdentityAndMethod(t *testing
 				Characters: []*dnd5ev1alpha1.Character{{Id: "gallery-id", Name: galleryCharacterName}},
 			}}
 
-			out, err := SeedWeaponGallery(context.Background(), &SeedWeaponGalleryInput{Client: client, Store: tt.store})
+			out, err := SeedWeaponGallery(context.Background(), &SeedWeaponGalleryInput{WorldID: testWorldID, Client: client, Store: tt.store})
 
 			require.Nil(t, out)
 			require.ErrorContains(t, err, tt.wantErr)
@@ -255,7 +258,7 @@ func TestSeed_DefaultStillDeletesAndRecreatesToolkitFixtures(t *testing.T) {
 	store := newSeedFakeStore("level-up-fighter-id", "level-up-bard-id")
 	client.seedStore = store
 
-	err := Seed(context.Background(), &SeedInput{Client: client, Store: store})
+	err := Seed(context.Background(), &SeedInput{WorldID: testWorldID, Client: client, Store: store})
 
 	require.NoError(t, err)
 	require.Equal(t, []string{
@@ -289,7 +292,7 @@ func TestSeed_BardAsksForBothCantripsAndBothSupportedLevelOneSpells(t *testing.T
 	store := newSeedFakeStore("level-up-fighter-id", "level-up-bard-id")
 	client.seedStore = store
 
-	require.NoError(t, Seed(context.Background(), &SeedInput{Client: client, Store: store}))
+	require.NoError(t, Seed(context.Background(), &SeedInput{WorldID: testWorldID, Client: client, Store: store}))
 
 	var cantrips, leveled []string
 	for _, request := range client.updateClassRequests {
@@ -987,7 +990,7 @@ func TestSeed_RefusesABardThatFinalizedKnowingNothing(t *testing.T) {
 			store := newSeedFakeStore("level-up-fighter-id", "level-up-bard-id")
 			client.seedStore = store
 
-			err := Seed(context.Background(), &SeedInput{Client: client, Store: store})
+			err := Seed(context.Background(), &SeedInput{WorldID: testWorldID, Client: client, Store: store})
 
 			require.ErrorContains(t, err, tc.want)
 		})

@@ -24,8 +24,24 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	orchcharacter "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
+
+// worldAndPlayer reads the trusted world and authenticated player installed by
+// the auth/role boundary. Both are mandatory for every private operation here;
+// a missing one fails closed rather than defaulting to any world.
+func worldAndPlayer(ctx context.Context) (string, string, error) {
+	playerID := auth.GetPlayerID(ctx)
+	if playerID == "" {
+		return "", "", apierr.ToGRPCError(apierr.Unauthenticated("player not authenticated"))
+	}
+	world, ok := worldcontext.Get(ctx)
+	if !ok || world.WorldID == "" {
+		return "", "", apierr.ToGRPCError(apierr.FailedPrecondition("trusted world context is required"))
+	}
+	return world.WorldID, playerID, nil
+}
 
 // HandlerConfig configures a v1alpha2 character Handler.
 type HandlerConfig struct {
@@ -83,7 +99,14 @@ func (h *Handler) EquipItem(
 		return nil, err
 	}
 
+	worldID, playerID, err := worldAndPlayer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	out, err := h.characterService.EquipItem(ctx, &orchcharacter.EquipItemInput{
+		WorldID:     worldID,
+		PlayerID:    playerID,
 		CharacterID: req.GetCharacterId(),
 		ItemID:      req.GetItem().GetId(),
 		Slot:        tkcharacter.InventorySlot(req.GetSlotKey()),
@@ -120,7 +143,14 @@ func (h *Handler) UnequipItem(
 		return nil, err
 	}
 
+	worldID, playerID, err := worldAndPlayer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	out, err := h.characterService.UnequipItem(ctx, &orchcharacter.UnequipItemInput{
+		WorldID:     worldID,
+		PlayerID:    playerID,
 		CharacterID: req.GetCharacterId(),
 		Slot:        tkcharacter.InventorySlot(req.GetSlotKey()),
 	})
@@ -183,12 +213,14 @@ func (h *Handler) GetCharacterData(
 // handler's callerActingAs keeps for the same reason
 // (internal/handlers/dnd5e/session/v1alpha1/handler.go).
 func (h *Handler) verifyCallerOwnsCharacter(ctx context.Context, characterID string) (*tkcharacter.Data, error) {
-	playerID := auth.GetPlayerID(ctx)
-	if playerID == "" {
-		return nil, apierr.ToGRPCError(apierr.Unauthenticated("player not authenticated"))
+	worldID, playerID, err := worldAndPlayer(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	out, err := h.characterService.GetCharacter(ctx, &orchcharacter.GetCharacterInput{
+		WorldID:     worldID,
+		PlayerID:    playerID,
 		CharacterID: characterID,
 	})
 	if err != nil {

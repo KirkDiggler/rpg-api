@@ -99,7 +99,7 @@ func TestSeed_WritesLevelUpExperienceThroughTheRepository(t *testing.T) {
 	client.seedStore = store
 	client.listResponses = seedListResponses()
 
-	err := Seed(context.Background(), &SeedInput{Client: client, Store: store})
+	err := Seed(context.Background(), &SeedInput{WorldID: testWorldID, Client: client, Store: store})
 
 	require.NoError(t, err)
 	require.Len(t, store.updates, 2, "one repository write per level-up fixture, and none for the other three")
@@ -121,7 +121,7 @@ func TestSeed_WritesLevelUpExperienceThroughTheRepository(t *testing.T) {
 // that look correct until someone clicks "level up" and is told they have not
 // earned it -- the failure this refusal exists to make loud.
 func TestSeed_RefusesWithoutAStore(t *testing.T) {
-	err := Seed(context.Background(), &SeedInput{Client: newGalleryFakeClient()})
+	err := Seed(context.Background(), &SeedInput{WorldID: testWorldID, Client: newGalleryFakeClient()})
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "character store is required")
@@ -137,7 +137,7 @@ func TestSeed_LevelUpFixturesUseTheirOwnIdentities(t *testing.T) {
 	client.seedStore = store
 	client.listResponses = seedListResponses()
 
-	require.NoError(t, Seed(context.Background(), &SeedInput{Client: client, Store: store}))
+	require.NoError(t, Seed(context.Background(), &SeedInput{WorldID: testWorldID, Client: client, Store: store}))
 
 	require.Contains(t, client.authHeaders, "Dev "+levelUpFighterIdentity)
 	require.Contains(t, client.authHeaders, "Dev "+levelUpBardIdentity)
@@ -161,7 +161,7 @@ func TestSeed_LevelUpBardIsBuiltByTheSameFunctionAsTheSandboxBard(t *testing.T) 
 	client.seedStore = store
 	client.listResponses = seedListResponses()
 
-	require.NoError(t, Seed(context.Background(), &SeedInput{Client: client, Store: store}))
+	require.NoError(t, Seed(context.Background(), &SeedInput{WorldID: testWorldID, Client: client, Store: store}))
 
 	var bardSpellRequests [][]string
 	for _, request := range client.updateClassRequests {

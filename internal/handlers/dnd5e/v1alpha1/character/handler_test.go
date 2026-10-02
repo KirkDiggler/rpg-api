@@ -24,6 +24,12 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
+)
+
+const (
+	testWorldID  = "123456789012345678"
+	testPlayerID = "player-1"
 )
 
 type HandlerTestSuite struct {
@@ -37,7 +43,10 @@ type HandlerTestSuite struct {
 func (s *HandlerTestSuite) SetupTest() {
 	s.ctrl = gomock.NewController(s.T())
 	s.mockService = charactermock.NewMockService(s.ctrl)
-	s.ctx = context.Background()
+	s.ctx = worldcontext.With(
+		auth.WithPlayerID(context.Background(), testPlayerID),
+		worldcontext.Value{WorldID: testWorldID},
+	)
 
 	config := &HandlerConfig{
 		CharacterService: s.mockService,
@@ -92,6 +101,7 @@ func (s *HandlerTestSuite) TestUpdateRace_MapsDwarfToolChoice() {
 
 	s.mockService.EXPECT().
 		SetRace(s.ctx, &character.SetRaceInput{
+			WorldID: testWorldID, PlayerID: testPlayerID,
 			DraftID: draftID,
 			Input: &toolkitchar.SetRaceInput{
 				RaceID: races.Dwarf,
@@ -147,6 +157,7 @@ func (s *HandlerTestSuite) TestUpdateBackground_MapsEquipmentAndToolChoices() {
 
 	s.mockService.EXPECT().
 		SetBackground(s.ctx, &character.SetBackgroundInput{
+			WorldID: testWorldID, PlayerID: testPlayerID,
 			DraftID: draftID,
 			Input: &toolkitchar.SetBackgroundInput{
 				BackgroundID: backgrounds.Soldier,
@@ -180,6 +191,7 @@ func (s *HandlerTestSuite) TestDeleteCharacter_Success() {
 	// Mock the service call
 	s.mockService.EXPECT().
 		DeleteCharacter(s.ctx, &character.DeleteCharacterInput{
+			WorldID: testWorldID, PlayerID: testPlayerID,
 			CharacterID: characterID,
 		}).
 		Return(&character.DeleteCharacterOutput{}, nil)
@@ -237,6 +249,7 @@ func (s *HandlerTestSuite) TestDeleteCharacter_NotFound() {
 	// Mock the service to return not found
 	s.mockService.EXPECT().
 		DeleteCharacter(s.ctx, &character.DeleteCharacterInput{
+			WorldID: testWorldID, PlayerID: testPlayerID,
 			CharacterID: characterID,
 		}).
 		Return(nil, apierr.NotFound("character not found"))
@@ -263,6 +276,7 @@ func (s *HandlerTestSuite) TestDeleteCharacter_InvalidArgument() {
 	// Mock the service to return invalid argument
 	s.mockService.EXPECT().
 		DeleteCharacter(s.ctx, &character.DeleteCharacterInput{
+			WorldID: testWorldID, PlayerID: testPlayerID,
 			CharacterID: characterID,
 		}).
 		Return(nil, apierr.InvalidArgument("invalid character ID format"))
@@ -289,6 +303,7 @@ func (s *HandlerTestSuite) TestDeleteCharacter_InternalError() {
 	// Mock the service to return internal error
 	s.mockService.EXPECT().
 		DeleteCharacter(s.ctx, &character.DeleteCharacterInput{
+			WorldID: testWorldID, PlayerID: testPlayerID,
 			CharacterID: characterID,
 		}).
 		Return(nil, apierr.Internal("database error"))
@@ -322,7 +337,7 @@ func (s *HandlerTestSuite) TestGetCharacter_IncludesEquipmentSlotsAndHairAppeara
 	}
 
 	s.mockService.EXPECT().
-		GetCharacter(s.ctx, &character.GetCharacterInput{CharacterID: characterID}).
+		GetCharacter(s.ctx, &character.GetCharacterInput{WorldID: testWorldID, PlayerID: testPlayerID, CharacterID: characterID}).
 		Return(&character.GetCharacterOutput{Character: &entities.Character{
 			Data: func() *toolkitchar.Data {
 				charData.Appearance = appearance
@@ -349,6 +364,7 @@ func (s *HandlerTestSuite) TestListCharacters_IncludesHairAppearance() {
 	ctx := auth.WithPlayerID(s.ctx, "player-1")
 	appearance := handlerHairAppearance()
 	s.mockService.EXPECT().ListCharacters(ctx, &character.ListCharactersInput{
+		WorldID:  testWorldID,
 		PlayerID: "player-1",
 	}).Return(&character.ListCharactersOutput{
 		Characters: []*entities.Character{{
@@ -444,6 +460,7 @@ func (s *HandlerTestSuite) TestGetCharacter_ServiceError() {
 
 	s.mockService.EXPECT().
 		GetCharacter(s.ctx, &character.GetCharacterInput{
+			WorldID: testWorldID, PlayerID: testPlayerID,
 			CharacterID: characterID,
 		}).
 		Return(nil, apierr.NotFound("character not found"))
@@ -478,6 +495,7 @@ func (s *HandlerTestSuite) TestEquipItem_ReturnsPersistedPostStateWithoutRefetch
 
 	s.mockService.EXPECT().
 		EquipItem(s.ctx, &character.EquipItemInput{
+			WorldID: testWorldID, PlayerID: testPlayerID,
 			CharacterID: "char-equip",
 			ItemID:      "longsword",
 			Slot:        toolkitchar.SlotMainHand,
@@ -487,7 +505,7 @@ func (s *HandlerTestSuite) TestEquipItem_ReturnsPersistedPostStateWithoutRefetch
 			Character:      postState,
 		}, nil)
 	s.mockService.EXPECT().
-		GetCharacter(s.ctx, &character.GetCharacterInput{CharacterID: "char-equip"}).
+		GetCharacter(s.ctx, &character.GetCharacterInput{WorldID: testWorldID, PlayerID: testPlayerID, CharacterID: "char-equip"}).
 		Return(nil, errors.New("post-write Get would fail")).
 		MaxTimes(0)
 
@@ -517,6 +535,7 @@ func (s *HandlerTestSuite) TestUnequipItem_ReturnsPersistedPostStateWithoutRefet
 
 	s.mockService.EXPECT().
 		UnequipItem(s.ctx, &character.UnequipItemInput{
+			WorldID: testWorldID, PlayerID: testPlayerID,
 			CharacterID: "char-unequip",
 			Slot:        toolkitchar.SlotMainHand,
 		}).
@@ -525,7 +544,7 @@ func (s *HandlerTestSuite) TestUnequipItem_ReturnsPersistedPostStateWithoutRefet
 			Character:        postState,
 		}, nil)
 	s.mockService.EXPECT().
-		GetCharacter(s.ctx, &character.GetCharacterInput{CharacterID: "char-unequip"}).
+		GetCharacter(s.ctx, &character.GetCharacterInput{WorldID: testWorldID, PlayerID: testPlayerID, CharacterID: "char-unequip"}).
 		Return(nil, errors.New("post-write Get would fail")).
 		MaxTimes(0)
 

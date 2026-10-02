@@ -86,7 +86,8 @@ func (s *SandboxSeedSuite) listExactlyOne(identity string) *dnd5ev1alpha1.Charac
 
 func (s *SandboxSeedSuite) seed(client sandboxseed.CharacterRPC) error {
 	return sandboxseed.Seed(s.ctx, &sandboxseed.SeedInput{
-		Client: client,
+		WorldID: harness.DevWorldA,
+		Client:  client,
 		// The real repository over the harness's real Redis. Experience has
 		// no service call that writes it (design R4.12), so the fixture tool
 		// reaches the store directly -- and this test proves the number it

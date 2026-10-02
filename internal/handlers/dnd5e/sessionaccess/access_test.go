@@ -15,8 +15,20 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
+
+const testWorldID = "123456789012345678"
+
+// authenticatedCtx installs both the authenticated player and the trusted
+// world the auth/role boundary would; every ownership lookup is world-scoped.
+func authenticatedCtx(playerID string) context.Context {
+	return worldcontext.With(
+		auth.WithPlayerID(context.Background(), playerID),
+		worldcontext.Value{WorldID: testWorldID},
+	)
+}
 
 func TestCallerMemberSeated_VerifiesOwnershipAndExactPlayerRow(t *testing.T) {
 	cases := []struct {
@@ -38,7 +50,7 @@ func TestCallerMemberSeated_VerifiesOwnershipAndExactPlayerRow(t *testing.T) {
 		},
 		{
 			name:       "missing character",
-			ctx:        auth.WithPlayerID(context.Background(), "alice"),
+			ctx:        authenticatedCtx("alice"),
 			member:     "char-1",
 			characters: newCharacterFixture(nil).withGetError("char-1", apierr.NotFound("missing")),
 			roster:     &fakeRosterReader{output: playerRoster("char-1")},
@@ -46,7 +58,7 @@ func TestCallerMemberSeated_VerifiesOwnershipAndExactPlayerRow(t *testing.T) {
 		},
 		{
 			name:       "foreign owner",
-			ctx:        auth.WithPlayerID(context.Background(), "alice"),
+			ctx:        authenticatedCtx("alice"),
 			member:     "char-1",
 			characters: newCharacterFixture(map[string]string{"char-1": "bob"}),
 			roster:     &fakeRosterReader{output: playerRoster("char-1")},
@@ -54,7 +66,7 @@ func TestCallerMemberSeated_VerifiesOwnershipAndExactPlayerRow(t *testing.T) {
 		},
 		{
 			name:       "member absent",
-			ctx:        auth.WithPlayerID(context.Background(), "alice"),
+			ctx:        authenticatedCtx("alice"),
 			member:     "char-1",
 			characters: newCharacterFixture(map[string]string{"char-1": "alice"}),
 			roster:     &fakeRosterReader{output: playerRoster("char-2")},
@@ -63,7 +75,7 @@ func TestCallerMemberSeated_VerifiesOwnershipAndExactPlayerRow(t *testing.T) {
 		},
 		{
 			name:       "matching monster row is not a seat",
-			ctx:        auth.WithPlayerID(context.Background(), "alice"),
+			ctx:        authenticatedCtx("alice"),
 			member:     "char-1",
 			characters: newCharacterFixture(map[string]string{"char-1": "alice"}),
 			roster:     &fakeRosterReader{output: &sdk.RosterOutput{Members: []sdk.PublicMember{{ID: "char-1", Kind: sdk.KindMonster}}}},
@@ -72,7 +84,7 @@ func TestCallerMemberSeated_VerifiesOwnershipAndExactPlayerRow(t *testing.T) {
 		},
 		{
 			name:       "matching world row is not a seat",
-			ctx:        auth.WithPlayerID(context.Background(), "alice"),
+			ctx:        authenticatedCtx("alice"),
 			member:     "char-1",
 			characters: newCharacterFixture(map[string]string{"char-1": "alice"}),
 			roster:     &fakeRosterReader{output: &sdk.RosterOutput{Members: []sdk.PublicMember{{ID: "char-1", Kind: sdk.KindWorld}}}},
@@ -81,7 +93,7 @@ func TestCallerMemberSeated_VerifiesOwnershipAndExactPlayerRow(t *testing.T) {
 		},
 		{
 			name:       "owned player seat",
-			ctx:        auth.WithPlayerID(context.Background(), "alice"),
+			ctx:        authenticatedCtx("alice"),
 			member:     "char-1",
 			characters: newCharacterFixture(map[string]string{"char-1": "alice"}),
 			roster:     &fakeRosterReader{output: playerRoster("char-1")},
@@ -111,7 +123,7 @@ func TestCallerSeated_DelegatesAuthenticationToRosterReader(t *testing.T) {
 	access, err := New(newCharacterFixture(nil), reader)
 	require.NoError(t, err)
 
-	err = access.CallerSeated(auth.WithPlayerID(context.Background(), "alice"), "session-1")
+	err = access.CallerSeated(authenticatedCtx("alice"), "session-1")
 
 	require.NoError(t, err)
 	require.Equal(t, []sdk.RosterInput{{Session: "session-1", Player: "alice"}}, reader.calls)
@@ -135,7 +147,7 @@ func TestCallerSeated_TranslatesRosterErrors(t *testing.T) {
 			access, err := New(newCharacterFixture(nil), &fakeRosterReader{err: tc.err})
 			require.NoError(t, err)
 
-			err = access.CallerSeated(auth.WithPlayerID(context.Background(), "alice"), "session-1")
+			err = access.CallerSeated(authenticatedCtx("alice"), "session-1")
 
 			requireCode(t, err, tc.code)
 		})
@@ -152,7 +164,7 @@ func TestCallerSeated_WithoutRosterReader_IsInternal(t *testing.T) {
 	access, err := New(newCharacterFixture(nil), nil)
 	require.NoError(t, err)
 
-	err = access.CallerSeated(auth.WithPlayerID(context.Background(), "alice"), "session-1")
+	err = access.CallerSeated(authenticatedCtx("alice"), "session-1")
 
 	requireCode(t, err, codes.Internal)
 }

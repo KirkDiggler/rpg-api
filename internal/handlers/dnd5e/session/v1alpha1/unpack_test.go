@@ -11,7 +11,6 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -29,7 +28,7 @@ func TestUnpack_EmptyActor_IsRefused(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Unpack(ctx, &sessionpb.UnpackRequest{Session: "sess-1", ItemId: "explorers-pack", Quantity: 1})
 	requireCode(t, err, codes.InvalidArgument)
 }
@@ -44,7 +43,7 @@ func TestUnpack_ForeignActor_IsRefusedBeforeTheSDK(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
 	h := &Handler{manager: mgr, characters: ownedCharacterRepo(ctrl, "char-bob", "bob")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Unpack(ctx, &sessionpb.UnpackRequest{
 		Session: "sess-1", Actor: "char-bob", ItemId: "explorers-pack", Quantity: 1,
 	})
@@ -66,7 +65,7 @@ func TestUnpack_HappyPath_RoutesVerbatimAndAcksOnly(t *testing.T) {
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Unpack(ctx, &sessionpb.UnpackRequest{
 		Session: "sess-1", Actor: "char-1", ItemId: "explorers-pack", Quantity: 2,
 	})
@@ -81,7 +80,7 @@ func TestUnpack_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr.EXPECT().Unpack(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNotAPack)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Unpack(ctx, &sessionpb.UnpackRequest{
 		Session: "sess-1", Actor: "char-1", ItemId: "longsword", Quantity: 1,
 	})

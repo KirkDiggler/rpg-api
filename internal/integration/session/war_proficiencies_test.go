@@ -1,7 +1,6 @@
 package session_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -22,8 +21,8 @@ func TestWarProficienciesSuite(t *testing.T) { suite.Run(t, new(WarProficiencies
 func (s *WarProficienciesSuite) TestNativeCreationPersistsAndProjectsDomainProficiencies() {
 	h := newAcceptanceHarness(s.T())
 	id := createNativeCleric(s.T(), h, spells.DivineFavor)
-	ctx := auth.WithPlayerID(context.Background(), "cleric-player")
-	stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: id})
+	ctx := auth.WithPlayerID(worldCtx(), "cleric-player")
+	stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: id})
 	s.Require().NoError(err)
 	s.ElementsMatch([]proficiencies.Weapon{proficiencies.WeaponSimple, proficiencies.WeaponMartial}, stored.Character.Data.WeaponProficiencies)
 	s.ElementsMatch([]proficiencies.Armor{proficiencies.ArmorLight, proficiencies.ArmorMedium, proficiencies.ArmorHeavy, proficiencies.ArmorShields}, stored.Character.Data.ArmorProficiencies)

@@ -29,7 +29,7 @@ import (
 func clericCastScene(t *testing.T) (*acceptanceHarness, context.Context) {
 	t.Helper()
 	h, ctx, _ := castScene(t)
-	stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: "bella"})
+	stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: "bella"})
 	require.NoError(t, err)
 	sheet := stored.Character.Data
 	levelfixture.Reclass(sheet, classes.Cleric)
@@ -96,7 +96,7 @@ func TestAcceptance_BlessHostPolicyAndPersistedMixedOutcomes(t *testing.T) {
 					require.Error(t, castErr)
 				}
 			})
-			stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: id})
+			stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: id})
 			require.NoError(t, err)
 			if policy != sdk.StaleTargetAttempt {
 				require.Equal(t, 2, stored.Character.Data.Resources[resources.SpellSlotLevel1].Current)
@@ -132,7 +132,7 @@ func TestAcceptance_ClericHealingResults(t *testing.T) {
 	for _, spell := range []spells.Spell{spells.CureWounds, spells.HealingWord} {
 		t.Run(spell, func(t *testing.T) {
 			h, ctx := clericCastScene(t)
-			patient, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: "alice"})
+			patient, err := h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: "alice"})
 			require.NoError(t, err)
 			patient.Character.Data.HitPoints = 1
 			_, err = h.charRepo.Update(ctx, characterrepo.UpdateInput{Character: patient.Character})

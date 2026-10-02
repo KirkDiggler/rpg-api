@@ -1,7 +1,6 @@
 package session_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
@@ -28,7 +27,7 @@ func TestAcceptance_ClericAcquisitionPersistsOpenSpellRefs(t *testing.T) {
 func createNativeCleric(t *testing.T, h *acceptanceHarness, preferred ...spells.Spell) string {
 	t.Helper()
 	handler := newCharacterCreationHandler(t, h)
-	ctx := auth.WithPlayerID(context.Background(), "cleric-player")
+	ctx := auth.WithPlayerID(worldCtx(), "cleric-player")
 	catalog, err := handler.ListClasses(ctx, &pb.ListClassesRequest{})
 	require.NoError(t, err)
 	details, err := handler.GetClassDetails(ctx, &pb.GetClassDetailsRequest{ClassId: "cleric"})
@@ -139,7 +138,7 @@ func createNativeCleric(t *testing.T, h *acceptanceHarness, preferred ...spells.
 	finalized, err := handler.FinalizeDraft(ctx, &pb.FinalizeDraftRequest{DraftId: id})
 	require.NoError(t, err)
 	require.ElementsMatch(t, accessRefs, finalized.GetCharacter().GetKnownSpells())
-	stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: finalized.GetCharacter().GetId()})
+	stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: finalized.GetCharacter().GetId()})
 	require.NoError(t, err)
 	require.ElementsMatch(t, accessRefs, stored.Character.Data.KnownSpells)
 	require.Equal(t, 2, stored.Character.Data.Resources[resources.SpellSlotLevel1].Current)
@@ -151,7 +150,7 @@ func TestAcceptance_NativeClericOwnerPrivateData(t *testing.T) {
 	id := createNativeCleric(t, h)
 	handler, err := characterhandler.New(&characterhandler.HandlerConfig{CharacterService: newAcceptanceCharacterService(t, h)})
 	require.NoError(t, err)
-	view, err := handler.GetCharacterData(auth.WithPlayerID(context.Background(), "cleric-player"), &characterpb.GetCharacterDataRequest{CharacterId: id})
+	view, err := handler.GetCharacterData(auth.WithPlayerID(worldCtx(), "cleric-player"), &characterpb.GetCharacterDataRequest{CharacterId: id})
 	require.NoError(t, err, "a natively finalized Cleric must have an owner-private view")
 	require.NotEmpty(t, view.GetCharacter().GetResources())
 	require.NotEmpty(t, view.GetCharacter().GetInventory())

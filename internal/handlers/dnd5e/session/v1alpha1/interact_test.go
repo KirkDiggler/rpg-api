@@ -15,7 +15,6 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -52,7 +51,7 @@ func TestInteract_HappyPath_ReturnsDescriptor(t *testing.T) {
 		}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Interact(ctx, &sessionpb.InteractRequest{
 		Session: "sess-1", Actor: "char-1", Target: "demo-merchant-1", Range: 2,
 	})
@@ -90,7 +89,7 @@ func TestInteract_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr.EXPECT().Interact(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrOutOfRange)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Interact(ctx, &sessionpb.InteractRequest{Session: "sess-1", Actor: "char-1", Target: "demo-merchant-1"})
 	// FailedPrecondition, not NotFound: the actor and target both exist, the
 	// reach just doesn't hold right now -- the same bucket ErrOutOfReach
@@ -108,7 +107,7 @@ func TestInteract_ForeignActor_IsRefusedBeforeTheSDK(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
 	h := &Handler{manager: mgr, characters: ownedCharacterRepo(ctrl, "goblin-1", "someone-else")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Interact(ctx, &sessionpb.InteractRequest{Session: "sess-1", Actor: "goblin-1", Target: "demo-merchant-1"})
 	requireCode(t, err, codes.PermissionDenied)
 }
@@ -118,7 +117,7 @@ func TestInteract_EmptyActor_IsRefused(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Interact(ctx, &sessionpb.InteractRequest{Session: "sess-1", Target: "demo-merchant-1"})
 	requireCode(t, err, codes.InvalidArgument)
 }

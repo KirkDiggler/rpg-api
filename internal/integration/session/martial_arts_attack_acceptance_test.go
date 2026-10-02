@@ -72,7 +72,7 @@ func TestAcceptance_QuarterstaffAttackGrantsBonusUnarmedStrike(t *testing.T) {
 	h, ctx := adjacentOffHandFight(
 		t, quarterstaffMonkAcceptance(t, "alice", "player-alice"),
 	)
-	_, err := h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+	_, err := h.manager.Manager.Spawn(worldCtx(), &sdk.SpawnInput{
 		Session: "off-hand-run", ID: "skel-captain",
 		Ref: refs.Monsters.SkeletonCaptain().String(), Position: at(18, 4),
 	})

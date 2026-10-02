@@ -20,13 +20,37 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/sandboxseed"
 )
 
+const testWorldID = "123456789012345678"
+
 func TestParseConfig_DefaultsToEnvoyAddressAndDefaultFixture(t *testing.T) {
+	t.Setenv("RPG_DEV_WORLD_ID", testWorldID)
 	config, err := parseConfig(nil)
 	require.NoError(t, err)
 	require.Equal(t, defaultAddress, config.address)
 	require.Equal(t, fixtureDefault, config.fixture)
 	require.Equal(t, defaultRedisAddress, config.redisAddress)
+	require.Equal(t, testWorldID, config.worldID)
 	require.False(t, config.health)
+}
+
+// TestParseConfig_RequiresAnExplicitWorldForMutations proves there is no
+// test-world or ownerless fallback: a mutating fixture without -world-id and
+// without RPG_DEV_WORLD_ID is refused, while -health stays usable.
+func TestParseConfig_RequiresAnExplicitWorldForMutations(t *testing.T) {
+	t.Setenv("RPG_DEV_WORLD_ID", "")
+	_, err := parseConfig([]string{"--fixture", fixtureDefault})
+	require.ErrorContains(t, err, "world ID is required")
+
+	config, err := parseConfig([]string{"--health"})
+	require.NoError(t, err)
+	require.True(t, config.health)
+}
+
+func TestParseConfig_WorldFlagOverridesEnv(t *testing.T) {
+	t.Setenv("RPG_DEV_WORLD_ID", "999999999999999999")
+	config, err := parseConfig([]string{"--world-id", testWorldID})
+	require.NoError(t, err)
+	require.Equal(t, testWorldID, config.worldID)
 }
 
 func TestParseConfig_RejectsUnknownFixture(t *testing.T) {
@@ -35,7 +59,7 @@ func TestParseConfig_RejectsUnknownFixture(t *testing.T) {
 }
 
 func TestParseConfig_AcceptsTheLevelUpClassesFixture(t *testing.T) {
-	config, err := parseConfig([]string{"--fixture", fixtureLevelUpClasses})
+	config, err := parseConfig([]string{"--fixture", fixtureLevelUpClasses, "--world-id", testWorldID})
 	require.NoError(t, err)
 	require.Equal(t, fixtureLevelUpClasses, config.fixture)
 }
@@ -76,12 +100,13 @@ func TestRunWithDeps_GalleryWiresRedisBackedStoreWithoutNetworkInUnitTest(t *tes
 		seedGallery: func(_ context.Context, input *sandboxseed.SeedWeaponGalleryInput) (*sandboxseed.SeedWeaponGalleryOutput, error) {
 			require.Same(t, fakeClient, input.Client)
 			require.Same(t, fakeStore, input.Store)
+			require.Equal(t, testWorldID, input.WorldID)
 			return &sandboxseed.SeedWeaponGalleryOutput{CharacterID: "stable-id", WeaponCount: 30}, nil
 		},
 		stdout: &stdout,
 	}
 
-	err := runWithDeps([]string{"--fixture", fixtureWeaponGallery, "--address", "bufnet", "--redis-address", "redis:6380"}, deps)
+	err := runWithDeps([]string{"--fixture", fixtureWeaponGallery, "--address", "bufnet", "--redis-address", "redis:6380", "--world-id", testWorldID}, deps)
 
 	require.NoError(t, err)
 	require.Equal(t, "bufnet", connectedAddress)

@@ -12,7 +12,6 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionmock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 )
@@ -36,7 +35,7 @@ func TestCastMissed_LiveAndStoryPreserveMixedTargetOrder(t *testing.T) {
 			Body: sdk.CastMissedBody{Actor: "cleric", Target: "ally-third", Spell: spell}},
 	}
 	mgr.EXPECT().Story(gomock.Any(), &sdk.StoryInput{Session: "sess", Member: "cleric", FromSeq: 10}).Return(events, nil)
-	ctx, cancel := context.WithCancel(auth.WithPlayerID(context.Background(), "alice"))
+	ctx, cancel := context.WithCancel(authedCtx("alice"))
 	defer cancel()
 	stream := newCapturingStream(ctx)
 	done := make(chan error, 1)

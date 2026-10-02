@@ -12,7 +12,6 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -49,7 +48,7 @@ func TestDeathSave_MapsRequestAndResponseFieldForField(t *testing.T) {
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.DeathSave(ctx, &sessionpb.DeathSaveRequest{
 		Session: "sess-1", Member: "char-1", DeclarationId: "decl-save-1",
 	})
@@ -83,7 +82,7 @@ func TestDeathSave_EmptyInputsAndStateSentinelsMapConsistently(t *testing.T) {
 			manager:    sessionv1alpha1mock.NewMockManager(ctrl),
 			characters: anyMemberOwnedBy(ctrl, "alice"),
 		}
-		ctx := auth.WithPlayerID(context.Background(), "alice")
+		ctx := authedCtx("alice")
 		_, err := h.DeathSave(ctx, &sessionpb.DeathSaveRequest{Session: "sess-1", DeclarationId: "decl"})
 		requireCode(t, err, codes.InvalidArgument)
 	})
@@ -106,7 +105,7 @@ func TestDeathSave_EmptyInputsAndStateSentinelsMapConsistently(t *testing.T) {
 			mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 			mgr.EXPECT().DeathSave(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("death save: %w", tt.err))
 			h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-			ctx := auth.WithPlayerID(context.Background(), "alice")
+			ctx := authedCtx("alice")
 			_, err := h.DeathSave(ctx, &sessionpb.DeathSaveRequest{
 				Session: "sess-1", Member: "char-1", DeclarationId: "decl-save-1",
 			})

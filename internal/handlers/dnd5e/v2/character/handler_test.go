@@ -20,6 +20,7 @@ import (
 	orchcharacter "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
 	"github.com/KirkDiggler/rpg-api/internal/testsupport/levelfixture"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -51,6 +52,9 @@ type HandlerTestSuite struct {
 	testPlayerID    string
 }
 
+// testWorldID is the trusted world every private operation is bound to.
+const testWorldID = "123456789012345678"
+
 func TestHandlerSuite(t *testing.T) {
 	suite.Run(t, new(HandlerTestSuite))
 }
@@ -58,7 +62,7 @@ func TestHandlerSuite(t *testing.T) {
 func (s *HandlerTestSuite) SetupTest() {
 	s.ctrl = gomock.NewController(s.T())
 	s.mockService = charactermock.NewMockService(s.ctrl)
-	s.ctx = context.Background()
+	s.ctx = worldcontext.With(context.Background(), worldcontext.Value{WorldID: testWorldID})
 	s.testCharacterID = "char-fighter-1"
 	s.testPlayerID = "alice"
 
@@ -195,12 +199,13 @@ func (s *HandlerTestSuite) TestEquipItem_Success() {
 	// Ownership is fetched once before the write. The orchestrator returns the
 	// already-composed post-view, so no post-write reload can fail.
 	s.mockService.EXPECT().
-		GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
+		GetCharacter(ctx, &orchcharacter.GetCharacterInput{WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID}).
 		Return(&orchcharacter.GetCharacterOutput{Character: charEntity}, nil)
 
 	postView := s.project(charEntity.Data)
 	s.mockService.EXPECT().
 		EquipItem(ctx, &orchcharacter.EquipItemInput{
+			WorldID: testWorldID, PlayerID: s.testPlayerID,
 			CharacterID: s.testCharacterID,
 			ItemID:      "longsword",
 			Slot:        character.SlotMainHand,
@@ -247,7 +252,7 @@ func (s *HandlerTestSuite) TestEquipItem_ForeignCharacter_NotFound() {
 	charEntity.Data.PlayerID = "someone-else"
 
 	s.mockService.EXPECT().
-		GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
+		GetCharacter(ctx, &orchcharacter.GetCharacterInput{WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID}).
 		Return(&orchcharacter.GetCharacterOutput{Character: charEntity}, nil)
 
 	_, err := s.handler.EquipItem(ctx, &characterpb.EquipItemRequest{
@@ -264,7 +269,7 @@ func (s *HandlerTestSuite) TestEquipItem_OrchestratorError_PropagatesAsNotFound(
 	charEntity := s.fighterCharacterEntity()
 
 	s.mockService.EXPECT().
-		GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
+		GetCharacter(ctx, &orchcharacter.GetCharacterInput{WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID}).
 		Return(&orchcharacter.GetCharacterOutput{Character: charEntity}, nil)
 
 	s.mockService.EXPECT().
@@ -285,7 +290,7 @@ func (s *HandlerTestSuite) TestEquipItem_OrchestratorGenericError_PropagatesAsIn
 	charEntity := s.fighterCharacterEntity()
 
 	s.mockService.EXPECT().
-		GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
+		GetCharacter(ctx, &orchcharacter.GetCharacterInput{WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID}).
 		Return(&orchcharacter.GetCharacterOutput{Character: charEntity}, nil)
 
 	s.mockService.EXPECT().
@@ -326,11 +331,12 @@ func (s *HandlerTestSuite) TestUnequipItem_Success() {
 	postEntity.Data.EquipmentSlots = character.EquipmentSlots{}
 
 	s.mockService.EXPECT().
-		GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
+		GetCharacter(ctx, &orchcharacter.GetCharacterInput{WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID}).
 		Return(&orchcharacter.GetCharacterOutput{Character: preEntity}, nil)
 
 	s.mockService.EXPECT().
 		UnequipItem(ctx, &orchcharacter.UnequipItemInput{
+			WorldID: testWorldID, PlayerID: s.testPlayerID,
 			CharacterID: s.testCharacterID,
 			Slot:        character.SlotMainHand,
 		}).
@@ -366,7 +372,7 @@ func (s *HandlerTestSuite) TestUnequipItem_ForeignCharacter_NotFound() {
 	charEntity.Data.PlayerID = "someone-else"
 
 	s.mockService.EXPECT().
-		GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
+		GetCharacter(ctx, &orchcharacter.GetCharacterInput{WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID}).
 		Return(&orchcharacter.GetCharacterOutput{Character: charEntity}, nil)
 
 	_, err := s.handler.UnequipItem(ctx, &characterpb.UnequipItemRequest{
@@ -399,7 +405,7 @@ func (s *HandlerTestSuite) TestGetCharacterData_Success() {
 	charEntity := s.fighterCharacterEntity()
 
 	s.mockService.EXPECT().
-		GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
+		GetCharacter(ctx, &orchcharacter.GetCharacterInput{WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID}).
 		Return(&orchcharacter.GetCharacterOutput{Character: charEntity}, nil)
 
 	resp, err := s.handler.GetCharacterData(ctx, &characterpb.GetCharacterDataRequest{
@@ -581,7 +587,7 @@ func (s *HandlerTestSuite) TestStrictProjectionFailuresAreSanitized() {
 		entity := s.fighterCharacterEntity()
 		entity.Data.Features = []json.RawMessage{json.RawMessage(`{"ref":"` + secret)}
 		s.mockService.EXPECT().
-			GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
+			GetCharacter(ctx, &orchcharacter.GetCharacterInput{WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID}).
 			Return(&orchcharacter.GetCharacterOutput{Character: entity}, nil)
 
 		_, err := s.handler.GetCharacterData(ctx, &characterpb.GetCharacterDataRequest{CharacterId: s.testCharacterID})
@@ -591,7 +597,7 @@ func (s *HandlerTestSuite) TestStrictProjectionFailuresAreSanitized() {
 	s.Run("equip", func() {
 		entity := s.fighterCharacterEntity()
 		s.mockService.EXPECT().
-			GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
+			GetCharacter(ctx, &orchcharacter.GetCharacterInput{WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID}).
 			Return(&orchcharacter.GetCharacterOutput{Character: entity}, nil)
 		s.mockService.EXPECT().
 			EquipItem(ctx, gomock.Any()).
@@ -608,7 +614,7 @@ func (s *HandlerTestSuite) TestStrictProjectionFailuresAreSanitized() {
 	s.Run("unequip", func() {
 		entity := s.fighterCharacterEntity()
 		s.mockService.EXPECT().
-			GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
+			GetCharacter(ctx, &orchcharacter.GetCharacterInput{WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID}).
 			Return(&orchcharacter.GetCharacterOutput{Character: entity}, nil)
 		s.mockService.EXPECT().
 			UnequipItem(ctx, gomock.Any()).
@@ -636,7 +642,7 @@ func (s *HandlerTestSuite) TestGetCharacterData_OwnerMalformedCharacterIsInterna
 		character.InventoryItemData{Type: "item", ID: "vorpal-spork", Quantity: 1})
 
 	s.mockService.EXPECT().
-		GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
+		GetCharacter(ctx, &orchcharacter.GetCharacterInput{WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID}).
 		Return(&orchcharacter.GetCharacterOutput{Character: charEntity}, nil)
 
 	_, err := s.handler.GetCharacterData(ctx, &characterpb.GetCharacterDataRequest{CharacterId: s.testCharacterID})
@@ -652,7 +658,7 @@ func (s *HandlerTestSuite) TestGetCharacterData_ForeignMalformedCharacterStillNo
 		character.InventoryItemData{Type: "item", ID: "vorpal-spork", Quantity: 1})
 
 	s.mockService.EXPECT().
-		GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
+		GetCharacter(ctx, &orchcharacter.GetCharacterInput{WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID}).
 		Return(&orchcharacter.GetCharacterOutput{Character: charEntity}, nil)
 
 	_, err := s.handler.GetCharacterData(ctx, &characterpb.GetCharacterDataRequest{CharacterId: s.testCharacterID})
@@ -671,7 +677,7 @@ func (s *HandlerTestSuite) TestGetCharacterData_ForeignCharacter_NotFound() {
 	charEntity.Data.PlayerID = "someone-else"
 
 	s.mockService.EXPECT().
-		GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
+		GetCharacter(ctx, &orchcharacter.GetCharacterInput{WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID}).
 		Return(&orchcharacter.GetCharacterOutput{Character: charEntity}, nil)
 
 	_, err := s.handler.GetCharacterData(ctx, &characterpb.GetCharacterDataRequest{
@@ -721,7 +727,7 @@ func (s *HandlerTestSuite) TestVerifyCallerOwnsCharacter_MissingAndForeign_Ident
 	missingCtrl := gomock.NewController(s.T())
 	missingSvc := charactermock.NewMockService(missingCtrl)
 	missingSvc.EXPECT().
-		GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
+		GetCharacter(ctx, &orchcharacter.GetCharacterInput{WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID}).
 		Return(nil, apierr.NotFound("no character with that id in the repository")) // deliberately DIFFERENT wording
 	missingHandler, err := New(&HandlerConfig{CharacterService: missingSvc})
 	s.Require().NoError(err)
@@ -732,7 +738,7 @@ func (s *HandlerTestSuite) TestVerifyCallerOwnsCharacter_MissingAndForeign_Ident
 	foreignEntity := s.fighterCharacterEntity()
 	foreignEntity.Data.PlayerID = "someone-else"
 	foreignSvc.EXPECT().
-		GetCharacter(ctx, &orchcharacter.GetCharacterInput{CharacterID: s.testCharacterID}).
+		GetCharacter(ctx, &orchcharacter.GetCharacterInput{WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID}).
 		Return(&orchcharacter.GetCharacterOutput{Character: foreignEntity}, nil)
 	foreignHandler, err := New(&HandlerConfig{CharacterService: foreignSvc})
 	s.Require().NoError(err)

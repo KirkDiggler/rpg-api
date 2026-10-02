@@ -13,6 +13,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 )
 
 const (
@@ -23,6 +24,7 @@ const (
 	errCallerNotSeated              = "caller is not seated in this session"
 	errCharactersRepositoryRequired = "session access: characters repository is required"
 	errRosterReaderRequired         = "session access: roster reader is required"
+	errTrustedWorldRequired         = "session access: trusted world context is required"
 	memberNotFoundFmt               = "member %q not found"
 	loadMemberFmt                   = "load member %q: %v"
 )
@@ -120,7 +122,12 @@ func authenticatedPlayerID(ctx context.Context) (string, error) {
 }
 
 func (a *Access) verifyMemberOwnership(ctx context.Context, playerID, member string) error {
-	out, err := a.characters.Get(ctx, characterrepo.GetInput{ID: member})
+	world, ok := worldcontext.Get(ctx)
+	if !ok || world.WorldID == "" {
+		return status.Error(codes.FailedPrecondition, errTrustedWorldRequired)
+	}
+
+	out, err := a.characters.Get(ctx, characterrepo.GetInput{WorldID: world.WorldID, ID: member})
 	if err != nil {
 		if apierr.IsNotFound(err) {
 			return status.Errorf(codes.NotFound, memberNotFoundFmt, member)

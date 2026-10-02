@@ -9,7 +9,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
@@ -70,7 +69,7 @@ func TestNew_EverythingSupplied_Succeeds(t *testing.T) {
 }
 
 func TestAuthenticatedPlayerID_Present(t *testing.T) {
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	got, err := authenticatedPlayerID(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "alice", got)

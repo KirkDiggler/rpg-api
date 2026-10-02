@@ -159,15 +159,15 @@ func TestAcceptance_GreatWeaponFightingRollTraceCrossesLiveAndStory(t *testing.T
 		acceptanceDie{size: 6, value: 4},   // GWF replacement for die 0
 	)
 	h := newAcceptanceHarnessWithDice(t, dice)
-	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+	ctx := auth.WithPlayerID(worldCtx(), "player-alice")
 	const sessionID = "gwf-roll-trace-run"
 
-	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: greatWeaponFighter(t, "alice", "player-alice")},
+	_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: greatWeaponFighter(t, "alice", "player-alice")},
 	})
 	require.NoError(t, err)
 	world := buildThreeRoomTomb(t)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: sessionID, Encounter: "gwf-encounter", World: world,
 	})
 	require.NoError(t, err)
@@ -175,7 +175,7 @@ func TestAcceptance_GreatWeaponFightingRollTraceCrossesLiveAndStory(t *testing.T
 		Session: sessionID, Member: "alice", Position: pbAt(18, 3),
 	})
 	require.NoError(t, err)
-	spawned, err := h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+	spawned, err := h.manager.Manager.Spawn(worldCtx(), &sdk.SpawnInput{
 		Session: sessionID, ID: "skel-1", Ref: refs.Monsters.Skeleton().String(), Position: at(19, 3),
 	})
 	require.NoError(t, err)

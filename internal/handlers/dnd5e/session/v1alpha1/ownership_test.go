@@ -10,7 +10,6 @@ import (
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -46,7 +45,7 @@ func TestEveryMemberTakingVerbRefusesAForeignMember(t *testing.T) {
 				manager:    sessionv1alpha1mock.NewMockManager(ctrl),
 				characters: ownedCharacterRepo(ctrl, foreign, owner),
 			}
-			err := call(auth.WithPlayerID(context.Background(), caller), h)
+			err := call(authedCtx(caller), h)
 			requireCode(t, err, codes.PermissionDenied)
 		})
 	}
@@ -63,7 +62,7 @@ func TestEveryMemberTakingVerbRefusesAMissingMember(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			manager := sessionv1alpha1mock.NewMockManager(ctrl)
 			characters := charactermock.NewMockRepository(ctrl)
-			characters.EXPECT().Get(gomock.Any(), characterrepo.GetInput{ID: member}).Return(nil, apierr.NotFound("missing")).AnyTimes()
+			characters.EXPECT().Get(gomock.Any(), characterrepo.GetInput{WorldID: sessionTestWorldID, ID: member}).Return(nil, apierr.NotFound("missing")).AnyTimes()
 
 			h, err := New(&HandlerConfig{
 				Manager:    manager,
@@ -72,7 +71,7 @@ func TestEveryMemberTakingVerbRefusesAMissingMember(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			err = call(auth.WithPlayerID(context.Background(), caller), h)
+			err = call(authedCtx(caller), h)
 			requireCode(t, err, codes.NotFound)
 		})
 	}
@@ -223,7 +222,7 @@ func TestEveryMemberTakingVerbRefusesAnEmptyMember(t *testing.T) {
 				manager:    sessionv1alpha1mock.NewMockManager(ctrl),
 				characters: anyMemberOwnedBy(ctrl, "alice"),
 			}
-			err := call(auth.WithPlayerID(context.Background(), "alice"), h)
+			err := call(authedCtx("alice"), h)
 			requireCode(t, err, codes.InvalidArgument)
 		})
 	}
@@ -239,7 +238,7 @@ func TestStreamEventsRefusesAnEmptySession(t *testing.T) {
 		manager:    sessionv1alpha1mock.NewMockManager(ctrl),
 		characters: anyMemberOwnedBy(ctrl, "alice"),
 	}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	err := h.StreamEvents(
 		&sessionpb.StreamEventsRequest{Member: "char-1"},
 		newCapturingStream(ctx),

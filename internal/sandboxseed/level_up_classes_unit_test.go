@@ -256,7 +256,8 @@ func TestClassSlug_ComesFromTheEnumNotATable(t *testing.T) {
 // store-less run would produce twelve characters that cannot level.
 func TestSeedLevelUpClasses_RefusesWithoutItsDependencies(t *testing.T) {
 	_, err := SeedLevelUpClasses(context.Background(), &SeedLevelUpClassesInput{
-		Client: newGalleryFakeClient(),
+		WorldID: testWorldID,
+		Client:  newGalleryFakeClient(),
 	})
 	require.ErrorContains(t, err, "character store is required")
 
@@ -270,8 +271,9 @@ func TestSeedLevelUpClasses_RefusesWithoutItsDependencies(t *testing.T) {
 // is a broken build, not a run that seeded zero classes successfully.
 func TestSeedLevelUpClasses_RefusesAnEmptyCatalog(t *testing.T) {
 	_, err := SeedLevelUpClasses(context.Background(), &SeedLevelUpClassesInput{
-		Client: newGalleryFakeClient(),
-		Store:  newSeedFakeStore(),
+		WorldID: testWorldID,
+		Client:  newGalleryFakeClient(),
+		Store:   newSeedFakeStore(),
 	})
 	require.ErrorContains(t, err, "the catalog is empty")
 }

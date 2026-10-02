@@ -41,6 +41,11 @@ const (
 	expectedMissingVersionMessage  = "character repository contract violation: missing character version"
 )
 
+// testWorldID is the trusted world every orchestrator test binds its private
+// operations to. The repositories are mocked and ignore it, but the input
+// contract is world-bearing.
+const testWorldID = "world-123"
+
 type EquipItemTestSuite struct {
 	suite.Suite
 	ctrl              *gomock.Controller
@@ -49,6 +54,7 @@ type EquipItemTestSuite struct {
 	ctx               context.Context
 
 	testCharacterID string
+	testPlayerID    string
 	notified        *recordingNotifier
 }
 
@@ -62,6 +68,7 @@ func (s *EquipItemTestSuite) SetupTest() {
 	s.mockCharacterRepo = charactermock.NewMockRepository(s.ctrl)
 	s.ctx = context.Background()
 	s.testCharacterID = "char-fighter-1"
+	s.testPlayerID = "player-1"
 
 	var err error
 	s.notified = &recordingNotifier{}
@@ -139,7 +146,7 @@ func (s *EquipItemTestSuite) TestEquipItem_MissingRepositoryVersionFailsBeforeMu
 	originalData.EquipmentSlots = maps.Clone(entity.Data.EquipmentSlots)
 	originalSlotsIdentity := reflect.ValueOf(entity.Data.EquipmentSlots).Pointer()
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: entity}, nil)
 	// Deliberately no PatchEquipment expectation.
 
@@ -150,9 +157,9 @@ func (s *EquipItemTestSuite) TestEquipItem_MissingRepositoryVersionFailsBeforeMu
 	}
 
 	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "longsword",
-		Slot:        character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID,
+		ItemID: "longsword",
+		Slot:   character.SlotMainHand,
 	})
 	s.Require().Error(err)
 	s.Nil(out)
@@ -172,7 +179,7 @@ func (s *EquipItemTestSuite) TestUnequipItem_MissingRepositoryVersionFailsBefore
 	originalData.EquipmentSlots = maps.Clone(entity.Data.EquipmentSlots)
 	originalSlotsIdentity := reflect.ValueOf(entity.Data.EquipmentSlots).Pointer()
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: entity}, nil)
 	// Deliberately no PatchEquipment expectation.
 
@@ -183,8 +190,8 @@ func (s *EquipItemTestSuite) TestUnequipItem_MissingRepositoryVersionFailsBefore
 	}
 
 	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
-		CharacterID: s.testCharacterID,
-		Slot:        character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID,
+		Slot: character.SlotMainHand,
 	})
 	s.Require().Error(err)
 	s.Nil(out)
@@ -201,7 +208,7 @@ func (s *EquipItemTestSuite) TestEquipItem_Success_NoPreviousOccupant() {
 	charEntity := s.fighterWithLongswordAndShield()
 
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
 
 	s.mockCharacterRepo.EXPECT().
@@ -212,9 +219,9 @@ func (s *EquipItemTestSuite) TestEquipItem_Success_NoPreviousOccupant() {
 		})
 
 	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "longsword",
-		Slot:        character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID,
+		ItemID: "longsword",
+		Slot:   character.SlotMainHand,
 	})
 	s.Require().NoError(err)
 	s.Assert().Empty(out.PreviousItemID)
@@ -231,7 +238,7 @@ func (s *EquipItemTestSuite) TestEquipItem_TwoHanded_ClearsOffHand() {
 	}
 
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
 
 	s.mockCharacterRepo.EXPECT().
@@ -244,9 +251,9 @@ func (s *EquipItemTestSuite) TestEquipItem_TwoHanded_ClearsOffHand() {
 		})
 
 	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "greatsword",
-		Slot:        character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID,
+		ItemID: "greatsword",
+		Slot:   character.SlotMainHand,
 	})
 	s.Require().NoError(err)
 	s.Assert().Empty(out.PreviousItemID, "main_hand had nothing equipped before this call")
@@ -261,7 +268,7 @@ func (s *EquipItemTestSuite) TestEquipItem_Swap_ReturnsPreviousOccupant() {
 	}
 
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
 
 	s.mockCharacterRepo.EXPECT().
@@ -271,9 +278,9 @@ func (s *EquipItemTestSuite) TestEquipItem_Swap_ReturnsPreviousOccupant() {
 		})
 
 	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "longsword",
-		Slot:        character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID,
+		ItemID: "longsword",
+		Slot:   character.SlotMainHand,
 	})
 	s.Require().NoError(err)
 	s.Assert().Equal("handaxe", out.PreviousItemID)
@@ -283,13 +290,13 @@ func (s *EquipItemTestSuite) TestEquipItem_ItemNotInInventory_ReturnsNotFound() 
 	charEntity := s.fighterWithLongswordAndShield()
 
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
 
 	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "not-owned-item",
-		Slot:        character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID,
+		ItemID: "not-owned-item",
+		Slot:   character.SlotMainHand,
 	})
 	s.Require().Error(err)
 	s.Assert().True(apierr.IsNotFound(err), "expected NotFound, got %v", err)
@@ -303,13 +310,13 @@ func (s *EquipItemTestSuite) TestEquipItem_IncompatibleSlot_ReturnsInvalidArgume
 	charEntity := s.fighterWithLongswordAndShield()
 
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
 
 	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "shield",
-		Slot:        character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID,
+		ItemID: "shield",
+		Slot:   character.SlotMainHand,
 	})
 	s.Require().Error(err)
 	s.Assert().True(apierr.IsInvalidArgument(err), "expected InvalidArgument, got %v", err)
@@ -322,7 +329,7 @@ func (s *EquipItemTestSuite) TestUnequipItem_Success() {
 	}
 
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
 
 	s.mockCharacterRepo.EXPECT().
@@ -333,8 +340,8 @@ func (s *EquipItemTestSuite) TestUnequipItem_Success() {
 		})
 
 	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
-		CharacterID: s.testCharacterID,
-		Slot:        character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID,
+		Slot: character.SlotMainHand,
 	})
 	s.Require().NoError(err)
 	s.Assert().Equal("longsword", out.UnequippedItemID)
@@ -374,7 +381,7 @@ func (s *EquipItemTestSuite) TestEquipItem_PreservesNonEquipmentFields() {
 	}}
 
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
 
 	var persisted *entities.Character
@@ -387,9 +394,9 @@ func (s *EquipItemTestSuite) TestEquipItem_PreservesNonEquipmentFields() {
 		})
 
 	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "longsword",
-		Slot:        character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID,
+		ItemID: "longsword",
+		Slot:   character.SlotMainHand,
 	})
 	s.Require().NoError(err)
 	s.Require().NotNil(persisted)
@@ -472,15 +479,15 @@ func (s *EquipItemTestSuite) TestEquipItem_RejectsUnprojectableDataWithoutWritin
 			entity := s.fighterWithLongswordAndShield()
 			tc.mutate(entity)
 			s.mockCharacterRepo.EXPECT().
-				Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+				Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 				Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 			// Deliberately no PatchEquipment expectation: gomock fails if malformed
 			// private state reaches persistence.
 
 			out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-				CharacterID: s.testCharacterID,
-				ItemID:      "longsword",
-				Slot:        character.SlotMainHand,
+				WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID,
+				ItemID: "longsword",
+				Slot:   character.SlotMainHand,
 			})
 			s.Require().Error(err)
 			s.Nil(out)
@@ -493,13 +500,13 @@ func (s *EquipItemTestSuite) TestUnequipItem_MissingOwnerIdentityWritesNothing()
 	entity.Data.PlayerID = ""
 	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotMainHand: "longsword"}
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 	// Deliberately no PatchEquipment expectation.
 
 	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
-		CharacterID: s.testCharacterID,
-		Slot:        character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID,
+		Slot: character.SlotMainHand,
 	})
 	s.Require().Error(err)
 	s.Nil(out)
@@ -510,13 +517,13 @@ func (s *EquipItemTestSuite) TestUnequipItem_MalformedConditionWritesNothing() {
 	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotMainHand: "longsword"}
 	entity.Data.Conditions = []json.RawMessage{json.RawMessage(`{"ref":{"module":"dnd5e","type":"conditions","id":"unknown"}}`)}
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 	// Deliberately no PatchEquipment expectation.
 
 	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
-		CharacterID: s.testCharacterID,
-		Slot:        character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID,
+		Slot: character.SlotMainHand,
 	})
 	s.Require().Error(err)
 	s.Nil(out)
@@ -528,7 +535,7 @@ func (s *EquipItemTestSuite) TestEquipItem_PostProjectionFailureLeavesRepository
 	originalSlots := entity.Data.EquipmentSlots
 	originalSlotsIdentity := reflect.ValueOf(originalSlots).Pointer()
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 
 	calls := 0
@@ -545,9 +552,9 @@ func (s *EquipItemTestSuite) TestEquipItem_PostProjectionFailureLeavesRepository
 	// before persistence.
 
 	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "longsword",
-		Slot:        character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID,
+		ItemID: "longsword",
+		Slot:   character.SlotMainHand,
 	})
 	s.Require().Error(err)
 	s.Nil(out)
@@ -568,7 +575,7 @@ func (s *EquipItemTestSuite) TestUnequipItem_PostProjectionFailureLeavesReposito
 	originalSlots := entity.Data.EquipmentSlots
 	originalSlotsIdentity := reflect.ValueOf(originalSlots).Pointer()
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 
 	calls := 0
@@ -584,8 +591,8 @@ func (s *EquipItemTestSuite) TestUnequipItem_PostProjectionFailureLeavesReposito
 	// Deliberately no PatchEquipment expectation.
 
 	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
-		CharacterID: s.testCharacterID,
-		Slot:        character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID,
+		Slot: character.SlotMainHand,
 	})
 	s.Require().Error(err)
 	s.Nil(out)
@@ -606,7 +613,7 @@ func (s *EquipItemTestSuite) TestEquipItem_PatchFailureLeavesRepositoryEntityUnc
 	originalSlots := entity.Data.EquipmentSlots
 	originalSlotsIdentity := reflect.ValueOf(originalSlots).Pointer()
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 	s.mockCharacterRepo.EXPECT().
 		PatchEquipment(s.ctx, gomock.Any()).
@@ -623,9 +630,9 @@ func (s *EquipItemTestSuite) TestEquipItem_PatchFailureLeavesRepositoryEntityUnc
 		})
 
 	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "longsword",
-		Slot:        character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID,
+		ItemID: "longsword",
+		Slot:   character.SlotMainHand,
 	})
 	s.Require().Error(err)
 	s.Nil(out)
@@ -642,7 +649,7 @@ func (s *EquipItemTestSuite) TestUnequipItem_PatchFailureLeavesRepositoryEntityU
 	originalSlots := entity.Data.EquipmentSlots
 	originalSlotsIdentity := reflect.ValueOf(originalSlots).Pointer()
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 	s.mockCharacterRepo.EXPECT().
 		PatchEquipment(s.ctx, gomock.Any()).
@@ -662,8 +669,8 @@ func (s *EquipItemTestSuite) TestUnequipItem_PatchFailureLeavesRepositoryEntityU
 		})
 
 	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
-		CharacterID: s.testCharacterID,
-		Slot:        character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID,
+		Slot: character.SlotMainHand,
 	})
 	s.Require().Error(err)
 	s.Nil(out)
@@ -677,7 +684,7 @@ func (s *EquipItemTestSuite) TestUnequipItem_PatchFailureLeavesRepositoryEntityU
 func (s *EquipItemTestSuite) TestEquipItem_RetriesConcurrentNonEquipmentRevisionAndReturnsOnePostState() {
 	entity := s.fighterWithLongswordAndShield()
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: entity, Version: "version-before-combat"}, nil)
 
 	latestData := *entity.Data
@@ -718,9 +725,9 @@ func (s *EquipItemTestSuite) TestEquipItem_RetriesConcurrentNonEquipmentRevision
 	)
 
 	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "longsword",
-		Slot:        character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID,
+		ItemID: "longsword",
+		Slot:   character.SlotMainHand,
 	})
 	s.Require().NoError(err)
 	s.Require().NotNil(out.Character)
@@ -734,7 +741,7 @@ func (s *EquipItemTestSuite) TestEquipItem_RetriesConcurrentNonEquipmentRevision
 func (s *EquipItemTestSuite) TestEquipItem_OutputViewEqualsCapturedPersistedPostState() {
 	entity := s.fighterWithLongswordAndShield()
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 
 	var persisted *character.Data
@@ -747,9 +754,9 @@ func (s *EquipItemTestSuite) TestEquipItem_OutputViewEqualsCapturedPersistedPost
 		})
 
 	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "longsword",
-		Slot:        character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID,
+		ItemID: "longsword",
+		Slot:   character.SlotMainHand,
 	})
 	s.Require().NoError(err)
 	s.Require().NotNil(out.View)
@@ -770,7 +777,7 @@ func (s *EquipItemTestSuite) TestEquipItem_SyncsStoredArmorClass() {
 		character.InventoryItemData{Type: "armor", ID: "chain-mail", Quantity: 1})
 
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
 
 	var persisted *character.Data
@@ -785,9 +792,9 @@ func (s *EquipItemTestSuite) TestEquipItem_SyncsStoredArmorClass() {
 	// chain-mail is a fixed-AC-16 heavy armor (no DEX bonus) — a
 	// hand-computable, non-tautological expectation.
 	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "chain-mail",
-		Slot:        character.SlotArmor,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID,
+		ItemID: "chain-mail",
+		Slot:   character.SlotArmor,
 	})
 	s.Require().NoError(err)
 	s.Require().NotNil(persisted)
@@ -814,7 +821,7 @@ func (r *recordingNotifier) AppearanceChanged(_ context.Context, in *AppearanceC
 func (s *EquipItemTestSuite) TestEquipItem_TellsWatchersTheAppearanceChanged() {
 	entity := s.fighterWithLongswordAndShield()
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 	s.mockCharacterRepo.EXPECT().
 		PatchEquipment(s.ctx, gomock.Any()).
@@ -823,7 +830,7 @@ func (s *EquipItemTestSuite) TestEquipItem_TellsWatchersTheAppearanceChanged() {
 		})
 
 	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID, ItemID: "longsword", Slot: character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID, ItemID: "longsword", Slot: character.SlotMainHand,
 	})
 	s.Require().NoError(err)
 
@@ -839,12 +846,12 @@ func (s *EquipItemTestSuite) TestEquipItem_TellsWatchersTheAppearanceChanged() {
 func (s *EquipItemTestSuite) TestEquipItem_ARefusalTellsNobody() {
 	entity := s.fighterWithLongswordAndShield()
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 	// Deliberately no PatchEquipment expectation: the item is not held.
 
 	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID, ItemID: "a-sword-she-does-not-have",
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID, ItemID: "a-sword-she-does-not-have",
 		Slot: character.SlotMainHand,
 	})
 	s.Require().Error(err)
@@ -860,7 +867,7 @@ func (s *EquipItemTestSuite) TestEquipItem_ANotifierFailureDoesNotFailTheEquip()
 	s.notified.err = errors.New("the session is gone")
 	entity := s.fighterWithLongswordAndShield()
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 	s.mockCharacterRepo.EXPECT().
 		PatchEquipment(s.ctx, gomock.Any()).
@@ -869,7 +876,7 @@ func (s *EquipItemTestSuite) TestEquipItem_ANotifierFailureDoesNotFailTheEquip()
 		})
 
 	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID, ItemID: "longsword", Slot: character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID, ItemID: "longsword", Slot: character.SlotMainHand,
 	})
 	s.Require().NoError(err, "the write succeeded, so the call succeeded")
 	s.Require().NotNil(out)
@@ -887,7 +894,7 @@ func (s *EquipItemTestSuite) TestUnequipItem_TellsWatchersTheAppearanceChanged()
 	entity := s.fighterWithLongswordAndShield()
 	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotMainHand: "longsword"}
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 	s.mockCharacterRepo.EXPECT().
 		PatchEquipment(s.ctx, gomock.Any()).
@@ -896,7 +903,7 @@ func (s *EquipItemTestSuite) TestUnequipItem_TellsWatchersTheAppearanceChanged()
 		})
 
 	_, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
-		CharacterID: s.testCharacterID, Slot: character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID, Slot: character.SlotMainHand,
 	})
 	s.Require().NoError(err)
 
@@ -915,7 +922,7 @@ func (s *EquipItemTestSuite) TestUnequipItem_TellsWatchersTheAppearanceChanged()
 func (s *EquipItemTestSuite) TestEquipItem_AVersionRaceTellsNobodyUntilTheWriteLands() {
 	entity := s.fighterWithLongswordAndShield()
 	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: entity, Version: "version-before-combat"}, nil)
 
 	latestData := *entity.Data
@@ -939,7 +946,7 @@ func (s *EquipItemTestSuite) TestEquipItem_AVersionRaceTellsNobodyUntilTheWriteL
 	)
 
 	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID, ItemID: "longsword", Slot: character.SlotMainHand,
+		WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID, ItemID: "longsword", Slot: character.SlotMainHand,
 	})
 	s.Require().NoError(err)
 
@@ -956,14 +963,14 @@ func (s *EquipItemTestSuite) TestUnequipPersistsToolkitRemovalOfWeaponEnchantmen
 	raw, err := effect.ToJSON()
 	s.Require().NoError(err)
 	entity.Data.Conditions = []json.RawMessage{raw}
-	s.mockCharacterRepo.EXPECT().Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
+	s.mockCharacterRepo.EXPECT().Get(s.ctx, characterrepo.GetInput{WorldID: testWorldID, ID: s.testCharacterID}).Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 	s.mockCharacterRepo.EXPECT().PatchEquipment(s.ctx, gomock.Any()).DoAndReturn(func(_ context.Context, in characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
 		s.Require().NotNil(in.Conditions)
 		s.Empty(*in.Conditions, "toolkit removal must be included in the same atomic equipment write")
 		s.Empty(in.EquipmentSlots)
 		return s.appliedPatch(entity, in), nil
 	})
-	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{CharacterID: s.testCharacterID, Slot: character.SlotMainHand})
+	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: s.testCharacterID, Slot: character.SlotMainHand})
 	s.Require().NoError(err)
 	s.Require().NotNil(out)
 	s.Len(entity.Data.Conditions, 1, "the repository's read snapshot must not be mutated")

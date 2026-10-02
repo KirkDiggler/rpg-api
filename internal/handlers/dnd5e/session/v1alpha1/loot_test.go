@@ -12,7 +12,6 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -30,7 +29,7 @@ func TestLoot_EmptyMember_IsRefused(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Loot(ctx, &sessionpb.LootRequest{Session: "sess-1", Target: "captain-1"})
 	requireCode(t, err, codes.InvalidArgument)
 }
@@ -44,7 +43,7 @@ func TestLoot_ForeignMember_IsRefusedBeforeTheSDK(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
 	h := &Handler{manager: mgr, characters: ownedCharacterRepo(ctrl, "char-bob", "bob")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Loot(ctx, &sessionpb.LootRequest{
 		Session: "sess-1", Member: "char-bob", Target: "captain-1",
 	})
@@ -71,7 +70,7 @@ func TestLoot_HappyPath_RoutesVerbatimAndAcksOnly(t *testing.T) {
 			"char-alice": {owner: "alice", name: "Alice", class: "fighter", race: "human"},
 		}),
 	}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Loot(ctx, &sessionpb.LootRequest{
 		Session: "sess-1", Member: "char-alice", Target: "skeleton-captain-1", Range: 2,
 	})
@@ -96,7 +95,7 @@ func TestLoot_AnEmptyBodyAnswersLikeTheCaptain(t *testing.T) {
 	mgr.EXPECT().Loot(gomock.Any(), gomock.Any()).Return(ack, nil).Times(2)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 
 	captain, err := h.Loot(ctx, &sessionpb.LootRequest{
 		Session: "sess-1", Member: "char-1", Target: "skeleton-captain-1",
@@ -120,7 +119,7 @@ func TestLoot_NotDown_IsFailedPrecondition(t *testing.T) {
 	mgr.EXPECT().Loot(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNotDown)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Loot(ctx, &sessionpb.LootRequest{
 		Session: "sess-1", Member: "char-1", Target: "skeleton-2",
 	})

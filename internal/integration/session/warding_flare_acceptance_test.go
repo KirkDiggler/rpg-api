@@ -1,7 +1,6 @@
 package session_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -26,7 +25,7 @@ func (s *WardingFlareSuite) TestNativeLightReactionOwnerSheetAndReplay() {
 		s.Run(map[bool]string{true: "use", false: "decline"}[spend], func() {
 			t := s.T()
 			h, ctx, id := nativeClericCombatSceneAt(t, 8, 2, spells.FaerieFire)
-			stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: id})
+			stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: id})
 			s.Require().NoError(err)
 			initial := stored.Character.Data.Resources[resources.WardingFlare].Current
 			s.Positive(initial)
@@ -46,7 +45,7 @@ func (s *WardingFlareSuite) TestNativeLightReactionOwnerSheetAndReplay() {
 				s.True(found)
 			}
 			assertSheet(initial)
-			otherCtx := auth.WithPlayerID(context.Background(), "player-alice")
+			otherCtx := auth.WithPlayerID(worldCtx(), "player-alice")
 			_, err = sheetHandler.GetCharacterData(otherCtx, &characterpb.GetCharacterDataRequest{CharacterId: id})
 			s.Error(err, "private resources stay owner-only")
 			_, err = h.handler.EndTurn(ctx, &sessionpb.EndTurnRequest{Session: castSessionID, Member: id, DeclarationId: currentDeclarationID(ctx, t, h.handler, castSessionID, id, sessionpb.Verb_VERB_END_TURN)})
@@ -75,7 +74,7 @@ func (s *WardingFlareSuite) TestNativeLightReactionOwnerSheetAndReplay() {
 				want--
 			}
 			assertSheet(want)
-			stored, err = h.charRepo.Get(ctx, characterrepo.GetInput{ID: id})
+			stored, err = h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: id})
 			s.Require().NoError(err)
 			s.Equal(2, stored.Character.Data.Resources[resources.SpellSlotLevel1].Current)
 			swings := 0

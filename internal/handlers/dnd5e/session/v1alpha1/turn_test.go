@@ -11,7 +11,6 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -34,7 +33,7 @@ func TestTurn_HappyPath(t *testing.T) {
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Turn(ctx, &sessionpb.TurnRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
 	require.Equal(t, sessionpb.ClockKind_CLOCK_KIND_TURN, resp.GetClock())
@@ -55,7 +54,7 @@ func TestTurn_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr.EXPECT().Turn(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNoMember)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Turn(ctx, &sessionpb.TurnRequest{Session: "sess-1", Member: "char-1"})
 	requireCode(t, err, codes.NotFound)
 }

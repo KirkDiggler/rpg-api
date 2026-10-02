@@ -111,13 +111,13 @@ func launchTheCampWith(t *testing.T, roller sdk.Roller) *campRun {
 	t.Helper()
 
 	h := newAcceptanceHarnessWithDice(t, roller)
-	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+	_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter("alice", "player-alice")},
 	})
 	require.NoError(t, err)
 
 	lobbies := lobbyrepo.NewInMemory()
-	require.NoError(t, lobbies.Save(context.Background(), &lobbyrepo.Data{
+	require.NoError(t, lobbies.Save(worldCtx(), &lobbyrepo.Data{
 		ID: "lobby-1", HostPlayerID: "player-alice", Status: lobbyrepo.StatusWaiting,
 		Members: map[string]*lobbyrepo.Member{"player-alice": {
 			PlayerID: "player-alice", CharacterID: "alice", IsHost: true, IsReady: true,
@@ -136,12 +136,12 @@ func launchTheCampWith(t *testing.T, roller sdk.Roller) *campRun {
 	})
 	require.NoError(t, err)
 
-	out, err := lobby.StartEncounter(context.Background(), &lobbyorch.StartEncounterInput{
+	out, err := lobby.StartEncounter(worldCtx(), &lobbyorch.StartEncounterInput{
 		PlayerID: "player-alice", LobbyID: "lobby-1", DungeonKey: raiderCampKey,
 	})
 	require.NoError(t, err, "the camp launches: its chief entered the raiders as their mind")
 
-	return &campRun{h: h, sess: out.EncounterID, alice: auth.WithPlayerID(context.Background(), "player-alice")}
+	return &campRun{h: h, sess: out.EncounterID, alice: auth.WithPlayerID(worldCtx(), "player-alice")}
 }
 
 func (r *campRun) story(t *testing.T) []*sessionpb.Event {
@@ -442,7 +442,7 @@ func TestAcceptance_TheLetterCarriedToTheChiefTurnsTheCamp(t *testing.T) {
 	// Every recipient hears the stance turn, monsters included (design §6).
 	// The chief's story is read through the Manager: no player owns a
 	// monster's view.
-	chiefsStory, err := r.h.manager.Manager.Story(context.Background(), &sdk.StoryInput{Session: r.sess, Member: "chief"})
+	chiefsStory, err := r.h.manager.Manager.Story(worldCtx(), &sdk.StoryInput{Session: r.sess, Member: "chief"})
 	require.NoError(t, err)
 	chiefHeard := false
 	for _, e := range chiefsStory {
@@ -472,7 +472,7 @@ func TestAcceptance_TheChiefsFallBringsTheReinforcements(t *testing.T) {
 	// session's standing seam reads it, and the world notices the fall at
 	// the next verb.
 	sessions := sessionorch.NewSessionRepository(r.h.redis, time.Hour)
-	stored, err := sessions.GetSession(context.Background(), r.sess)
+	stored, err := sessions.GetSession(worldCtx(), r.sess)
 	require.NoError(t, err)
 	felled := false
 	for i := range stored.NPCs {
@@ -482,7 +482,7 @@ func TestAcceptance_TheChiefsFallBringsTheReinforcements(t *testing.T) {
 		}
 	}
 	require.True(t, felled, "the chief's sheet is in the session under his authored id")
-	require.NoError(t, sessions.SaveSession(context.Background(), stored))
+	require.NoError(t, sessions.SaveSession(worldCtx(), stored))
 
 	// Placed on the first verb after the fall is noticed.
 	for verbs := 0; verbs < 2 && len(arrivals(r.story(t))) < 3; verbs++ {

@@ -119,7 +119,7 @@ func TestSharedThrowCrossesServerInstances(t *testing.T) {
 
 func seedCharacter(ctx context.Context, t *testing.T, repo characterrepo.Repository, id, playerID, name string) {
 	t.Helper()
-	_, err := repo.Create(ctx, characterrepo.CreateInput{Character: &entities.Character{Data: &character.Data{
+	_, err := repo.Create(ctx, characterrepo.CreateInput{Character: &entities.Character{WorldID: harness.DevWorldA, Data: &character.Data{
 		ID:           id,
 		PlayerID:     playerID,
 		Name:         name,

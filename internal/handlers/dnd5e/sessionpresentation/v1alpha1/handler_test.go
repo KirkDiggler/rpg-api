@@ -18,9 +18,14 @@ import (
 	orchsessionpresentation "github.com/KirkDiggler/rpg-api/internal/orchestrators/sessionpresentation"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
+
+// presentationTestWorldID is the trusted world the auth/role boundary installs
+// on every request.
+const presentationTestWorldID = "123456789012345678"
 
 type HandlerSuite struct {
 	suite.Suite
@@ -40,7 +45,10 @@ func (s *HandlerSuite) SetupTest() {
 	s.playerID = "alice"
 	s.sessionID = "session-1"
 	s.memberID = "char-1"
-	s.ctx = auth.WithPlayerID(context.Background(), s.playerID)
+	s.ctx = worldcontext.With(
+		auth.WithPlayerID(context.Background(), s.playerID),
+		worldcontext.Value{WorldID: presentationTestWorldID},
+	)
 }
 
 func (s *HandlerSuite) TearDownTest() {
@@ -61,7 +69,7 @@ func (s *HandlerSuite) accessForMemberOwner(ownerPlayerID string, order *callOrd
 	s.T().Helper()
 
 	characters := charactermock.NewMockRepository(s.ctrl)
-	characters.EXPECT().Get(gomock.Any(), characterrepo.GetInput{ID: s.memberID}).DoAndReturn(
+	characters.EXPECT().Get(gomock.Any(), characterrepo.GetInput{WorldID: presentationTestWorldID, ID: s.memberID}).DoAndReturn(
 		func(_ context.Context, _ characterrepo.GetInput) (*characterrepo.GetOutput, error) {
 			if order != nil {
 				order.Add("characters.Get")

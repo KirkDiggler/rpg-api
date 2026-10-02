@@ -15,7 +15,6 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -58,7 +57,7 @@ func TestTrade_HappyPath_ReturnsDecrementedDescriptor(t *testing.T) {
 		}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Trade(ctx, &sessionpb.TradeRequest{
 		Session: "sess-1", Actor: "char-1", Target: "demo-merchant-1", Range: 1,
 		Give: &sessionpb.TradeOffer{Currency: &sessionpb.Money{Copper: int32(price.Copper)}},
@@ -95,7 +94,7 @@ func TestTrade_BothGiveAndReceiveItems_IsRefused(t *testing.T) {
 		})
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Trade(ctx, &sessionpb.TradeRequest{
 		Session: "sess-1", Actor: "char-1", Target: "demo-merchant-1",
 		Give: &sessionpb.TradeOffer{Items: []*sessionpb.TradeItem{
@@ -146,7 +145,7 @@ func TestTrade_Sell_ForwardsGiveItemsAndReceiveCurrency(t *testing.T) {
 		}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Trade(ctx, &sessionpb.TradeRequest{
 		Session: "sess-1", Actor: "char-1", Target: "demo-merchant-1", Range: 1,
 		Give: &sessionpb.TradeOffer{Items: []*sessionpb.TradeItem{
@@ -172,7 +171,7 @@ func TestTrade_NotInInventory_IsRefused(t *testing.T) {
 	mgr.EXPECT().Trade(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNotInInventory)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Trade(ctx, &sessionpb.TradeRequest{
 		Session: "sess-1", Actor: "char-1", Target: "demo-merchant-1",
 		Give: &sessionpb.TradeOffer{Items: []*sessionpb.TradeItem{
@@ -189,7 +188,7 @@ func TestTrade_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr.EXPECT().Trade(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrOutOfStock)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Trade(ctx, &sessionpb.TradeRequest{
 		Session: "sess-1", Actor: "char-1", Target: "demo-merchant-1",
 		Receive: &sessionpb.TradeOffer{Items: []*sessionpb.TradeItem{
@@ -209,7 +208,7 @@ func TestTrade_WrongPrice_IsRefused(t *testing.T) {
 	mgr.EXPECT().Trade(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrWrongPrice)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Trade(ctx, &sessionpb.TradeRequest{
 		Session: "sess-1", Actor: "char-1", Target: "demo-merchant-1",
 		Give: &sessionpb.TradeOffer{Currency: &sessionpb.Money{Copper: 1}},
@@ -229,7 +228,7 @@ func TestTrade_InsufficientFunds_IsRefused(t *testing.T) {
 	mgr.EXPECT().Trade(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrInsufficientFunds)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	price, err := equipment.PriceOf("longsword")
 	require.NoError(t, err)
 	_, err = h.Trade(ctx, &sessionpb.TradeRequest{
@@ -252,7 +251,7 @@ func TestTrade_ForeignActor_IsRefusedBeforeTheSDK(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
 	h := &Handler{manager: mgr, characters: ownedCharacterRepo(ctrl, "goblin-1", "someone-else")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Trade(ctx, &sessionpb.TradeRequest{
 		Session: "sess-1", Actor: "goblin-1", Target: "demo-merchant-1",
 		Receive: &sessionpb.TradeOffer{Items: []*sessionpb.TradeItem{
@@ -267,7 +266,7 @@ func TestTrade_EmptyActor_IsRefused(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Trade(ctx, &sessionpb.TradeRequest{Session: "sess-1", Target: "demo-merchant-1"})
 	requireCode(t, err, codes.InvalidArgument)
 }

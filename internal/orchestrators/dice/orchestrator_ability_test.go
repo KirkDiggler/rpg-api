@@ -14,6 +14,8 @@ import (
 	dicemock "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session/mock"
 )
 
+const testWorldID = "world-123"
+
 func TestOrchestrator_RollDice_AbilityScores(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -32,6 +34,7 @@ func TestOrchestrator_RollDice_AbilityScores(t *testing.T) {
 	// Test rolling 4d6 for ability scores - should drop lowest
 	t.Run("4d6 ability scores drops lowest", func(t *testing.T) {
 		input := &RollDiceInput{
+			WorldID:  testWorldID,
 			EntityID: "player-123",
 			Context:  ContextAbilityScores,
 			Notation: "4d6",
@@ -40,6 +43,7 @@ func TestOrchestrator_RollDice_AbilityScores(t *testing.T) {
 		// Mock the repository to return NotFound (no existing session)
 		mockRepo.EXPECT().
 			Get(ctx, dicesession.GetInput{
+				WorldID:  testWorldID,
 				EntityID: "player-123",
 				Context:  ContextAbilityScores,
 			}).
@@ -94,6 +98,7 @@ func TestOrchestrator_RollDice_AbilityScores(t *testing.T) {
 	// Test rolling 4d6 for non-ability context - should NOT drop lowest
 	t.Run("4d6 non-ability context keeps all dice", func(t *testing.T) {
 		input := &RollDiceInput{
+			WorldID:  testWorldID,
 			EntityID: "player-123",
 			Context:  "damage_rolls",
 			Notation: "4d6",
@@ -102,6 +107,7 @@ func TestOrchestrator_RollDice_AbilityScores(t *testing.T) {
 		// Mock the repository to return NotFound (no existing session)
 		mockRepo.EXPECT().
 			Get(ctx, dicesession.GetInput{
+				WorldID:  testWorldID,
 				EntityID: "player-123",
 				Context:  "damage_rolls",
 			}).
@@ -165,6 +171,7 @@ func TestOrchestrator_RollAbilityScores_StandardArray(t *testing.T) {
 
 	t.Run("creates 6 rolls with standard array values", func(t *testing.T) {
 		input := &RollAbilityScoresInput{
+			WorldID:  testWorldID,
 			EntityID: "draft-123",
 			Method:   MethodStandardArray,
 		}
@@ -226,6 +233,7 @@ func TestOrchestrator_GetRollSession_AutoCreatesStandardArray(t *testing.T) {
 		// First call returns not found
 		mockRepo.EXPECT().
 			Get(ctx, dicesession.GetInput{
+				WorldID:  testWorldID,
 				EntityID: "draft-456",
 				Context:  ContextAbilityScores,
 			}).
@@ -255,6 +263,7 @@ func TestOrchestrator_GetRollSession_AutoCreatesStandardArray(t *testing.T) {
 			})
 
 		output, err := o.GetRollSession(ctx, &GetRollSessionInput{
+			WorldID:    testWorldID,
 			EntityID:   "draft-456",
 			Context:    ContextAbilityScores,
 			AutoCreate: true,
@@ -268,12 +277,14 @@ func TestOrchestrator_GetRollSession_AutoCreatesStandardArray(t *testing.T) {
 	t.Run("returns error for ability_scores when not found and AutoCreate is false", func(t *testing.T) {
 		mockRepo.EXPECT().
 			Get(ctx, dicesession.GetInput{
+				WorldID:  testWorldID,
 				EntityID: "draft-no-auto",
 				Context:  ContextAbilityScores,
 			}).
 			Return(nil, apierr.NotFound("session not found"))
 
 		output, err := o.GetRollSession(ctx, &GetRollSessionInput{
+			WorldID:    testWorldID,
 			EntityID:   "draft-no-auto",
 			Context:    ContextAbilityScores,
 			AutoCreate: false, // Explicit false - should NOT auto-create
@@ -285,12 +296,14 @@ func TestOrchestrator_GetRollSession_AutoCreatesStandardArray(t *testing.T) {
 	t.Run("returns error for non-ability_scores context when not found", func(t *testing.T) {
 		mockRepo.EXPECT().
 			Get(ctx, dicesession.GetInput{
+				WorldID:  testWorldID,
 				EntityID: "player-789",
 				Context:  "damage_rolls",
 			}).
 			Return(nil, apierr.NotFound("session not found"))
 
 		output, err := o.GetRollSession(ctx, &GetRollSessionInput{
+			WorldID:    testWorldID,
 			EntityID:   "player-789",
 			Context:    "damage_rolls",
 			AutoCreate: true, // Even with AutoCreate, non-ability_scores should error
@@ -315,12 +328,14 @@ func TestOrchestrator_GetRollSession_AutoCreatesStandardArray(t *testing.T) {
 
 		mockRepo.EXPECT().
 			Get(ctx, dicesession.GetInput{
+				WorldID:  testWorldID,
 				EntityID: "draft-existing",
 				Context:  ContextAbilityScores,
 			}).
 			Return(&dicesession.GetOutput{Session: existingSession}, nil)
 
 		output, err := o.GetRollSession(ctx, &GetRollSessionInput{
+			WorldID:  testWorldID,
 			EntityID: "draft-existing",
 			Context:  ContextAbilityScores,
 		})

@@ -17,8 +17,12 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
+
+// testWorldID is the trusted world every lobby character lookup is bound to.
+const testWorldID = "123456789012345678"
 
 // lobbyFixture is the shared setup and helper set every lobby-orchestrator
 // suite composes: the generated SDK mock, the dungeon registry mock, the
@@ -54,7 +58,7 @@ type lobbyFixture struct {
 }
 
 func (f *lobbyFixture) SetupTest() {
-	f.ctx = context.Background()
+	f.ctx = worldcontext.With(context.Background(), worldcontext.Value{WorldID: testWorldID})
 	f.ctrl = gomock.NewController(f.T())
 	f.charRepo = charactermock.NewMockRepository(f.ctrl)
 	f.manager = lobbymock.NewMockSessionManager(f.ctrl)
@@ -85,7 +89,7 @@ func (f *lobbyFixture) TearDownTest() {
 // character owned by playerID with the given display name and HP.
 func (f *lobbyFixture) expectCharacter(characterID, playerID, name string, hp, maxHP int) {
 	f.charRepo.EXPECT().
-		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
+		Get(gomock.Any(), characterrepo.GetInput{WorldID: testWorldID, ID: characterID}).
 		Return(&characterrepo.GetOutput{
 			Character: &entities.Character{
 				Data: &toolkitchar.Data{
@@ -98,7 +102,7 @@ func (f *lobbyFixture) expectCharacter(characterID, playerID, name string, hp, m
 // expectCharacterNotFound arms s.charRepo to return NotFound for characterID.
 func (f *lobbyFixture) expectCharacterNotFound(characterID string) {
 	f.charRepo.EXPECT().
-		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
+		Get(gomock.Any(), characterrepo.GetInput{WorldID: testWorldID, ID: characterID}).
 		Return(nil, apierr.NotFound("character not found"))
 }
 

@@ -64,8 +64,13 @@ type Service interface {
 	ListSpellsByLevel(ctx context.Context, input *ListSpellsByLevelInput) (*ListSpellsByLevelOutput, error)
 }
 
-// CreateDraftInput creates a new character draft
+// CreateDraftInput creates a new character draft.
+//
+// WorldID and PlayerID are the caller's trusted ownership: the world the
+// request was admitted into and the authenticated player. Both are mandatory
+// for a draft mutation.
 type CreateDraftInput struct {
+	WorldID   string
 	PlayerID  string
 	SessionID string // Optional
 }
@@ -75,9 +80,14 @@ type CreateDraftOutput struct {
 	Draft *character.DraftData
 }
 
-// GetDraftInput gets a draft by ID
+// GetDraftInput gets a draft by ID.
+//
+// WorldID and PlayerID bind the read to the caller's trusted ownership: a
+// draft in another world or owned by another player reads as NotFound.
 type GetDraftInput struct {
-	DraftID string
+	WorldID  string
+	PlayerID string
+	DraftID  string
 }
 
 // GetDraftOutput returns the draft and its progress
@@ -86,9 +96,11 @@ type GetDraftOutput struct {
 	Progress character.Progress
 }
 
-// DeleteDraftInput deletes a draft
+// DeleteDraftInput deletes a draft.
 type DeleteDraftInput struct {
-	DraftID string
+	WorldID  string
+	PlayerID string
+	DraftID  string
 }
 
 // DeleteDraftOutput confirms deletion
@@ -109,10 +121,12 @@ type GetRequirementsOutput struct {
 	Requirements *choices.Requirements
 }
 
-// SetNameInput sets the character name
+// SetNameInput sets the character name.
 type SetNameInput struct {
-	DraftID string
-	Name    string
+	WorldID  string
+	PlayerID string
+	DraftID  string
+	Name     string
 }
 
 // SetNameOutput returns updated draft
@@ -121,10 +135,12 @@ type SetNameOutput struct {
 	Progress character.Progress
 }
 
-// SetRaceInput sets the race with choices
+// SetRaceInput sets the race with choices.
 type SetRaceInput struct {
-	DraftID string
-	Input   *character.SetRaceInput
+	WorldID  string
+	PlayerID string
+	DraftID  string
+	Input    *character.SetRaceInput
 }
 
 // SetRaceOutput returns updated draft
@@ -134,10 +150,12 @@ type SetRaceOutput struct {
 	Validation *choices.ValidationResult
 }
 
-// SetClassInput sets the class with choices
+// SetClassInput sets the class with choices.
 type SetClassInput struct {
-	DraftID string
-	Input   *character.SetClassInput
+	WorldID  string
+	PlayerID string
+	DraftID  string
+	Input    *character.SetClassInput
 }
 
 // SetClassOutput returns updated draft
@@ -147,10 +165,12 @@ type SetClassOutput struct {
 	Validation *choices.ValidationResult
 }
 
-// SetBackgroundInput sets the background with choices
+// SetBackgroundInput sets the background with choices.
 type SetBackgroundInput struct {
-	DraftID string
-	Input   *character.SetBackgroundInput
+	WorldID  string
+	PlayerID string
+	DraftID  string
+	Input    *character.SetBackgroundInput
 }
 
 // SetBackgroundOutput returns updated draft
@@ -160,10 +180,12 @@ type SetBackgroundOutput struct {
 	Validation *choices.ValidationResult
 }
 
-// SetAbilityScoresInput sets ability scores
+// SetAbilityScoresInput sets ability scores.
 type SetAbilityScoresInput struct {
-	DraftID string
-	Input   *character.SetAbilityScoresInput
+	WorldID  string
+	PlayerID string
+	DraftID  string
+	Input    *character.SetAbilityScoresInput
 }
 
 // SetAbilityScoresOutput returns updated draft
@@ -172,8 +194,10 @@ type SetAbilityScoresOutput struct {
 	Progress character.Progress
 }
 
-// SetAbilityScoresFromRollsInput provides roll assignments for ability scores
+// SetAbilityScoresFromRollsInput provides roll assignments for ability scores.
 type SetAbilityScoresFromRollsInput struct {
+	WorldID         string
+	PlayerID        string
 	DraftID         string
 	RollAssignments map[abilities.Ability]string // Maps ability to roll ID
 }
@@ -184,9 +208,11 @@ type SetAbilityScoresFromRollsOutput struct {
 	Progress character.Progress
 }
 
-// ValidateDraftInput validates a draft
+// ValidateDraftInput validates a draft.
 type ValidateDraftInput struct {
-	DraftID string
+	WorldID  string
+	PlayerID string
+	DraftID  string
 }
 
 // ValidateDraftOutput returns validation results
@@ -196,9 +222,11 @@ type ValidateDraftOutput struct {
 	Validation *choices.ValidationResult
 }
 
-// FinalizeDraftInput finalizes a draft into a character
+// FinalizeDraftInput finalizes a draft into a character.
 type FinalizeDraftInput struct {
-	DraftID string
+	WorldID  string
+	PlayerID string
+	DraftID  string
 }
 
 // FinalizeDraftOutput returns the created character.
@@ -236,10 +264,15 @@ type ListBackgroundsOutput struct {
 	Backgrounds []*backgrounds.Data // Toolkit Data is self-contained with ID, Name(), Description()
 }
 
-// RollAbilityScoresInput requests ability score rolls
+// RollAbilityScoresInput requests ability score rolls.
+//
+// The dice session is stored under the authenticated PlayerID, never the
+// client-supplied draft id: an entity id the caller names is not authority.
 type RollAbilityScoresInput struct {
-	DraftID string
-	Method  string // "standard" (4d6 drop lowest), "classic" (3d6), etc.
+	WorldID  string
+	PlayerID string
+	DraftID  string
+	Method   string // "standard" (4d6 drop lowest), "classic" (3d6), etc.
 }
 
 // AbilityScoreRoll represents a single ability score roll
@@ -257,8 +290,9 @@ type RollAbilityScoresOutput struct {
 	SessionID string // For audit trail
 }
 
-// ListDraftsInput lists drafts with optional filters
+// ListDraftsInput lists drafts with optional filters.
 type ListDraftsInput struct {
+	WorldID   string
 	PlayerID  string
 	SessionID string // Optional filter
 	PageSize  int
@@ -271,8 +305,14 @@ type ListDraftsOutput struct {
 	NextPageToken string
 }
 
-// GetCharacterInput gets a character by ID
+// GetCharacterInput gets a character by ID.
+//
+// WorldID and PlayerID bind the read to the caller's trusted ownership: a
+// character in another world, or owned by another player, reads as NotFound.
+// The session SDK's own (party-capable) reads do NOT go through here.
 type GetCharacterInput struct {
+	WorldID     string
+	PlayerID    string
 	CharacterID string
 }
 
@@ -281,8 +321,10 @@ type GetCharacterOutput struct {
 	Character *entities.Character // includes appearance
 }
 
-// EquipItemInput equips an item to a slot
+// EquipItemInput equips an item to a slot.
 type EquipItemInput struct {
+	WorldID     string
+	PlayerID    string
 	CharacterID string
 	ItemID      string
 	Slot        character.InventorySlot
@@ -295,8 +337,10 @@ type EquipItemOutput struct {
 	View           *View               // Complete detached post-equip projection
 }
 
-// UnequipItemInput unequips an item from a slot
+// UnequipItemInput unequips an item from a slot.
 type UnequipItemInput struct {
+	WorldID     string
+	PlayerID    string
 	CharacterID string
 	Slot        character.InventorySlot
 }
@@ -308,8 +352,9 @@ type UnequipItemOutput struct {
 	View             *View               // Complete detached post-unequip projection
 }
 
-// ListCharactersInput lists characters with optional filters
+// ListCharactersInput lists characters with optional filters.
 type ListCharactersInput struct {
+	WorldID   string
 	PlayerID  string
 	SessionID string // Optional filter
 	PageSize  int
@@ -323,8 +368,10 @@ type ListCharactersOutput struct {
 	TotalSize     int
 }
 
-// DeleteCharacterInput deletes a character
+// DeleteCharacterInput deletes a character.
 type DeleteCharacterInput struct {
+	WorldID     string
+	PlayerID    string
 	CharacterID string
 }
 
@@ -368,6 +415,7 @@ type SpellInfo struct {
 
 // SetAppearanceInput sets the appearance for a draft.
 type SetAppearanceInput struct {
+	WorldID    string
 	DraftID    string
 	PlayerID   string
 	Appearance *customization.Appearance

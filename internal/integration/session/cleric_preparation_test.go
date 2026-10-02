@@ -1,7 +1,6 @@
 package session_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -39,8 +38,8 @@ func (s *ClericPreparationSuite) TestBardCreationRetainsFourKnownSpells() {
 	h := newAcceptanceHarness(s.T())
 	const playerID = "preparation-bard-player"
 	id := createFinalizedBaneBard(s.T(), h, playerID)
-	ctx := auth.WithPlayerID(context.Background(), playerID)
-	stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: id})
+	ctx := auth.WithPlayerID(worldCtx(), playerID)
+	stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: id})
 	s.Require().NoError(err)
 	expected := make([]string, 0, 4)
 	for _, spell := range []spells.Spell{spells.Bane, spells.Thunderwave, spells.DissonantWhispers, spells.Command} {

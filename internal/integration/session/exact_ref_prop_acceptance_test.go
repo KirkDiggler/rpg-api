@@ -1,7 +1,6 @@
 package session_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -34,10 +33,10 @@ import (
 // would pass every weaker check written here.
 func TestAcceptance_AnExactRefPropReachesTheWireWhole(t *testing.T) {
 	h := newAcceptanceHarness(t)
-	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+	ctx := auth.WithPlayerID(worldCtx(), "player-alice")
 
-	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+	_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter("alice", "player-alice")},
 	})
 	require.NoError(t, err)
 
@@ -47,7 +46,7 @@ func TestAcceptance_AnExactRefPropReachesTheWireWhole(t *testing.T) {
 	dungeon, err := sessionworld.Compile([]byte(dungeonstest.ExactRefPropsYAML))
 	require.NoError(t, err, "a dungeon placing a four-part props ref must compile")
 
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: "exact-ref-run", Encounter: "toy-room", World: dungeon.World,
 	})
 	require.NoError(t, err, "and the run must start on it")

@@ -49,7 +49,7 @@ func TestAcceptance_GuidingBoltNativeCastAndReplay(t *testing.T) {
 				_, castErr := h.handler.Cast(ctx, &sessionpb.CastRequest{Session: castSessionID, Member: id, DeclarationId: row.GetId(), Targets: []string{"skel-1"}})
 				require.NoError(t, castErr)
 			})
-			stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: id})
+			stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: id})
 			require.NoError(t, err)
 			require.Zero(t, stored.Character.Data.ActionEconomy.ActionsRemaining)
 			require.Equal(t, 1, stored.Character.Data.Resources[resources.SpellSlotLevel1].Current)
@@ -99,7 +99,7 @@ func TestAcceptance_GuidingBoltNativeCastAndReplay(t *testing.T) {
 				_, err = h.handler.EndTurn(ctx, &sessionpb.EndTurnRequest{Session: castSessionID, Member: id,
 					DeclarationId: currentDeclarationID(ctx, t, h.handler, castSessionID, id, sessionpb.Verb_VERB_END_TURN)})
 				require.NoError(t, err)
-				allyCtx := auth.WithPlayerID(context.Background(), "player-alice")
+				allyCtx := auth.WithPlayerID(worldCtx(), "player-alice")
 				attacked, attackErr := h.handler.Attack(allyCtx, &sessionpb.AttackRequest{Session: castSessionID, Attacker: "alice", Target: "skel-1",
 					DeclarationId: currentDeclarationID(allyCtx, t, h.handler, castSessionID, "alice", sessionpb.Verb_VERB_ATTACK)})
 				require.NoError(t, attackErr)
@@ -115,7 +115,7 @@ func TestAcceptance_GuidingBoltNativeCastAndReplay(t *testing.T) {
 
 func hasGuidingBoltLight(t *testing.T, h *acceptanceHarness) bool {
 	t.Helper()
-	stored, err := sessionorch.NewSessionRepository(h.redis, 0).GetSession(context.Background(), castSessionID)
+	stored, err := sessionorch.NewSessionRepository(h.redis, 0).GetSession(worldCtx(), castSessionID)
 	require.NoError(t, err)
 	for _, npc := range stored.NPCs {
 		if npc.ID != "skel-1" {
@@ -156,7 +156,7 @@ func TestAcceptance_GuidingBoltExpiresAfterNextCasterTurn(t *testing.T) {
 	end(ctx, id)
 	require.True(t, hasGuidingBoltLight(t, h), "casting turn does not expire the light")
 	reopenClericHost(t, h, sdk.StaleTargetRefuse)
-	end(auth.WithPlayerID(context.Background(), "player-alice"), "alice")
+	end(auth.WithPlayerID(worldCtx(), "player-alice"), "alice")
 	require.True(t, hasGuidingBoltLight(t, h), "the target and ally do not own the expiry clock")
 	end(ctx, id)
 	require.False(t, hasGuidingBoltLight(t, h), "the caster's next turn end expires persisted light")

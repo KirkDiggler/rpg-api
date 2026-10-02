@@ -61,8 +61,10 @@ var fallbackLanguages = []dnd5ev1alpha1.Language{
 
 // SeedLevelUpClassesInput contains the dependencies for the per-class fixture set.
 type SeedLevelUpClassesInput struct {
-	Client CharacterRPC
-	Store  CharacterStore
+	// WorldID is the explicit world every fixture is created in.
+	WorldID string
+	Client  CharacterRPC
+	Store   CharacterStore
 }
 
 // SeedLevelUpClassesOutput reports what was created, in class order.
@@ -112,13 +114,16 @@ func SeedLevelUpClasses(
 	if input.Store == nil {
 		return nil, fmt.Errorf("%s: character store is required to seed experience", levelUpClassesFixtureName)
 	}
+	if input.WorldID == "" {
+		return nil, fmt.Errorf("%s: world ID is required", levelUpClassesFixtureName)
+	}
 
 	// The catalog is static content, but every RPC on this service is
 	// authenticated, so the read is made under the fixture set's own name
 	// rather than under one of the twelve characters' -- there is no character
 	// yet when this runs, and borrowing one would imply the catalog it returns
 	// depends on who asked.
-	catalogCtx := authenticatedContext(ctx, levelUpClassesFixtureName)
+	catalogCtx := authenticatedContext(ctx, input.WorldID, levelUpClassesFixtureName)
 	catalog, err := input.Client.ListClasses(catalogCtx, &dnd5ev1alpha1.ListClassesRequest{PageSize: listPageSize})
 	if err != nil {
 		return nil, rpcError(levelUpClassesFixtureName, "ListClasses", err)
@@ -178,7 +183,7 @@ func seedOneLevelUpClass(
 		return nil, fmt.Errorf("%s: %w", identity, err)
 	}
 
-	identityCtx := authenticatedContext(ctx, identity)
+	identityCtx := authenticatedContext(ctx, input.WorldID, identity)
 	if delErr := deleteListedCharacters(identityCtx, input.Client, identity); delErr != nil {
 		return nil, delErr
 	}
@@ -200,7 +205,7 @@ func seedOneLevelUpClass(
 		return nil, err
 	}
 	if seedErr := seedLevelUpExperience(identityCtx, &SeedInput{
-		Client: input.Client, Store: input.Store,
+		WorldID: input.WorldID, Client: input.Client, Store: input.Store,
 	}, identity, characterID); seedErr != nil {
 		return nil, seedErr
 	}

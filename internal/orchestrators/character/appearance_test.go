@@ -29,7 +29,7 @@ func TestSetAppearance_MutatesToolkitDraftOnceAndReturnsStoredDraft(t *testing.T
 		Outfit: &customization.OutfitCustomization{PrimaryColorSRGB: uint32Ptr(0x102030)},
 	}
 
-	repo.EXPECT().Get(context.Background(), characterdraft.GetInput{ID: "draft-1"}).Return(&characterdraft.GetOutput{
+	repo.EXPECT().Get(context.Background(), characterdraft.GetInput{WorldID: testWorldID, ID: "draft-1"}).Return(&characterdraft.GetOutput{
 		Draft: stored,
 	}, nil)
 	repo.EXPECT().Update(context.Background(), gomock.Any()).DoAndReturn(
@@ -46,6 +46,7 @@ func TestSetAppearance_MutatesToolkitDraftOnceAndReturnsStoredDraft(t *testing.T
 	)
 
 	out, err := orch.SetAppearance(context.Background(), &SetAppearanceInput{
+		WorldID:    testWorldID,
 		DraftID:    "draft-1",
 		PlayerID:   "player-1",
 		Appearance: appearance,
@@ -60,11 +61,12 @@ func TestSetAppearance_RefusesToolkitErrorBeforeRepositoryUpdate(t *testing.T) {
 	repo := draftmock.NewMockRepository(ctrl)
 	orch := newAppearanceTestOrchestrator(t, repo)
 
-	repo.EXPECT().Get(context.Background(), characterdraft.GetInput{ID: "draft-1"}).Return(&characterdraft.GetOutput{
+	repo.EXPECT().Get(context.Background(), characterdraft.GetInput{WorldID: testWorldID, ID: "draft-1"}).Return(&characterdraft.GetOutput{
 		Draft: &entities.CharacterDraft{Data: &character.DraftData{ID: "draft-1", PlayerID: "player-1"}},
 	}, nil)
 
 	_, err := orch.SetAppearance(context.Background(), &SetAppearanceInput{
+		WorldID:  testWorldID,
 		DraftID:  "draft-1",
 		PlayerID: "player-1",
 		Appearance: &customization.Appearance{Hair: &customization.HairCustomization{
@@ -81,6 +83,7 @@ func TestSetAppearance_RequiresPlayerID(t *testing.T) {
 	orch := newAppearanceTestOrchestrator(t, repo)
 
 	_, err := orch.SetAppearance(context.Background(), &SetAppearanceInput{
+		WorldID:    testWorldID,
 		DraftID:    "draft-1",
 		Appearance: &customization.Appearance{},
 	})
@@ -94,16 +97,18 @@ func TestSetAppearance_MissingAndForeignDraftAreIndistinguishableWithoutUpdate(t
 	repo := draftmock.NewMockRepository(ctrl)
 	orch := newAppearanceTestOrchestrator(t, repo)
 
-	repo.EXPECT().Get(context.Background(), characterdraft.GetInput{ID: "draft-missing"}).Return(nil,
+	repo.EXPECT().Get(context.Background(), characterdraft.GetInput{WorldID: testWorldID, ID: "draft-missing"}).Return(nil,
 		apierr.NotFound("draft storage record missing"))
-	repo.EXPECT().Get(context.Background(), characterdraft.GetInput{ID: "draft-foreign"}).Return(&characterdraft.GetOutput{
+	repo.EXPECT().Get(context.Background(), characterdraft.GetInput{WorldID: testWorldID, ID: "draft-foreign"}).Return(&characterdraft.GetOutput{
 		Draft: &entities.CharacterDraft{Data: &character.DraftData{ID: "draft-foreign", PlayerID: "owner"}},
 	}, nil)
 
 	missing, missingErr := orch.SetAppearance(context.Background(), &SetAppearanceInput{
+		WorldID: testWorldID,
 		DraftID: "draft-missing", PlayerID: "caller", Appearance: &customization.Appearance{},
 	})
 	foreign, foreignErr := orch.SetAppearance(context.Background(), &SetAppearanceInput{
+		WorldID: testWorldID,
 		DraftID: "draft-foreign", PlayerID: "caller", Appearance: &customization.Appearance{},
 	})
 

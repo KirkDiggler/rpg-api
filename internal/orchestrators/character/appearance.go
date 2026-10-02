@@ -96,6 +96,7 @@ func (NoAppearanceNotifier) AppearanceChanged(_ context.Context, _ *AppearanceCh
 
 // equipmentWriteInput is one attempt at writing a character's equipment slots.
 type equipmentWriteInput struct {
+	WorldID     string
 	CharacterID string
 	// Slot is carried for the log alone — it says which slot moved when a
 	// notification fails, and decides nothing.
@@ -143,6 +144,7 @@ func (o *Orchestrator) writeEquipment(
 		changedConditions = &in.Conditions
 	}
 	patch, err := o.characterRepo.PatchEquipment(ctx, characterrepo.PatchEquipmentInput{
+		WorldID:                in.WorldID,
 		CharacterID:            in.CharacterID,
 		ExpectedVersion:        in.Current.Version,
 		ExpectedEquipmentSlots: maps.Clone(in.Current.Character.Data.EquipmentSlots),

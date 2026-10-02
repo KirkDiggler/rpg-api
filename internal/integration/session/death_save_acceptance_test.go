@@ -82,16 +82,16 @@ func newDeathSaveScene(t *testing.T) *deathSaveScene {
 	const sessionID = "death-save-run"
 
 	for _, row := range []struct{ id, player string }{{"alice", "player-alice"}, {"bob", "player-bob"}} {
-		_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-			Character: &entities.Character{Data: armedFighter(row.id, row.player)},
+		_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+			Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter(row.id, row.player)},
 		})
 		require.NoError(t, err)
 	}
-	_, err := h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err := h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: sessionID, Encounter: "death-save-encounter", World: buildThreeRoomTomb(t),
 	})
 	require.NoError(t, err)
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+	_, err = h.manager.Manager.Spawn(worldCtx(), &sdk.SpawnInput{
 		Session: sessionID, ID: "skel-1", Ref: refs.Monsters.Skeleton().String(), Position: at(19, 3),
 	})
 	require.NoError(t, err)
@@ -99,13 +99,13 @@ func newDeathSaveScene(t *testing.T) *deathSaveScene {
 		id, player string
 		col        int
 	}{{"alice", "player-alice", 18}, {"bob", "player-bob", 17}} {
-		_, err = h.handler.Join(auth.WithPlayerID(context.Background(), row.player), &sessionpb.JoinRequest{
+		_, err = h.handler.Join(auth.WithPlayerID(worldCtx(), row.player), &sessionpb.JoinRequest{
 			Session: sessionID, Member: row.id, Position: pbAt(row.col, 3),
 		})
 		require.NoError(t, err)
 	}
 
-	turn, err := h.manager.Manager.Turn(context.Background(), &sdk.TurnInput{Session: sessionID, Member: "alice"})
+	turn, err := h.manager.Manager.Turn(worldCtx(), &sdk.TurnInput{Session: sessionID, Member: "alice"})
 	require.NoError(t, err)
 	require.Equal(t, sdk.ClockTurn, turn.Clock)
 	require.Contains(t, []string{"alice", "bob"}, turn.Active, "monster turns are synchronously driven")
@@ -114,12 +114,12 @@ func newDeathSaveScene(t *testing.T) *deathSaveScene {
 		ally = "bob"
 	}
 	player := "player-" + actor
-	return &deathSaveScene{h: h, dice: dice, ctx: auth.WithPlayerID(context.Background(), player), session: sessionID, actor: actor, ally: ally}
+	return &deathSaveScene{h: h, dice: dice, ctx: auth.WithPlayerID(worldCtx(), player), session: sessionID, actor: actor, ally: ally}
 }
 
 func (s *deathSaveScene) seed(t *testing.T, member string, hp int, state *saves.DeathSaveState, grant bool) {
 	t.Helper()
-	got, err := s.h.charRepo.Get(context.Background(), characterrepo.GetInput{ID: member})
+	got, err := s.h.charRepo.Get(worldCtx(), characterrepo.GetInput{WorldID: sessionWorld, ID: member})
 	require.NoError(t, err)
 	got.Character.Data.HitPoints = hp
 	got.Character.Data.DeathSaveState = state
@@ -134,13 +134,13 @@ func (s *deathSaveScene) seed(t *testing.T, member string, hp int, state *saves.
 	} else {
 		delete(got.Character.Data.ActionEconomy.Granted, tkcharacter.GrantedDeathSaves)
 	}
-	_, err = s.h.charRepo.Update(context.Background(), characterrepo.UpdateInput{Character: got.Character})
+	_, err = s.h.charRepo.Update(worldCtx(), characterrepo.UpdateInput{Character: got.Character})
 	require.NoError(t, err)
 }
 
 func (s *deathSaveScene) stored(t *testing.T, member string) *tkcharacter.Data {
 	t.Helper()
-	got, err := s.h.charRepo.Get(context.Background(), characterrepo.GetInput{ID: member})
+	got, err := s.h.charRepo.Get(worldCtx(), characterrepo.GetInput{WorldID: sessionWorld, ID: member})
 	require.NoError(t, err)
 	return got.Character.Data
 }
@@ -221,7 +221,7 @@ type deathSaveWitness struct {
 
 func subscribeDeathSaveWitness(t *testing.T, s *deathSaveScene, member string) *deathSaveWitness {
 	t.Helper()
-	ctx, cancel := context.WithCancel(auth.WithPlayerID(context.Background(), "player-"+member))
+	ctx, cancel := context.WithCancel(auth.WithPlayerID(worldCtx(), "player-"+member))
 	stream := newRecordingStream(ctx)
 	done := make(chan error, 1)
 	go func() {
@@ -328,7 +328,7 @@ func deathSaveStateSnapshotOf(t *testing.T, s *deathSaveScene, member string) de
 	if data.ActionEconomy != nil {
 		snapshot.DeathSaveCapacity = data.ActionEconomy.Granted[tkcharacter.GrantedDeathSaves]
 	}
-	loaded, err := tkcharacter.Load(context.Background(), data)
+	loaded, err := tkcharacter.Load(worldCtx(), data)
 	require.NoError(t, err)
 	snapshot.LifeState = loaded.LifeState()
 	return snapshot
@@ -451,10 +451,10 @@ func TestAcceptance_DeathSaveAttackTransitionsAndTargetability(t *testing.T) {
 			if tc.weak {
 				data := s.stored(t, s.actor)
 				data.AbilityScores[abilities.STR] = 1
-				got, err := s.h.charRepo.Get(context.Background(), characterrepo.GetInput{ID: s.actor})
+				got, err := s.h.charRepo.Get(worldCtx(), characterrepo.GetInput{WorldID: sessionWorld, ID: s.actor})
 				require.NoError(t, err)
 				got.Character.Data = data
-				_, err = s.h.charRepo.Update(context.Background(), characterrepo.UpdateInput{Character: got.Character})
+				_, err = s.h.charRepo.Update(worldCtx(), characterrepo.UpdateInput{Character: got.Character})
 				require.NoError(t, err)
 			}
 			afford, err := s.h.handler.Afford(s.ctx, &sessionpb.AffordRequest{Session: s.session, Member: s.actor})
@@ -514,7 +514,7 @@ func TestAcceptance_DeathSaveAttackTransitionsAndTargetability(t *testing.T) {
 
 	t.Run("defeated monster is excluded while another hostile keeps the fight active", func(t *testing.T) {
 		s := newDeathSaveScene(t)
-		_, err := s.h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+		_, err := s.h.manager.Manager.Spawn(worldCtx(), &sdk.SpawnInput{
 			Session: s.session, ID: "skel-2", Ref: refs.Monsters.Skeleton().String(), Position: at(20, 3),
 		})
 		require.NoError(t, err)

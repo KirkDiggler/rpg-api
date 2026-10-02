@@ -22,10 +22,23 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 
 	lobbyv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
 )
+
+// lobbyTestWorldID is the trusted world the auth/role boundary installs on
+// every lobby request.
+const lobbyTestWorldID = "123456789012345678"
+
+// lobbyCtx installs the authenticated player and the trusted world.
+func lobbyCtx(playerID string) context.Context {
+	return worldcontext.With(
+		auth.WithPlayerID(context.Background(), playerID),
+		worldcontext.Value{WorldID: lobbyTestWorldID},
+	)
+}
 
 // HandlerSuite wires a real lobby orchestrator (in-memory lobby repo, a
 // miniredis-backed session.Manager for StartEncounter's sole remaining
@@ -48,7 +61,7 @@ type HandlerSuite struct {
 func (s *HandlerSuite) SetupTest() {
 	base, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
-	s.ctx = auth.WithPlayerID(base, "alice")
+	s.ctx = worldcontext.With(auth.WithPlayerID(base, "alice"), worldcontext.Value{WorldID: lobbyTestWorldID})
 
 	s.ctrl = gomock.NewController(s.T())
 	s.charRepo = charactermock.NewMockRepository(s.ctrl)
@@ -108,7 +121,7 @@ func (s *HandlerSuite) TearDownTest() {
 // have to pin).
 func (s *HandlerSuite) expectCharacter(characterID, playerID, name string, hp, maxHP int) {
 	s.charRepo.EXPECT().
-		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
+		Get(gomock.Any(), characterrepo.GetInput{WorldID: lobbyTestWorldID, ID: characterID}).
 		Return(&characterrepo.GetOutput{
 			Character: &entities.Character{
 				Data: &toolkitchar.Data{
@@ -143,7 +156,7 @@ func (s *HandlerSuite) expectCharacter(characterID, playerID, name string, hp, m
 
 func (s *HandlerSuite) expectCharacterNotFound(characterID string) {
 	s.charRepo.EXPECT().
-		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
+		Get(gomock.Any(), characterrepo.GetInput{WorldID: lobbyTestWorldID, ID: characterID}).
 		Return(nil, apierr.NotFound("character not found")).AnyTimes()
 }
 
@@ -152,7 +165,7 @@ func (s *HandlerSuite) expectCharacterNotFound(characterID string) {
 // need an existing lobby.
 func (s *HandlerSuite) createLobby(playerID, characterID, name string) (lobbyID, joinRef string) {
 	s.expectCharacter(characterID, playerID, name, 12, 12)
-	ctx := auth.WithPlayerID(context.Background(), playerID)
+	ctx := lobbyCtx(playerID)
 	resp, err := s.handler.CreateLobby(ctx, &lobbyv1alpha1.CreateLobbyRequest{
 		CampaignId: "campaign-1", CharacterId: characterID,
 	})

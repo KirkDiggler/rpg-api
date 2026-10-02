@@ -12,7 +12,6 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -40,7 +39,7 @@ func TestAttack_HappyPath(t *testing.T) {
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Attack(ctx, &sessionpb.AttackRequest{
 		Session: "sess-1", Attacker: "char-1", Target: "goblin-1", DeclarationId: "decl-attack-1",
 	})
@@ -81,7 +80,7 @@ func TestAttack_Paused_ReturnsRollAndTotalOnly(t *testing.T) {
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Attack(ctx, &sessionpb.AttackRequest{
 		Session: "sess-1", Attacker: "char-1", Target: "goblin-1", DeclarationId: "decl-attack-1",
 	})
@@ -106,7 +105,7 @@ func TestAttack_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr.EXPECT().Attack(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNotACharacter)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Attack(ctx, &sessionpb.AttackRequest{Session: "sess-1", Attacker: "goblin-1", Target: "char-1"})
 	requireCode(t, err, codes.FailedPrecondition)
 }
@@ -136,7 +135,7 @@ func TestAttack_NotATarget_IsAWorldRefusalNotAnInternalError(t *testing.T) {
 	mgr.EXPECT().Attack(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNotATarget)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Attack(ctx, &sessionpb.AttackRequest{
 		Session: "sess-1", Attacker: "char-1", Target: "merchant-1",
 	})

@@ -314,6 +314,7 @@ func (s *OrchestratorTestSuite) TestNew_InvalidConfig() {
 // CreateDraft tests
 func (s *OrchestratorTestSuite) TestCreateDraft_Success() {
 	input := &CreateDraftInput{
+		WorldID:  testWorldID,
 		PlayerID: s.testPlayerID,
 	}
 
@@ -348,7 +349,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft_InvalidInput() {
 		},
 		{
 			name:  "empty player ID",
-			input: &CreateDraftInput{PlayerID: ""},
+			input: &CreateDraftInput{WorldID: testWorldID, PlayerID: ""},
 		},
 	}
 
@@ -363,6 +364,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft_InvalidInput() {
 
 func (s *OrchestratorTestSuite) TestCreateDraft_SaveError() {
 	input := &CreateDraftInput{
+		WorldID:  testWorldID,
 		PlayerID: "player-123",
 	}
 
@@ -378,6 +380,7 @@ func (s *OrchestratorTestSuite) TestCreateDraft_SaveError() {
 // GetDraft tests
 func (s *OrchestratorTestSuite) TestGetDraft_Success() {
 	input := &GetDraftInput{
+		WorldID: testWorldID, PlayerID: s.testPlayerID,
 		DraftID: s.testDraftID,
 	}
 
@@ -402,6 +405,7 @@ func (s *OrchestratorTestSuite) TestGetDraft_Success() {
 
 func (s *OrchestratorTestSuite) TestGetDraft_NotFound() {
 	input := &GetDraftInput{
+		WorldID: testWorldID, PlayerID: s.testPlayerID,
 		DraftID: "draft-404",
 	}
 
@@ -424,7 +428,7 @@ func (s *OrchestratorTestSuite) TestGetDraft_InvalidInput() {
 		},
 		{
 			name:  "empty draft ID",
-			input: &GetDraftInput{DraftID: ""},
+			input: &GetDraftInput{WorldID: testWorldID, PlayerID: s.testPlayerID, DraftID: ""},
 		},
 	}
 
@@ -479,9 +483,13 @@ func (s *OrchestratorTestSuite) TestListBackgrounds_NilInput() {
 // DeleteDraft tests
 func (s *OrchestratorTestSuite) TestDeleteDraft_Success() {
 	input := &DeleteDraftInput{
+		WorldID: testWorldID, PlayerID: s.testPlayerID,
 		DraftID: "draft-123",
 	}
 
+	s.mockDraftRepo.EXPECT().Get(s.ctx, gomock.Any()).Return(&characterdraft.GetOutput{
+		Draft: &entities.CharacterDraft{WorldID: testWorldID, Data: &character.DraftData{ID: "draft-123", PlayerID: s.testPlayerID}},
+	}, nil)
 	s.mockDraftRepo.EXPECT().Delete(s.ctx, gomock.Any()).DoAndReturn(
 		func(_ context.Context, input characterdraft.DeleteInput) (*characterdraft.DeleteOutput, error) {
 			s.Assert().Equal("draft-123", input.ID)
@@ -497,9 +505,13 @@ func (s *OrchestratorTestSuite) TestDeleteDraft_Success() {
 
 func (s *OrchestratorTestSuite) TestDeleteDraft_Error() {
 	input := &DeleteDraftInput{
+		WorldID: testWorldID, PlayerID: s.testPlayerID,
 		DraftID: "draft-123",
 	}
 
+	s.mockDraftRepo.EXPECT().Get(s.ctx, gomock.Any()).Return(&characterdraft.GetOutput{
+		Draft: &entities.CharacterDraft{WorldID: testWorldID, Data: &character.DraftData{ID: "draft-123", PlayerID: s.testPlayerID}},
+	}, nil)
 	s.mockDraftRepo.EXPECT().Delete(s.ctx, gomock.Any()).Return(nil, errors.New("delete failed"))
 
 	output, err := s.orchestrator.DeleteDraft(s.ctx, input)
@@ -511,6 +523,7 @@ func (s *OrchestratorTestSuite) TestDeleteDraft_Error() {
 // SetName tests
 func (s *OrchestratorTestSuite) TestSetName_Success() {
 	input := &SetNameInput{
+		WorldID: testWorldID, PlayerID: s.testPlayerID,
 		DraftID: "draft-123",
 		Name:    "Aragorn",
 	}
@@ -554,11 +567,11 @@ func (s *OrchestratorTestSuite) TestSetName_InvalidInput() {
 		},
 		{
 			name:  "empty draft ID",
-			input: &SetNameInput{DraftID: "", Name: "Aragorn"},
+			input: &SetNameInput{WorldID: testWorldID, PlayerID: s.testPlayerID, DraftID: "", Name: "Aragorn"},
 		},
 		{
 			name:  "empty name",
-			input: &SetNameInput{DraftID: "draft-123", Name: ""},
+			input: &SetNameInput{WorldID: testWorldID, PlayerID: s.testPlayerID, DraftID: "draft-123", Name: ""},
 		},
 	}
 
@@ -574,6 +587,7 @@ func (s *OrchestratorTestSuite) TestSetName_InvalidInput() {
 // SetRace tests
 func (s *OrchestratorTestSuite) TestSetRace_Success() {
 	input := &SetRaceInput{
+		WorldID: testWorldID, PlayerID: s.testPlayerID,
 		DraftID: "draft-123",
 		Input: &character.SetRaceInput{
 			RaceID:    races.Elf,
@@ -624,11 +638,11 @@ func (s *OrchestratorTestSuite) TestSetRace_InvalidInput() {
 		},
 		{
 			name:  "empty draft ID",
-			input: &SetRaceInput{DraftID: "", Input: &character.SetRaceInput{}},
+			input: &SetRaceInput{WorldID: testWorldID, PlayerID: s.testPlayerID, DraftID: "", Input: &character.SetRaceInput{}},
 		},
 		{
 			name:  "nil race input",
-			input: &SetRaceInput{DraftID: "draft-123", Input: nil},
+			input: &SetRaceInput{WorldID: testWorldID, PlayerID: s.testPlayerID, DraftID: "draft-123", Input: nil},
 		},
 	}
 
@@ -644,6 +658,7 @@ func (s *OrchestratorTestSuite) TestSetRace_InvalidInput() {
 // SetClass tests
 func (s *OrchestratorTestSuite) TestSetClass_Success() {
 	input := &SetClassInput{
+		WorldID: testWorldID, PlayerID: s.testPlayerID,
 		DraftID: "draft-123",
 		Input: &character.SetClassInput{
 			ClassID: classes.Fighter,
@@ -687,6 +702,7 @@ func (s *OrchestratorTestSuite) TestSetClass_Success() {
 // SetBackground tests
 func (s *OrchestratorTestSuite) TestSetBackground_Success() {
 	input := &SetBackgroundInput{
+		WorldID: testWorldID, PlayerID: s.testPlayerID,
 		DraftID: "draft-123",
 		Input: &character.SetBackgroundInput{
 			BackgroundID: backgrounds.Soldier,
@@ -734,6 +750,7 @@ func (s *OrchestratorTestSuite) TestSetBackground_Success() {
 // SetAbilityScores tests
 func (s *OrchestratorTestSuite) TestSetAbilityScores_Success() {
 	input := &SetAbilityScoresInput{
+		WorldID: testWorldID, PlayerID: s.testPlayerID,
 		DraftID: "draft-123",
 		Input: &character.SetAbilityScoresInput{
 			Scores: shared.AbilityScores{
@@ -782,6 +799,7 @@ func (s *OrchestratorTestSuite) TestSetAbilityScores_Success() {
 // ValidateDraft tests
 func (s *OrchestratorTestSuite) TestValidateDraft_ReturnsToolkitResult() {
 	input := &ValidateDraftInput{
+		WorldID: testWorldID, PlayerID: s.testPlayerID,
 		DraftID: s.testDraftID,
 	}
 
@@ -805,6 +823,7 @@ func (s *OrchestratorTestSuite) TestValidateDraft_ReturnsToolkitResult() {
 // FinalizeDraft tests
 func (s *OrchestratorTestSuite) TestFinalizeDraft_IncompleteError() {
 	input := &FinalizeDraftInput{
+		WorldID: testWorldID, PlayerID: s.testPlayerID,
 		DraftID: "draft-123",
 	}
 
@@ -876,6 +895,7 @@ func (s *OrchestratorTestSuite) TestFighterSetClass() {
 func (s *OrchestratorTestSuite) TestFighterCreationViaOrchestrator() {
 	// Create draft
 	createDraftInput := &CreateDraftInput{
+		WorldID:  testWorldID,
 		PlayerID: s.testPlayerID,
 	}
 
@@ -890,6 +910,7 @@ func (s *OrchestratorTestSuite) TestFighterCreationViaOrchestrator() {
 
 	// Use the valid fighter input from suite
 	setClassInput := &SetClassInput{
+		WorldID: testWorldID, PlayerID: s.testPlayerID,
 		DraftID: draftID,
 		Input:   s.validFighter,
 	}
@@ -1041,12 +1062,14 @@ func (s *OrchestratorTestSuite) TestRollAbilityScores() {
 				{RollID: "roll-6", Total: 9, Dice: []int{3, 3, 3, 2}, Dropped: []int{2}},
 			},
 			Session: &dicesession.DiceSession{
-				EntityID: "draft-123",
+				WorldID:  testWorldID,
+				EntityID: s.testPlayerID,
 				Context:  "ability_scores",
 			},
 		}, nil)
 
 	result, err := s.orchestrator.RollAbilityScores(context.Background(), &RollAbilityScoresInput{
+		WorldID: testWorldID, PlayerID: s.testPlayerID,
 		DraftID: "draft-123",
 		Method:  "standard",
 	})
@@ -1054,7 +1077,7 @@ func (s *OrchestratorTestSuite) TestRollAbilityScores() {
 	s.NoError(err)
 	s.NotNil(result)
 	s.Equal(6, len(result.Rolls))
-	s.Equal("draft-123:ability_scores", result.SessionID)
+	s.Equal(s.testPlayerID+":ability_scores", result.SessionID)
 
 	// Verify first roll details
 	s.Equal(16, result.Rolls[0].Total)
@@ -1065,15 +1088,26 @@ func (s *OrchestratorTestSuite) TestRollAbilityScores() {
 func (s *OrchestratorTestSuite) TestDeleteCharacter_Success() {
 	characterID := "char-123"
 
+	// The ownership gate loads the character before deleting so a foreign
+	// character is refused before any write.
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, gomock.Any()).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{
+			WorldID: testWorldID,
+			Data:    &character.Data{ID: characterID, PlayerID: s.testPlayerID},
+		}}, nil)
+
 	// Mock the repository delete call
 	s.mockCharacterRepo.EXPECT().
 		Delete(s.ctx, characterrepo.DeleteInput{
-			ID: characterID,
+			WorldID: testWorldID,
+			ID:      characterID,
 		}).
 		Return(&characterrepo.DeleteOutput{}, nil)
 
 	// Call DeleteCharacter
 	output, err := s.orchestrator.DeleteCharacter(s.ctx, &DeleteCharacterInput{
+		WorldID: testWorldID, PlayerID: s.testPlayerID,
 		CharacterID: characterID,
 	})
 
@@ -1095,7 +1129,7 @@ func (s *OrchestratorTestSuite) TestDeleteCharacter_InvalidInput() {
 		},
 		{
 			name:  "empty character ID",
-			input: &DeleteCharacterInput{CharacterID: ""},
+			input: &DeleteCharacterInput{WorldID: testWorldID, PlayerID: s.testPlayerID, CharacterID: ""},
 			error: "character ID is required",
 		},
 	}
@@ -1113,36 +1147,46 @@ func (s *OrchestratorTestSuite) TestDeleteCharacter_InvalidInput() {
 func (s *OrchestratorTestSuite) TestDeleteCharacter_NotFound() {
 	characterID := "char-404"
 
-	// Mock the repository delete call to return not found
+	// A missing/foreign character is a NotFound from the ownership gate, so
+	// the repository's own Delete (and its NotFound) is never reached.
 	s.mockCharacterRepo.EXPECT().
-		Delete(s.ctx, characterrepo.DeleteInput{
-			ID: characterID,
-		}).
+		Get(s.ctx, gomock.Any()).
 		Return(nil, rpgerrors.NotFound("character not found"))
 
 	// Call DeleteCharacter
 	output, err := s.orchestrator.DeleteCharacter(s.ctx, &DeleteCharacterInput{
+		WorldID: testWorldID, PlayerID: s.testPlayerID,
 		CharacterID: characterID,
 	})
 
 	// Assert error
 	s.Error(err)
-	s.Contains(err.Error(), "failed to delete character")
+	s.True(rpgerrors.IsNotFound(err))
+	s.Contains(err.Error(), "not found")
 	s.Nil(output)
 }
 
 func (s *OrchestratorTestSuite) TestDeleteCharacter_RepositoryError() {
 	characterID := "char-123"
 
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, gomock.Any()).
+		Return(&characterrepo.GetOutput{Character: &entities.Character{
+			WorldID: testWorldID,
+			Data:    &character.Data{ID: characterID, PlayerID: s.testPlayerID},
+		}}, nil)
+
 	// Mock the repository delete call to return an error
 	s.mockCharacterRepo.EXPECT().
 		Delete(s.ctx, characterrepo.DeleteInput{
-			ID: characterID,
+			WorldID: testWorldID,
+			ID:      characterID,
 		}).
 		Return(nil, rpgerrors.Internal("database connection failed"))
 
 	// Call DeleteCharacter
 	output, err := s.orchestrator.DeleteCharacter(s.ctx, &DeleteCharacterInput{
+		WorldID: testWorldID, PlayerID: s.testPlayerID,
 		CharacterID: characterID,
 	})
 

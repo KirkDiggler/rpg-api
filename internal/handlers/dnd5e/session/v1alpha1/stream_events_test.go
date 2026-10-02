@@ -19,7 +19,6 @@ import (
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -63,7 +62,7 @@ func (s *capturingStream) WaitForSend(t *testing.T, timeout time.Duration) *sess
 
 func ownedCharacterRepo(ctrl *gomock.Controller, member, playerID string) characterrepo.Repository {
 	repo := charactermock.NewMockRepository(ctrl)
-	repo.EXPECT().Get(gomock.Any(), characterrepo.GetInput{ID: member}).Return(
+	repo.EXPECT().Get(gomock.Any(), characterrepo.GetInput{WorldID: sessionTestWorldID, ID: member}).Return(
 		&characterrepo.GetOutput{Character: &entities.Character{Data: &tkcharacter.Data{ID: member, PlayerID: playerID}}}, nil,
 	).AnyTimes()
 	return repo
@@ -102,7 +101,7 @@ func TestStreamEvents_Unauthenticated_Errors(t *testing.T) {
 func TestStreamEvents_EmptyMember_InvalidArgument(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	stream := newCapturingStream(ctx)
 	err := h.StreamEvents(&sessionpb.StreamEventsRequest{Session: "sess-1"}, stream)
 	requireCode(t, err, codes.InvalidArgument)
@@ -111,7 +110,7 @@ func TestStreamEvents_EmptyMember_InvalidArgument(t *testing.T) {
 func TestStreamEvents_CallerDoesNotOwnMember_PermissionDenied(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "bob"), broker: sessionorch.NewBroker()}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	stream := newCapturingStream(ctx)
 	err := h.StreamEvents(&sessionpb.StreamEventsRequest{Session: "sess-1", Member: "char-1"}, stream)
 	requireCode(t, err, codes.PermissionDenied)
@@ -122,7 +121,7 @@ func TestStreamEvents_ForwardsPublishedEventsVerbatim(t *testing.T) {
 	broker := sessionorch.NewBroker()
 	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), broker: broker}
 
-	ctx, cancel := context.WithCancel(auth.WithPlayerID(context.Background(), "alice"))
+	ctx, cancel := context.WithCancel(authedCtx("alice"))
 	defer cancel()
 	stream := newCapturingStream(ctx)
 
@@ -157,7 +156,7 @@ func TestStreamEvents_DoesNotReceiveEventsAddressedToOthers(t *testing.T) {
 	broker := sessionorch.NewBroker()
 	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), broker: broker}
 
-	ctx, cancel := context.WithCancel(auth.WithPlayerID(context.Background(), "alice"))
+	ctx, cancel := context.WithCancel(authedCtx("alice"))
 	defer cancel()
 	stream := newCapturingStream(ctx)
 
@@ -292,7 +291,7 @@ func TestStreamEvents_ForwardsTypedBodyPerKind(t *testing.T) {
 			broker := sessionorch.NewBroker()
 			h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), broker: broker}
 
-			ctx, cancel := context.WithCancel(auth.WithPlayerID(context.Background(), "alice"))
+			ctx, cancel := context.WithCancel(authedCtx("alice"))
 			defer cancel()
 			stream := newCapturingStream(ctx)
 
@@ -366,7 +365,7 @@ func TestStreamEvents_SendTrace_OnlyLogsAfterASuccessfulSend(t *testing.T) {
 	broker := sessionorch.NewBroker()
 	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), broker: broker}
 
-	ctx, cancel := context.WithCancel(auth.WithPlayerID(context.Background(), "alice"))
+	ctx, cancel := context.WithCancel(authedCtx("alice"))
 	defer cancel()
 	stream := newCapturingStream(ctx)
 
@@ -394,7 +393,7 @@ func TestStreamEvents_SendTrace_LogsFailureNotForwardedWhenSendErrors(t *testing
 	broker := sessionorch.NewBroker()
 	h := &Handler{characters: ownedCharacterRepo(ctrl, "char-1", "alice"), broker: broker}
 
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	// A stream whose Send always fails: a zero-capacity channel nobody
 	// reads from means the non-blocking select inside Send can never take
 	// its success branch.
