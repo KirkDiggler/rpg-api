@@ -19,6 +19,7 @@ import (
 	customizationconverter "github.com/KirkDiggler/rpg-api/internal/converters/customization"
 	characterorchestrator "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/orchestrators/character/mock"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 	"github.com/KirkDiggler/rpg-toolkit/rpgerr"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
@@ -67,12 +68,13 @@ func TestUpdateAppearance_DelegatesCompleteAppearanceAndReturnsServiceDraft(t *t
 	storedDraft := &toolkitchar.DraftData{ID: draftID, Appearance: expectedAppearance}
 
 	service.EXPECT().SetAppearance(gomock.Any(), &characterorchestrator.SetAppearanceInput{
+		WorldID:    testWorldID,
 		DraftID:    draftID,
 		PlayerID:   "player-1",
 		Appearance: expectedAppearance,
 	}).Return(&characterorchestrator.SetAppearanceOutput{Draft: storedDraft}, nil)
 
-	response, err := handler.UpdateAppearance(auth.WithPlayerID(context.Background(), "player-1"), &dnd5ev1alpha1.UpdateAppearanceRequest{
+	response, err := handler.UpdateAppearance(authedCtx("player-1"), &dnd5ev1alpha1.UpdateAppearanceRequest{
 		DraftId:    draftID,
 		Appearance: requestAppearance,
 	})
@@ -114,7 +116,7 @@ func TestUpdateAppearance_DelegatesMalformedSemanticsToToolkit(t *testing.T) {
 		},
 	)
 
-	response, err := handler.UpdateAppearance(auth.WithPlayerID(context.Background(), "player-1"), &dnd5ev1alpha1.UpdateAppearanceRequest{
+	response, err := handler.UpdateAppearance(authedCtx("player-1"), &dnd5ev1alpha1.UpdateAppearanceRequest{
 		DraftId:    draftID,
 		Appearance: requestAppearance,
 	})
@@ -142,7 +144,7 @@ func TestUpdateAppearance_UsesReturnedDraftWithoutRefetch(t *testing.T) {
 		Draft: &toolkitchar.DraftData{ID: draftID, Name: "stored-name", Appearance: &customization.Appearance{}},
 	}, nil)
 
-	response, err := handler.UpdateAppearance(auth.WithPlayerID(context.Background(), "player-1"), request)
+	response, err := handler.UpdateAppearance(authedCtx("player-1"), request)
 	require.NoError(t, err)
 	require.Equal(t, "stored-name", response.GetDraft().GetName())
 }
@@ -165,7 +167,7 @@ func TestUpdateAppearance_RejectsOnlyTransportEnvelopeFailures(t *testing.T) {
 			handler, err := NewHandler(&HandlerConfig{CharacterService: service, Sessions: &fakeSessions{}})
 			require.NoError(t, err)
 
-			response, err := handler.UpdateAppearance(auth.WithPlayerID(context.Background(), "player-1"), tt.req)
+			response, err := handler.UpdateAppearance(authedCtx("player-1"), tt.req)
 			require.Nil(t, response)
 			require.Equal(t, codes.InvalidArgument, status.Code(err))
 			require.Equal(t, tt.msg, status.Convert(err).Message())
@@ -182,7 +184,7 @@ func TestUpdateAppearance_NotFoundUsesLegacyMessage(t *testing.T) {
 	service.EXPECT().SetAppearance(gomock.Any(), gomock.Any()).Return(nil,
 		apierr.NotFound("draft storage record missing"))
 
-	response, err := handler.UpdateAppearance(auth.WithPlayerID(context.Background(), "player-1"), &dnd5ev1alpha1.UpdateAppearanceRequest{
+	response, err := handler.UpdateAppearance(authedCtx("player-1"), &dnd5ev1alpha1.UpdateAppearanceRequest{
 		DraftId:    "draft-missing",
 		Appearance: &dnd5ev1alpha1.Appearance{},
 	})
@@ -200,11 +202,20 @@ func TestUpdateAppearance_TranslatesToolkitErrors(t *testing.T) {
 	service.EXPECT().SetAppearance(gomock.Any(), gomock.Any()).Return(nil,
 		rpgerr.New(rpgerr.CodeInvalidArgument, "appearance.hair.scalp.selection is required"))
 
-	response, err := handler.UpdateAppearance(auth.WithPlayerID(context.Background(), "player-1"), &dnd5ev1alpha1.UpdateAppearanceRequest{
+	response, err := handler.UpdateAppearance(authedCtx("player-1"), &dnd5ev1alpha1.UpdateAppearanceRequest{
 		DraftId:    "draft-error",
 		Appearance: &dnd5ev1alpha1.Appearance{},
 	})
 	require.Nil(t, response)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 	require.Equal(t, "appearance.hair.scalp.selection is required", status.Convert(err).Message())
+}
+
+// authedCtx installs the authenticated player and the trusted world the
+// auth/role boundary would before a handler RPC runs.
+func authedCtx(playerID string) context.Context {
+	return worldcontext.With(
+		auth.WithPlayerID(context.Background(), playerID),
+		worldcontext.Value{WorldID: testWorldID},
+	)
 }

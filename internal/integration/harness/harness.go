@@ -48,6 +48,16 @@ import (
 	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 	sessionpresentationrepo "github.com/KirkDiggler/rpg-api/internal/repositories/sessionpresentation"
+	worldrepo "github.com/KirkDiggler/rpg-api/internal/repositories/world"
+)
+
+// Dev-world fixture IDs for the #522 local two-world simulation. The harness
+// admits Dev credentials into an allowlist of exactly these two worlds so a
+// test can prove the same player's records are isolated per world on one
+// server and one Redis.
+const (
+	DevWorldA = "123456789012345678"
+	DevWorldB = "223456789012345678"
 )
 
 const bufSize = 1024 * 1024
@@ -297,17 +307,54 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 		return fmt.Errorf("dice handler: %w", err)
 	}
 
-	// Create gRPC server with auth interceptor
+	// Create gRPC server with the REAL auth and role-access interceptors,
+	// mirroring cmd/server: the resolver installs the trusted world (default
+	// DevWorldA, allowlisted DevWorldB via x-rpg-guild-id) and RoleAccess
+	// installs worldcontext only after admission. Tests therefore exercise
+	// the production world boundary, not a bypass.
 	discordClient := auth.NewDiscordClient()
 	tokenCache := auth.NewTokenCache(5 * time.Minute)
-	authConfig := &auth.InterceptorConfig{DevMode: cfg.DevMode}
+	authConfig := &auth.InterceptorConfig{DevMode: cfg.DevMode, WorldScopedStreams: true}
+
+	membershipCache, err := auth.NewMembershipCache(&auth.MembershipCacheConfig{
+		TTL: 30 * time.Second, MaxEntries: 1024, Now: time.Now,
+	})
+	if err != nil {
+		return fmt.Errorf("membership cache: %w", err)
+	}
+	resolverConfig := &auth.WorldResolverConfig{
+		MembershipVerifier: discordClient,
+		IdentityCache:      tokenCache,
+		MembershipCache:    membershipCache,
+	}
+	if cfg.DevMode {
+		resolverConfig.DevWorldID = DevWorldA
+		resolverConfig.DevWorldIDs = []string{DevWorldA, DevWorldB}
+	}
+	worldResolver, err := auth.NewWorldResolver(resolverConfig)
+	if err != nil {
+		return fmt.Errorf("world resolver: %w", err)
+	}
+	worldRepository, err := worldrepo.NewRedis(&worldrepo.RedisConfig{Client: ts.redisClient})
+	if err != nil {
+		return fmt.Errorf("world repository: %w", err)
+	}
+	roleAccess, err := auth.NewRoleAccess(&auth.RoleAccessConfig{
+		Resolver: worldResolver, Worlds: worldRepository,
+		DevelopmentPermissions: auth.PermissionPlay,
+	})
+	if err != nil {
+		return fmt.Errorf("role access: %w", err)
+	}
 
 	ts.grpcServer = grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
 			auth.UnaryAuthInterceptor(discordClient, tokenCache, authConfig),
+			roleAccess.UnaryInterceptor(),
 		),
 		grpc.ChainStreamInterceptor(
 			auth.StreamAuthInterceptor(discordClient, tokenCache, authConfig),
+			roleAccess.StreamInterceptor(),
 		),
 	)
 

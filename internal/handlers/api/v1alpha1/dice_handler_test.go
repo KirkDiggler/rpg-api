@@ -16,7 +16,14 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
 	dicemock "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice/mock"
 	dicesession "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 )
+
+const testWorldID = "123456789012345678"
+
+func worldCtx() context.Context {
+	return worldcontext.With(context.Background(), worldcontext.Value{WorldID: testWorldID})
+}
 
 type DiceHandlerTestSuite struct {
 	suite.Suite
@@ -45,7 +52,7 @@ func (s *DiceHandlerTestSuite) TearDownTest() {
 }
 
 func (s *DiceHandlerTestSuite) TestRollDice_Success() {
-	ctx := context.Background()
+	ctx := worldCtx()
 	entityID := "player_123"
 	contextStr := "character_draft_456_abilities"
 	notation := "4d6"
@@ -72,6 +79,7 @@ func (s *DiceHandlerTestSuite) TestRollDice_Success() {
 
 	s.mockDice.EXPECT().
 		RollDice(ctx, &dice.RollDiceInput{
+			WorldID:     testWorldID,
 			EntityID:    entityID,
 			Context:     contextStr,
 			Notation:    notation,
@@ -153,7 +161,7 @@ func (s *DiceHandlerTestSuite) TestRollDice_ValidationErrors() {
 }
 
 func (s *DiceHandlerTestSuite) TestGetRollSession_Success() {
-	ctx := context.Background()
+	ctx := worldCtx()
 	entityID := "player_123"
 	contextStr := "character_draft_456_abilities"
 
@@ -185,6 +193,7 @@ func (s *DiceHandlerTestSuite) TestGetRollSession_Success() {
 
 	s.mockDice.EXPECT().
 		GetRollSession(ctx, &dice.GetRollSessionInput{
+			WorldID:  testWorldID,
 			EntityID: entityID,
 			Context:  contextStr,
 		}).
@@ -210,7 +219,7 @@ func (s *DiceHandlerTestSuite) TestGetRollSession_Success() {
 }
 
 func (s *DiceHandlerTestSuite) TestGetRollSession_NotFound() {
-	ctx := context.Background()
+	ctx := worldCtx()
 	entityID := "player_123"
 	contextStr := "non_existent"
 
@@ -233,12 +242,13 @@ func (s *DiceHandlerTestSuite) TestGetRollSession_NotFound() {
 }
 
 func (s *DiceHandlerTestSuite) TestClearRollSession_Success() {
-	ctx := context.Background()
+	ctx := worldCtx()
 	entityID := "player_123"
 	contextStr := "character_draft_456_abilities"
 
 	s.mockDice.EXPECT().
 		ClearRollSession(ctx, &dice.ClearRollSessionInput{
+			WorldID:  testWorldID,
 			EntityID: entityID,
 			Context:  contextStr,
 		}).

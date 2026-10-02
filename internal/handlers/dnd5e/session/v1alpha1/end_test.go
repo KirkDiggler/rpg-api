@@ -11,7 +11,6 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -29,7 +28,7 @@ func TestEnd_HappyPath(t *testing.T) {
 	}, nil)
 
 	h := &Handler{manager: mgr}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.End(ctx, &sessionpb.EndRequest{Session: "sess-1", Ending: "victory"})
 	require.NoError(t, err)
 	require.Equal(t, "victory", resp.GetOutcome().GetEnding())
@@ -41,7 +40,7 @@ func TestEnd_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr.EXPECT().End(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNoEnding)
 
 	h := &Handler{manager: mgr}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.End(ctx, &sessionpb.EndRequest{Session: "sess-1", Ending: "bogus"})
 	requireCode(t, err, codes.NotFound)
 }

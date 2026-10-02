@@ -5,7 +5,9 @@ import (
 	"context"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
+	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/dice"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
 )
@@ -40,6 +42,31 @@ func NewDiceHandler(cfg *DiceHandlerConfig) (*DiceHandler, error) {
 	}, nil
 }
 
+// trustedWorld reads the world installed by the auth/role boundary. A missing
+// world fails closed rather than letting dice state land in an unnamed world.
+func trustedWorld(ctx context.Context) (string, error) {
+	world, ok := worldcontext.Get(ctx)
+	if !ok || world.WorldID == "" {
+		return "", apierr.FailedPrecondition("trusted world context is required")
+	}
+	return world.WorldID, nil
+}
+
+// creationEntityID binds the ability_scores roll session to the authenticated
+// player. The measured creation consumer sends entity_id = playerId, and a
+// client-supplied entity id is never authority: a request naming a different
+// entity for creation is refused rather than written under that name.
+func creationEntityID(ctx context.Context, requested string) (string, error) {
+	playerID := auth.GetPlayerID(ctx)
+	if playerID == "" {
+		return "", apierr.Unauthenticated("player not authenticated")
+	}
+	if requested != playerID {
+		return "", apierr.PermissionDenied("ability_scores rolls belong to the authenticated player")
+	}
+	return playerID, nil
+}
+
 // RollDice rolls dice using the specified notation and stores the result in a session
 func (h *DiceHandler) RollDice(
 	ctx context.Context,
@@ -55,9 +82,23 @@ func (h *DiceHandler) RollDice(
 		return nil, apierr.ToGRPCError(apierr.InvalidArgument("notation is required"))
 	}
 
+	worldID, err := trustedWorld(ctx)
+	if err != nil {
+		return nil, apierr.ToGRPCError(err)
+	}
+
+	entityID := req.EntityId
+	if req.Context == dice.ContextAbilityScores {
+		entityID, err = creationEntityID(ctx, req.EntityId)
+		if err != nil {
+			return nil, apierr.ToGRPCError(err)
+		}
+	}
+
 	// Use the dice service to roll dice
 	diceInput := &dice.RollDiceInput{
-		EntityID:    req.EntityId,
+		WorldID:     worldID,
+		EntityID:    entityID,
 		Context:     req.Context,
 		Notation:    req.Notation,
 		Description: req.ModifierDescription,
@@ -109,10 +150,24 @@ func (h *DiceHandler) GetRollSession(
 		return nil, apierr.ToGRPCError(apierr.InvalidArgument("context is required"))
 	}
 
+	worldID, err := trustedWorld(ctx)
+	if err != nil {
+		return nil, apierr.ToGRPCError(err)
+	}
+
+	entityID := req.EntityId
+	if req.Context == dice.ContextAbilityScores {
+		entityID, err = creationEntityID(ctx, req.EntityId)
+		if err != nil {
+			return nil, apierr.ToGRPCError(err)
+		}
+	}
+
 	// Use the dice service to get the session
 	// AutoCreate for ability_scores so UI doesn't need to click roll button
 	diceInput := &dice.GetRollSessionInput{
-		EntityID:   req.EntityId,
+		WorldID:    worldID,
+		EntityID:   entityID,
 		Context:    req.Context,
 		AutoCreate: req.Context == dice.ContextAbilityScores,
 	}
@@ -156,9 +211,23 @@ func (h *DiceHandler) ClearRollSession(
 		return nil, apierr.ToGRPCError(apierr.InvalidArgument("context is required"))
 	}
 
+	worldID, err := trustedWorld(ctx)
+	if err != nil {
+		return nil, apierr.ToGRPCError(err)
+	}
+
+	entityID := req.EntityId
+	if req.Context == dice.ContextAbilityScores {
+		entityID, err = creationEntityID(ctx, req.EntityId)
+		if err != nil {
+			return nil, apierr.ToGRPCError(err)
+		}
+	}
+
 	// Use the dice service to clear the session
 	diceInput := &dice.ClearRollSessionInput{
-		EntityID: req.EntityId,
+		WorldID:  worldID,
+		EntityID: entityID,
 		Context:  req.Context,
 	}
 

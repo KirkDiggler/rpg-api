@@ -124,20 +124,20 @@ func castSceneAtFighterTurn(
 		paths:  map[string][]spatial.Position{},
 		walked: map[string]bool{},
 	})
-	bardCtx := auth.WithPlayerID(context.Background(), "player-bella")
-	fighterCtx := auth.WithPlayerID(context.Background(), "player-alice")
+	bardCtx := auth.WithPlayerID(worldCtx(), "player-bella")
+	fighterCtx := auth.WithPlayerID(worldCtx(), "player-alice")
 
 	for _, sheet := range []*tkcharacter.Data{
 		castingBard("bella", "player-bella", known...),
 		armedFighter("alice", "player-alice"),
 	} {
-		_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-			Character: &entities.Character{Data: sheet},
+		_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+			Character: &entities.Character{WorldID: sessionWorld, Data: sheet},
 		})
 		require.NoError(t, err)
 	}
 
-	_, err := h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err := h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: castSessionID, Encounter: "room-encounter", World: buildOpenRoom(t, 12, 6),
 	})
 	require.NoError(t, err)
@@ -153,7 +153,7 @@ func castSceneAtFighterTurn(
 	inCombat(t, h.charRepo, "bella", 1)
 	inCombat(t, h.charRepo, "alice", 1)
 
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+	_, err = h.manager.Manager.Spawn(worldCtx(), &sdk.SpawnInput{
 		Session: castSessionID, ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
 		Position: at(4, 0),
 	})

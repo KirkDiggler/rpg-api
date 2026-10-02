@@ -152,6 +152,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 		IdentityCache:      tokenCache,
 		MembershipCache:    membershipCache,
 		DevWorldID:         configuredDevWorldID(authConfig.DevMode),
+		DevWorldIDs:        configuredDevWorldIDs(authConfig.DevMode),
 		DevelopmentRoles:   development.Roles,
 	})
 	if err != nil {

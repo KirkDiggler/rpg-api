@@ -132,8 +132,13 @@ type CharacterRPC interface {
 	ListClasses(context.Context, *dnd5ev1alpha1.ListClassesRequest, ...grpc.CallOption) (*dnd5ev1alpha1.ListClassesResponse, error)
 }
 
-// SeedInput carries the two capabilities the default fixture set needs.
+// SeedInput carries the capabilities the default fixture set needs.
 type SeedInput struct {
+	// WorldID is the explicit world every fixture is created in. It is sent
+	// as the gRPC world selector and used for every direct repository write,
+	// so a fixture never lands in an ownerless or default world.
+	WorldID string
+
 	// Client creates every character through the production RPCs.
 	Client CharacterRPC
 
@@ -153,6 +158,9 @@ func Seed(ctx context.Context, input *SeedInput) error {
 	if input == nil {
 		return errors.New("sandbox seed: input is required")
 	}
+	if input.WorldID == "" {
+		return errors.New("sandbox seed: world ID is required")
+	}
 	if input.Client == nil {
 		return errors.New("sandbox seed: character RPC client is required")
 	}
@@ -160,13 +168,13 @@ func Seed(ctx context.Context, input *SeedInput) error {
 		return errors.New("sandbox seed: character store is required to seed level-up experience")
 	}
 
-	if err := seedFighter(ctx, input.Client); err != nil {
+	if err := seedFighter(ctx, input); err != nil {
 		return err
 	}
-	if err := seedBarbarian(ctx, input.Client); err != nil {
+	if err := seedBarbarian(ctx, input); err != nil {
 		return err
 	}
-	if err := seedBard(ctx, input.Client); err != nil {
+	if err := seedBard(ctx, input); err != nil {
 		return err
 	}
 	if err := seedLevelUpFighter(ctx, input); err != nil {
@@ -192,7 +200,7 @@ const (
 // offered a confirmation that names Action Surge, takes it, and comes out with
 // Action Surge."
 func seedLevelUpFighter(ctx context.Context, input *SeedInput) error {
-	identityCtx := authenticatedContext(ctx, levelUpFighterIdentity)
+	identityCtx := authenticatedContext(ctx, input.WorldID, levelUpFighterIdentity)
 	if err := deleteListedCharacters(identityCtx, input.Client, levelUpFighterIdentity); err != nil {
 		return err
 	}
@@ -220,7 +228,7 @@ func seedLevelUpFighter(ctx context.Context, input *SeedInput) error {
 // to drift, and the level-2 spell choice is "five known minus four known" --
 // an assertion about how many spells this character already has.
 func seedLevelUpBard(ctx context.Context, input *SeedInput) error {
-	identityCtx := authenticatedContext(ctx, levelUpBardIdentity)
+	identityCtx := authenticatedContext(ctx, input.WorldID, levelUpBardIdentity)
 	if err := deleteListedCharacters(identityCtx, input.Client, levelUpBardIdentity); err != nil {
 		return err
 	}
@@ -253,7 +261,7 @@ func seedLevelUpExperience(
 	identity string,
 	characterID string,
 ) error {
-	stored, err := input.Store.Get(ctx, characterrepo.GetInput{ID: characterID})
+	stored, err := input.Store.Get(ctx, characterrepo.GetInput{WorldID: input.WorldID, ID: characterID})
 	if err != nil {
 		return fmt.Errorf("%s repository Get: %w", identity, err)
 	}
@@ -309,8 +317,9 @@ func seedLevelUpExperience(
 // It holds NO experience. Done-when 7 is that "a freshly created character
 // shows 0 of 300 and no prompt -- the true state of a game that awards no
 // experience yet", and this is the fixture that shows it.
-func seedBard(ctx context.Context, client CharacterRPC) error {
-	identityCtx := authenticatedContext(ctx, bardIdentity)
+func seedBard(ctx context.Context, input *SeedInput) error {
+	client := input.Client
+	identityCtx := authenticatedContext(ctx, input.WorldID, bardIdentity)
 	if err := deleteListedCharacters(identityCtx, client, bardIdentity); err != nil {
 		return err
 	}
@@ -525,8 +534,9 @@ func createBard(ctx context.Context, input *createBardInput) error {
 	return nil
 }
 
-func seedFighter(ctx context.Context, client CharacterRPC) error {
-	identityCtx := authenticatedContext(ctx, fighterIdentity)
+func seedFighter(ctx context.Context, input *SeedInput) error {
+	client := input.Client
+	identityCtx := authenticatedContext(ctx, input.WorldID, fighterIdentity)
 	if err := deleteListedCharacters(identityCtx, client, fighterIdentity); err != nil {
 		return err
 	}
@@ -579,8 +589,9 @@ func seedFighter(ctx context.Context, client CharacterRPC) error {
 	return nil
 }
 
-func seedBarbarian(ctx context.Context, client CharacterRPC) error {
-	identityCtx := authenticatedContext(ctx, barbarianIdentity)
+func seedBarbarian(ctx context.Context, input *SeedInput) error {
+	client := input.Client
+	identityCtx := authenticatedContext(ctx, input.WorldID, barbarianIdentity)
 	if err := deleteListedCharacters(identityCtx, client, barbarianIdentity); err != nil {
 		return err
 	}
@@ -726,8 +737,16 @@ func seedBarbarian(ctx context.Context, client CharacterRPC) error {
 	return nil
 }
 
-func authenticatedContext(ctx context.Context, identity string) context.Context {
-	return metadata.AppendToOutgoingContext(ctx, "authorization", "Dev "+identity)
+// authenticatedContext identifies the fixture identity and selects the world
+// for every outgoing RPC. The world selector is the same canonical header the
+// auth boundary resolves, so the fixture is written into exactly the world the
+// seeder was told to use; there is no default world.
+func authenticatedContext(ctx context.Context, worldID, identity string) context.Context {
+	withIdentity := metadata.AppendToOutgoingContext(ctx, "authorization", "Dev "+identity)
+	if worldID == "" {
+		return withIdentity
+	}
+	return metadata.AppendToOutgoingContext(withIdentity, "x-rpg-guild-id", worldID)
 }
 
 func deleteListedCharacters(ctx context.Context, client CharacterRPC, identity string) error {

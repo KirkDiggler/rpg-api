@@ -11,7 +11,6 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -29,7 +28,7 @@ func TestCast_ForwardsCanonicalTargetsWithoutAliasing(t *testing.T) {
 	)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Cast(ctx, &sessionpb.CastRequest{
 		Session: "sess-1", Member: "bard-1", DeclarationId: "decl-bane-1", Targets: requestTargets,
 	})
@@ -53,7 +52,7 @@ func TestCast_Posed_ReturnsRollAndTotalOnly(t *testing.T) {
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Cast(ctx, &sessionpb.CastRequest{
 		Session: "sess-1", Member: "bard-1", DeclarationId: "decl-bane-1", Targets: []string{"fighter-1"},
 	})
@@ -78,7 +77,7 @@ func TestCast_ForwardsDeprecatedScalarForProviderNormalization(t *testing.T) {
 	}).Return(&sdk.CastOutput{}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Cast(ctx, &sessionpb.CastRequest{
 		Session: "sess-1", Member: "bard-1", DeclarationId: "decl-bane-1", Target: "goblin-1",
 	})
@@ -104,7 +103,7 @@ func TestCast_ForwardsTheAimedCell(t *testing.T) {
 	)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Cast(ctx, &sessionpb.CastRequest{
 		Session: "sess-1", Member: "bard-1", DeclarationId: "decl-thunderwave-1",
 		Cell: &sessionpb.Position{X: 4, Y: 2},
@@ -129,7 +128,7 @@ func TestCast_LeavesTheCellNilWhenTheRequestNamesNone(t *testing.T) {
 	)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Cast(ctx, &sessionpb.CastRequest{
 		Session: "sess-1", Member: "bard-1", DeclarationId: "decl-bane-1", Targets: []string{"goblin-1"},
 	})
@@ -155,7 +154,7 @@ func TestCast_ForwardsTheChosenWord(t *testing.T) {
 	)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Cast(ctx, &sessionpb.CastRequest{
 		Session: "sess-1", Member: "bard-1", DeclarationId: "decl-command-1",
 		Targets: []string{"skel-1"}, Option: "grovel",

@@ -59,19 +59,34 @@ func UnaryWorldContextInterceptor(resolver WorldResolver) grpc.UnaryServerInterc
 	}
 }
 
-func guildSelector(ctx context.Context) (string, error) {
+// optionalGuildSelector reports the canonical guild selector a request
+// carries, if any. Absence is not an error so a caller with a configured
+// default can tell "no selector" apart from "an unusable selector"; a present
+// but non-canonical or repeated value is always refused.
+func optionalGuildSelector(ctx context.Context) (string, bool, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
-		return "", status.Error(codes.FailedPrecondition, "guild selector is required")
+		return "", false, nil
 	}
 	values := md.Get(guildSelectorHeader)
 	if len(values) == 0 {
-		return "", status.Error(codes.FailedPrecondition, "guild selector is required")
+		return "", false, nil
 	}
 	if len(values) != 1 || !isCanonicalUint64(values[0]) {
-		return "", status.Error(codes.InvalidArgument, "guild selector must be one canonical non-zero uint64")
+		return "", false, status.Error(codes.InvalidArgument, "guild selector must be one canonical non-zero uint64")
 	}
-	return values[0], nil
+	return values[0], true, nil
+}
+
+func guildSelector(ctx context.Context) (string, error) {
+	selector, present, err := optionalGuildSelector(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !present {
+		return "", status.Error(codes.FailedPrecondition, "guild selector is required")
+	}
+	return selector, nil
 }
 
 func isCanonicalUint64(value string) bool {

@@ -7,7 +7,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	lobbyv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 )
 
 func (s *HandlerSuite) TestStartEncounter_NoAuth_Unauthenticated() {
@@ -38,7 +37,7 @@ func (s *HandlerSuite) TestStartEncounter_NotAllReady_FailedPrecondition() {
 func (s *HandlerSuite) TestStartEncounter_NotHost_PermissionDenied() {
 	lobbyID, joinRef := s.createLobby("alice", "char-alice", "Alice")
 	s.expectCharacter("char-bob", "bob", "Bob", 10, 10)
-	bobCtx := auth.WithPlayerID(context.Background(), "bob")
+	bobCtx := lobbyCtx("bob")
 	_, err := s.handler.JoinLobby(bobCtx, &lobbyv1alpha1.JoinLobbyRequest{
 		JoinRef: joinRef, CharacterId: "char-bob",
 	})

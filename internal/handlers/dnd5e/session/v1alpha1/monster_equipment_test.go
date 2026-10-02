@@ -1,7 +1,6 @@
 package sessionv1alpha1
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -11,7 +10,6 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -80,7 +78,7 @@ func (s *MonsterEquipmentTransportSuite) TestMonsterEquipmentSurvivesViewDiscove
 func (s *MonsterEquipmentTransportSuite) TestGetViewTranslatesOnlyTheCallingObserversTestimony() {
 	manager := sessionv1alpha1mock.NewMockManager(s.ctrl)
 	h := &Handler{manager: manager, characters: anyMemberOwnedBy(s.ctrl, "owner")}
-	ctx := auth.WithPlayerID(context.Background(), "owner")
+	ctx := authedCtx("owner")
 	for _, tc := range []struct {
 		member string
 		weapon string

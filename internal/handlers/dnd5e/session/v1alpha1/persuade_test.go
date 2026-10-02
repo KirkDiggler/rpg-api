@@ -12,7 +12,6 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -30,7 +29,7 @@ func TestPersuade_EmptyMember_IsRefused(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Persuade(ctx, &sessionpb.PersuadeRequest{Session: "sess-1", Target: "goblin-2"})
 	requireCode(t, err, codes.InvalidArgument)
 }
@@ -46,7 +45,7 @@ func TestPersuade_ForeignMember_IsRefusedBeforeTheSDK(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
 	h := &Handler{manager: mgr, characters: ownedCharacterRepo(ctrl, "char-bob", "bob")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Persuade(ctx, &sessionpb.PersuadeRequest{
 		Session: "sess-1", Member: "char-bob", Target: "goblin-2",
 	})
@@ -81,7 +80,7 @@ func TestPersuade_HappyPath_ReturnsTheAckAndNotTheRoll(t *testing.T) {
 			"char-alice": {owner: "alice", name: "Alice", class: "bard", race: "human"},
 		}),
 	}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Persuade(ctx, &sessionpb.PersuadeRequest{
 		Session: "sess-1", Member: "char-alice", Target: "front-goblin",
 	})
@@ -115,7 +114,7 @@ func TestPersuade_BeatenAndMissed_AnswerIdentically(t *testing.T) {
 				"char-alice": {owner: "alice", name: "Alice", class: "bard", race: "human"},
 			}),
 		}
-		ctx := auth.WithPlayerID(context.Background(), "alice")
+		ctx := authedCtx("alice")
 		resp, err := h.Persuade(ctx, &sessionpb.PersuadeRequest{
 			Session: "sess-1", Member: "char-alice", Target: "front-goblin",
 		})
@@ -163,7 +162,7 @@ func TestPersuade_Paused_CarriesTheRollAndNothingElse(t *testing.T) {
 			"char-alice": {owner: "alice", name: "Alice", class: "bard", race: "human"},
 		}),
 	}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Persuade(ctx, &sessionpb.PersuadeRequest{
 		Session: "sess-1", Member: "char-alice", Target: "front-goblin",
 	})
@@ -196,7 +195,7 @@ func TestPersuade_NotYourTurn_IsAWorldRefusal(t *testing.T) {
 	mgr.EXPECT().Persuade(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNotYourTurn)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Persuade(ctx, &sessionpb.PersuadeRequest{
 		Session: "sess-1", Member: "char-1", Target: "front-goblin",
 	})
@@ -222,7 +221,7 @@ func TestPersuade_Unwitnessed_IsAWorldRefusalNotAnInternalError(t *testing.T) {
 	mgr.EXPECT().Persuade(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrUnwitnessed)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Persuade(ctx, &sessionpb.PersuadeRequest{
 		Session: "sess-1", Member: "char-1", Target: "front-goblin",
 	})

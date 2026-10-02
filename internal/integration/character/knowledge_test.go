@@ -2,6 +2,7 @@ package characterintegration
 
 import (
 	v1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/integration/harness"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	tk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -79,7 +80,7 @@ func (s *CharacterCreationSuite) TestKnowledgeCreationRoundTrip() {
 	s.ElementsMatch([]v1alpha1.Language{v1alpha1.Language_LANGUAGE_COMMON, v1alpha1.Language_LANGUAGE_DWARVISH, v1alpha1.Language_LANGUAGE_ELVISH, v1alpha1.Language_LANGUAGE_GNOMISH}, read.Character.Languages)
 	s.ElementsMatch([]v1alpha1.Skill{v1alpha1.Skill_SKILL_ARCANA, v1alpha1.Skill_SKILL_HISTORY}, read.Character.Proficiencies.ExpertiseSkills)
 	s.Contains(read.Character.Proficiencies.Skills, v1alpha1.Skill_SKILL_RELIGION)
-	stored, err := s.server.CharacterRepo.Get(s.ctx, characterrepo.GetInput{ID: read.Character.Id})
+	stored, err := s.server.CharacterRepo.Get(s.ctx, characterrepo.GetInput{WorldID: harness.DevWorldA, ID: read.Character.Id})
 	s.Require().NoError(err)
 	character, err := tk.Load(s.ctx, stored.Character.Data)
 	s.Require().NoError(err)

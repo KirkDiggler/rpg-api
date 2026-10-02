@@ -15,7 +15,6 @@ import (
 
 	customizationpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/customization/v1alpha1"
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -49,7 +48,7 @@ func TestGetRoster_DelegatesOnceAndProjectsSDKOutput(t *testing.T) {
 	}}, nil)
 	h := &Handler{manager: manager}
 
-	got, err := h.GetRoster(auth.WithPlayerID(context.Background(), "player-1"), &sessionpb.GetRosterRequest{Session: "sess-1"})
+	got, err := h.GetRoster(authedCtx("player-1"), &sessionpb.GetRosterRequest{Session: "sess-1"})
 
 	require.NoError(t, err)
 	want := &sessionpb.GetRosterResponse{Members: []*sessionpb.PublicMemberInfo{
@@ -84,7 +83,7 @@ func TestGetRoster_RefusesUnauthenticatedAndMissingSessionBeforeSDK(t *testing.T
 		code codes.Code
 	}{
 		{name: "unauthenticated", ctx: context.Background(), req: &sessionpb.GetRosterRequest{Session: "sess-1"}, code: codes.Unauthenticated},
-		{name: "missing session", ctx: auth.WithPlayerID(context.Background(), "player-1"), req: &sessionpb.GetRosterRequest{}, code: codes.InvalidArgument},
+		{name: "missing session", ctx: authedCtx("player-1"), req: &sessionpb.GetRosterRequest{}, code: codes.InvalidArgument},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
@@ -118,7 +117,7 @@ func TestGetRoster_TranslatesSDKErrors(t *testing.T) {
 			manager.EXPECT().Roster(gomock.Any(), &sdk.RosterInput{Session: "sess-1", Player: "player-1"}).Return(nil, tc.err)
 			h := &Handler{manager: manager}
 
-			_, err := h.GetRoster(auth.WithPlayerID(context.Background(), "player-1"), &sessionpb.GetRosterRequest{Session: "sess-1"})
+			_, err := h.GetRoster(authedCtx("player-1"), &sessionpb.GetRosterRequest{Session: "sess-1"})
 
 			requireCode(t, err, tc.code)
 		})

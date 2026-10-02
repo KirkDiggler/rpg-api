@@ -1,7 +1,6 @@
 package session_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -23,7 +22,7 @@ func TestAcceptance_Sanctuary(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			h, ctx, id := nativeClericCombatScene(t)
-			allyCtx := auth.WithPlayerID(context.Background(), "player-alice")
+			allyCtx := auth.WithPlayerID(worldCtx(), "player-alice")
 			target := id
 			if cast {
 				// Move adjacent to the enemy, then ward it through the ordinary Cast door.
@@ -37,7 +36,7 @@ func TestAcceptance_Sanctuary(t *testing.T) {
 			require.True(t, row.GetAvailable(), "%s", row.GetWhy())
 			_, err := h.handler.Cast(ctx, &sessionpb.CastRequest{Session: castSessionID, Member: id, DeclarationId: row.GetId(), Targets: []string{target}})
 			require.NoError(t, err)
-			stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: id})
+			stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: id})
 			require.NoError(t, err)
 			require.Equal(t, 1, stored.Character.Data.Resources[resources.SpellSlotLevel1].Current)
 			require.Zero(t, stored.Character.Data.ActionEconomy.BonusActionsRemaining)
@@ -83,13 +82,13 @@ func TestAcceptance_Sanctuary(t *testing.T) {
 				}
 			}
 			require.Equal(t, 1, warded)
-			paid, err := h.charRepo.Get(actorCtx, characterrepo.GetInput{ID: actor})
+			paid, err := h.charRepo.Get(actorCtx, characterrepo.GetInput{WorldID: sessionWorld, ID: actor})
 			require.NoError(t, err)
 			require.Zero(t, paid.Character.Data.ActionEconomy.ActionsRemaining, "a warded attempt still pays its action")
 			if cast {
 				require.Equal(t, 1, paid.Character.Data.Resources[resources.SpellSlotLevel1].Current, "the warded cantrip spends no extra spell slot")
 			} else {
-				protected, getErr := h.charRepo.Get(ctx, characterrepo.GetInput{ID: id})
+				protected, getErr := h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: id})
 				require.NoError(t, getErr)
 				require.Equal(t, protected.Character.Data.MaxHitPoints, protected.Character.Data.HitPoints)
 			}

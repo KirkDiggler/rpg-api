@@ -55,16 +55,16 @@ func requireStoryContainsLiveEvents(
 // from the toolkit through to eventToProto here.
 func TestGetStoryMatchesLiveEvents(t *testing.T) {
 	h := newAcceptanceHarness(t)
-	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+	ctx := auth.WithPlayerID(worldCtx(), "player-alice")
 	const session = "story-events-run"
 
-	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+	_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter("alice", "player-alice")},
 	})
 	require.NoError(t, err)
 
 	world := buildThreeRoomTomb(t)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: session, Encounter: "tomb-encounter", World: world,
 	})
 	require.NoError(t, err)
@@ -72,7 +72,7 @@ func TestGetStoryMatchesLiveEvents(t *testing.T) {
 	// geometry TestSkeletonsDrivenTurnMovesAndStrikes uses), so the fight
 	// forms the moment alice joins in sight and range of it -- a turn order
 	// this test can predict rather than one shaped by join-then-spawn timing.
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+	_, err = h.manager.Manager.Spawn(worldCtx(), &sdk.SpawnInput{
 		Session: session, ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
 		Position: at(19, 3),
 	})
@@ -159,17 +159,17 @@ func TestGetStoryMatchesLiveEvents(t *testing.T) {
 // so a caller can do this without a second builder.
 func TestGetStoryAgedOutReturnsOutOfRange(t *testing.T) {
 	h := newAcceptanceHarness(t)
-	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+	ctx := auth.WithPlayerID(worldCtx(), "player-alice")
 	const session = "story-trimmed-run"
 
-	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+	_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter("alice", "player-alice")},
 	})
 	require.NoError(t, err)
 
 	world := buildThreeRoomTomb(t)
 	world.Retention = 2 // small on purpose: this test wants trimming, not the whole story
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: session, Encounter: "tomb-encounter", World: world,
 	})
 	require.NoError(t, err)

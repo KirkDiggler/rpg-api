@@ -27,9 +27,9 @@ func nativeClericCombatSceneAt(t *testing.T, targetX, targetY int, preferred ...
 	t.Helper()
 	h := newAcceptanceHarnessWith(t, failedSaveDice{}, sdk.Pass{})
 	id := createNativeCleric(t, h, preferred...)
-	ctx := auth.WithPlayerID(context.Background(), "cleric-player")
-	allyCtx := auth.WithPlayerID(context.Background(), "player-alice")
-	_, err := h.charRepo.Create(ctx, characterrepo.CreateInput{Character: &entities.Character{Data: armedFighter("alice", "player-alice")}})
+	ctx := auth.WithPlayerID(worldCtx(), "cleric-player")
+	allyCtx := auth.WithPlayerID(worldCtx(), "player-alice")
+	_, err := h.charRepo.Create(ctx, characterrepo.CreateInput{Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter("alice", "player-alice")}})
 	require.NoError(t, err)
 	_, err = h.manager.Manager.StartSession(ctx, &sdk.StartSessionInput{Session: castSessionID, Encounter: "room-encounter", World: buildOpenRoom(t, 12, 6)})
 	require.NoError(t, err)
@@ -62,7 +62,7 @@ func TestAcceptance_NativeClericWorldToCombatCasts(t *testing.T) {
 		t.Run(spell, func(t *testing.T) {
 			h, ctx, id := nativeClericCombatScene(t)
 			if spell != spells.Bless {
-				ally, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: "alice"})
+				ally, err := h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: "alice"})
 				require.NoError(t, err)
 				ally.Character.Data.HitPoints = 1
 				_, err = h.charRepo.Update(ctx, characterrepo.UpdateInput{Character: ally.Character})
@@ -78,7 +78,7 @@ func TestAcceptance_NativeClericWorldToCombatCasts(t *testing.T) {
 				_, err := h.handler.Cast(ctx, &sessionpb.CastRequest{Session: castSessionID, Member: id, DeclarationId: row.GetId(), Targets: targets})
 				require.NoError(t, err)
 			})
-			stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: id})
+			stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: id})
 			require.NoError(t, err)
 			require.Equal(t, 1, stored.Character.Data.Resources[resources.SpellSlotLevel1].Current)
 			if spell == spells.HealingWord {

@@ -1,7 +1,6 @@
 package session_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -57,7 +56,7 @@ func TestAcceptance_SanctuaryRecipientCooldown(t *testing.T) {
 	_, err = h.handler.EndTurn(ctx, &sessionpb.EndTurnRequest{Session: castSessionID, Member: id,
 		DeclarationId: currentDeclarationID(ctx, t, h.handler, castSessionID, id, sessionpb.Verb_VERB_END_TURN)})
 	require.NoError(t, err)
-	allyCtx := auth.WithPlayerID(context.Background(), "player-alice")
+	allyCtx := auth.WithPlayerID(worldCtx(), "player-alice")
 	_, err = h.handler.EndTurn(allyCtx, &sessionpb.EndTurnRequest{Session: castSessionID, Member: "alice",
 		DeclarationId: currentDeclarationID(allyCtx, t, h.handler, castSessionID, "alice", sessionpb.Verb_VERB_END_TURN)})
 	require.NoError(t, err)
@@ -73,12 +72,12 @@ func TestAcceptance_SanctuaryRecipientCooldown(t *testing.T) {
 	require.NotNil(t, recipient)
 	require.False(t, recipient.GetAvailable())
 	require.Contains(t, recipient.GetWhy().GetText(), "cooldown")
-	before, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: id})
+	before, err := h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: id})
 	require.NoError(t, err)
 	require.Equal(t, 1, before.Character.Data.Resources[resources.SpellSlotLevel1].Current)
 	_, err = h.handler.Cast(ctx, &sessionpb.CastRequest{Session: castSessionID, Member: id, DeclarationId: row.GetId(), Targets: []string{id}})
 	require.Error(t, err)
-	after, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: id})
+	after, err := h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: id})
 	require.NoError(t, err)
 	require.Equal(t, before.Character.Data, after.Character.Data, "refusal must preserve payment and existing ward")
 	found = false

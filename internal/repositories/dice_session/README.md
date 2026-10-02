@@ -5,22 +5,42 @@ The dice session repository provides storage interface and types for managing di
 ## Current adapter evidence (#1047)
 
 `redis_contract_test.go` uses miniredis and a controlled application clock to verify
-supplied roll preservation, ordinary entity/context isolation, detached reads, TTL,
+supplied roll preservation, ordinary world/entity/context isolation, detached reads, TTL,
 delete counts and errors without generating dice results. Update replaces the stored
-record and uses its remaining lifetime; it does not enforce roll immutability or
-check that the key already exists. Delete's RollsDeleted is best-effort: a failed
-pre-count Get followed by successful DEL returns zero and no error; only the delete's
+record and uses its remaining lifetime; it does not enforce roll immutability, but it
+does refuse to overwrite a stored envelope whose ownership metadata contradicts the
+write. Delete's RollsDeleted is best-effort: a failed pre-count Get followed by successful DEL returns zero and no error; only the delete's
 own error propagates. Exact-deadline resurrection without a TTL is a
-known defect tracked in #1055, not an accepted contract. See the
+known defect tracked in #1055, not an accepted contract. `world_test.go` adds
+same-player A/B isolation, foreign-world delete safety, legacy-key non-fallback and
+corrupt-ownership refusal. See the
 [method inventory](../../../docs/quality/repository-contracts.md) for coverage limits.
+
+### Concurrency: fixed ownership, last-writer updates
+
+Two different properties are easy to conflate here, so they are stated separately:
+
+- **World ownership is fixed.** Every key is world-scoped,
+  `(WorldID, EntityID, Context)` names exactly one session, and `Create`/`Update`
+  refuse to write an envelope whose stored `world_id` contradicts the write. No
+  update can move a session to another world.
+- **Updates are last-writer-wins, not serializable.** The ownership refusal above is a
+  read-then-`Set`, not a transaction: a concurrent writer to the same
+  `(world, entity, context)` key between the read and the `Set` is overwritten, and a
+  concurrent `Delete` can be re-created by `Update` (the adapter keeps its pre-existing
+  create-on-update behavior for a missing key). There is no WATCH/CAS on this adapter
+  (contrast `PatchEquipment` on the character repository). Preserve that expectation when
+  adding roll-append callers: read-modify-write of `session.Rolls` assumes it is the only
+  writer for that key during the call.
 
 ## Core Concepts
 
 ### DiceSession
-A session represents a collection of dice rolls grouped by entity and context:
+A session represents a collection of dice rolls grouped by world, entity and context:
 
 ```go
 type DiceSession struct {
+    WorldID   string     // Owning world (Discord guild or configured dev world)
     EntityID  string     // Owner of the rolls (e.g., "char_draft_123")
     Context   string     // Purpose grouping (e.g., "ability_scores") 
     Rolls     []DiceRoll // The actual dice rolls
@@ -62,6 +82,7 @@ type Repository interface {
 Creates a new dice session with TTL:
 ```go
 input := CreateInput{
+    WorldID:  "123456789012345678",
     EntityID: "char_draft_123",
     Context:  "ability_scores",
     Rolls:    []DiceRoll{...},
@@ -70,9 +91,10 @@ input := CreateInput{
 ```
 
 #### Get  
-Retrieves session by entity and context:
+Retrieves session by world, entity and context:
 ```go
 input := GetInput{
+    WorldID:  "123456789012345678",
     EntityID: "char_draft_123", 
     Context:  "ability_scores",
 }
@@ -89,6 +111,7 @@ err := repo.Update(ctx, session)
 Removes session and returns count of deleted rolls:
 ```go
 output, err := repo.Delete(ctx, DeleteInput{
+    WorldID:  "123456789012345678",
     EntityID: "char_draft_123",
     Context:  "ability_scores", 
 })
@@ -97,7 +120,10 @@ output, err := repo.Delete(ctx, DeleteInput{
 
 ## Session Identification
 
-Sessions are uniquely identified by `(EntityID, Context)` tuples:
+Sessions are uniquely identified by `(WorldID, EntityID, Context)` tuples:
+
+- **WorldID**: The owning world. Mandatory on every operation and never inferred
+  from context inside the adapter. A roll stored in one world is invisible to another.
 
 - **EntityID**: The entity performing rolls
   - Character drafts: `"char_draft_123"`
@@ -172,6 +198,7 @@ Interface includes mock generation:
 ```go
 // 1. Create session with ability score rolls
 createOutput, err := repo.Create(ctx, CreateInput{
+    WorldID:  "123456789012345678",
     EntityID: "char_draft_123",
     Context:  "ability_scores",
     Rolls:    generateAbilityScoreRolls(),
@@ -180,12 +207,14 @@ createOutput, err := repo.Create(ctx, CreateInput{
 
 // 2. Retrieve for assignment in UI
 getOutput, err := repo.Get(ctx, GetInput{
+    WorldID:  "123456789012345678",
     EntityID: "char_draft_123",
     Context:  "ability_scores",
 })
 
 // 3. Clean up after character finalized
 deleteOutput, err := repo.Delete(ctx, DeleteInput{
+    WorldID:  "123456789012345678",
     EntityID: "char_draft_123", 
     Context:  "ability_scores",
 })
@@ -195,6 +224,7 @@ deleteOutput, err := repo.Delete(ctx, DeleteInput{
 ```go
 // Track damage rolls for a combat round
 session := &DiceSession{
+    WorldID:  "123456789012345678",
     EntityID: "char_456",
     Context:  "combat_round_5",
     Rolls: []DiceRoll{
@@ -208,11 +238,19 @@ err := repo.Update(ctx, session)
 ## Redis Implementation Notes
 
 The Redis implementation should:
-- Use composite keys: `dice_session:{entity_id}:{context}`
+- Use composite keys: `dice_session:{world_id}:{entity_id}:{context}`
 - Leverage Redis TTL for automatic expiration
 - Store sessions as JSON for human readability
-- Support atomic updates for concurrent access
+- Not assume serializable updates: the ownership refusal on Update is a best-effort
+  read-then-write with last-writer semantics (see "Concurrency" above); there is no
+  WATCH/CAS on this adapter
 - Handle connection failures gracefully
+- Treat a stored envelope whose `world_id` contradicts the requested world as
+  `Internal` corruption, never as a valid or missing session
+
+World IDs are canonical decimal guild-shaped identifiers; entity and context IDs
+never contain the `:` delimiter. The ownerless `dice_session:{entity_id}:{context}`
+key is legacy and is never read as a fallback on a world-scoped miss.
 
 ## Testing Strategy
 

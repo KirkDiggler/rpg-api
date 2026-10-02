@@ -25,7 +25,7 @@ func TestPatchEquipment_ConcurrentCombatStateSurvives(t *testing.T) {
 	_, err := repo.Create(ctx, characterrepo.CreateInput{Character: original})
 	require.NoError(t, err)
 
-	before, err := repo.Get(ctx, characterrepo.GetInput{ID: original.Data.ID})
+	before, err := repo.Get(ctx, characterrepo.GetInput{WorldID: worldA, ID: original.Data.ID})
 	require.NoError(t, err)
 	expectedSlots := maps.Clone(before.Character.Data.EquipmentSlots)
 
@@ -53,6 +53,7 @@ func TestPatchEquipment_ConcurrentCombatStateSurvives(t *testing.T) {
 	require.NoError(t, err)
 
 	first, err := repo.PatchEquipment(ctx, characterrepo.PatchEquipmentInput{
+		WorldID:                worldA,
 		CharacterID:            original.Data.ID,
 		ExpectedVersion:        before.Version,
 		ExpectedEquipmentSlots: expectedSlots,
@@ -66,6 +67,7 @@ func TestPatchEquipment_ConcurrentCombatStateSurvives(t *testing.T) {
 	require.Equal(t, 4, first.Character.Data.HitPoints)
 
 	patched, err := repo.PatchEquipment(ctx, characterrepo.PatchEquipmentInput{
+		WorldID:                worldA,
 		CharacterID:            original.Data.ID,
 		ExpectedVersion:        first.Version,
 		ExpectedEquipmentSlots: maps.Clone(first.Character.Data.EquipmentSlots),
@@ -77,7 +79,7 @@ func TestPatchEquipment_ConcurrentCombatStateSurvives(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, patched.Applied)
 
-	stored, err := repo.Get(ctx, characterrepo.GetInput{ID: original.Data.ID})
+	stored, err := repo.Get(ctx, characterrepo.GetInput{WorldID: worldA, ID: original.Data.ID})
 	require.NoError(t, err)
 	require.Equal(t, 4, stored.Character.Data.HitPoints)
 	require.Equal(t, concurrent.Data.Resources, stored.Character.Data.Resources)
@@ -95,7 +97,7 @@ func TestPatchEquipment_StaleExpectedEquipmentRefusesAndPreservesNewerData(t *te
 	_, err := repo.Create(ctx, characterrepo.CreateInput{Character: original})
 	require.NoError(t, err)
 
-	stale, err := repo.Get(ctx, characterrepo.GetInput{ID: original.Data.ID})
+	stale, err := repo.Get(ctx, characterrepo.GetInput{WorldID: worldA, ID: original.Data.ID})
 	require.NoError(t, err)
 	expectedSlots := maps.Clone(stale.Character.Data.EquipmentSlots)
 
@@ -107,6 +109,7 @@ func TestPatchEquipment_StaleExpectedEquipmentRefusesAndPreservesNewerData(t *te
 	require.NoError(t, err)
 
 	out, err := repo.PatchEquipment(ctx, characterrepo.PatchEquipmentInput{
+		WorldID:                worldA,
 		CharacterID:            original.Data.ID,
 		ExpectedVersion:        stale.Version,
 		ExpectedEquipmentSlots: expectedSlots,
@@ -117,7 +120,7 @@ func TestPatchEquipment_StaleExpectedEquipmentRefusesAndPreservesNewerData(t *te
 	require.Nil(t, out)
 	require.True(t, apierr.IsAborted(err), "stale equipment must be an ABORTED conflict, got %v", err)
 
-	stored, err := repo.Get(ctx, characterrepo.GetInput{ID: original.Data.ID})
+	stored, err := repo.Get(ctx, characterrepo.GetInput{WorldID: worldA, ID: original.Data.ID})
 	require.NoError(t, err)
 	require.Equal(t, newer.Data.EquipmentSlots, stored.Character.Data.EquipmentSlots)
 	require.Equal(t, 12, stored.Character.Data.ArmorClass)
@@ -136,7 +139,7 @@ func newRedisCharacterRepository(t *testing.T) characterrepo.Repository {
 }
 
 func repositoryCharacter(id string) *entities.Character {
-	return &entities.Character{Data: &tkcharacter.Data{
+	return &entities.Character{WorldID: worldA, Data: &tkcharacter.Data{
 		ID:             id,
 		PlayerID:       "player-1",
 		Name:           "Fighter",

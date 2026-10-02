@@ -34,7 +34,12 @@ type WorldResolverConfig struct {
 	IdentityCache      *TokenCache
 	MembershipCache    *MembershipCache
 	DevWorldID         string
-	DevelopmentRoles   map[string][]string
+	// DevWorldIDs is the optional development allowlist (RPG_DEV_WORLD_IDS).
+	// When non-empty, NewWorldResolver requires every entry to be a canonical
+	// non-zero uint64, refuses duplicates, and requires DevWorldID to appear in
+	// the list. An empty list preserves the fixed single-world Dev behavior.
+	DevWorldIDs      []string
+	DevelopmentRoles map[string][]string
 }
 
 type worldResolver struct {
@@ -42,6 +47,7 @@ type worldResolver struct {
 	identityCache      *TokenCache
 	membershipCache    *MembershipCache
 	devWorldID         string
+	devWorldIDs        map[string]struct{}
 	developmentRoles   map[string][]string
 }
 
@@ -63,12 +69,17 @@ func NewWorldResolver(cfg *WorldResolverConfig) (WorldResolver, error) {
 	for player, assigned := range cfg.DevelopmentRoles {
 		roles[player] = append([]string(nil), assigned...)
 	}
+	devWorldIDs, err := developmentWorldAllowlist(cfg.DevWorldID, cfg.DevWorldIDs)
+	if err != nil {
+		return nil, err
+	}
 	return &worldResolver{
 		developmentRoles:   roles,
 		membershipVerifier: cfg.MembershipVerifier,
 		identityCache:      cfg.IdentityCache,
 		membershipCache:    cfg.MembershipCache,
 		devWorldID:         cfg.DevWorldID,
+		devWorldIDs:        devWorldIDs,
 	}, nil
 }
 
@@ -87,12 +98,62 @@ func (r *worldResolver) Resolve(ctx context.Context, input *ResolveWorldInput) (
 		if r.devWorldID == "" {
 			return nil, status.Error(codes.FailedPrecondition, "development world is not configured")
 		}
-		return &ResolveWorldOutput{WorldID: r.devWorldID, AssignedRoleIDs: append([]string(nil), r.developmentRoles[playerID]...)}, nil
+		worldID, err := r.selectDevWorld(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &ResolveWorldOutput{WorldID: worldID, AssignedRoleIDs: append([]string(nil), r.developmentRoles[playerID]...)}, nil
 	case authSchemeDiscord:
 		return r.resolveDiscord(ctx, input, request.value, playerID)
 	default:
 		return nil, status.Error(codes.Unauthenticated, "unsupported authentication scheme")
 	}
+}
+
+// selectDevWorld applies the optional development allowlist to an already
+// authenticated Dev request. Without an allowlist the configured default is
+// authoritative and any selector is ignored, preserving the fixed-dev-world
+// behavior. With one, the selector is read from this authenticated branch so
+// no untrusted value can reach gameplay without matching the allowlist.
+func (r *worldResolver) selectDevWorld(ctx context.Context) (string, error) {
+	if len(r.devWorldIDs) == 0 {
+		return r.devWorldID, nil
+	}
+	selector, present, err := optionalGuildSelector(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !present {
+		return r.devWorldID, nil
+	}
+	if _, allowed := r.devWorldIDs[selector]; !allowed {
+		return "", status.Error(codes.PermissionDenied, "selected development world is not allowed")
+	}
+	return selector, nil
+}
+
+// developmentWorldAllowlist validates the optional RPG_DEV_WORLD_IDS fixture.
+// It never silently repairs malformed configuration: a non-canonical or
+// duplicated entry, or a list that omits the configured default, fails server
+// construction rather than broadening access.
+func developmentWorldAllowlist(defaultWorldID string, configured []string) (map[string]struct{}, error) {
+	if len(configured) == 0 {
+		return nil, nil
+	}
+	allowlist := make(map[string]struct{}, len(configured))
+	for _, worldID := range configured {
+		if !isCanonicalUint64(worldID) {
+			return nil, fmt.Errorf("development world allowlist entry %q must be a canonical non-zero uint64", worldID)
+		}
+		if _, duplicate := allowlist[worldID]; duplicate {
+			return nil, fmt.Errorf("development world allowlist entry %q is duplicated", worldID)
+		}
+		allowlist[worldID] = struct{}{}
+	}
+	if _, present := allowlist[defaultWorldID]; !present {
+		return nil, fmt.Errorf("development world allowlist must include the default world %q", defaultWorldID)
+	}
+	return allowlist, nil
 }
 
 func (r *worldResolver) resolveDiscord(ctx context.Context, input *ResolveWorldInput, token, playerID string) (*ResolveWorldOutput, error) {

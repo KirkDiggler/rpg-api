@@ -12,7 +12,6 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -32,7 +31,7 @@ func TestGetAtlas_HappyPath(t *testing.T) {
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.GetAtlas(ctx, &sessionpb.GetAtlasRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
 	require.Len(t, resp.GetCells(), 1)
@@ -59,7 +58,7 @@ func TestGetAtlas_DungeonKeyNamesTheContentTheSessionPlays(t *testing.T) {
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.GetAtlas(ctx, &sessionpb.GetAtlasRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
 	require.Equal(t, "reference-front-room", resp.GetDungeonKey(),
@@ -75,7 +74,7 @@ func TestGetAtlas_ASessionWithNoDungeonKeyAnswersWithNone(t *testing.T) {
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.GetAtlas(ctx, &sessionpb.GetAtlasRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
 	require.Empty(t, resp.GetDungeonKey(),
@@ -89,7 +88,7 @@ func TestGetAtlas_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr.EXPECT().Atlas(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNoEncounter)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.GetAtlas(ctx, &sessionpb.GetAtlasRequest{Session: "sess-1", Member: "char-1"})
 	requireCode(t, err, codes.NotFound)
 }
@@ -104,7 +103,7 @@ func TestGetAtlas_ForeignMember_IsRefusedBeforeTheSDK(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
 	h := &Handler{manager: mgr, characters: ownedCharacterRepo(ctrl, "goblin-1", "someone-else")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.GetAtlas(ctx, &sessionpb.GetAtlasRequest{Session: "sess-1", Member: "goblin-1"})
 	requireCode(t, err, codes.PermissionDenied)
 }
@@ -114,7 +113,7 @@ func TestGetAtlas_EmptyMember_IsRefused(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.GetAtlas(ctx, &sessionpb.GetAtlasRequest{Session: "sess-1"})
 	requireCode(t, err, codes.InvalidArgument)
 }

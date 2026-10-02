@@ -14,7 +14,6 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -32,7 +31,7 @@ func TestHold_EmptyMember_IsRefused(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Hold(ctx, &sessionpb.HoldRequest{Session: "sess-1", Target: "heirloom"})
 	requireCode(t, err, codes.InvalidArgument)
 }
@@ -42,7 +41,7 @@ func TestHold_ForeignMember_IsRefusedBeforeTheSDK(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
 	h := &Handler{manager: mgr, characters: ownedCharacterRepo(ctrl, "char-bob", "bob")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Hold(ctx, &sessionpb.HoldRequest{
 		Session: "sess-1", Member: "char-bob", Target: "heirloom",
 	})
@@ -68,7 +67,7 @@ func TestHold_HappyPath_RoutesVerbatimAndAcksOnly(t *testing.T) {
 			"char-alice": {owner: "alice", name: "Alice", class: "fighter", race: "human"},
 		}),
 	}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Hold(ctx, &sessionpb.HoldRequest{
 		Session: "sess-1", Member: "char-alice", Target: "heirloom", Range: 1,
 	})
@@ -105,7 +104,7 @@ func TestHold_TheProbeLawSurvivesTranslation(t *testing.T) {
 		Return(nil, fmt.Errorf("hold: %w", sdk.ErrNoProp)).Times(len(probes))
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 
 	answers := make([]string, len(probes))
 	for i, target := range probes {
@@ -145,7 +144,7 @@ func TestHold_AVisibleRefusalIsNamed(t *testing.T) {
 			mgr.EXPECT().Hold(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("hold: %w", tc.err))
 
 			h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-			ctx := auth.WithPlayerID(context.Background(), "alice")
+			ctx := authedCtx("alice")
 			_, err := h.Hold(ctx, &sessionpb.HoldRequest{
 				Session: "sess-1", Member: "char-1", Target: "pillar",
 			})

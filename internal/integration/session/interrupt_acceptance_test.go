@@ -96,8 +96,8 @@ func buildOpenRoom(t *testing.T, width, height int) *tkencounter.EncounterData {
 // is overwritten.
 func inCombat(t *testing.T, repo characterrepo.Repository, id string, reactions int) {
 	t.Helper()
-	ctx := context.Background()
-	got, err := repo.Get(ctx, characterrepo.GetInput{ID: id})
+	ctx := worldCtx()
+	got, err := repo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: id})
 	require.NoError(t, err)
 	got.Character.Data.ActionEconomy = &tkcharacter.ActionEconomyData{
 		TurnNumber: 1, ActionsRemaining: 1, BonusActionsRemaining: 1,
@@ -172,22 +172,22 @@ func TestAcceptance_ReactionWindowCrossesTheWire(t *testing.T) {
 		},
 		walked: map[string]bool{},
 	})
-	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+	ctx := auth.WithPlayerID(worldCtx(), "player-alice")
 
-	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+	_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter("alice", "player-alice")},
 	})
 	require.NoError(t, err)
 	// bob exists but never joins. He is the non-audience caller below: the
 	// ownership gate needs a character this player owns, and React's own
 	// refusal is about whose window it is, not who is in the fight.
-	_, err = h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: armedFighter("bob", "player-bob")},
+	_, err = h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter("bob", "player-bob")},
 	})
 	require.NoError(t, err)
 
 	// The lobby's job, in-process (design rule 5: creation is the lobby's).
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: sessionID, Encounter: "room-encounter", World: buildOpenRoom(t, 12, 6),
 	})
 	require.NoError(t, err)
@@ -204,7 +204,7 @@ func TestAcceptance_ReactionWindowCrossesTheWire(t *testing.T) {
 		id string
 		at spatial.Position
 	}{{"skel-1", at(4, 0)}, {"skel-2", at(2, 0)}} {
-		_, serr := h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+		_, serr := h.manager.Manager.Spawn(worldCtx(), &sdk.SpawnInput{
 			Session: sessionID, ID: spawn.id, Ref: refs.Monsters.Skeleton().String(), Position: spawn.at,
 		})
 		require.NoError(t, serr)
@@ -281,7 +281,7 @@ func TestAcceptance_ReactionWindowCrossesTheWire(t *testing.T) {
 	requireGRPCCode(t, err, codes.InvalidArgument)
 
 	// -- somebody else's window is a permission refusal, not a stale one --
-	bobCtx := auth.WithPlayerID(context.Background(), "player-bob")
+	bobCtx := auth.WithPlayerID(worldCtx(), "player-bob")
 	_, err = h.handler.React(bobCtx, &sessionpb.ReactRequest{
 		Session: sessionID, Member: "bob", DeclarationId: row.GetId(),
 		Choice: sessionpb.ReactChoice_REACT_CHOICE_STRIKE,
@@ -359,7 +359,7 @@ const oaRef = "dnd5e:conditions:opportunity_attack"
 // owning player, so this cannot go through GetWhere's ownership gate.
 func whereIs(t *testing.T, h *acceptanceHarness, session, member string) spatial.Position {
 	t.Helper()
-	out, err := h.manager.Manager.Where(context.Background(), &sdk.WhereInput{
+	out, err := h.manager.Manager.Where(worldCtx(), &sdk.WhereInput{
 		Session: session, Member: member,
 	})
 	require.NoError(t, err)

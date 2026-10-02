@@ -20,9 +20,38 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	customizationconverter "github.com/KirkDiggler/rpg-api/internal/converters/customization"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 )
 
 const draftNotFoundMessage = "draft not found"
+
+// worldAndPlayer reads the trusted world installed by the auth/role boundary
+// and the authenticated player. Both are mandatory for every private
+// character/draft operation; a missing one fails closed rather than defaulting
+// to any world.
+func worldAndPlayer(ctx context.Context) (string, string, error) {
+	playerID := auth.GetPlayerID(ctx)
+	if playerID == "" {
+		return "", "", status.Error(codes.Unauthenticated, "player not authenticated")
+	}
+	world, ok := worldcontext.Get(ctx)
+	if !ok || world.WorldID == "" {
+		return "", "", status.Error(codes.FailedPrecondition, "trusted world context is required")
+	}
+	return world.WorldID, playerID, nil
+}
+
+// toStatusError converts the orchestrator's typed apierr refusals (NotFound,
+// InvalidArgument, ...) into gRPC status errors so the right code reaches the
+// caller, while leaving other errors -- and their chains -- untouched so a
+// caller's errors.Is sentinel still matches.
+func toStatusError(err error) error {
+	var coded *apierr.Error
+	if errors.As(err, &coded) {
+		return apierr.ToGRPCError(err)
+	}
+	return err
+}
 
 // HandlerConfig holds dependencies for the handler
 type HandlerConfig struct {
@@ -74,14 +103,14 @@ func (h *Handler) CreateDraft(
 	ctx context.Context,
 	req *dnd5ev1alpha1.CreateDraftRequest,
 ) (*dnd5ev1alpha1.CreateDraftResponse, error) {
-	// Get authenticated player ID from context
-	playerID := auth.GetPlayerID(ctx)
-	if playerID == "" {
-		return nil, status.Error(codes.Unauthenticated, "player not authenticated")
+	worldID, playerID, err := worldAndPlayer(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Create input for orchestrator
 	input := &character.CreateDraftInput{
+		WorldID:   worldID,
 		PlayerID:  playerID,
 		SessionID: req.SessionId,
 	}
@@ -112,9 +141,16 @@ func (h *Handler) GetDraft(
 		return nil, apierr.InvalidArgument("draft_id is required")
 	}
 
+	worldID, playerID, err := worldAndPlayer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Call orchestrator
 	output, err := h.characterService.GetDraft(ctx, &character.GetDraftInput{
-		DraftID: req.DraftId,
+		WorldID:  worldID,
+		PlayerID: playerID,
+		DraftID:  req.DraftId,
 	})
 	if err != nil {
 		if apierr.IsNotFound(err) {
@@ -128,7 +164,9 @@ func (h *Handler) GetDraft(
 
 	// Run validation to populate the validation field
 	validationOutput, err := h.characterService.ValidateDraft(ctx, &character.ValidateDraftInput{
-		DraftID: req.DraftId,
+		WorldID:  worldID,
+		PlayerID: playerID,
+		DraftID:  req.DraftId,
 	})
 	if err == nil && validationOutput != nil {
 		// Convert toolkit validation to proto format
@@ -146,14 +184,14 @@ func (h *Handler) ListDrafts(
 	ctx context.Context,
 	req *dnd5ev1alpha1.ListDraftsRequest,
 ) (*dnd5ev1alpha1.ListDraftsResponse, error) {
-	// Get authenticated player ID from context
-	playerID := auth.GetPlayerID(ctx)
-	if playerID == "" {
-		return nil, status.Error(codes.Unauthenticated, "player not authenticated")
+	worldID, playerID, err := worldAndPlayer(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Build input for orchestrator
 	input := &character.ListDraftsInput{
+		WorldID:   worldID,
 		PlayerID:  playerID,
 		SessionID: req.GetSessionId(),
 		PageSize:  int(req.GetPageSize()),
@@ -201,13 +239,20 @@ func (h *Handler) UpdateName(
 		return nil, apierr.InvalidArgument("name is required")
 	}
 
-	// Call orchestrator
-	result, err := h.characterService.SetName(ctx, &character.SetNameInput{
-		DraftID: req.DraftId,
-		Name:    req.Name,
-	})
+	worldID, playerID, err := worldAndPlayer(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	// Call orchestrator
+	result, err := h.characterService.SetName(ctx, &character.SetNameInput{
+		WorldID:  worldID,
+		PlayerID: playerID,
+		DraftID:  req.DraftId,
+		Name:     req.Name,
+	})
+	if err != nil {
+		return nil, toStatusError(err)
 	}
 
 	// Convert result to proto
@@ -267,8 +312,14 @@ func (h *Handler) UpdateRace(
 	}
 
 	// Call orchestrator
+	worldID, playerID, err := worldAndPlayer(ctx)
+	if err != nil {
+		return nil, err
+	}
 	result, err := h.characterService.SetRace(ctx, &character.SetRaceInput{
-		DraftID: req.DraftId,
+		WorldID:  worldID,
+		PlayerID: playerID,
+		DraftID:  req.DraftId,
 		Input: &toolkitchar.SetRaceInput{
 			RaceID:    convertProtoRaceToToolkit(req.Race),
 			SubraceID: convertProtoSubraceToToolkit(req.Subrace),
@@ -276,7 +327,7 @@ func (h *Handler) UpdateRace(
 		},
 	})
 	if err != nil {
-		return nil, err
+		return nil, toStatusError(err)
 	}
 
 	// Convert result to proto
@@ -426,8 +477,14 @@ func (h *Handler) UpdateClass(
 	}
 
 	// Call orchestrator
+	worldID, playerID, err := worldAndPlayer(ctx)
+	if err != nil {
+		return nil, err
+	}
 	result, err := h.characterService.SetClass(ctx, &character.SetClassInput{
-		DraftID: req.DraftId,
+		WorldID:  worldID,
+		PlayerID: playerID,
+		DraftID:  req.DraftId,
 		Input: &toolkitchar.SetClassInput{
 			ClassID:    convertProtoClassToToolkit(req.Class),
 			SubclassID: convertProtoSubclassToToolkit(req.Subclass),
@@ -435,7 +492,7 @@ func (h *Handler) UpdateClass(
 		},
 	})
 	if err != nil {
-		return nil, err
+		return nil, toStatusError(err)
 	}
 
 	// Convert result to proto
@@ -516,15 +573,21 @@ func (h *Handler) UpdateBackground(
 	}
 
 	// Call orchestrator
+	worldID, playerID, err := worldAndPlayer(ctx)
+	if err != nil {
+		return nil, err
+	}
 	result, err := h.characterService.SetBackground(ctx, &character.SetBackgroundInput{
-		DraftID: req.DraftId,
+		WorldID:  worldID,
+		PlayerID: playerID,
+		DraftID:  req.DraftId,
 		Input: &toolkitchar.SetBackgroundInput{
 			BackgroundID: convertProtoBackgroundToToolkit(req.Background),
 			Choices:      bgChoices,
 		},
 	})
 	if err != nil {
-		return nil, err
+		return nil, toStatusError(err)
 	}
 
 	// Convert result to proto
@@ -548,6 +611,11 @@ func (h *Handler) UpdateAbilityScores(
 	var scores shared.AbilityScores
 	var method string
 
+	worldID, playerID, err := worldAndPlayer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	switch scoresInput := req.GetScoresInput().(type) {
 	case *dnd5ev1alpha1.UpdateAbilityScoresRequest_AbilityScores:
 		if scoresInput.AbilityScores == nil {
@@ -563,17 +631,19 @@ func (h *Handler) UpdateAbilityScores(
 		rollAssignments := convertRollAssignmentsToMap(scoresInput.RollAssignments)
 
 		// Call orchestrator with roll assignments - it will handle dice service lookup
-		result, err := h.characterService.SetAbilityScoresFromRolls(ctx, &character.SetAbilityScoresFromRollsInput{
+		rollResult, rollErr := h.characterService.SetAbilityScoresFromRolls(ctx, &character.SetAbilityScoresFromRollsInput{
+			WorldID:         worldID,
+			PlayerID:        playerID,
 			DraftID:         req.DraftId,
 			RollAssignments: rollAssignments,
 		})
-		if err != nil {
-			return nil, err
+		if rollErr != nil {
+			return nil, toStatusError(rollErr)
 		}
 
 		// Convert result to proto
 		return &dnd5ev1alpha1.UpdateAbilityScoresResponse{
-			Draft: convertDraftDataToProto(result.Draft),
+			Draft: convertDraftDataToProto(rollResult.Draft),
 		}, nil
 	default:
 		return nil, apierr.InvalidArgument("scores_input is required")
@@ -581,14 +651,16 @@ func (h *Handler) UpdateAbilityScores(
 
 	// Call orchestrator
 	result, err := h.characterService.SetAbilityScores(ctx, &character.SetAbilityScoresInput{
-		DraftID: req.DraftId,
+		WorldID:  worldID,
+		PlayerID: playerID,
+		DraftID:  req.DraftId,
 		Input: &toolkitchar.SetAbilityScoresInput{
 			Scores: scores,
 			Method: method,
 		},
 	})
 	if err != nil {
-		return nil, err
+		return nil, toStatusError(err)
 	}
 
 	// Convert result to proto
@@ -630,12 +702,19 @@ func (h *Handler) FinalizeDraft(
 		return nil, apierr.InvalidArgument("draft ID is required")
 	}
 
-	// Call orchestrator to finalize the draft
-	output, err := h.characterService.FinalizeDraft(ctx, &character.FinalizeDraftInput{
-		DraftID: req.DraftId,
-	})
+	worldID, playerID, err := worldAndPlayer(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	// Call orchestrator to finalize the draft
+	output, err := h.characterService.FinalizeDraft(ctx, &character.FinalizeDraftInput{
+		WorldID:  worldID,
+		PlayerID: playerID,
+		DraftID:  req.DraftId,
+	})
+	if err != nil {
+		return nil, toStatusError(err)
 	}
 
 	// Convert toolkit character to proto
@@ -661,8 +740,15 @@ func (h *Handler) GetCharacter(
 		return nil, status.Error(codes.InvalidArgument, "character_id is required")
 	}
 
+	worldID, playerID, err := worldAndPlayer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get character from orchestrator
 	result, err := h.characterService.GetCharacter(ctx, &character.GetCharacterInput{
+		WorldID:     worldID,
+		PlayerID:    playerID,
 		CharacterID: req.CharacterId,
 	})
 	if err != nil {
@@ -689,13 +775,14 @@ func (h *Handler) ListCharacters(
 	req *dnd5ev1alpha1.ListCharactersRequest,
 ) (*dnd5ev1alpha1.ListCharactersResponse, error) {
 	// Get authenticated player ID from context
-	playerID := auth.GetPlayerID(ctx)
-	if playerID == "" {
-		return nil, status.Error(codes.Unauthenticated, "player not authenticated")
+	worldID, playerID, err := worldAndPlayer(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Build input for orchestrator
 	input := &character.ListCharactersInput{
+		WorldID:   worldID,
 		PlayerID:  playerID,
 		SessionID: req.GetSessionId(),
 		PageSize:  int(req.GetPageSize()),
@@ -735,8 +822,15 @@ func (h *Handler) DeleteCharacter(
 		return nil, status.Error(codes.InvalidArgument, "character_id is required")
 	}
 
+	worldID, playerID, err := worldAndPlayer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Call orchestrator
-	_, err := h.characterService.DeleteCharacter(ctx, &character.DeleteCharacterInput{
+	_, err = h.characterService.DeleteCharacter(ctx, &character.DeleteCharacterInput{
+		WorldID:     worldID,
+		PlayerID:    playerID,
 		CharacterID: req.CharacterId,
 	})
 	if err != nil {
@@ -956,7 +1050,7 @@ func (h *Handler) ListSpellsByLevel(
 		// TODO: Convert class filter when needed
 	})
 	if err != nil {
-		return nil, apierr.ToGRPCError(err)
+		return nil, toStatusError(err)
 	}
 
 	// Convert to proto format
@@ -992,11 +1086,20 @@ func (h *Handler) GetCharacterInventory(
 	}
 
 	// Get character data - equipment slots are part of character data
+	worldID, playerID, err := worldAndPlayer(ctx)
+	if err != nil {
+		return nil, err
+	}
 	charResult, err := h.characterService.GetCharacter(ctx, &character.GetCharacterInput{
+		WorldID:     worldID,
+		PlayerID:    playerID,
 		CharacterID: req.CharacterId,
 	})
 	if err != nil {
-		return nil, err
+		// A foreign/missing character is NotFound, the same refusal every
+		// other private direct-ID path makes; the orchestrator's apierr is
+		// converted here because this RPC returns it directly.
+		return nil, toStatusError(err)
 	}
 
 	// Convert character inventory from character data
@@ -1038,8 +1141,15 @@ func (h *Handler) EquipItem(
 		return nil, err
 	}
 
+	worldID, playerID, err := worldAndPlayer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Equip item via orchestrator
 	equipResult, err := h.characterService.EquipItem(ctx, &character.EquipItemInput{
+		WorldID:     worldID,
+		PlayerID:    playerID,
 		CharacterID: req.CharacterId,
 		ItemID:      req.ItemId,
 		Slot:        slot,
@@ -1089,8 +1199,15 @@ func (h *Handler) UnequipItem(
 		return nil, err
 	}
 
+	worldID, playerID, err := worldAndPlayer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Unequip item via orchestrator
 	unequipResult, err := h.characterService.UnequipItem(ctx, &character.UnequipItemInput{
+		WorldID:     worldID,
+		PlayerID:    playerID,
 		CharacterID: req.CharacterId,
 		Slot:        slot,
 	})
@@ -1110,7 +1227,7 @@ func (h *Handler) UnequipItem(
 func equipmentRPCError(err error) error {
 	var coded *apierr.Error
 	if errors.As(err, &coded) && coded.Code != apierr.CodeInternal {
-		return apierr.ToGRPCError(err)
+		return toStatusError(err)
 	}
 	return apierr.ToGRPCError(apierr.WrapWithCode(err, apierr.CodeInternal, character.CharacterDataUnavailableMessage))
 }
@@ -1149,7 +1266,12 @@ func (h *Handler) UpdateAppearance(
 	if req.Appearance == nil {
 		return nil, status.Error(codes.InvalidArgument, "appearance is required")
 	}
+	worldID, _, err := worldAndPlayer(ctx)
+	if err != nil {
+		return nil, err
+	}
 	output, err := h.characterService.SetAppearance(ctx, &character.SetAppearanceInput{
+		WorldID:    worldID,
 		DraftID:    req.DraftId,
 		PlayerID:   playerID,
 		Appearance: customizationconverter.ProtoToToolkit(req.Appearance),

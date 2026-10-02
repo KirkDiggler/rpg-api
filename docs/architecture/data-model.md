@@ -68,7 +68,7 @@ stores it as part of the thin `entities.Character`/`CharacterDraft` wrapper's ne
 `Data` value. The shared converter preserves optional and malformed wire shape while
 toolkit owns semantic validation.
 
-**Storage:** Redis key `character:{id}` (verified via `repositories/character/redis.go`). No TTL observed — characters persist indefinitely.
+**Storage:** Redis key `character:{worldID}:{id}` (verified via `repositories/character/redis.go`), where `WorldID` is API-owned ownership metadata stored on the `entities.Character` wrapper as `world_id` (not part of toolkit `character.Data`). World and player ownership are immutable; every repository operation is world-scoped. No TTL observed — characters persist indefinitely. The ownerless legacy `character:{id}` key is never read as a fallback.
 
 ## CharacterDraft (`entities/character_draft.go`)
 
@@ -80,7 +80,7 @@ Key fields:
 - `AbilityScores` — pending assignment
 - `ChoicesCompleted` — which selection steps are done
 
-**Storage:** Redis-backed via `repositories/character_draft/redis.go`. Represents transient state during character creation flow.
+**Storage:** Redis-backed via `repositories/character_draft/redis.go`. Represents transient state during character creation flow. Keys are world-scoped: `draft:{worldID}:{draftID}` plus `draft:player:{worldID}:{playerID}` mapping to the player's single draft in that world. `WorldID` is API-owned wrapper metadata; world/player ownership is immutable.
 
 ## ~~Dungeon (`entities/dungeon.go`)~~ DELETED (rpg-api#642, 2026-07-13)
 
@@ -259,7 +259,7 @@ Production guild-to-world mapping and rendering integration do not exist here.
 
 ## DiceSession (repositories/dice_session)
 
-Tracks in-progress ability score rolls for character creation. Redis-backed. Narrow scope; stores the rolls until assigned to a draft.
+Tracks in-progress ability score rolls for character creation. Redis-backed. Narrow scope; stores the rolls until assigned to a draft. Sessions are world-scoped by the `(WorldID, EntityID, Context)` tuple; `WorldID` is API-owned ownership metadata on the `DiceSession` envelope.
 
 ## Position types (canonical model, post-#471)
 
@@ -278,14 +278,16 @@ The old `entities.Position` (float64) and `dungeon.Position` (int) types — and
 ## Redis key schema (character repos)
 
 Character repository (`repositories/character/redis.go`):
-- `character:{id}` — JSON-serialized `entities.Character` wrapping toolkit `character.Data`
+- `character:{worldID}:{id}` — JSON-serialized `entities.Character` wrapping toolkit `character.Data` plus API-owned `world_id`
+- `character:player:{worldID}:{playerID}` — maintained set of character IDs
+- `character:session:{worldID}:{sessionID}` — read-side set of character IDs (not maintained by character CRUD)
 
 Character draft repository (`repositories/character_draft/redis.go`):
-- `draft:{draftID}` — JSON-serialized `entities.CharacterDraft` wrapping toolkit `character.DraftData`
-- `character_drafts:{playerID}` — set of draft IDs per player
+- `draft:{worldID}:{draftID}` — JSON-serialized `entities.CharacterDraft` wrapping toolkit `character.DraftData` plus API-owned `world_id`
+- `draft:player:{worldID}:{playerID}` — points to the player's current draft ID in that world
 
 Dice session repository (`repositories/dice_session/redis.go`):
-- `dice_session:{playerID}:{sessionID}` — JSON-serialized session state
+- `dice_session:{worldID}:{entityID}:{context}` — JSON-serialized session state with API-owned `world_id`
 
 Composition repository (`repositories/composition/redis.go`):
 - `composition:<WorldID>` — hash with composition ID fields and serialized toolkit

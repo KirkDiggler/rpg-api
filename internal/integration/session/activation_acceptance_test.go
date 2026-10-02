@@ -73,15 +73,15 @@ func inAFightWithDice(
 ) (*acceptanceHarness, context.Context) {
 	t.Helper()
 	h := newAcceptanceHarnessWithDice(t, roller)
-	ctx := auth.WithPlayerID(context.Background(), sheet.PlayerID)
+	ctx := auth.WithPlayerID(worldCtx(), sheet.PlayerID)
 
-	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: sheet},
+	_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: sheet},
 	})
 	require.NoError(t, err)
 
 	world := buildThreeRoomTomb(t)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: "acceptance-run", Encounter: "tomb-encounter", World: world,
 	})
 	require.NoError(t, err)
@@ -112,7 +112,7 @@ func inAFightWithDice(
 	// what leaves the caller on a turn clock. It is the shape
 	// TestAcceptance_GreatWeaponFightingRollTraceCrossesLiveAndStory already
 	// proves, and the two scripted d20s are this formation's initiative.
-	spawned, err := h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+	spawned, err := h.manager.Manager.Spawn(worldCtx(), &sdk.SpawnInput{
 		Session: "acceptance-run", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
 		Position: at(19, 3),
 	})
@@ -152,7 +152,7 @@ func storedSheetOf(
 	t *testing.T, repo characterrepo.Repository, id string,
 ) *tkcharacter.Data {
 	t.Helper()
-	got, err := repo.Get(context.Background(), characterrepo.GetInput{ID: id})
+	got, err := repo.Get(worldCtx(), characterrepo.GetInput{WorldID: sessionWorld, ID: id})
 	require.NoError(t, err)
 	return got.Character.Data
 }
@@ -444,11 +444,11 @@ func TestAcceptance_SecondWindActivationEventsAndHealingCrossTheWire(t *testing.
 	// Join owns first-admission normal-rest recovery, so establish the damaged
 	// precondition after that admission and before Afford/Activate. This is a
 	// persistence fixture setup, not API-side healing arithmetic.
-	stored, err := h.charRepo.Get(context.Background(), characterrepo.GetInput{ID: "alice"})
+	stored, err := h.charRepo.Get(worldCtx(), characterrepo.GetInput{WorldID: sessionWorld, ID: "alice"})
 	require.NoError(t, err)
 	stored.Character.Data.HitPoints = 8
 	stored.Character.Data.MaxHitPoints = 10
-	_, err = h.charRepo.Update(context.Background(), characterrepo.UpdateInput{Character: stored.Character})
+	_, err = h.charRepo.Update(worldCtx(), characterrepo.UpdateInput{Character: stored.Character})
 	require.NoError(t, err)
 
 	offers := activationsFor(ctx, t, h, "alice")
@@ -539,8 +539,8 @@ func TestAcceptance_HelpOffersTheAdjacentAlly(t *testing.T) {
 
 	// Bob joins next to her, through the real service and as his own player.
 	bob := ragingBarbarian("bob", "player-bob")
-	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: bob},
+	_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: bob},
 	})
 	require.NoError(t, err)
 
@@ -549,7 +549,7 @@ func TestAcceptance_HelpOffersTheAdjacentAlly(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	bobCtx := auth.WithPlayerID(context.Background(), "player-bob")
+	bobCtx := auth.WithPlayerID(worldCtx(), "player-bob")
 	_, err = h.handler.Join(bobCtx, &sessionpb.JoinRequest{
 		Session: "acceptance-run", Member: "bob",
 		Position: &sessionpb.Position{

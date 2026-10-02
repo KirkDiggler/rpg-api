@@ -83,6 +83,18 @@ func (s *CharacterCreationSuite) authCtx(playerID string) context.Context {
 	return metadata.AppendToOutgoingContext(s.ctx, "authorization", "Dev "+playerID)
 }
 
+// authCtxInWorld identifies the player and selects the world through the
+// measured x-rpg-guild-id selector. The harness's real world resolver admits
+// only the #522 fixture allowlist, so this is the production-shaped way a test
+// switches between world A and world B on one server and one Redis.
+func (s *CharacterCreationSuite) authCtxInWorld(playerID, worldID string) context.Context {
+	return metadata.AppendToOutgoingContext(
+		s.ctx,
+		"authorization", "Dev "+playerID,
+		"x-rpg-guild-id", worldID,
+	)
+}
+
 func (s *CharacterCreationSuite) assertInventoryCounts(char *dnd5ev1alpha1.Character, expected map[string]int32) {
 	s.Require().NotNil(char)
 
@@ -1390,7 +1402,7 @@ func (s *CharacterCreationSuite) TestCreateMonk_RejectsLiveAndPersistedUnarmedSt
 	// FinalizeDraft RPC revalidates persisted selections before creating a character.
 	draftID := s.createMonkDraftWithPrimaryWeapon(ctx, "monk-weapon-b", dnd5ev1alpha1.Weapon_WEAPON_CLUB)
 	draftRepo := s.newDraftRepository()
-	stored, err := draftRepo.Get(ctx, characterdraft.GetInput{ID: draftID})
+	stored, err := draftRepo.Get(ctx, characterdraft.GetInput{WorldID: harness.DevWorldA, ID: draftID})
 	s.Require().NoError(err)
 	mutated := false
 	for i := range stored.Draft.Data.Choices {
@@ -1889,7 +1901,8 @@ func (s *CharacterCreationSuite) TestCreateBard_FinalizesChoosingTwoCantrips() {
 	// either through the wire would be asserting against an empty list and
 	// could not fail. --
 	stored, err := s.server.CharacterRepo.Get(s.ctx, characterrepo.GetInput{
-		ID: finalizeResp.GetCharacter().GetId(),
+		WorldID: harness.DevWorldA,
+		ID:      finalizeResp.GetCharacter().GetId(),
 	})
 	s.Require().NoError(err)
 

@@ -19,7 +19,6 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -33,7 +32,7 @@ func TestGetDoors_Unauthenticated_Errors(t *testing.T) {
 func TestGetDoors_MissingSession_Errors(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.GetDoors(ctx, &sessionpb.GetDoorsRequest{})
 	requireCode(t, err, codes.InvalidArgument)
 }
@@ -46,7 +45,7 @@ func TestGetDoors_NotSeated_PermissionDenied(t *testing.T) {
 			"char-bob":   {owner: "bob", name: "Bob", class: "rogue", race: "elf"},
 		}),
 	}
-	ctx := auth.WithPlayerID(context.Background(), "mallory")
+	ctx := authedCtx("mallory")
 	_, err := h.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: "sess-1", Member: "char-alice"})
 	requireCode(t, err, codes.PermissionDenied)
 }
@@ -75,7 +74,7 @@ func TestGetDoors_ProjectsTheLiveState(t *testing.T) {
 			"char-bob":   {owner: "bob", name: "Bob", class: "rogue", race: "elf"},
 		}),
 	}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: "sess-1", Member: "char-alice"})
 	require.NoError(t, err)
 	require.Len(t, resp.GetDoors(), 2)
@@ -104,7 +103,7 @@ func TestOpenDoor_MissingMember_Errors_NeverCallsManager(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl) // no EXPECT()
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.OpenDoor(ctx, &sessionpb.OpenDoorRequest{Session: "sess-1", Door: "gate"})
 	requireCode(t, err, codes.InvalidArgument)
 }
@@ -122,7 +121,7 @@ func TestOpenDoor_HappyPath(t *testing.T) {
 	)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.OpenDoor(ctx, &sessionpb.OpenDoorRequest{Session: "sess-1", Member: "char-1", Door: "gate"})
 	require.NoError(t, err)
 	require.Equal(t, "gate", resp.GetDoor().GetDoor())
@@ -137,7 +136,7 @@ func TestOpenDoor_Locked_FailedPrecondition(t *testing.T) {
 	mgr.EXPECT().OpenDoor(gomock.Any(), gomock.Any()).Return(nil, sdkLockedErr())
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.OpenDoor(ctx, &sessionpb.OpenDoorRequest{Session: "sess-1", Member: "char-1", Door: "hall-tomb"})
 	requireCode(t, err, codes.FailedPrecondition)
 	require.Contains(t, err.Error(), "DC 12", "the refusal names the stakes")
@@ -159,7 +158,7 @@ func TestUnlock_HappyPath_CarriesTheAttempt(t *testing.T) {
 	)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Unlock(ctx, &sessionpb.UnlockRequest{Session: "sess-1", Member: "char-1", Door: "hall-tomb"})
 	require.NoError(t, err, "a failed attempt is an outcome, not an error")
 	require.False(t, resp.GetBeaten())
@@ -183,7 +182,7 @@ func TestUnlock_Paused_ReturnsRollAndTotalOnly(t *testing.T) {
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Unlock(ctx, &sessionpb.UnlockRequest{Session: "sess-1", Member: "char-1", Door: "hall-tomb"})
 	require.NoError(t, err)
 
@@ -202,7 +201,7 @@ func TestUnlock_Paused_ReturnsRollAndTotalOnly(t *testing.T) {
 func TestUnlock_MissingMember_Errors(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Unlock(ctx, &sessionpb.UnlockRequest{Session: "sess-1", Door: "hall-tomb"})
 	requireCode(t, err, codes.InvalidArgument)
 }

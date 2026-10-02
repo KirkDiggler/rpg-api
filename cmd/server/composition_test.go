@@ -21,6 +21,21 @@ func TestConfiguredDevWorldID(t *testing.T) {
 	require.Equal(t, "configured-world", configuredDevWorldID(true))
 }
 
+func TestConfiguredDevWorldIDs(t *testing.T) {
+	t.Setenv(envDevWorldIDs, "123456789012345678,223456789012345678")
+	require.Nil(t, configuredDevWorldIDs(false), "production must ignore the allowlist even when it is set")
+	require.Equal(t, []string{"123456789012345678", "223456789012345678"}, configuredDevWorldIDs(true))
+
+	t.Setenv(envDevWorldIDs, "")
+	require.Nil(t, configuredDevWorldIDs(true), "an absent allowlist preserves the fixed dev world")
+
+	t.Setenv(envDevWorldIDs, " 123456789012345678 , 223456789012345678 ")
+	require.Equal(t, []string{"123456789012345678", "223456789012345678"}, configuredDevWorldIDs(true), "surrounding whitespace is tolerated, internal formatting is not")
+
+	t.Setenv(envDevWorldIDs, "123456789012345678,,223456789012345678")
+	require.Equal(t, []string{"123456789012345678", "", "223456789012345678"}, configuredDevWorldIDs(true), "empty entries survive to validation instead of being deduped away")
+}
+
 func TestCompositionServiceRegistrationInProductionAndDev(t *testing.T) {
 	t.Setenv(envDevWorldID, "production-must-ignore-this-stub")
 	redisServer := miniredis.RunT(t)

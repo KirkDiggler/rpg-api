@@ -11,7 +11,6 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -46,7 +45,7 @@ func TestAfford_HappyPath_ProjectsNestedDeclaration(t *testing.T) {
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
 	require.Equal(t, sessionpb.ClockKind_CLOCK_KIND_TURN, resp.GetClock())
@@ -99,7 +98,7 @@ func TestAfford_AreaFootprintsCrossWholeForAvailableAndUnavailableDeclarations(t
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
 	require.Len(t, resp.GetDeclarations(), 2)
@@ -129,7 +128,7 @@ func TestAfford_AbsentFootprintStaysAbsent(t *testing.T) {
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
 	require.Len(t, resp.GetDeclarations(), 1)
@@ -154,7 +153,7 @@ func TestAfford_UnknownFootprintEnumsFailClosed(t *testing.T) {
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
 	require.Len(t, resp.GetDeclarations(), 1)
@@ -206,7 +205,7 @@ func TestAfford_WorldClock_DeclarationsEmpty(t *testing.T) {
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
 	require.Equal(t, sessionpb.ClockKind_CLOCK_KIND_WORLD, resp.GetClock())
@@ -230,7 +229,7 @@ func TestAfford_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 			mgr.EXPECT().Afford(gomock.Any(), gomock.Any()).Return(nil, tt.err)
 
 			h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-			ctx := auth.WithPlayerID(context.Background(), "alice")
+			ctx := authedCtx("alice")
 			_, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
 			requireCode(t, err, tt.want)
 		})
@@ -258,7 +257,7 @@ func TestAfford_NoTargetInReach_KeepsCandidateRows(t *testing.T) {
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
 	require.Len(t, resp.GetDeclarations(), 1)
@@ -284,7 +283,7 @@ func TestAfford_MoveAndEndTurnDeclarations(t *testing.T) {
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
 	require.Len(t, resp.GetDeclarations(), 2)
@@ -304,6 +303,6 @@ func TestAfford_MoveAndEndTurnDeclarations(t *testing.T) {
 func TestAfford_AimPreviewRequiresOwner(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	h := &Handler{characters: anyMemberOwnedBy(ctrl, "alice")}
-	_, err := h.Afford(auth.WithPlayerID(context.Background(), "bob"), &sessionpb.AffordRequest{Session: "sess", Member: "char-1", CastAim: &sessionpb.CastAim{Declaration: "offer", Cell: &sessionpb.Position{X: 1.25, Y: 2}}})
+	_, err := h.Afford(authedCtx("bob"), &sessionpb.AffordRequest{Session: "sess", Member: "char-1", CastAim: &sessionpb.CastAim{Declaration: "offer", Cell: &sessionpb.Position{X: 1.25, Y: 2}}})
 	requireCode(t, err, codes.PermissionDenied)
 }

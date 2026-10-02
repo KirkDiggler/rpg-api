@@ -65,8 +65,10 @@ type CharacterStore interface {
 
 // SeedWeaponGalleryInput contains the dependencies for the weapon gallery fixture.
 type SeedWeaponGalleryInput struct {
-	Client CharacterRPC
-	Store  CharacterStore
+	// WorldID is the explicit world the gallery character lives in.
+	WorldID string
+	Client  CharacterRPC
+	Store   CharacterStore
 }
 
 // SeedWeaponGalleryOutput reports the stable gallery character and weapon count.
@@ -86,8 +88,11 @@ func SeedWeaponGallery(ctx context.Context, input *SeedWeaponGalleryInput) (*See
 	if input.Store == nil {
 		return nil, errors.New("weapon-gallery: character store is required")
 	}
+	if input.WorldID == "" {
+		return nil, errors.New("weapon-gallery: world ID is required")
+	}
 
-	identityCtx := authenticatedContext(ctx, galleryIdentity)
+	identityCtx := authenticatedContext(ctx, input.WorldID, galleryIdentity)
 	characterID, err := galleryListedCharacterID(identityCtx, input.Client)
 	if err != nil {
 		return nil, err
@@ -106,7 +111,7 @@ func SeedWeaponGallery(ctx context.Context, input *SeedWeaponGalleryInput) (*See
 		}
 	}
 
-	getOutput, err := input.Store.Get(ctx, characterrepo.GetInput{ID: characterID})
+	getOutput, err := input.Store.Get(ctx, characterrepo.GetInput{WorldID: input.WorldID, ID: characterID})
 	if err != nil {
 		return nil, fmt.Errorf("%s Get: %w", galleryIdentity, err)
 	}

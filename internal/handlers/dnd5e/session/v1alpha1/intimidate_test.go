@@ -12,7 +12,6 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -30,7 +29,7 @@ func TestIntimidate_EmptyMember_IsRefused(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Intimidate(ctx, &sessionpb.IntimidateRequest{Session: "sess-1", Target: "goblin-2"})
 	requireCode(t, err, codes.InvalidArgument)
 }
@@ -45,7 +44,7 @@ func TestIntimidate_ForeignMember_IsRefusedBeforeTheSDK(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
 	h := &Handler{manager: mgr, characters: ownedCharacterRepo(ctrl, "char-bob", "bob")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Intimidate(ctx, &sessionpb.IntimidateRequest{
 		Session: "sess-1", Member: "char-bob", Target: "goblin-2",
 	})
@@ -80,7 +79,7 @@ func TestIntimidate_HappyPath_ReturnsTheAckAndNotTheRoll(t *testing.T) {
 			"char-alice": {owner: "alice", name: "Alice", class: "fighter", race: "human"},
 		}),
 	}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Intimidate(ctx, &sessionpb.IntimidateRequest{
 		Session: "sess-1", Member: "char-alice", Target: "goblin-2",
 	})
@@ -112,7 +111,7 @@ func TestIntimidate_BeatenAndMissed_AnswerIdentically(t *testing.T) {
 				"char-alice": {owner: "alice", name: "Alice", class: "fighter", race: "human"},
 			}),
 		}
-		ctx := auth.WithPlayerID(context.Background(), "alice")
+		ctx := authedCtx("alice")
 		resp, err := h.Intimidate(ctx, &sessionpb.IntimidateRequest{
 			Session: "sess-1", Member: "char-alice", Target: "goblin-2",
 		})
@@ -160,7 +159,7 @@ func TestIntimidate_Paused_CarriesTheRollAndNothingElse(t *testing.T) {
 			"char-alice": {owner: "alice", name: "Alice", class: "fighter", race: "human"},
 		}),
 	}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Intimidate(ctx, &sessionpb.IntimidateRequest{
 		Session: "sess-1", Member: "char-alice", Target: "goblin-2",
 	})
@@ -191,7 +190,7 @@ func TestIntimidate_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr.EXPECT().Intimidate(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNotYourTurn)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Intimidate(ctx, &sessionpb.IntimidateRequest{
 		Session: "sess-1", Member: "char-1", Target: "goblin-2",
 	})
@@ -219,7 +218,7 @@ func TestIntimidate_Unwitnessed_IsAWorldRefusalNotAnInternalError(t *testing.T) 
 	mgr.EXPECT().Intimidate(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrUnwitnessed)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Intimidate(ctx, &sessionpb.IntimidateRequest{
 		Session: "sess-1", Member: "char-1", Target: "goblin-2",
 	})

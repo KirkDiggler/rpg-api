@@ -107,8 +107,9 @@ var blockedClasses = map[string]string{}
 // cannot hide eleven answers.
 func (s *LevelUpClassesSuite) TestEveryClassIsCreatedFromItsOwnCatalogEntry() {
 	out, err := sandboxseed.SeedLevelUpClasses(s.ctx, &sandboxseed.SeedLevelUpClassesInput{
-		Client: s.server.CharacterClient,
-		Store:  s.server.CharacterRepo,
+		WorldID: harness.DevWorldA,
+		Client:  s.server.CharacterClient,
+		Store:   s.server.CharacterRepo,
 	})
 	s.Require().NotNil(out, "a partial run still reports what it seeded")
 
@@ -195,8 +196,9 @@ func (s *LevelUpClassesSuite) TestEveryClassCanBeAskedForItsNextLevel() {
 	// CREATED is the other test's claim, and this one is about whether the
 	// ones that exist can be asked what their next level brings.
 	out, _ := sandboxseed.SeedLevelUpClasses(s.ctx, &sandboxseed.SeedLevelUpClassesInput{
-		Client: s.server.CharacterClient,
-		Store:  s.server.CharacterRepo,
+		WorldID: harness.DevWorldA,
+		Client:  s.server.CharacterClient,
+		Store:   s.server.CharacterRepo,
 	})
 	s.Require().NotNil(out)
 	s.Require().NotEmpty(out.Classes)

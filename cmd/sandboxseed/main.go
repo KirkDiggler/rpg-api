@@ -42,6 +42,7 @@ const (
 type config struct {
 	address      string
 	redisAddress string
+	worldID      string
 	fixture      string
 	health       bool
 }
@@ -106,7 +107,7 @@ func runWithDeps(args []string, deps commandDeps) error {
 			return storeErr
 		}
 		defer func() { _ = store.Close() }()
-		if err := deps.seedDefault(ctx, &sandboxseed.SeedInput{Client: client, Store: store}); err != nil {
+		if err := deps.seedDefault(ctx, &sandboxseed.SeedInput{WorldID: config.worldID, Client: client, Store: store}); err != nil {
 			return fmt.Errorf("seed: %w", err)
 		}
 		return nil
@@ -116,7 +117,7 @@ func runWithDeps(args []string, deps commandDeps) error {
 			return storeErr
 		}
 		defer func() { _ = store.Close() }()
-		out, err := deps.seedClasses(ctx, &sandboxseed.SeedLevelUpClassesInput{Client: client, Store: store})
+		out, err := deps.seedClasses(ctx, &sandboxseed.SeedLevelUpClassesInput{WorldID: config.worldID, Client: client, Store: store})
 		// The output is printed even on error: a run that failed on three
 		// classes still seeded the other nine, and naming what DID work is
 		// what makes the failure a per-class finding rather than a dead run.
@@ -140,7 +141,7 @@ func runWithDeps(args []string, deps commandDeps) error {
 			return err
 		}
 		defer func() { _ = store.Close() }()
-		out, err := deps.seedGallery(ctx, &sandboxseed.SeedWeaponGalleryInput{Client: client, Store: store})
+		out, err := deps.seedGallery(ctx, &sandboxseed.SeedWeaponGalleryInput{WorldID: config.worldID, Client: client, Store: store})
 		if err != nil {
 			return fmt.Errorf("seed %s: %w", fixtureWeaponGallery, err)
 		}
@@ -200,6 +201,8 @@ func parseConfig(args []string) (*config, error) {
 	flags.StringVar(&result.redisAddress, "redis-address", defaultRedisAddress, "Redis address for repository-backed fixtures")
 	flags.StringVar(&result.fixture, "fixture", fixtureDefault,
 		"fixture to seed: default, weapon-gallery, or level-up-classes")
+	flags.StringVar(&result.worldID, "world-id", os.Getenv("RPG_DEV_WORLD_ID"),
+		"world to seed fixtures into; defaults to the explicitly supplied RPG_DEV_WORLD_ID")
 	flags.BoolVar(&result.health, "health", false, "check Envoy gRPC health only")
 	if err := flags.Parse(args); err != nil {
 		return nil, err
@@ -217,6 +220,11 @@ func parseConfig(args []string) (*config, error) {
 	}
 	if !result.health && result.redisAddress == "" {
 		return nil, errors.New("redis address is required to seed fixtures")
+	}
+	// A mutation must name a world: there is no test-world or ownerless
+	// fallback. Health-only invocations are allowed to skip it.
+	if !result.health && result.worldID == "" {
+		return nil, errors.New("world ID is required to seed fixtures: pass -world-id or set RPG_DEV_WORLD_ID")
 	}
 	return result, nil
 }

@@ -36,14 +36,14 @@ func TestAcceptance_Stabilization(t *testing.T) {
 	for _, stable := range []bool{false, true} {
 		t.Run(fmt.Sprintf("already_stable=%t", stable), func(t *testing.T) {
 			h, ctx := clericCastScene(t)
-			patientCtx := auth.WithPlayerID(context.Background(), "player-alice")
+			patientCtx := auth.WithPlayerID(worldCtx(), "player-alice")
 			// Fixture setup: retain the patient's existing initiative slot, then injure them.
-			caster, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: "bella"})
+			caster, err := h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: "bella"})
 			require.NoError(t, err)
 			caster.Character.Data.KnownCantrips = []string{refs.Spells.SpareTheDying().String()}
 			_, err = h.charRepo.Update(ctx, characterrepo.UpdateInput{Character: caster.Character})
 			require.NoError(t, err)
-			patient, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: "alice"})
+			patient, err := h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: "alice"})
 			require.NoError(t, err)
 			patient.Character.Data.HitPoints = 0
 			patient.Character.Data.DeathSaveState = &saves.DeathSaveState{Successes: 1, Failures: 1, Stabilized: stable}
@@ -88,7 +88,7 @@ func TestAcceptance_Stabilization(t *testing.T) {
 			}
 			want := &sessionpb.Stabilized{Target: "alice", SourceRef: refs.Spells.SpareTheDying().String(), SourceName: "Spare the Dying", Before: before, After: sessionpb.LifeState_LIFE_STATE_STABILIZED, Progress: &sessionpb.DeathSaveProgress{SuccessesNeeded: 3, FailuresRemaining: 3, Stabilized: true}}
 			require.True(t, proto.Equal(want, result), "%v", result)
-			caster, err = h.charRepo.Get(ctx, characterrepo.GetInput{ID: "bella"})
+			caster, err = h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: "bella"})
 			require.NoError(t, err)
 			require.Zero(t, caster.Character.Data.ActionEconomy.ActionsRemaining)
 			require.Equal(t, 2, caster.Character.Data.Resources[resources.SpellSlotLevel1].Current)
@@ -126,7 +126,7 @@ func TestAcceptance_Stabilization(t *testing.T) {
 			require.True(t, proto.Equal(want.Progress, private.GetCharacter().GetDeathSaves()))
 			_, err = owner.GetCharacterData(ctx, &characterpb.GetCharacterDataRequest{CharacterId: "alice"})
 			require.Equal(t, codes.NotFound, status.Code(err), "non-owners must not learn that the private character exists")
-			_, err = owner.GetCharacterData(context.Background(), &characterpb.GetCharacterDataRequest{CharacterId: "alice"})
+			_, err = owner.GetCharacterData(worldCtx(), &characterpb.GetCharacterDataRequest{CharacterId: "alice"})
 			require.Equal(t, codes.Unauthenticated, status.Code(err))
 			_, err = h.handler.EndTurn(ctx, &sessionpb.EndTurnRequest{Session: castSessionID, Member: "bella", DeclarationId: currentDeclarationID(ctx, t, h.handler, castSessionID, "bella", sessionpb.Verb_VERB_END_TURN)})
 			require.NoError(t, err)

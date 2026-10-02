@@ -41,7 +41,18 @@ import (
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 )
+
+// sessionWorld is the trusted world every acceptance fixture lives in. These
+// tests exercise the real world-scoped repositories, so direct seeding and the
+// manager verbs they drive must all name it explicitly.
+const sessionWorld = "123456789012345678"
+
+// worldCtx installs the trusted world on a fresh background context.
+func worldCtx() context.Context {
+	return worldcontext.With(context.Background(), worldcontext.Value{WorldID: sessionWorld})
+}
 
 // requireGRPCCode asserts the gRPC status code of a handler error.
 func requireGRPCCode(t *testing.T, err error, want codes.Code) {
@@ -420,11 +431,11 @@ func newAcceptanceHarnessWith(t *testing.T, roller sdk.Roller, driver sdk.TurnDr
 
 func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	h := newAcceptanceHarness(t)
-	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+	ctx := auth.WithPlayerID(worldCtx(), "player-alice")
 
 	// Seed alice's character so Join can load her and Attack can swing.
-	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+	_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter("alice", "player-alice")},
 	})
 	require.NoError(t, err)
 
@@ -434,11 +445,11 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	// role directly against the manager, exactly as StartEncounter's
 	// re-point will.)
 	world := buildThreeRoomTomb(t)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: "acceptance-run", Encounter: "tomb-encounter", World: world,
 	})
 	require.NoError(t, err)
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+	_, err = h.manager.Manager.Spawn(worldCtx(), &sdk.SpawnInput{
 		Session: "acceptance-run", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
 		// tomb's Origin is (14,0); local (5,3) (matching the toolkit's own
 		// proven ambush geometry) is absolute (19,3). Spawn speaks absolute
@@ -649,26 +660,26 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 // nothing else.
 func TestGetRoster_UsesSessionRoster(t *testing.T) {
 	h := newAcceptanceHarness(t)
-	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+	ctx := auth.WithPlayerID(worldCtx(), "player-alice")
 	appearance := acceptanceHairAppearance()
 
 	data := armedFighter("alice", "player-alice")
 	data.Appearance = appearance
-	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: data},
+	_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: data},
 	})
 	require.NoError(t, err)
 
 	world := buildThreeRoomTomb(t)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: "roster-run", Encounter: "tomb-encounter", World: world,
 	})
 	require.NoError(t, err)
-	_, err = h.manager.Manager.Join(context.Background(), &sdk.JoinInput{
+	_, err = h.manager.Manager.Join(worldCtx(), &sdk.JoinInput{
 		Session: "roster-run", Member: "alice", Position: at(1, 1),
 	})
 	require.NoError(t, err)
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+	_, err = h.manager.Manager.Spawn(worldCtx(), &sdk.SpawnInput{
 		Session: "roster-run", ID: "skeleton-1", Ref: refs.Monsters.Skeleton().String(), Position: at(19, 3),
 	})
 	require.NoError(t, err)
@@ -703,7 +714,7 @@ func TestGetRoster_UsesSessionRoster(t *testing.T) {
 	require.NotNil(t, skel.GetCustomization())
 	require.Nil(t, skel.GetCustomization().GetHair())
 
-	strangerCtx := auth.WithPlayerID(context.Background(), "player-nobody")
+	strangerCtx := auth.WithPlayerID(worldCtx(), "player-nobody")
 	_, err = h.handler.GetRoster(strangerCtx, &sessionpb.GetRosterRequest{Session: "roster-run"})
 	requireGRPCCode(t, err, codes.PermissionDenied)
 }
@@ -721,19 +732,19 @@ func TestGetRoster_UsesSessionRoster(t *testing.T) {
 // nobody declares and one nobody else can.
 func TestFightEndsByDecisionWhenThePartyWalksAway(t *testing.T) {
 	h := newAcceptanceHarness(t)
-	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+	ctx := auth.WithPlayerID(worldCtx(), "player-alice")
 
-	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+	_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter("alice", "player-alice")},
 	})
 	require.NoError(t, err)
 
 	world := buildThreeRoomTomb(t)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: "decision-run", Encounter: "tomb-encounter", World: world,
 	})
 	require.NoError(t, err)
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+	_, err = h.manager.Manager.Spawn(worldCtx(), &sdk.SpawnInput{
 		Session: "decision-run", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
 		Position: at(19, 3),
 	})
@@ -787,15 +798,15 @@ func TestFightEndsByDecisionWhenThePartyWalksAway(t *testing.T) {
 // an ordinary obstruction does not discard movement already performed.
 func TestAWalkCannotCrossAWallWhereThereIsNoDoorway(t *testing.T) {
 	h := newAcceptanceHarness(t)
-	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+	ctx := auth.WithPlayerID(worldCtx(), "player-alice")
 
-	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+	_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter("alice", "player-alice")},
 	})
 	require.NoError(t, err)
 
 	world := buildThreeRoomTomb(t)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: "wall-run", Encounter: "tomb-encounter", World: world,
 	})
 	require.NoError(t, err)
@@ -878,19 +889,19 @@ func storyBeats(ctx context.Context, t *testing.T, h *sessionhandler.Handler, se
 // test.
 func TestSkeletonsDrivenTurnStrikesFromRange(t *testing.T) {
 	h := newAcceptanceHarness(t)
-	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+	ctx := auth.WithPlayerID(worldCtx(), "player-alice")
 
-	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+	_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter("alice", "player-alice")},
 	})
 	require.NoError(t, err)
 
 	world := buildThreeRoomTomb(t)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: "monster-turn-run", Encounter: "tomb-encounter", World: world,
 	})
 	require.NoError(t, err)
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+	_, err = h.manager.Manager.Spawn(worldCtx(), &sdk.SpawnInput{
 		Session: "monster-turn-run", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
 		Position: at(19, 3),
 	})
@@ -962,10 +973,10 @@ func TestSkeletonsDrivenTurnStrikesFromRange(t *testing.T) {
 // the beat order Kirk ruled (rpg-project#269 §6.6): down, fight over, ended.
 func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
 	h := newAcceptanceHarness(t)
-	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+	ctx := auth.WithPlayerID(worldCtx(), "player-alice")
 
-	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+	_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter("alice", "player-alice")},
 	})
 	require.NoError(t, err)
 
@@ -979,11 +990,11 @@ func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
 			{Key: "boss-down", Trigger: tkencounter.TriggerMemberDown{Member: "skel-1"}},
 		}
 	})
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: "doom-run", Encounter: "tomb-encounter", World: world,
 	})
 	require.NoError(t, err)
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+	_, err = h.manager.Manager.Spawn(worldCtx(), &sdk.SpawnInput{
 		Session: "doom-run", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
 		Position: at(19, 3),
 	})
@@ -1125,7 +1136,7 @@ func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
 
 	// The total is not a claim the wire makes alone: the sheet was saved
 	// before the beat was ever written, so the store agrees with it.
-	stored, err := h.charRepo.Get(context.Background(), characterrepo.GetInput{ID: "alice"})
+	stored, err := h.charRepo.Get(worldCtx(), characterrepo.GetInput{WorldID: sessionWorld, ID: "alice"})
 	require.NoError(t, err)
 	require.Equal(t, 50, stored.Character.Data.Experience,
 		"the beat's total is what the character store holds, not a number only the stream believes")

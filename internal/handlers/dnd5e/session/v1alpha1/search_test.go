@@ -12,7 +12,6 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -28,7 +27,7 @@ func TestSearch_EmptyMember_IsRefused(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Search(ctx, &sessionpb.SearchRequest{Session: "sess-1", Region: "hall"})
 	requireCode(t, err, codes.InvalidArgument)
 }
@@ -43,7 +42,7 @@ func TestSearch_ForeignMember_IsRefusedBeforeTheSDK(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
 	h := &Handler{manager: mgr, characters: ownedCharacterRepo(ctrl, "char-bob", "bob")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Search(ctx, &sessionpb.SearchRequest{Session: "sess-1", Member: "char-bob", Region: "hall"})
 	requireCode(t, err, codes.PermissionDenied)
 }
@@ -68,7 +67,7 @@ func TestSearch_HappyPath_ReturnsAckOnly(t *testing.T) {
 			"char-alice": {owner: "alice", name: "Alice", class: "fighter", race: "human"},
 		}),
 	}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Search(ctx, &sessionpb.SearchRequest{Session: "sess-1", Member: "char-alice", Region: "hall"})
 	require.NoError(t, err)
 	require.Equal(t, []string{"encounter"}, resp.GetSaved().GetWritten())
@@ -93,7 +92,7 @@ func TestSearch_EmptySearch_LooksIdenticalToAFind(t *testing.T) {
 			"char-alice": {owner: "alice", name: "Alice", class: "fighter", race: "human"},
 		}),
 	}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.Search(ctx, &sessionpb.SearchRequest{Session: "sess-1", Member: "char-alice", Region: "hall"})
 	require.NoError(t, err, "an empty region and a failed check both resolve as an ordinary ack, never an error")
 	require.Empty(t, resp.GetSaved().GetWritten())
@@ -110,7 +109,7 @@ func TestSearch_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr.EXPECT().Search(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrElsewhere)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.Search(ctx, &sessionpb.SearchRequest{Session: "sess-1", Member: "char-1", Region: "hall"})
 	requireCode(t, err, codes.FailedPrecondition)
 }

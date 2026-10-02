@@ -12,7 +12,6 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -31,7 +30,7 @@ func TestGetWhere_HappyPath_ReturnsAbsoluteCell(t *testing.T) {
 	)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.GetWhere(ctx, &sessionpb.GetWhereRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
 	// The exact cell, not merely a non-nil position: this read exists so a cold
@@ -48,7 +47,7 @@ func TestGetWhere_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr.EXPECT().Where(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNoMember)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.GetWhere(ctx, &sessionpb.GetWhereRequest{Session: "sess-1", Member: "char-1"})
 	// NotFound, not InvalidArgument: the caller named a member the session does
 	// not have, which the error table buckets with "you named something that
@@ -74,7 +73,7 @@ func TestGetWhere_ForeignMember_IsRefusedBeforeTheSDK(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
 	h := &Handler{manager: mgr, characters: ownedCharacterRepo(ctrl, "goblin-1", "someone-else")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.GetWhere(ctx, &sessionpb.GetWhereRequest{Session: "sess-1", Member: "goblin-1"})
 	requireCode(t, err, codes.PermissionDenied)
 }
@@ -84,7 +83,7 @@ func TestGetWhere_EmptyMember_IsRefused(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.GetWhere(ctx, &sessionpb.GetWhereRequest{Session: "sess-1"})
 	requireCode(t, err, codes.InvalidArgument)
 }

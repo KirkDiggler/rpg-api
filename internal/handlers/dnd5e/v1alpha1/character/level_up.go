@@ -12,7 +12,6 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sdkerr"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 )
@@ -130,7 +129,13 @@ func (h *Handler) LevelUp(
 	// repository. So the projected Character comes from a read, not from a
 	// value handed back -- which also means the client is shown the sheet that
 	// is actually stored.
+	currentWorldID, currentPlayerID, ctxErr := worldAndPlayer(ctx)
+	if ctxErr != nil {
+		return nil, levelUpStatusError(ctxErr)
+	}
 	current, err := h.characterService.GetCharacter(ctx, &character.GetCharacterInput{
+		WorldID:     currentWorldID,
+		PlayerID:    currentPlayerID,
 		CharacterID: req.GetCharacterId(),
 	})
 	if err != nil {
@@ -319,12 +324,14 @@ func levelChoiceSubmissions(
 // PLAYER is transport's, not the rules engine's: the SDK is handed a character
 // id and has no notion of who is holding the connection.
 func (h *Handler) verifyCallerOwnsCharacter(ctx context.Context, characterID string) error {
-	playerID := auth.GetPlayerID(ctx)
-	if playerID == "" {
-		return apierr.ToGRPCError(apierr.Unauthenticated("player not authenticated"))
+	worldID, playerID, err := worldAndPlayer(ctx)
+	if err != nil {
+		return err
 	}
 
 	out, err := h.characterService.GetCharacter(ctx, &character.GetCharacterInput{
+		WorldID:     worldID,
+		PlayerID:    playerID,
 		CharacterID: characterID,
 	})
 	if err != nil {

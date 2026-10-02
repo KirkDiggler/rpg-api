@@ -1,7 +1,6 @@
 package session_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -114,10 +113,10 @@ func offsetCells(pairs [][2]int) cellSet {
 // left, no reveal arrives at all.
 func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 	h := newAcceptanceHarness(t)
-	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+	ctx := auth.WithPlayerID(worldCtx(), "player-alice")
 
-	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+	_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+		Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter("alice", "player-alice")},
 	})
 	require.NoError(t, err)
 
@@ -127,7 +126,7 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 	dungeon, err := sessionworld.Compile([]byte(dungeonstest.ConcealedVaultYAML))
 	require.NoError(t, err, "the concealed-vault fixture must compile")
 
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: "reveal-run", Encounter: "vault-encounter", World: dungeon.World,
 	})
 	require.NoError(t, err)

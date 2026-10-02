@@ -54,8 +54,8 @@ func startPlacedTableRun(t *testing.T) *placedRun {
 	for _, who := range []struct{ id, player string }{
 		{"alice", "player-alice"}, {"bob", "player-bob"},
 	} {
-		_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-			Character: &entities.Character{Data: armedFighter(who.id, who.player)},
+		_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+			Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter(who.id, who.player)},
 		})
 		require.NoError(t, err)
 	}
@@ -64,15 +64,15 @@ func startPlacedTableRun(t *testing.T) *placedRun {
 	require.NoError(t, err, "the placed-table room must compile")
 	require.NotEmpty(t, dungeon.PartySeats)
 
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+	_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 		Session: placedTableSession, Encounter: "placed-table-encounter", World: dungeon.World,
 	})
 	require.NoError(t, err)
 
 	run := &placedRun{
 		h:     h,
-		alice: auth.WithPlayerID(context.Background(), "player-alice"),
-		bob:   auth.WithPlayerID(context.Background(), "player-bob"),
+		alice: auth.WithPlayerID(worldCtx(), "player-alice"),
+		bob:   auth.WithPlayerID(worldCtx(), "player-bob"),
 		start: dungeon.PartySeats[0],
 	}
 	_, err = h.handler.Join(run.alice, &sessionpb.JoinRequest{

@@ -98,13 +98,90 @@ func New(cfg *Config) (*Orchestrator, error) {
 	}, nil
 }
 
+// errDraftNotFound is the ONE not-found the orchestrator's draft ownership
+// gate ever returns, for a missing draft and a foreign owner alike -- the two
+// must be indistinguishable on the wire.
+const errDraftNotFound = "draft not found"
+
+// requireWorldAndPlayer fails closed when a private operation is attempted
+// without a trusted world or player. Handlers install both before calling;
+// an empty one means the caller skipped the auth boundary, which is refused
+// rather than defaulted to any world.
+func requireWorldAndPlayer(worldID, playerID string) error {
+	if worldID == "" {
+		return apierr.InvalidArgument("world ID is required")
+	}
+	if playerID == "" {
+		return apierr.InvalidArgument("player ID is required")
+	}
+	return nil
+}
+
+// getOwnedDraft loads a draft scoped to the trusted world and returns it only
+// when the stored owner matches playerID. A foreign world (rejected by the
+// world-scoped repository) and a foreign player (rejected here) both report
+// the same NotFound, and neither projects nor mutates the record.
+func (o *Orchestrator) getOwnedDraft(
+	ctx context.Context, worldID, playerID, draftID string,
+) (*entities.CharacterDraft, error) {
+	if err := requireWorldAndPlayer(worldID, playerID); err != nil {
+		return nil, err
+	}
+
+	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
+		WorldID: worldID,
+		ID:      draftID,
+	})
+	if err != nil {
+		if apierr.IsNotFound(err) {
+			return nil, apierr.NotFound(errDraftNotFound)
+		}
+		return nil, fmt.Errorf("failed to get draft: %w", err)
+	}
+	if getOutput == nil || getOutput.Draft == nil || getOutput.Draft.Data == nil ||
+		getOutput.Draft.Data.PlayerID != playerID {
+		return nil, apierr.NotFound(errDraftNotFound)
+	}
+	return getOutput.Draft, nil
+}
+
+// getOwnedCharacter loads a character scoped to the trusted world and returns
+// it only when the stored owner matches playerID. A foreign world (rejected by
+// the world-scoped repository) and a foreign player (rejected here) both report
+// the same NotFound. The session SDK's party-capable reads deliberately do NOT
+// go through this gate: a party save may legitimately target another seated
+// member of the SAME world.
+func (o *Orchestrator) getOwnedCharacter(
+	ctx context.Context, worldID, playerID, characterID string,
+) (*characterrepo.GetOutput, error) {
+	if err := requireWorldAndPlayer(worldID, playerID); err != nil {
+		return nil, err
+	}
+
+	out, err := o.characterRepo.Get(ctx, characterrepo.GetInput{
+		WorldID: worldID,
+		ID:      characterID,
+	})
+	if err != nil {
+		if apierr.IsNotFound(err) {
+			return nil, apierr.NotFoundf("character %q not found", characterID)
+		}
+		return nil, fmt.Errorf("failed to get character: %w", err)
+	}
+	if out == nil || out.Character == nil || out.Character.Data == nil ||
+		out.Character.Data.PlayerID != playerID {
+		return nil, apierr.NotFoundf("character %q not found", characterID)
+	}
+	return out, nil
+}
+
 // CreateDraft creates a new character draft
 func (o *Orchestrator) CreateDraft(ctx context.Context, input *CreateDraftInput) (*CreateDraftOutput, error) {
 	if input == nil {
 		return nil, apierr.InvalidArgument("input is required")
 	}
-	if input.PlayerID == "" {
-		return nil, apierr.InvalidArgument("player ID is required")
+	if err := requireWorldAndPlayer(input.WorldID, input.PlayerID); err != nil {
+		return nil, err
 	}
 
 	// Create new draft with generated ID
@@ -119,7 +196,7 @@ func (o *Orchestrator) CreateDraft(ctx context.Context, input *CreateDraftInput)
 	}
 
 	// Wrap toolkit draft data for storage.
-	draftEntity := &entities.CharacterDraft{Data: draft.ToData()}
+	draftEntity := &entities.CharacterDraft{WorldID: input.WorldID, Data: draft.ToData()}
 
 	// Save to repository
 	if _, err := o.draftRepo.Create(ctx, characterdraft.CreateInput{
@@ -142,17 +219,15 @@ func (o *Orchestrator) GetDraft(ctx context.Context, input *GetDraftInput) (*Get
 		return nil, apierr.InvalidArgument("draft ID is required")
 	}
 
-	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
-		ID: input.DraftID,
-	})
+	draft, err := o.getOwnedDraft(ctx, input.WorldID, input.PlayerID, input.DraftID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get draft: %w", err)
+		return nil, err
 	}
 
 	// Draft data carries toolkit-owned Appearance.
 	return &GetDraftOutput{
-		Draft:    getOutput.Draft,
-		Progress: getOutput.Draft.Data.Progress,
+		Draft:    draft,
+		Progress: draft.Data.Progress,
 	}, nil
 }
 
@@ -165,8 +240,13 @@ func (o *Orchestrator) DeleteDraft(ctx context.Context, input *DeleteDraftInput)
 		return nil, apierr.InvalidArgument("draft ID is required")
 	}
 
+	owned, err := o.getOwnedDraft(ctx, input.WorldID, input.PlayerID, input.DraftID)
+	if err != nil {
+		return nil, err
+	}
 	if _, err := o.draftRepo.Delete(ctx, characterdraft.DeleteInput{
-		ID: input.DraftID,
+		WorldID: owned.WorldID,
+		ID:      input.DraftID,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to delete draft: %w", err)
 	}
@@ -244,15 +324,12 @@ func (o *Orchestrator) SetName(ctx context.Context, input *SetNameInput) (*SetNa
 		return nil, apierr.InvalidArgument("name is required")
 	}
 
-	// Get draft entity (includes appearance)
-	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
-		ID: input.DraftID,
-	})
+	owned, err := o.getOwnedDraft(ctx, input.WorldID, input.PlayerID, input.DraftID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get draft: %w", err)
+		return nil, err
 	}
 
-	draft := character.LoadDraftFromData(getOutput.Draft.Data)
+	draft := character.LoadDraftFromData(owned.Data)
 	// Set name
 	err = draft.SetName(&character.SetNameInput{Name: input.Name})
 	if err != nil {
@@ -260,7 +337,7 @@ func (o *Orchestrator) SetName(ctx context.Context, input *SetNameInput) (*SetNa
 	}
 
 	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
-		Draft: &entities.CharacterDraft{Data: draft.ToData()},
+		Draft: &entities.CharacterDraft{WorldID: owned.WorldID, Data: draft.ToData()},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save draft: %w", err)
@@ -284,15 +361,12 @@ func (o *Orchestrator) SetRace(ctx context.Context, input *SetRaceInput) (*SetRa
 		return nil, apierr.InvalidArgument("race input is required")
 	}
 
-	// Get draft entity (includes appearance)
-	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
-		ID: input.DraftID,
-	})
+	owned, err := o.getOwnedDraft(ctx, input.WorldID, input.PlayerID, input.DraftID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get draft: %w", err)
+		return nil, err
 	}
 
-	draft := character.LoadDraftFromData(getOutput.Draft.Data)
+	draft := character.LoadDraftFromData(owned.Data)
 	// Set race with choices
 	err = draft.SetRace(input.Input)
 	if err != nil {
@@ -300,7 +374,7 @@ func (o *Orchestrator) SetRace(ctx context.Context, input *SetRaceInput) (*SetRa
 	}
 
 	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
-		Draft: &entities.CharacterDraft{Data: draft.ToData()},
+		Draft: &entities.CharacterDraft{WorldID: owned.WorldID, Data: draft.ToData()},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save draft: %w", err)
@@ -333,15 +407,12 @@ func (o *Orchestrator) SetClass(ctx context.Context, input *SetClassInput) (*Set
 		return nil, apierr.InvalidArgument("class input is required")
 	}
 
-	// Get draft entity (includes appearance)
-	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
-		ID: input.DraftID,
-	})
+	owned, err := o.getOwnedDraft(ctx, input.WorldID, input.PlayerID, input.DraftID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get draft: %w", err)
+		return nil, err
 	}
 
-	draft := character.LoadDraftFromData(getOutput.Draft.Data)
+	draft := character.LoadDraftFromData(owned.Data)
 	// Set class with choices
 	err = draft.SetClass(input.Input)
 	if err != nil {
@@ -349,7 +420,7 @@ func (o *Orchestrator) SetClass(ctx context.Context, input *SetClassInput) (*Set
 	}
 
 	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
-		Draft: &entities.CharacterDraft{Data: draft.ToData()},
+		Draft: &entities.CharacterDraft{WorldID: owned.WorldID, Data: draft.ToData()},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save draft: %w", err)
@@ -382,15 +453,12 @@ func (o *Orchestrator) SetBackground(ctx context.Context, input *SetBackgroundIn
 		return nil, apierr.InvalidArgument("background input is required")
 	}
 
-	// Get draft entity (includes appearance)
-	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
-		ID: input.DraftID,
-	})
+	owned, err := o.getOwnedDraft(ctx, input.WorldID, input.PlayerID, input.DraftID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get draft: %w", err)
+		return nil, err
 	}
 
-	draft := character.LoadDraftFromData(getOutput.Draft.Data)
+	draft := character.LoadDraftFromData(owned.Data)
 	// Set background with choices
 	err = draft.SetBackground(input.Input)
 	if err != nil {
@@ -398,7 +466,7 @@ func (o *Orchestrator) SetBackground(ctx context.Context, input *SetBackgroundIn
 	}
 
 	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
-		Draft: &entities.CharacterDraft{Data: draft.ToData()},
+		Draft: &entities.CharacterDraft{WorldID: owned.WorldID, Data: draft.ToData()},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save draft: %w", err)
@@ -428,15 +496,12 @@ func (o *Orchestrator) SetAbilityScores(ctx context.Context, input *SetAbilitySc
 		return nil, apierr.InvalidArgument("draft ID is required")
 	}
 
-	// Get draft entity (includes appearance)
-	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
-		ID: input.DraftID,
-	})
+	owned, err := o.getOwnedDraft(ctx, input.WorldID, input.PlayerID, input.DraftID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get draft: %w", err)
+		return nil, err
 	}
 
-	draft := character.LoadDraftFromData(getOutput.Draft.Data)
+	draft := character.LoadDraftFromData(owned.Data)
 	// Set ability scores
 	err = draft.SetAbilityScores(input.Input)
 	if err != nil {
@@ -444,7 +509,7 @@ func (o *Orchestrator) SetAbilityScores(ctx context.Context, input *SetAbilitySc
 	}
 
 	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
-		Draft: &entities.CharacterDraft{Data: draft.ToData()},
+		Draft: &entities.CharacterDraft{WorldID: owned.WorldID, Data: draft.ToData()},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save draft: %w", err)
@@ -468,33 +533,23 @@ func (o *Orchestrator) SetAbilityScoresFromRolls(ctx context.Context, input *Set
 		return nil, apierr.InvalidArgument("roll assignments are required")
 	}
 
-	// Get draft entity (includes appearance)
-	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
-		ID: input.DraftID,
-	})
+	owned, err := o.getOwnedDraft(ctx, input.WorldID, input.PlayerID, input.DraftID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get draft: %w", err)
+		return nil, err
 	}
 
-	// Get the dice session - try player ID first (prevents gaming by deleting drafts)
-	// then fall back to draft ID for backwards compatibility
+	// The creation roll session is keyed by the AUTHENTICATED player, not a
+	// client-named entity: the S2 local-simulation consumer writes with
+	// entity_id = playerId and context = ability_scores. The trusted world
+	// scopes the read so a roll rolled in another world can never be assigned
+	// here, and a roll id absent from THIS session is refused below.
 	sessionOutput, err := o.diceService.GetRollSession(ctx, &dice.GetRollSessionInput{
-		EntityID: getOutput.Draft.Data.PlayerID,
+		WorldID:  input.WorldID,
+		EntityID: input.PlayerID,
 		Context:  dice.ContextAbilityScores,
 	})
 	if err != nil {
-		if apierr.IsNotFound(err) {
-			// Fall back to draft ID
-			sessionOutput, err = o.diceService.GetRollSession(ctx, &dice.GetRollSessionInput{
-				EntityID: input.DraftID,
-				Context:  dice.ContextAbilityScores,
-			})
-			if err != nil {
-				return nil, apierr.Wrap(err, "failed to get dice roll session (tried both player ID and draft ID)")
-			}
-		} else {
-			return nil, apierr.Wrap(err, "failed to get dice roll session")
-		}
+		return nil, apierr.Wrap(err, "failed to get dice roll session")
 	}
 
 	// Build a map of roll IDs to their totals
@@ -513,7 +568,7 @@ func (o *Orchestrator) SetAbilityScoresFromRolls(ctx context.Context, input *Set
 		}
 	}
 
-	draft := character.LoadDraftFromData(getOutput.Draft.Data)
+	draft := character.LoadDraftFromData(owned.Data)
 
 	// Set ability scores with "rolled" method
 	err = draft.SetAbilityScores(&character.SetAbilityScoresInput{
@@ -525,7 +580,7 @@ func (o *Orchestrator) SetAbilityScoresFromRolls(ctx context.Context, input *Set
 	}
 
 	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
-		Draft: &entities.CharacterDraft{Data: draft.ToData()},
+		Draft: &entities.CharacterDraft{WorldID: owned.WorldID, Data: draft.ToData()},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to save draft: %w", err)
@@ -552,21 +607,12 @@ func (o *Orchestrator) SetAppearance(ctx context.Context, input *SetAppearanceIn
 		return nil, apierr.InvalidArgument("appearance is required")
 	}
 
-	// Get draft entity
-	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
-		ID: input.DraftID,
-	})
+	owned, err := o.getOwnedDraft(ctx, input.WorldID, input.PlayerID, input.DraftID)
 	if err != nil {
-		if apierr.IsNotFound(err) {
-			return nil, apierr.NotFound("draft not found")
-		}
-		return nil, fmt.Errorf("failed to get draft: %w", err)
-	}
-	if getOutput == nil || getOutput.Draft == nil || getOutput.Draft.Data == nil || getOutput.Draft.Data.PlayerID != input.PlayerID {
-		return nil, apierr.NotFound("draft not found")
+		return nil, err
 	}
 
-	draft := character.LoadDraftFromData(getOutput.Draft.Data)
+	draft := character.LoadDraftFromData(owned.Data)
 	if draft == nil {
 		return nil, apierr.Internal("failed to load draft data")
 	}
@@ -575,7 +621,7 @@ func (o *Orchestrator) SetAppearance(ctx context.Context, input *SetAppearanceIn
 	}
 
 	updateOutput, err := o.draftRepo.Update(ctx, characterdraft.UpdateInput{
-		Draft: &entities.CharacterDraft{Data: draft.ToData()},
+		Draft: &entities.CharacterDraft{WorldID: owned.WorldID, Data: draft.ToData()},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update draft appearance: %w", err)
@@ -596,15 +642,12 @@ func (o *Orchestrator) ValidateDraft(ctx context.Context, input *ValidateDraftIn
 		return nil, apierr.InvalidArgument("draft ID is required")
 	}
 
-	// Get draft entity
-	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
-		ID: input.DraftID,
-	})
+	owned, err := o.getOwnedDraft(ctx, input.WorldID, input.PlayerID, input.DraftID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get draft: %w", err)
+		return nil, err
 	}
 
-	draft := character.LoadDraftFromData(getOutput.Draft.Data)
+	draft := character.LoadDraftFromData(owned.Data)
 
 	// Validate all choices
 	validationErr := draft.ValidateChoices()
@@ -655,15 +698,12 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		return nil, apierr.InvalidArgument("draft ID is required")
 	}
 
-	// Get draft entity (includes appearance)
-	getOutput, err := o.draftRepo.Get(ctx, characterdraft.GetInput{
-		ID: input.DraftID,
-	})
+	owned, err := o.getOwnedDraft(ctx, input.WorldID, input.PlayerID, input.DraftID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get draft: %w", err)
+		return nil, err
 	}
 
-	draft := character.LoadDraftFromData(getOutput.Draft.Data)
+	draft := character.LoadDraftFromData(owned.Data)
 
 	// Check if draft is complete
 	progress := draft.Progress()
@@ -719,7 +759,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	// ToData is now a method on Character
 	charData := char.ToData()
 
-	charEntity := &entities.Character{Data: charData}
+	charEntity := &entities.Character{WorldID: owned.WorldID, Data: charData}
 
 	// Save character to character repository
 	createOutput, err := o.characterRepo.Create(ctx, characterrepo.CreateInput{
@@ -729,9 +769,10 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		return nil, fmt.Errorf("failed to save character: %w", err)
 	}
 
-	// Delete draft after successful finalization
+	// Delete draft after successful finalization, using the owned world.
 	_, err = o.draftRepo.Delete(ctx, characterdraft.DeleteInput{
-		ID: input.DraftID,
+		WorldID: owned.WorldID,
+		ID:      input.DraftID,
 	})
 	if err != nil {
 		// Log error but don't fail the operation - character is already saved
@@ -791,14 +832,20 @@ func (o *Orchestrator) ListBackgrounds(_ context.Context, _ *ListBackgroundsInpu
 	}, nil
 }
 
-// RollAbilityScores rolls ability scores for character creation
+// RollAbilityScores rolls ability scores for character creation. The roll
+// session is stored under the authenticated player, never a client-supplied
+// entity id, and is scoped to the trusted world.
 func (o *Orchestrator) RollAbilityScores(ctx context.Context, input *RollAbilityScoresInput) (*RollAbilityScoresOutput, error) {
 	if input == nil {
 		input = &RollAbilityScoresInput{}
 	}
+	if err := requireWorldAndPlayer(input.WorldID, input.PlayerID); err != nil {
+		return nil, err
+	}
 
 	diceResult, err := o.diceService.RollAbilityScores(ctx, &dice.RollAbilityScoresInput{
-		EntityID: input.DraftID, // Use draft ID as entity ID
+		WorldID:  input.WorldID,
+		EntityID: input.PlayerID,
 		Method:   input.Method,
 	})
 	if err != nil {
@@ -836,10 +883,14 @@ func (o *Orchestrator) ListDrafts(ctx context.Context, input *ListDraftsInput) (
 	if input.PlayerID == "" {
 		return nil, apierr.InvalidArgument("player ID is required")
 	}
+	if input.WorldID == "" {
+		return nil, apierr.InvalidArgument("world ID is required")
+	}
 
 	// The repository uses a single-draft-per-player pattern
-	// Try to get the player's draft
+	// Try to get the player's draft in the trusted world
 	getOutput, err := o.draftRepo.GetByPlayerID(ctx, characterdraft.GetByPlayerIDInput{
+		WorldID:  input.WorldID,
 		PlayerID: input.PlayerID,
 	})
 	if err != nil {
@@ -869,12 +920,11 @@ func (o *Orchestrator) GetCharacter(ctx context.Context, input *GetCharacterInpu
 		return nil, apierr.InvalidArgument("character ID is required")
 	}
 
-	// Get character data from repository.
-	result, err := o.characterRepo.Get(ctx, characterrepo.GetInput{
-		ID: input.CharacterID,
-	})
+	// Get character data from repository, scoped to the trusted world and
+	// gated on the authenticated player.
+	result, err := o.getOwnedCharacter(ctx, input.WorldID, input.PlayerID, input.CharacterID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get character: %w", err)
+		return nil, err
 	}
 
 	return &GetCharacterOutput{
@@ -907,9 +957,9 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 		return nil, apierr.InvalidArgument("slot is required")
 	}
 
-	current, err := o.characterRepo.Get(ctx, characterrepo.GetInput{ID: input.CharacterID})
+	current, err := o.getOwnedCharacter(ctx, input.WorldID, input.PlayerID, input.CharacterID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get character: %w", err)
+		return nil, err
 	}
 
 	for range maxEquipmentPatchAttempts {
@@ -951,6 +1001,7 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 		}
 
 		patch, retry, patchErr := o.writeEquipment(ctx, &equipmentWriteInput{
+			WorldID:     input.WorldID,
 			CharacterID: input.CharacterID,
 			Slot:        input.Slot,
 			Current:     current,
@@ -992,9 +1043,9 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 		return nil, apierr.InvalidArgument("slot is required")
 	}
 
-	current, err := o.characterRepo.Get(ctx, characterrepo.GetInput{ID: input.CharacterID})
+	current, err := o.getOwnedCharacter(ctx, input.WorldID, input.PlayerID, input.CharacterID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get character: %w", err)
+		return nil, err
 	}
 
 	for range maxEquipmentPatchAttempts {
@@ -1036,6 +1087,7 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 		}
 
 		patch, retry, patchErr := o.writeEquipment(ctx, &equipmentWriteInput{
+			WorldID:     input.WorldID,
 			CharacterID: input.CharacterID,
 			Slot:        input.Slot,
 			Current:     current,
@@ -1089,6 +1141,7 @@ func (o *Orchestrator) ListCharacters(ctx context.Context, input *ListCharacters
 	// List by player ID (primary use case)
 	if input.PlayerID != "" {
 		result, err := o.characterRepo.ListByPlayerID(ctx, characterrepo.ListByPlayerIDInput{
+			WorldID:  input.WorldID,
 			PlayerID: input.PlayerID,
 		})
 		if err != nil {
@@ -1105,6 +1158,7 @@ func (o *Orchestrator) ListCharacters(ctx context.Context, input *ListCharacters
 	// List by session ID (secondary use case)
 	if input.SessionID != "" {
 		result, err := o.characterRepo.ListBySessionID(ctx, characterrepo.ListBySessionIDInput{
+			WorldID:   input.WorldID,
 			SessionID: input.SessionID,
 		})
 		if err != nil {
@@ -1131,9 +1185,17 @@ func (o *Orchestrator) DeleteCharacter(ctx context.Context, input *DeleteCharact
 		return nil, apierr.InvalidArgument("character ID is required")
 	}
 
+	// Load with ownership first so a foreign character is refused before any
+	// write, then delete scoped to the effective world.
+	owned, err := o.getOwnedCharacter(ctx, input.WorldID, input.PlayerID, input.CharacterID)
+	if err != nil {
+		return nil, err
+	}
+
 	// Delete from repository
-	_, err := o.characterRepo.Delete(ctx, characterrepo.DeleteInput{
-		ID: input.CharacterID,
+	_, err = o.characterRepo.Delete(ctx, characterrepo.DeleteInput{
+		WorldID: owned.Character.WorldID,
+		ID:      input.CharacterID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete character: %w", err)

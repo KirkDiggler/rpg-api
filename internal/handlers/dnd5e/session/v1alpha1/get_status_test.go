@@ -11,7 +11,6 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -27,7 +26,7 @@ func TestGetStatus_HappyPath(t *testing.T) {
 	mgr.EXPECT().Status(gomock.Any(), &sdk.StatusInput{Session: "sess-1"}).Return(&sdk.Status{Open: true}, nil)
 
 	h := &Handler{manager: mgr}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	resp, err := h.GetStatus(ctx, &sessionpb.GetStatusRequest{Session: "sess-1"})
 	require.NoError(t, err)
 	require.True(t, resp.GetOpen())
@@ -39,7 +38,7 @@ func TestGetStatus_ManagerError_TranslatesViaErrorTable(t *testing.T) {
 	mgr.EXPECT().Status(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNoSession)
 
 	h := &Handler{manager: mgr}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.GetStatus(ctx, &sessionpb.GetStatusRequest{Session: "bogus"})
 	requireCode(t, err, codes.NotFound)
 }

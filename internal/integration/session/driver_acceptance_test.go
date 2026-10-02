@@ -1,7 +1,6 @@
 package session_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -65,14 +64,14 @@ func TestAcceptance_TwoSessionsEachDriveTheirOwnMonsters(t *testing.T) {
 		{"mind-run-b", "player-bob", "bob"},
 	} {
 		t.Run(run.session, func(t *testing.T) {
-			ctx := auth.WithPlayerID(context.Background(), run.player)
+			ctx := auth.WithPlayerID(worldCtx(), run.player)
 
-			_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
-				Character: &entities.Character{Data: armedFighter(run.fighter, run.player)},
+			_, err := h.charRepo.Create(worldCtx(), characterrepo.CreateInput{
+				Character: &entities.Character{WorldID: sessionWorld, Data: armedFighter(run.fighter, run.player)},
 			})
 			require.NoError(t, err)
 
-			_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
+			_, err = h.manager.Manager.StartSession(worldCtx(), &sdk.StartSessionInput{
 				Session: run.session, Encounter: run.session + "-encounter", World: buildOpenRoom(t, 12, 6),
 			})
 			require.NoError(t, err)
@@ -83,7 +82,7 @@ func TestAcceptance_TwoSessionsEachDriveTheirOwnMonsters(t *testing.T) {
 			require.NoError(t, err)
 			inCombat(t, h.charRepo, run.fighter, 1)
 
-			_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
+			_, err = h.manager.Manager.Spawn(worldCtx(), &sdk.SpawnInput{
 				Session: run.session, ID: "skel-1", Ref: refs.Monsters.Skeleton().String(), Position: at(4, 0),
 			})
 			require.NoError(t, err)

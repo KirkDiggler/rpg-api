@@ -12,7 +12,6 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 )
 
@@ -47,7 +46,7 @@ func TestReact_BothChoicesTravelVerbatim(t *testing.T) {
 			}, nil)
 
 			h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-			ctx := auth.WithPlayerID(context.Background(), "alice")
+			ctx := authedCtx("alice")
 			resp, err := h.React(ctx, &sessionpb.ReactRequest{
 				Session: "sess-1", Member: "char-1", DeclarationId: "decl-react-1", Choice: tc.in, Option: "option-1",
 			})
@@ -73,7 +72,7 @@ func TestReact_AnUnsetChoiceIsRefusedBeforeTheSDK(t *testing.T) {
 				manager:    sessionv1alpha1mock.NewMockManager(ctrl),
 				characters: anyMemberOwnedBy(ctrl, "alice"),
 			}
-			ctx := auth.WithPlayerID(context.Background(), "alice")
+			ctx := authedCtx("alice")
 			resp, err := h.React(ctx, &sessionpb.ReactRequest{
 				Session: "sess-1", Member: "char-1", DeclarationId: "decl-react-1", Choice: choice,
 			})
@@ -119,7 +118,7 @@ func TestReact_EveryRefusalIsAStatusCode(t *testing.T) {
 				Return(nil, fmt.Errorf("react: %w", tc.err))
 
 			h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-			ctx := auth.WithPlayerID(context.Background(), "alice")
+			ctx := authedCtx("alice")
 			resp, err := h.React(ctx, &sessionpb.ReactRequest{
 				Session: "sess-1", Member: "char-1", DeclarationId: "decl-react-1",
 				Choice: sessionpb.ReactChoice_REACT_CHOICE_STRIKE,
@@ -144,7 +143,7 @@ func TestReact_TheFreezeNamesWhoIsBeingWaitedOn(t *testing.T) {
 	})
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
+	ctx := authedCtx("alice")
 	_, err := h.React(ctx, &sessionpb.ReactRequest{
 		Session: "sess-1", Member: "char-1", DeclarationId: "decl-react-1",
 		Choice: sessionpb.ReactChoice_REACT_CHOICE_HOLD,

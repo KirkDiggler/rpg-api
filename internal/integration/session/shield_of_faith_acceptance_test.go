@@ -1,7 +1,6 @@
 package session_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -37,7 +36,7 @@ func (s *ShieldOfFaithSuite) TestNativeProtectionPrivateSheetReplayAndReplacemen
 			sheet, err := characterhandler.New(&characterhandler.HandlerConfig{CharacterService: newAcceptanceCharacterService(t, h)})
 			s.Require().NoError(err)
 			ac := func() int32 {
-				view, readErr := sheet.GetCharacterData(auth.WithPlayerID(context.Background(), owner), &characterpb.GetCharacterDataRequest{CharacterId: target})
+				view, readErr := sheet.GetCharacterData(auth.WithPlayerID(worldCtx(), owner), &characterpb.GetCharacterDataRequest{CharacterId: target})
 				s.Require().NoError(readErr)
 				return view.GetCharacter().GetArmorClassDetail().GetTotal()
 			}
@@ -48,13 +47,13 @@ func (s *ShieldOfFaithSuite) TestNativeProtectionPrivateSheetReplayAndReplacemen
 				_, castErr := h.handler.Cast(ctx, &sessionpb.CastRequest{Session: castSessionID, Member: id, DeclarationId: row.GetId(), Targets: []string{target}})
 				s.Require().NoError(castErr)
 			})
-			stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: id})
+			stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: id})
 			s.Require().NoError(err)
 			s.Equal(1, stored.Character.Data.ActionEconomy.ActionsRemaining)
 			s.Zero(stored.Character.Data.ActionEconomy.BonusActionsRemaining)
 			s.Equal(1, stored.Character.Data.Resources[resources.SpellSlotLevel1].Current)
 			s.Equal(before+2, ac())
-			_, err = sheet.GetCharacterData(auth.WithPlayerID(context.Background(), "outsider"), &characterpb.GetCharacterDataRequest{CharacterId: target})
+			_, err = sheet.GetCharacterData(auth.WithPlayerID(worldCtx(), "outsider"), &characterpb.GetCharacterDataRequest{CharacterId: target})
 			s.Error(err, "the AC refresh must not disclose a private sheet to another player")
 			applied := 0
 			for _, event := range live {
@@ -105,11 +104,11 @@ func (s *ShieldOfFaithSuite) TestLeveledActionSpellBlockedInBothOrdersWithoutPay
 			reopenClericHost(t, h, sdk.StaleTargetRefuse)
 			blocked := castRowFor(ctx, t, h, id, second)
 			s.False(blocked.GetAvailable())
-			before, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: id})
+			before, err := h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: id})
 			s.Require().NoError(err)
 			_, err = h.handler.Cast(ctx, &sessionpb.CastRequest{Session: castSessionID, Member: id, DeclarationId: stale.GetId(), Targets: []string{id}})
 			s.Require().Error(err)
-			after, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: id})
+			after, err := h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: id})
 			s.Require().NoError(err)
 			s.Equal(before.Character.Data, after.Character.Data)
 		})
@@ -140,7 +139,7 @@ func (s *ShieldOfFaithSuite) TestProtectionTurnsBoundaryHitIntoMissAfterReload()
 			s.Require().NoError(err)
 			// This fixture's fighter has STR +3 and proficiency +2.
 			useGuidingBoltDice(t, h, int(base)-5)
-			allyCtx := auth.WithPlayerID(context.Background(), "player-alice")
+			allyCtx := auth.WithPlayerID(worldCtx(), "player-alice")
 			attacked, err := h.handler.Attack(allyCtx, &sessionpb.AttackRequest{Session: castSessionID, Attacker: "alice", Target: id,
 				DeclarationId: currentDeclarationID(allyCtx, t, h.handler, castSessionID, "alice", sessionpb.Verb_VERB_ATTACK)})
 			s.Require().NoError(err)
@@ -161,7 +160,7 @@ func (s *ShieldOfFaithSuite) TestOrdinaryAttackRemainsAvailableAfterBonusSpell()
 	_, err = h.handler.Attack(ctx, &sessionpb.AttackRequest{Session: castSessionID, Attacker: id, Target: "skel-1",
 		DeclarationId: currentDeclarationID(ctx, t, h.handler, castSessionID, id, sessionpb.Verb_VERB_ATTACK)})
 	s.Require().NoError(err)
-	stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: id})
+	stored, err := h.charRepo.Get(ctx, characterrepo.GetInput{WorldID: sessionWorld, ID: id})
 	s.Require().NoError(err)
 	s.Equal(1, stored.Character.Data.Resources[resources.SpellSlotLevel1].Current)
 }
@@ -176,7 +175,7 @@ func (s *ShieldOfFaithSuite) TestMonsterProtectionChangesAttackOutcome() {
 		DeclarationId: currentDeclarationID(ctx, t, h.handler, castSessionID, id, sessionpb.Verb_VERB_END_TURN)})
 	s.Require().NoError(err)
 	useGuidingBoltDice(t, h, 8) // 8 + 5 hits skeleton AC 13, but misses protected AC 15.
-	allyCtx := auth.WithPlayerID(context.Background(), "player-alice")
+	allyCtx := auth.WithPlayerID(worldCtx(), "player-alice")
 	attacked, err := h.handler.Attack(allyCtx, &sessionpb.AttackRequest{Session: castSessionID, Attacker: "alice", Target: "skel-1",
 		DeclarationId: currentDeclarationID(allyCtx, t, h.handler, castSessionID, "alice", sessionpb.Verb_VERB_ATTACK)})
 	s.Require().NoError(err)

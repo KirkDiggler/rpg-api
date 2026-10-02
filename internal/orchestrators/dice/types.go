@@ -8,6 +8,7 @@ import (
 
 // RollDiceInput defines the request for rolling dice
 type RollDiceInput struct {
+	WorldID     string
 	EntityID    string
 	Context     string
 	Notation    string
@@ -23,6 +24,7 @@ type RollDiceOutput struct {
 
 // GetRollSessionInput defines the request for getting a roll session
 type GetRollSessionInput struct {
+	WorldID  string
 	EntityID string
 	Context  string
 	// AutoCreate creates a standard array session if not found (for ability_scores context only)
@@ -36,6 +38,7 @@ type GetRollSessionOutput struct {
 
 // ClearRollSessionInput defines the request for clearing a roll session
 type ClearRollSessionInput struct {
+	WorldID  string
 	EntityID string
 	Context  string
 }
@@ -47,6 +50,7 @@ type ClearRollSessionOutput struct {
 
 // RollAbilityScoresInput defines the request for rolling ability scores for character creation
 type RollAbilityScoresInput struct {
+	WorldID  string
 	EntityID string
 	Method   string // "4d6_drop_lowest", "3d6", "point_buy", etc.
 }
