@@ -45,10 +45,12 @@ driven Striker, `:942` driven Mover, `:1066`), so
 world resolution until a released provider pin supplies the fix (parent-owned in
 toolkit `.worktrees/world-character-context`; latest session tag remains
 v0.112.0). The provider fix is now published for review at
-rpg-toolkit#1926 (issue #1925): session-only commit `0c35a38e` on
-`fix/session-call-context` binds the per-verb scope context for the Manager
-callbacks; its regression catches Announcer, Striker and Mover individually and
-the full session race/vet/lint suite passes. There is **no released tag yet and
+rpg-toolkit#1926 (issue #1925): session-only commit `0c77994d` on
+`fix/session-call-context` (superseding `0c35a38e` after a targeted minor-test
+closure) binds the per-verb scope context for the Manager
+callbacks; its regression catches Announcer, Striker and Mover individually,
+provider review found no Critical/Important, and the full session race/vet/lint
+suite passes. There is **no released tag yet and
 no merge is authorized**, so S2's full gate is **BLOCKED provider-release**:
 the API branch keeps `session v0.112.0` and cannot adopt a pseudo-version or
 local replace. On this branch `PATH=/tmp/discord-role-tools:$PATH make lint`
