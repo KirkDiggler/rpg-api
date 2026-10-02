@@ -32,8 +32,21 @@ still verify real membership against the selected guild, and setting the list
 alone cannot enable Dev in production. Malformed, empty, duplicated, or
 default-omitting configuration fails server construction. Focused `-race` tests
 cover the resolver, the composed unary and WorldService management entry paths,
-and `RoleAccess` admission. This is a provider stage only; storage/application
-isolation (S1→S2) and the local A/B browser walk remain open under #518.
+and `RoleAccess` admission. This entry is the Dev-selector provider stage. World-owned storage (S1) and the
+character/dice application isolation (S2) are implemented on
+`feat/world-owned-characters` and published as draft rpg-api#1067: repository,
+orchestrator, handler, session-SDK-adapter and fixture paths carry an explicit
+trusted world/player, and Docker-backed `internal/integration/character` proves
+same-player A/B isolation and SDK-save ownership. S2 is **not** adoptable as a
+release yet: the pinned session/encounter provider drops the per-verb context in
+four encounter callbacks (`encounter@v0.109.0/clocks.go:818` Announce, `:918`
+driven Striker, `:942` driven Mover, `:1066`), so
+`internal/orchestrators/lobby` and `internal/integration/session` fail closed on
+world resolution until a released provider pin supplies the fix (parent-owned in
+toolkit `.worktrees/world-character-context`; latest session tag remains
+v0.112.0). No pseudo-version, local replace, or broad toolkit bump is used; full
+`make ci-check` and release adoption remain explicitly pending that pin. The
+local A/B browser walk remains open under #518.
 
 **Nature cantrips preview (2026-09-28)** — Adopts toolkit root #1905's pushed
 commit for Poison Spray, Shillelagh and Nature utility NYIs. Shared cast options
