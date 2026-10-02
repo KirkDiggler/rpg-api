@@ -44,15 +44,21 @@ driven Striker, `:942` driven Mover, `:1066`), so
 `internal/orchestrators/lobby` and `internal/integration/session` fail closed on
 world resolution until a released provider pin supplies the fix (parent-owned in
 toolkit `.worktrees/world-character-context`; latest session tag remains
-v0.112.0). The parent's provider regression is green for the original context
-across announcer, driven strike, driven mover and cancellation, pending a
-provider PR/release; that is not authorization to adopt the API pin or merge.
-No pseudo-version, local replace, or broad toolkit bump is used; full
-`make ci-check` and release adoption remain explicitly pending that pin. On this
-branch `PATH=/tmp/discord-role-tools:$PATH make lint` (isolated golangci-lint
-2.14.0) is green, 0 issues, and `make ci-check` fails only on the two
-provider-blocked test packages. The local A/B browser walk remains open under
-#518.
+v0.112.0). The provider fix is now published for review at
+rpg-toolkit#1926 (issue #1925): session-only commit `0c35a38e` on
+`fix/session-call-context` binds the per-verb scope context for the Manager
+callbacks; its regression catches Announcer, Striker and Mover individually and
+the full session race/vet/lint suite passes. There is **no released tag yet and
+no merge is authorized**, so S2's full gate is **BLOCKED provider-release**:
+the API branch keeps `session v0.112.0` and cannot adopt a pseudo-version or
+local replace. On this branch `PATH=/tmp/discord-role-tools:$PATH make lint`
+(isolated golangci-lint 2.14.0) is green, 0 issues, and `make ci-check` fails
+only on the two provider-blocked test packages
+(`internal/orchestrators/lobby` and `internal/integration/session`; 54 failing
+tests, all four-callback context loss). Durable S2 checkpoint: branch
+`feat/world-owned-characters` head `8e2e1870`, draft rpg-api#1067, patch
+`/tmp/522-api-world-owned-characters.patch`. The local A/B browser walk remains
+open under #518.
 
 **Nature cantrips preview (2026-09-28)** — Adopts toolkit root #1905's pushed
 commit for Poison Spray, Shillelagh and Nature utility NYIs. Shared cast options
