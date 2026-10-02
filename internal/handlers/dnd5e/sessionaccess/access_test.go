@@ -111,10 +111,10 @@ func TestCallerSeated_DelegatesAuthenticationToRosterReader(t *testing.T) {
 	access, err := New(newCharacterFixture(nil), reader)
 	require.NoError(t, err)
 
-	err = access.CallerSeated(auth.WithPlayerID(context.Background(), "alice"), "session-1")
+	err = access.CallerSeated(auth.WithPlayerID(context.Background(), "alice"), "session-1", "char-1")
 
 	require.NoError(t, err)
-	require.Equal(t, []sdk.RosterInput{{Session: "session-1", Player: "alice"}}, reader.calls)
+	require.Equal(t, []sdk.RosterInput{{Session: "session-1", Player: "alice", Member: "char-1"}}, reader.calls)
 }
 
 func TestCallerSeated_TranslatesRosterErrors(t *testing.T) {
@@ -135,7 +135,7 @@ func TestCallerSeated_TranslatesRosterErrors(t *testing.T) {
 			access, err := New(newCharacterFixture(nil), &fakeRosterReader{err: tc.err})
 			require.NoError(t, err)
 
-			err = access.CallerSeated(auth.WithPlayerID(context.Background(), "alice"), "session-1")
+			err = access.CallerSeated(auth.WithPlayerID(context.Background(), "alice"), "session-1", "char-1")
 
 			requireCode(t, err, tc.code)
 		})
@@ -152,7 +152,7 @@ func TestCallerSeated_WithoutRosterReader_IsInternal(t *testing.T) {
 	access, err := New(newCharacterFixture(nil), nil)
 	require.NoError(t, err)
 
-	err = access.CallerSeated(auth.WithPlayerID(context.Background(), "alice"), "session-1")
+	err = access.CallerSeated(auth.WithPlayerID(context.Background(), "alice"), "session-1", "char-1")
 
 	requireCode(t, err, codes.Internal)
 }

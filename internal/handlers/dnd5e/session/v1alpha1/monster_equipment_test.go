@@ -90,11 +90,10 @@ func (s *MonsterEquipmentTransportSuite) TestGetViewTranslatesOnlyTheCallingObse
 		{"remembering-observer", "scimitar", nil},
 	} {
 		in := &sdk.ViewInput{Session: "sess", Member: tc.member}
-		manager.EXPECT().View(gomock.Any(), in).Return([]sdk.Sighting{{
+		manager.EXPECT().View(gomock.Any(), in).Return(&sdk.ViewOutput{Sightings: []sdk.Sighting{{
 			Subject: "monster", Kind: sdk.KindMonster, CurrentVia: tc.via,
 			Seen: &sdk.Seen{Equipment: &sdk.SeenEquipment{MainHand: tc.weapon}},
-		}}, nil)
-		manager.EXPECT().Areas(gomock.Any(), in).Return([]sdk.SightArea{}, nil)
+		}}}, nil)
 		out, err := h.GetView(ctx, &sessionpb.GetViewRequest{Session: "sess", Member: tc.member})
 		s.Require().NoError(err)
 		s.Require().Len(out.GetSightings(), 1)

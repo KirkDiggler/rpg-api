@@ -669,11 +669,11 @@ func TestGetRoster_UsesSessionRoster(t *testing.T) {
 	})
 	require.NoError(t, err)
 	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-		Session: "roster-run", ID: "skeleton-1", Ref: refs.Monsters.Skeleton().String(), Position: at(19, 3),
+		Session: "roster-run", ID: "skeleton-1", Ref: refs.Monsters.Skeleton().String(), Position: at(2, 1),
 	})
 	require.NoError(t, err)
 
-	resp, err := h.handler.GetRoster(ctx, &sessionpb.GetRosterRequest{Session: "roster-run"})
+	resp, err := h.handler.GetRoster(ctx, &sessionpb.GetRosterRequest{Session: "roster-run", Member: "alice"})
 	require.NoError(t, err)
 	require.Len(t, resp.GetMembers(), 2)
 
@@ -704,7 +704,7 @@ func TestGetRoster_UsesSessionRoster(t *testing.T) {
 	require.Nil(t, skel.GetCustomization().GetHair())
 
 	strangerCtx := auth.WithPlayerID(context.Background(), "player-nobody")
-	_, err = h.handler.GetRoster(strangerCtx, &sessionpb.GetRosterRequest{Session: "roster-run"})
+	_, err = h.handler.GetRoster(strangerCtx, &sessionpb.GetRosterRequest{Session: "roster-run", Member: "alice"})
 	requireGRPCCode(t, err, codes.PermissionDenied)
 }
 

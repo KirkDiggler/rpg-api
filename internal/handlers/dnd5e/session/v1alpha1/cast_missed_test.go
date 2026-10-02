@@ -35,6 +35,7 @@ func TestCastMissed_LiveAndStoryPreserveMixedTargetOrder(t *testing.T) {
 		{Session: "sess", Recipient: "cleric", Seq: 12, Kind: sdk.EventCastMissed,
 			Body: sdk.CastMissedBody{Actor: "cleric", Target: "ally-third", Spell: spell}},
 	}
+	mgr.EXPECT().Roster(gomock.Any(), &sdk.RosterInput{Session: "sess", Member: "cleric", Player: "alice"}).Return(&sdk.RosterOutput{Members: []sdk.PublicMember{{ID: "cleric", Kind: sdk.KindPlayer}}}, nil)
 	mgr.EXPECT().Story(gomock.Any(), &sdk.StoryInput{Session: "sess", Member: "cleric", FromSeq: 10}).Return(events, nil)
 	ctx, cancel := context.WithCancel(auth.WithPlayerID(context.Background(), "alice"))
 	defer cancel()

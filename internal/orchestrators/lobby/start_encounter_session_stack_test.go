@@ -211,7 +211,7 @@ func (s *SessionStackSuite) TestStartEncounter_SDKRosterIsAuthoritative() {
 	s.Require().NoError(err)
 
 	roster, err := s.sessOrch.Manager.Roster(s.ctx, &sdk.RosterInput{
-		Session: out.EncounterID, Player: "alice",
+		Session: out.EncounterID, Player: "alice", Member: "char-alice",
 	})
 	s.Require().NoError(err)
 	s.Require().NotNil(roster)
@@ -229,7 +229,9 @@ func (s *SessionStackSuite) TestStartEncounter_SDKRosterIsAuthoritative() {
 		}
 	}
 	s.Equal([]string{"char-alice", "char-bob"}, players)
-	s.Require().NotEmpty(monsters, "the authored tomb has a garrison")
+	s.Empty(monsters, "the garrison is not disclosed before Alice observes it")
+	// The following whole-garrison test checks the actual spawned members;
+	// this read is intentionally the player's knowledge, not authoring truth.
 }
 
 // TestStartEncounter_SeatsTheTombsWholeGarrison checks that starting on the new
@@ -295,8 +297,8 @@ func (s *SessionStackSuite) TestStartEncounter_ThePartyEntersOutOfSightOfTheGarr
 	})
 	s.Require().NoError(err)
 
-	subjects := make([]string, 0, len(view))
-	for _, sighting := range view {
+	subjects := make([]string, 0, len(view.Sightings))
+	for _, sighting := range view.Sightings {
 		subjects = append(subjects, sighting.Subject)
 	}
 
@@ -345,9 +347,7 @@ func (s *SessionStackSuite) TestStartEncounter_TheTombReachesTheWire() {
 			break
 		}
 	}
-	s.Require().NotNil(coffin, "the tomb's coffin reached the wire")
-	s.True(coffin.BlocksMovement, "a coffin is walked around")
-	s.False(coffin.BlocksLineOfSight, "and seen over")
+	s.Nil(coffin, "fixed scenery in an undiscovered room is withheld")
 }
 
 // TestStartEncounter_GetAtlasServesTheSeamsAsTwoLines is rpg-api#899's
@@ -385,7 +385,11 @@ func (s *SessionStackSuite) TestStartEncounter_GetAtlasServesTheSeamsAsTwoLines(
 		s.Zerof(segment.Height, "segment %d authors no height, and 0 means standard rather than flat", i)
 	}
 
-	s.Empty(atlas.Sealed, "quarter lines leave every cell they pass standable")
+	for _, region := range atlas.Regions {
+		for _, cell := range region.Cells {
+			s.NotContains(atlas.Sealed, cell, "quarter lines do not seal discovered owned floor")
+		}
+	}
 
 	// And the doors are still the ways through, on the crossings the lines
 	// actually cross: one row along from where the deleted pair form had them,
@@ -658,11 +662,15 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysADungeonTheAuthorPut() {
 	atlas, err := s.sessOrch.Manager.Atlas(s.ctx, &sdk.AtlasInput{Session: out.EncounterID, Member: "char-alice"})
 	s.Require().NoError(err)
 	s.NotEmpty(atlas.Cells, "the authored dungeon's floor reached the wire")
-	s.Require().Len(atlas.Regions, 3, "and its regions, with what they carry")
+	s.Require().Len(res.Entry.Atlas.Regions, 3, "authoring sees the complete dungeon")
+	s.Require().Len(atlas.Regions, 2, "gameplay only receives discovered regions")
 	s.Equal("crypt", atlas.Regions[0].Archetype)
-	s.Equal(res.Entry.Atlas.Cells, atlas.Cells,
-		"PutDungeon's atlas and the started session's GetAtlas are the same cells -- one producer (design §3a)")
-	s.Equal(res.Entry.Atlas.Regions, atlas.Regions, "and the same regions")
+	for _, region := range atlas.Regions {
+		s.Contains(res.Entry.Atlas.Regions, region, "known geometry remains the authored definition")
+	}
+	for _, cell := range atlas.Cells {
+		s.Contains(res.Entry.Atlas.Cells, cell)
+	}
 	s.Require().NotEmpty(atlas.Doorways)
 	s.True(strings.HasPrefix(atlas.Doorways[0].Door, "crypt"), "doorway %q is minted under the authored key, not the tomb's", atlas.Doorways[0].Door)
 }
@@ -1189,15 +1197,15 @@ func (s *SessionStackSuite) TestStartEncounter_TheCampLaunchesWithItsChiefAsTheM
 	s.Require().NoError(err, "the camp launches: its mind entered its own faction")
 
 	roster, err := s.sessOrch.Manager.Roster(s.ctx, &sdk.RosterInput{
-		Session: out.EncounterID, Player: "alice",
+		Session: out.EncounterID, Player: "alice", Member: "char-alice",
 	})
 	s.Require().NoError(err)
 	factions := map[string]string{}
 	for _, m := range roster.Members {
 		factions[m.ID] = m.Faction
 	}
-	s.Equal("raiders", factions["chief"], "the chief is in the raiders, under the id the file names as their mind")
-	s.Equal("raiders", factions["scout"], "and so is the scout")
+	s.NotContains(factions, "chief", "the unobserved chief is not on the player's roster")
+	s.NotContains(factions, "scout", "nor is the unobserved scout")
 	s.Equal("party", factions["char-alice"], "the party is the party")
 
 	_, err = s.sessOrch.Manager.Turn(s.ctx, &sdk.TurnInput{Session: out.EncounterID, Member: "chief"})

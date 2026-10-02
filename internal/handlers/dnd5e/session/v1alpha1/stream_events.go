@@ -18,19 +18,13 @@ import (
 func (h *Handler) StreamEvents(req *sessionpb.StreamEventsRequest, stream sessionpb.SessionService_StreamEventsServer) error {
 	ctx := stream.Context()
 
-	member := req.GetMember()
-	if err := h.callerActingAs(ctx, member); err != nil {
+	member, session := req.GetMember(), req.GetSession()
+	gate, err := h.accessGate()
+	if err != nil {
 		return err
 	}
-
-	// This is the ONE verb that never reaches the Manager, so an empty session
-	// is refused nowhere else. Unvalidated it does not fail -- it subscribes
-	// under the empty key and the call hangs forever, delivering nothing, which
-	// is the worst way for a stream to be wrong. Every other verb inherits this
-	// refusal from the SDK's ErrNoSessionID; this one has to say it itself.
-	session := req.GetSession()
-	if session == "" {
-		return status.Error(codes.InvalidArgument, "session is required")
+	if seatErr := gate.CallerMemberSeated(ctx, session, member); seatErr != nil {
+		return seatErr
 	}
 
 	sub, err := h.broker.Subscribe(session, member)

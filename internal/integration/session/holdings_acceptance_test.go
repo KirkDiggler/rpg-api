@@ -226,11 +226,7 @@ func (r *heirloomRun) ctxOf(member string) context.Context {
 
 func (r *heirloomRun) atlas(t *testing.T, member string) *sessionpb.GetAtlasResponse {
 	t.Helper()
-	out, err := r.h.handler.GetAtlas(r.ctxOf(member), &sessionpb.GetAtlasRequest{
-		Session: heirloomSession, Member: member,
-	})
-	require.NoError(t, err)
-	return out
+	return renderedKnowledgeAtlas(r.ctxOf(member), t, r.h, heirloomSession, member)
 }
 
 // story is one member's own beats, from their story rather than a live

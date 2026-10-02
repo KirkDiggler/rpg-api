@@ -2135,8 +2135,8 @@ func TestEventToProto_TypedBodies(t *testing.T) {
 		}).GetSighted()
 
 		require.Equal(t, []string{"goblin-2"}, sighted.GetChanged())
-		require.Equal(t, 3, sighted.ProtoReflect().Descriptor().Fields().Len(),
-			"gained, lost, changed — and nowhere to put an item")
+		require.Equal(t, 4, sighted.ProtoReflect().Descriptor().Fields().Len(),
+			"member lists plus object refresh notification, never item state")
 	})
 
 	t.Run("Sighted_MemberIdsAreNotAssetRefs", func(t *testing.T) {
