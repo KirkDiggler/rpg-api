@@ -133,32 +133,32 @@ func (s *CharacterCreationSuite) TestWorldIsolation_ForeignWorldAndPlayerRefused
 		call func() error
 	}{
 		{"v1 GetCharacter", func() error {
-			_, err := s.server.CharacterClient.GetCharacter(ctxSamePlayerB, &dnd5ev1alpha1.GetCharacterRequest{CharacterId: charID})
-			return err
+			_, callErr := s.server.CharacterClient.GetCharacter(ctxSamePlayerB, &dnd5ev1alpha1.GetCharacterRequest{CharacterId: charID})
+			return callErr
 		}},
 		{"v1 EquipItem", func() error {
-			_, err := s.server.CharacterClient.EquipItem(ctxSamePlayerB, &dnd5ev1alpha1.EquipItemRequest{
+			_, callErr := s.server.CharacterClient.EquipItem(ctxSamePlayerB, &dnd5ev1alpha1.EquipItemRequest{
 				CharacterId: charID, ItemId: "longsword", Slot: dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_MAIN_HAND,
 			})
-			return err
+			return callErr
 		}},
 		{"v1 DeleteCharacter", func() error {
-			_, err := s.server.CharacterClient.DeleteCharacter(ctxSamePlayerB, &dnd5ev1alpha1.DeleteCharacterRequest{CharacterId: charID})
-			return err
+			_, callErr := s.server.CharacterClient.DeleteCharacter(ctxSamePlayerB, &dnd5ev1alpha1.DeleteCharacterRequest{CharacterId: charID})
+			return callErr
 		}},
 		{"v1 GetCharacterInventory", func() error {
-			_, err := s.server.CharacterClient.GetCharacterInventory(ctxSamePlayerB, &dnd5ev1alpha1.GetCharacterInventoryRequest{CharacterId: charID})
-			return err
+			_, callErr := s.server.CharacterClient.GetCharacterInventory(ctxSamePlayerB, &dnd5ev1alpha1.GetCharacterInventoryRequest{CharacterId: charID})
+			return callErr
 		}},
 		{"v2 GetCharacterData", func() error {
-			_, err := s.server.CharacterClientV2.GetCharacterData(ctxSamePlayerB, &characterpb.GetCharacterDataRequest{CharacterId: charID})
-			return err
+			_, callErr := s.server.CharacterClientV2.GetCharacterData(ctxSamePlayerB, &characterpb.GetCharacterDataRequest{CharacterId: charID})
+			return callErr
 		}},
 		{"v2 EquipItem", func() error {
-			_, err := s.server.CharacterClientV2.EquipItem(ctxSamePlayerB, &characterpb.EquipItemRequest{
+			_, callErr := s.server.CharacterClientV2.EquipItem(ctxSamePlayerB, &characterpb.EquipItemRequest{
 				CharacterId: charID, Item: &encounterv2pb.Ref{Id: "longsword"}, SlotKey: "main_hand",
 			})
-			return err
+			return callErr
 		}},
 	}
 	for _, tc := range foreignWorld {
@@ -172,28 +172,28 @@ func (s *CharacterCreationSuite) TestWorldIsolation_ForeignWorldAndPlayerRefused
 		call func() error
 	}{
 		{"v1 GetCharacter", func() error {
-			_, err := s.server.CharacterClient.GetCharacter(ctxSecondPlayerA, &dnd5ev1alpha1.GetCharacterRequest{CharacterId: charID})
-			return err
+			_, callErr := s.server.CharacterClient.GetCharacter(ctxSecondPlayerA, &dnd5ev1alpha1.GetCharacterRequest{CharacterId: charID})
+			return callErr
 		}},
 		{"v1 EquipItem", func() error {
-			_, err := s.server.CharacterClient.EquipItem(ctxSecondPlayerA, &dnd5ev1alpha1.EquipItemRequest{
+			_, callErr := s.server.CharacterClient.EquipItem(ctxSecondPlayerA, &dnd5ev1alpha1.EquipItemRequest{
 				CharacterId: charID, ItemId: "longsword", Slot: dnd5ev1alpha1.EquipmentSlot_EQUIPMENT_SLOT_MAIN_HAND,
 			})
-			return err
+			return callErr
 		}},
 		{"v1 DeleteCharacter", func() error {
-			_, err := s.server.CharacterClient.DeleteCharacter(ctxSecondPlayerA, &dnd5ev1alpha1.DeleteCharacterRequest{CharacterId: charID})
-			return err
+			_, callErr := s.server.CharacterClient.DeleteCharacter(ctxSecondPlayerA, &dnd5ev1alpha1.DeleteCharacterRequest{CharacterId: charID})
+			return callErr
 		}},
 		{"v2 GetCharacterData", func() error {
-			_, err := s.server.CharacterClientV2.GetCharacterData(ctxSecondPlayerA, &characterpb.GetCharacterDataRequest{CharacterId: charID})
-			return err
+			_, callErr := s.server.CharacterClientV2.GetCharacterData(ctxSecondPlayerA, &characterpb.GetCharacterDataRequest{CharacterId: charID})
+			return callErr
 		}},
 		{"v2 UnequipItem", func() error {
-			_, err := s.server.CharacterClientV2.UnequipItem(ctxSecondPlayerA, &characterpb.UnequipItemRequest{
+			_, callErr := s.server.CharacterClientV2.UnequipItem(ctxSecondPlayerA, &characterpb.UnequipItemRequest{
 				CharacterId: charID, SlotKey: "main_hand",
 			})
-			return err
+			return callErr
 		}},
 	}
 	for _, tc := range wrongPlayer {

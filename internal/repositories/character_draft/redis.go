@@ -279,7 +279,7 @@ func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*Delet
 
 	// Get draft to find the player mapping; this also verifies stored world
 	// ownership and prevents a corrupt envelope from driving a deletion.
-	getOutput, err := r.Get(ctx, GetInput{WorldID: input.WorldID, ID: input.ID})
+	getOutput, err := r.Get(ctx, GetInput(input))
 	if err != nil {
 		return nil, err
 	}

@@ -631,19 +631,19 @@ func (h *Handler) UpdateAbilityScores(
 		rollAssignments := convertRollAssignmentsToMap(scoresInput.RollAssignments)
 
 		// Call orchestrator with roll assignments - it will handle dice service lookup
-		result, err := h.characterService.SetAbilityScoresFromRolls(ctx, &character.SetAbilityScoresFromRollsInput{
+		rollResult, rollErr := h.characterService.SetAbilityScoresFromRolls(ctx, &character.SetAbilityScoresFromRollsInput{
 			WorldID:         worldID,
 			PlayerID:        playerID,
 			DraftID:         req.DraftId,
 			RollAssignments: rollAssignments,
 		})
-		if err != nil {
-			return nil, toStatusError(err)
+		if rollErr != nil {
+			return nil, toStatusError(rollErr)
 		}
 
 		// Convert result to proto
 		return &dnd5ev1alpha1.UpdateAbilityScoresResponse{
-			Draft: convertDraftDataToProto(result.Draft),
+			Draft: convertDraftDataToProto(rollResult.Draft),
 		}, nil
 	default:
 		return nil, apierr.InvalidArgument("scores_input is required")
