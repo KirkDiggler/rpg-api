@@ -1,7 +1,7 @@
 ---
 name: rpg-api status
 description: Where we are with rpg-api — active work, paused, known rough edges, per-subsystem confidence
-updated: 2026-09-24
+updated: 2026-10-02
 confidence: high — #938 trusted guild-derived composition world context is verified through auth/provider/cache/interceptor/handler/registration tests, race detection, and real miniredis stored-world checks; #921 local-dev composition Create/Get/List/Delete remains covered; #895 explicit Death Save RPC/progress projection verified through handler, owner-view, adapter, and real released-provider acceptance; #891 activation/result event passthrough verified through converter RED/GREEN and real SessionService live/catch-up acceptance; #882 first-admission normal-rest ownership verified through Lobby StartEncounter against released providers; #870 Martial Arts Quarterstaff→bonus Unarmed Strike handler journey verified against released providers and focused RED/GREEN acceptance; #897 complete Appearance ownership/conversion/delegation verified through focused RED/GREEN and Docker-backed integration tests; #852 shared dice presentation wiring verified against RED/GREEN cross-instance Redis integration, focused lint, and race-stressed package gate; #844 field-complete owner projection and atomic equipment patch verified against focused handler/orchestrator/repository tests and lint; Wave 2 Monk entries verified against passing integration tests; #636 entry verified against passing unit + integration tests; #642 v1alpha1 encounter stack deletion verified against passing build/vet/test/lint; #644 The Dungeon wave 1 (api) verified against passing unit + stress-run (50x) integration tests; #650 toolkit seam adoption (InitiativeRolled event + room-aware spawn) verified against passing unit/integration/-race full suite; #651 ActiveConditions projection verified against passing unit + integration (10x -race) + full suite; #656 movement-truncation fix verified against an isolated toolkit-level repro, a new RPC-level regression test (10x -race), and the full suite; #663 AbandonEncounter + combat pockets + rage-at-seating verified against passing unit/integration/-race full suite plus a live playtest against the real game route; #676 The Dungeon wave 2 Slice 2 (api leg) verified against passing unit tests + a new 3-test integration gate suite (8x stress-run, entropy-seeded layouts); #680 equipment on the wire verified against passing unit + integration suite (real AC, occupancy, non-equipment-field preservation) + adversarial-gate fixes + full CI green against published deps; #687 region/theme wire projection verified against passing unit (-race) + a real-RPC integration gate proving connect-time AND incremental-reveal zone_id/zones/theme projection against the real Redis harness, full `go test`/`golangci-lint` green against the published `rpg-api-protos` generated branch + `rpg-toolkit/encounter v0.35.0`; #688 N-region dungeon by key verified against passing unit (-race, 15x stress-run) + a rewritten 3-test integration gate suite against the real Redis harness, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.35.0`; #694 crypt dungeon-key consumes the toolkit's own `CryptDungeonParams` (obstacles included) verified against passing unit (-race) against published `rpg-toolkit/encounter v0.38.0`; #689 deterministic crypt monster composition verified against passing unit (-race, 1000-seed x 4-party-size zero-error matrix against the real production registry) + real-Redis integration (composition + seed-determinism + party-size-invariance) + the updated dungeon_crypt_test.go gate, full `go test`/`golangci-lint` green against published `rpg-toolkit/encounter v0.38.0` + `rulebooks/dnd5e v0.68.0`, zero new lint issues versus main — **#694 and #689 merged together (this doc's own "Deterministic crypt monster composition, integrated with toolkit CryptDungeonParams" entry, 2026-07-23) close out rpg-api#696** (the out-of-sight goblin-placement collision #694 alone surfaced): #689's deterministic `FixedPositions` composition retires the search path that could fail, so the merged 1..1000-seed x party-1..4 matrix is 0/4000 errors, not a tuned-down failure rate
 ---
 
@@ -19,6 +19,21 @@ changing admin authority. Repository and real gRPC/provider-fixture tests cover
 setup, denial, wrong-world requests and admin-policy revocation. Explicit gameplay
 role gates and idle-stream refresh are implemented; the paired web adds setup.
 Local-stack and real Discord proof remain separate acceptance steps. See [world-service](architecture/components/world-service.md).
+
+**Development world selector allowlist (rpg-api#522, rpg-project#518, 2026-10-02)** —
+`RPG_DEV_WORLD_IDS` is an optional comma-separated allowlist of canonical
+guild-shaped IDs, honored only under `AUTH_DEV_MODE=true` with `Dev` credentials.
+The authenticated resolver parses the existing `x-rpg-guild-id` in its Dev branch
+only when the allowlist exists: an absent selector uses `RPG_DEV_WORLD_ID` (which
+must be listed), an unknown selector is `PermissionDenied`, and a
+repeated/non-canonical selector is `InvalidArgument`. Without the allowlist the
+fixed Dev world is preserved and selectors stay ignored. `Discord` credentials
+still verify real membership against the selected guild, and setting the list
+alone cannot enable Dev in production. Malformed, empty, duplicated, or
+default-omitting configuration fails server construction. Focused `-race` tests
+cover the resolver, the composed unary and WorldService management entry paths,
+and `RoleAccess` admission. This is a provider stage only; storage/application
+isolation (S1→S2) and the local A/B browser walk remain open under #518.
 
 **Nature cantrips preview (2026-09-28)** — Adopts toolkit root #1905's pushed
 commit for Poison Spray, Shillelagh and Nature utility NYIs. Shared cast options

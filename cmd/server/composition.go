@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"google.golang.org/grpc"
 
@@ -19,6 +20,7 @@ import (
 const (
 	envAuthDevMode                 = "AUTH_DEV_MODE"
 	envDevWorldID                  = "RPG_DEV_WORLD_ID"
+	envDevWorldIDs                 = "RPG_DEV_WORLD_IDS"
 	defaultWorldID                 = "test-world"
 	compositionv1alpha1ServiceName = "api.composition.v1alpha1.CompositionService"
 )
@@ -65,4 +67,26 @@ func configuredDevWorldID(devMode bool) string {
 		return worldID
 	}
 	return defaultWorldID
+}
+
+// configuredDevWorldIDs parses the optional RPG_DEV_WORLD_IDS allowlist. The
+// whole list is ignored unless Dev mode is on, so production cannot enable the
+// Dev selector by setting it alone. Entries are returned verbatim (only
+// surrounding whitespace is trimmed); canonical-uint64, duplicate and
+// default-membership validation belongs to auth.NewWorldResolver so malformed
+// configuration stops server construction rather than silently broadening
+// access.
+func configuredDevWorldIDs(devMode bool) []string {
+	if !devMode {
+		return nil
+	}
+	value := os.Getenv(envDevWorldIDs)
+	if value == "" {
+		return nil
+	}
+	entries := strings.Split(value, ",")
+	for i, entry := range entries {
+		entries[i] = strings.TrimSpace(entry)
+	}
+	return entries
 }

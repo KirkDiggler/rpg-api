@@ -50,6 +50,12 @@ always take the real provider-verification path. For WorldService local setup,
 `RPG_DEV_WORLD_ID` must be a canonical nonzero numeric guild ID; the legacy
 composition default `test-world` is not valid persisted World configuration.
 
+An optional `RPG_DEV_WORLD_IDS` allowlist lets a Dev request manage a selected
+world through `x-rpg-guild-id`; the resolver applies it before any handler, and
+the selected world must be listed and must be canonical. Production ignores the
+list, and a list that is malformed, duplicated, or missing the configured
+default world stops server startup. See the [auth component](auth.md).
+
 RoleAccess now gates explicitly classified gameplay unary and stream calls;
 stream permission refresh also covers idle subscriptions. The paired web slice
 requests the ownership scope and adds the configuration screen. Development role

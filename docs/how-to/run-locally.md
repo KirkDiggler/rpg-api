@@ -1,7 +1,7 @@
 ---
 name: run locally
 description: How to start the rpg-api gRPC server locally with dev auth enabled
-updated: 2026-07-13
+updated: 2026-10-02
 ---
 
 # How to run rpg-api locally
@@ -42,6 +42,8 @@ Default port: `50051`. Override with `--port <n>`.
 | Variable | Default | Purpose |
 |---|---|---|
 | `AUTH_DEV_MODE` | `false` | Enables `Dev <player_id>` auth scheme (never in production) |
+| `RPG_DEV_WORLD_ID` | `test-world` | Default world for `Dev` auth (single local simulation world) |
+| `RPG_DEV_WORLD_IDS` | unset | Optional comma-separated allowlist of canonical guild-shaped IDs a `Dev` request may select with `x-rpg-guild-id`. Honored only with `AUTH_DEV_MODE=true`; must include `RPG_DEV_WORLD_ID` |
 | `REDIS_ADDR` | `localhost:6379` | Redis address (check `cmd/server/server.go:mustRedisClient`) |
 
 ## Auth in dev mode
@@ -49,6 +51,39 @@ Default port: `50051`. Override with `--port <n>`.
 With `AUTH_DEV_MODE=true`, all gRPC calls must include the header:
 ```
 Authorization: Dev <your-player-id>
+```
+
+### Selecting between local simulation worlds
+
+`RPG_DEV_WORLD_IDS` is an optional comma-separated allowlist of canonical
+non-zero decimal guild-shaped IDs. It is honored only when `AUTH_DEV_MODE=true`
+and the request uses the `Dev` scheme; a real `Discord` credential always
+verifies real membership and never uses it. The existing `RPG_DEV_WORLD_ID`
+(default `test-world`) is the default and must appear in the allowlist.
+
+```bash
+AUTH_DEV_MODE=true \
+RPG_DEV_WORLD_ID=123456789012345678 \
+RPG_DEV_WORLD_IDS=123456789012345678,223456789012345678 \
+  go run ./cmd/server server
+```
+
+With the allowlist set, a `Dev` request may select an allowed world with the
+existing `x-rpg-guild-id` header; omitting it uses the default. An unknown
+selector is denied; a repeated or non-canonical selector is rejected. With the
+allowlist unset, the fixed `RPG_DEV_WORLD_ID` behavior is preserved and any
+selector is ignored. A malformed, empty, or duplicated allowlist entry, or a
+list missing `RPG_DEV_WORLD_ID`, stops server startup rather than silently
+broadening access.
+
+```bash
+# Same Dev player, two local worlds on one API/database
+grpcurl -plaintext \
+  -H "Authorization: Dev player-1" \
+  -H "x-rpg-guild-id: 223456789012345678" \
+  -d '{}' \
+  localhost:50051 \
+  dnd5e.api.v1alpha1.CharacterService/ListCharacters
 ```
 
 Example with `grpcurl`, using `LobbyService.CreateLobby` (updated 2026-07-13,

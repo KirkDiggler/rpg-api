@@ -1,7 +1,7 @@
 ---
 name: auth
 description: Discord identity plus method-scoped trusted guild world context
-updated: 2026-09-08
+updated: 2026-10-02
 confidence: high — verified by focused interceptor, provider, cache, handler, and race tests
 ---
 
@@ -35,11 +35,30 @@ can configure access before any gameplay role exists.
 | Scheme | Validation | Composition world |
 |---|---|---|
 | `Discord <token>` | `/api/users/@me`; identity may be cached | Exactly one canonical `x-rpg-guild-id`, verified with `/api/users/@me/guilds/{guild_id}/member` using the same request token |
-| `Dev <player_id>` | Accepted only with `AUTH_DEV_MODE=true` | `RPG_DEV_WORLD_ID`, defaulting to `test-world`; the untrusted guild selector is ignored |
+| `Dev <player_id>` | Accepted only with `AUTH_DEV_MODE=true` | `RPG_DEV_WORLD_ID`, defaulting to `test-world`; the untrusted guild selector is ignored unless `RPG_DEV_WORLD_IDS` opts in |
 
 Production does not accept `Dev` auth and never uses the development world. A
 Discord request on a dev-enabled server still follows Discord membership
 verification rather than inheriting the configured Dev world.
+
+## Development world selector
+
+`RPG_DEV_WORLD_IDS` is an optional comma-separated allowlist of canonical
+non-zero decimal `uint64` guild-shaped IDs. It is honored only when
+`AUTH_DEV_MODE=true` and the request uses authenticated `Dev` credentials; a
+Discord credential always verifies real membership, and setting the list alone
+never enables Dev auth in production. `NewWorldResolver` refuses an entry that
+is empty, non-canonical, or duplicated, and refuses a list that omits the
+configured `RPG_DEV_WORLD_ID` default, so malformed configuration stops server
+construction instead of silently broadening access.
+
+With an allowlist configured, a Dev request may select an allowed world through
+the existing `x-rpg-guild-id` header; the resolver parses it inside the
+authenticated Dev branch, before any handler runs. An absent selector uses the
+configured default; an unknown selector is `PermissionDenied`; a repeated or
+non-canonical selector is `InvalidArgument`. Without an allowlist the fixed
+`RPG_DEV_WORLD_ID` behavior is preserved and every incoming selector is ignored
+as untrusted.
 
 ## Trusted composition boundary
 
