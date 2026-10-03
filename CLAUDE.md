@@ -16,7 +16,7 @@ same instructions.
 - `docs/architecture/overview.md` — layer rules (handler → orchestrator → repo), request flow, cross-repo boundaries
 - `docs/architecture/data-model.md` — entities, relationships, storage schemas, known gaps
 - `docs/architecture/components/` — one doc per major component (auth, authoring-service, character-handler, character-orchestrator, dungeon-component, encounter-handler, encounter-orchestrator, entities, event-processor, integration-test-harness, lobby-service, repositories)
-- `docs/how-to/` — task guides: `add-handler-method`, `run-integration-tests`, `run-locally`, `update-proto-dependency`, `local-toolkit-override` (iterate on rpg-toolkit changes in the local Docker loop without publish → tag → `go get`)
+- `docs/how-to/` — task guides: `add-handler-method`, `run-integration-tests`, `run-locally`, `update-proto-dependency`, `toolkit-pseudo-versions` (push toolkit commits to origin, pin them with `go get`, then use the normal local stack)
 - `docs/archive/` — pre-PR #470 historical docs (old ADRs, journey narratives, plans, design notes, session handoffs); read for context, not current state
 
 ## The law: no game logic in the API
@@ -176,9 +176,13 @@ detection to `scripts/ci-checks.sh` so it is caught locally forever after.
 ## Dependency updates
 
 - Protos: `GOPROXY=direct go get github.com/KirkDiggler/rpg-api-protos/gen/go@generated`
-- Toolkit: `GOPROXY=direct go get github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e@latest`
-- Iterating on local toolkit changes without publish → tag → `go get`:
-  `docs/how-to/local-toolkit-override`
+- Toolkit development: push the provider commit to origin, then use
+  `go get <toolkit-module>@<pushed-commit>` in the consumer worktree. Go derives
+  the real pseudo-version; commit its `go.mod`/`go.sum` changes.
+- Local stacks use that API dependency graph and the normal Dockerfile, not
+  toolkit source copies, `replace`/`go.work`, or `Dockerfile.local-toolkit`.
+- Before consumer merge, adopt the provider's actual CI-published release tag.
+  See `docs/how-to/toolkit-pseudo-versions.md` for the development and release loop.
 
 ## Remember
 
