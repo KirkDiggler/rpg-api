@@ -758,6 +758,8 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 	// hides. Its cells, props, member doors, boundaries, walls and touched
 	// regions arrive on this one beat instead. The older wire kinds stay on
 	// the proto, deprecated; nothing maps to them any more.
+	case sdk.EventDiscoveryChecked:
+		return sessionpb.EventKind_EVENT_KIND_DISCOVERY_CHECKED
 	case sdk.EventConcealmentRevealed:
 		return sessionpb.EventKind_EVENT_KIND_CONCEALMENT_REVEALED
 	case sdk.EventRoomRevealed:
@@ -1137,6 +1139,12 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 		}}
 	case sdk.EndedBody:
 		evt.Body = &sessionpb.Event_Ended{Ended: &sessionpb.Ended{Ending: b.Ending}}
+	case sdk.DiscoveryCheckedBody:
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
+		evt.Body = &sessionpb.Event_DiscoveryChecked{DiscoveryChecked: &sessionpb.DiscoveryChecked{Member: b.Member, Ability: b.Ability, Beaten: b.Beaten, Total: int32(b.Total), Calculation: calculation}}
 	case sdk.IntimidatedBody:
 		// A threat, landed or missed (rpg-project#454). VERBATIM, and
 		// BEATEN IS COPIED rather than derived here from total against dc --

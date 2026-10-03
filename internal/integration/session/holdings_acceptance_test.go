@@ -278,7 +278,7 @@ func exitIDs(atlas *sessionpb.GetAtlasResponse) []string {
 // from anywhere in the hall; working its latch still costs her the steps.
 func (r *heirloomRun) findTheVault(t *testing.T, member string) {
 	t.Helper()
-	_, err := r.h.handler.Search(r.ctxOf(member), &sessionpb.SearchRequest{
+	_, err := r.h.manager.Manager.Search(r.ctxOf(member), &sdk.SearchInput{
 		Session: heirloomSession, Member: member, Region: "hall",
 	})
 	require.NoError(t, err)

@@ -11,16 +11,19 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
-**Session operation serialization (rpg-project#523 prerequisite)** — Draft
-adopts toolkit session#1930's pushed commit. The orchestrator supplies a
-cancellable per-session host locker; the SDK holds it across reads, writes,
-creation and save/delivery. A real miniredis-backed regression fails without
-wiring and passes with it: a second operation cannot read the old world while
-Move is paused before its save. Separate managers can inject one shared
-coordinator. The default is process-local, not protection across uncoordinated
-replicas or out-of-session character writes. Provider release pin, review and
-broader wave acceptance remain pending; automatic checks are not implemented
-by this prerequisite.
+**Automatic discovery local build (rpg-project#523)** — Adopts generated protos
+v0.1.220 and pushed encounter/session commits from toolkit#1931/#1930. The real
+server enables automatic discovery, persists opaque character-owned profiles
+without a run TTL, and supplies store-wide SDK coordination for those shared
+records. Result beats, snapshot sharing presence and the exact-seat preference
+RPC cross the handler unchanged. Search no longer has an implementation.
+`reference-discovery-checks.yaml` provides four optional discoveries and an
+unblocked entrance. Local browser smoke shows an automatic failed Perception
+check, no Search button, a spent single attempt after departure/return, and a
+private setting surviving reload. Broader party/authoring acceptance, independent
+review and actual provider release adoption remain pending; this is a local
+playtest build, not a shipped release. Coordination remains process-local unless
+an appropriate shared coordinator is injected, and is not a transaction.
 
 **Individual dungeon knowledge (rpg-project#508)** — Adopts session v0.113.0,
 encounter v0.110.0 and generated protos v0.1.219. `GetKnowledge` returns one

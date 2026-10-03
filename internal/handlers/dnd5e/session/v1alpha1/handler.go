@@ -51,7 +51,7 @@ type Manager interface {
 	Unlock(ctx context.Context, in *sdk.UnlockInput) (*sdk.UnlockOutput, error)
 	Intimidate(ctx context.Context, in *sdk.IntimidateInput) (*sdk.IntimidateOutput, error)
 	Persuade(ctx context.Context, in *sdk.PersuadeInput) (*sdk.PersuadeOutput, error)
-	Search(ctx context.Context, in *sdk.SearchInput) (*sdk.SearchOutput, error)
+	SetDiscoverySharing(ctx context.Context, in *sdk.SetDiscoverySharingInput) (*sdk.SetDiscoverySharingOutput, error)
 	Interact(ctx context.Context, in *sdk.InteractInput) (*sdk.InteractOutput, error)
 	Loot(ctx context.Context, in *sdk.LootInput) (*sdk.LootOutput, error)
 	Hold(ctx context.Context, in *sdk.HoldInput) (*sdk.HoldOutput, error)

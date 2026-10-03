@@ -44,12 +44,17 @@ type Config struct {
 	// keys. Pass 0 to disable expiration.
 	TTL time.Duration
 
-	// Locker coordinates full SDK session operations. Nil selects one
-	// in-process session-keyed locker for this Orchestrator, shared by all of
-	// its handlers/lobby callers. Hosts constructing multiple Orchestrators
-	// over the same sessions must inject the same coordination domain; multiple
-	// processes require a shared coordinator, not independent local lockers.
+	// Locker coordinates full SDK operations. Nil selects process-local
+	// exclusion: session-keyed for legacy hosts, store-wide when automatic
+	// discovery adds profiles shared across sessions. All handlers/lobby calls
+	// share it. Multiple Orchestrators/processes must inject a coordinator
+	// covering every shared resource; independent local lockers are insufficient.
 	Locker sdk.SessionLocker
+
+	// AutomaticDiscovery adopts proximity checks and durable character profiles.
+	// The game server enables this explicitly; older embedded hosts can migrate
+	// independently. Custom lockers must also cover profiles shared across runs.
+	AutomaticDiscovery bool
 
 	// Dice is the SDK's source of randomness. Optional: nil selects a
 	// crypto-secure dice.CryptoRoller, the production default. This is this
@@ -145,12 +150,21 @@ func New(cfg Config) (*Orchestrator, error) {
 
 	locker := cfg.Locker
 	if locker == nil {
-		locker = NewInProcessSessionLocker()
+		local := NewInProcessSessionLocker()
+		locker = local
+		if cfg.AutomaticDiscovery {
+			locker = sharedStoreLocker{inner: local}
+		}
+	}
+	var explorations sdk.ExplorationRepository
+	if cfg.AutomaticDiscovery {
+		explorations = &redisExplorationRepository{client: cfg.Redis}
 	}
 
 	broker := NewBroker()
 	mgr, err := sdk.NewManager(&sdk.Config{
 		Locker:            locker,
+		Explorations:      explorations,
 		StaleTargetPolicy: policy,
 		PresentationIDs:   presentationIDs,
 		Sessions:          NewSessionRepository(cfg.Redis, cfg.TTL),
