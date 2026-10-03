@@ -42,6 +42,8 @@ Default port: `50051`. Override with `--port <n>`.
 | Variable | Default | Purpose |
 |---|---|---|
 | `AUTH_DEV_MODE` | `false` | Enables `Dev <player_id>` auth scheme (never in production) |
+| `RPG_WORLD_ACCESS_ENFORCEMENT` | `false` | Opts into world-role admission for gameplay unary calls and streams |
+| `RPG_DEV_PERMISSION_LEVEL` | `none` | Explicit Dev role fixture when enforcement is enabled: `none`, `player`, `builder`, `admin` |
 | `REDIS_ADDR` | `localhost:6379` | Redis address (check `cmd/server/server.go:mustRedisClient`) |
 
 ## Auth in dev mode
@@ -62,6 +64,31 @@ grpcurl -plaintext \
   localhost:50051 \
   dnd5e.api.lobby.v1alpha1.LobbyService/CreateLobby
 ```
+
+## Opt-in world-access testing
+
+Normal local play and the existing Discord deployment retain their authenticated
+behavior when `RPG_WORLD_ACCESS_ENFORCEMENT` is unset or `false`. Publishing the
+code does not enable new role requirements. Existing private-resource checks,
+composition membership/world checks, and WorldService owner/admin authorization
+remain active; this is not an anonymous-access switch or a default-world bypass.
+
+Enable enforcement only in the environment deliberately testing it. For a Dev
+player who should play and author:
+
+```bash
+AUTH_DEV_MODE=true RPG_WORLD_ACCESS_ENFORCEMENT=true \
+RPG_DEV_PERMISSION_LEVEL=builder go run ./cmd/server server
+```
+
+With enforcement enabled, missing Dev permissions grant nothing. Real Discord
+credentials always use real membership and configured roles, even on a Dev
+server. The target Discord server needs owner setup and an access walk before
+its deployment opts in. Never enable `AUTH_DEV_MODE` in production.
+
+The enforcement setting is read at startup; invalid values refuse startup.
+It gates admission only, not storage migration or future world-owned schema
+cutover. Do not enable unfinished storage changes through an ordinary release.
 
 ## Health check
 

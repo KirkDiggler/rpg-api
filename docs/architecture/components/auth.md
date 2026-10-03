@@ -1,24 +1,26 @@
 ---
 name: auth
 description: Discord identity plus method-scoped trusted guild world context
-updated: 2026-09-08
+updated: 2026-10-03
 confidence: high — verified by focused interceptor, provider, cache, handler, and race tests
 ---
 
 # auth
 
-The auth package establishes player identity for authenticated gRPC endpoints. A
-world-access boundary derives trusted guild context and checks configured game
-roles for explicitly classified gameplay RPCs, including character APIs and
-streams. WorldService owner/bootstrap authorization is separate so an owner
-can configure access before any gameplay role exists.
+The auth package establishes player identity for authenticated gRPC endpoints.
+World-role admission for gameplay is explicitly enabled by
+`RPG_WORLD_ACCESS_ENFORCEMENT=true`; unset or `false` preserves the existing
+identity-authenticated gameplay contract. Both modes retain the composition
+world/membership boundary and separate WorldService owner/bootstrap authorization.
+Enforcement is an environment readiness choice, not a side effect of release.
 
 ## Files
 
 | File | Purpose |
 |---|---|
 | `auth/interceptor.go` | Global unary and stream player authentication |
-| `auth/world_interceptor.go` | Shared guild selector validation; legacy composition-only interceptor tests |
+| `auth/world_interceptor.go` | Shared guild selector validation; composition-only world boundary in compatibility mode |
+| `cmd/server/world_access_rollout.go` | Default-off gameplay role-enforcement selection; invalid settings fail startup |
 | `auth/role_policy.go` | Explicit gameplay method-to-permission policy; unknown methods fail closed |
 | `auth/role_interceptor.go` | Unary/stream role admission and idle-stream permission refresh |
 | `auth/world_management_interceptor.go` | WorldService membership/ownership boundary independent of game-role admission |
@@ -38,13 +40,19 @@ can configure access before any gameplay role exists.
 | `Dev <player_id>` | Accepted only with `AUTH_DEV_MODE=true` | `RPG_DEV_WORLD_ID`, defaulting to `test-world`; the untrusted guild selector is ignored |
 
 Production does not accept `Dev` auth and never uses the development world. A
-Discord request on a dev-enabled server still follows Discord membership
-verification rather than inheriting the configured Dev world.
+Discord request requiring a world on a dev-enabled server still follows Discord
+membership verification rather than inheriting the configured Dev world.
 
 ## Trusted composition boundary
 
-The server uses RoleAccess for all classified game unary and stream RPCs.
-Composition writes require build; rendering reads require play. Character,
+With enforcement enabled, the server uses RoleAccess for all classified game
+unary and stream RPCs. With it disabled, ordinary gameplay does not acquire new
+guild/role prerequisites; the existing composition-only world interceptor remains
+in the unary chain. Stream authentication strips its private credential itself
+when there is no role interceptor to consume it. No mode weakens token validation
+or enables Dev credentials in production.
+
+Under enforcement, composition writes require build; rendering reads require play. Character,
 dice, lobby, session and presentation calls require play. Authoring writes and
 builder catalogs require build. A coverage test requires classification of all
 published methods in these services; unknown methods are refused.
@@ -79,7 +87,7 @@ oldest-expiry with deterministic insertion-order tie breaking. Browser sign-out
 has no server eviction signal, so a prior positive decision may remain valid only
 until that bounded TTL expires.
 
-Role grants use current World repository configuration, never a cached
+When enforcement is enabled, role grants use current World repository configuration, never a cached
 configuration-derived permission. Streams fetch a fresh role snapshot on
 subscription and every 15 seconds, bypassing the positive membership cache.
 Refresh calls have a 15-second deadline; permission loss/provider failure
@@ -91,7 +99,8 @@ RPG_DEV_PERMISSION_LEVEL selects an explicit fallback (none/player/builder/admin
 RPG_DEV_PLAYER_PERMISSIONS provides per-player overrides. RPG_DEV_PLAYER_ROLES
 provides explicit role snapshots for administrative UI tests. Production ignores
 these fixtures, and Discord credentials never inherit them. Missing development
-permission configuration grants nothing. Development owner authority additionally
+permission configuration grants nothing when enforcement is enabled. Ordinary
+compatibility-mode gameplay does not consult these role fixtures. Development owner authority additionally
 requires RPG_DEV_WORLD_OWNER=true and a matching RPG_DEV_WORLD_OWNER_PLAYER_ID.
 
 OAuth transaction/session binding is separate deferred work in rpg-project#403.
