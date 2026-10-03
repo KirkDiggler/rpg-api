@@ -47,6 +47,22 @@ Orchestrator  (internal/orchestrators/<domain>/orchestrator.go)
             character rules
 ```
 
+## Session operation coordination
+
+The session orchestrator supplies `sdk.Config.Locker` alongside repositories.
+`InProcessSessionLocker` serializes operations by session ID; the SDK owns
+acquisition before repository access and release after save/delivery, including
+reads and creation. Waiting requests can cancel without releasing the current
+owner's guard. Idle entries are removed; unrelated sessions do not block one
+another. Handlers, lobby and notifiers keep calling the same SDK manager.
+
+This default protects callers sharing one orchestrator in one process. Multiple
+managers sharing sessions must receive the same coordinator through
+`session.Config.Locker`; multiple API processes require a shared coordinator.
+It is not a cross-process guarantee, a multi-repository transaction, or exclusion
+for character-only writes outside the session SDK. Event-stream subscriptions
+do not hold a session guard open.
+
 ## Layer rules
 
 ### Handlers

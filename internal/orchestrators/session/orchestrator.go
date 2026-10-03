@@ -44,6 +44,13 @@ type Config struct {
 	// keys. Pass 0 to disable expiration.
 	TTL time.Duration
 
+	// Locker coordinates full SDK session operations. Nil selects one
+	// in-process session-keyed locker for this Orchestrator, shared by all of
+	// its handlers/lobby callers. Hosts constructing multiple Orchestrators
+	// over the same sessions must inject the same coordination domain; multiple
+	// processes require a shared coordinator, not independent local lockers.
+	Locker sdk.SessionLocker
+
 	// Dice is the SDK's source of randomness. Optional: nil selects a
 	// crypto-secure dice.CryptoRoller, the production default. This is this
 	// PACKAGE's own ergonomics, not a relaxation of the toolkit's "supplied,
@@ -136,8 +143,14 @@ func New(cfg Config) (*Orchestrator, error) {
 		policy = sdk.StaleTargetRefuse
 	}
 
+	locker := cfg.Locker
+	if locker == nil {
+		locker = NewInProcessSessionLocker()
+	}
+
 	broker := NewBroker()
 	mgr, err := sdk.NewManager(&sdk.Config{
+		Locker:            locker,
 		StaleTargetPolicy: policy,
 		PresentationIDs:   presentationIDs,
 		Sessions:          NewSessionRepository(cfg.Redis, cfg.TTL),

@@ -11,6 +11,17 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Session operation serialization (rpg-project#523 prerequisite)** — Draft
+adopts toolkit session#1930's pushed commit. The orchestrator supplies a
+cancellable per-session host locker; the SDK holds it across reads, writes,
+creation and save/delivery. A real miniredis-backed regression fails without
+wiring and passes with it: a second operation cannot read the old world while
+Move is paused before its save. Separate managers can inject one shared
+coordinator. The default is process-local, not protection across uncoordinated
+replicas or out-of-session character writes. Provider release pin, review and
+broader wave acceptance remain pending; automatic checks are not implemented
+by this prerequisite.
+
 **Individual dungeon knowledge (rpg-project#508)** — Adopts session v0.113.0,
 encounter v0.110.0 and generated protos v0.1.219. `GetKnowledge` returns one
 SDK snapshot; `GetView` carries creature, prop, door and sight-area observations.
