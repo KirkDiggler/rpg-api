@@ -129,10 +129,17 @@ func runServer(_ *cobra.Command, _ []string) error {
 	discordClient := auth.NewDiscordClient()
 	tokenCache := auth.NewTokenCache(5 * time.Minute)
 
-	// Check if dev mode is enabled (allows "Dev <player_id>" auth scheme)
+	worldAccessEnforced, err := configuredWorldAccessEnforcement()
+	if err != nil {
+		return err
+	}
+	log.Printf("World-role admission enforcement enabled: %t (%s)", worldAccessEnforced, envWorldAccessEnforcement)
+
+	// Check if dev mode is enabled (allows "Dev <player_id>" auth scheme).
+	// Keep stream credentials only when the role gate will consume them.
 	authConfig := &auth.InterceptorConfig{
-		DevMode:            os.Getenv(envAuthDevMode) == "true",
-		WorldScopedStreams: true,
+		DevMode:            os.Getenv(envAuthDevMode) == envEnabledValue,
+		WorldScopedStreams: worldAccessEnforced,
 	}
 	authoringEnabled := os.Getenv(envAuthoringEnabled) == "1"
 	development, err := configuredDevelopmentAccess(authConfig.DevMode)
@@ -173,12 +180,15 @@ func runServer(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("world repository: %w", err)
 	}
-	roleAccess, err := auth.NewRoleAccess(&auth.RoleAccessConfig{
-		Resolver: worldResolver, Worlds: worldRepository,
-		DevelopmentPermissions: development.Default, DevelopmentPlayers: development.Players,
+	gameplayAccess, err := newGameplayAccess(&gameplayAccessInput{
+		Enforce: worldAccessEnforced,
+		Roles: &auth.RoleAccessConfig{
+			Resolver: worldResolver, Worlds: worldRepository,
+			DevelopmentPermissions: development.Default, DevelopmentPlayers: development.Players,
+		},
 	})
 	if err != nil {
-		return fmt.Errorf("role access: %w", err)
+		return err
 	}
 
 	srv := grpc.NewServer(
@@ -190,13 +200,13 @@ func runServer(_ *cobra.Command, _ []string) error {
 				DevelopmentOwner:         configuredDevWorldOwner(authConfig.DevMode),
 				DevelopmentOwnerPlayerID: os.Getenv(envDevWorldOwnerPlayer),
 			}),
-			roleAccess.UnaryInterceptor(),
+			gameplayAccess.Unary,
 			grpc_logging.UnaryServerInterceptor(grpc_logging.LoggerFunc(logFunc)),
 			grpc_recovery.UnaryServerInterceptor(),
 		),
 		grpc.ChainStreamInterceptor(
 			auth.StreamAuthInterceptor(discordClient, tokenCache, authConfig),
-			roleAccess.StreamInterceptor(),
+			gameplayAccess.Stream,
 			grpc_logging.StreamServerInterceptor(grpc_logging.LoggerFunc(logFunc)),
 			grpc_recovery.StreamServerInterceptor(),
 		),
