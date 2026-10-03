@@ -53,14 +53,16 @@ Proto3 is backward compatible — new fields with zero values don't break reader
 
 ## Update toolkit dependency
 
-For rpg-toolkit updates:
+Follow [the toolkit pseudo-version workflow](toolkit-pseudo-versions.md).
+During development, push the provider commit to origin and let
+`go get <module>@<pushed-commit>` derive the consumer's pseudo-version. Local
+stacks build the normal API image from that committed dependency graph; no source
+override is needed. Before consumer merge, adopt the actual CI-published provider
+tag rather than guessing a version or broadly updating to `@latest`.
 
-```bash
-GOPROXY=direct go get github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e@latest
-go mod tidy
-```
-
-rpg-toolkit is published as independently versioned Go modules. Inspect the direct `github.com/KirkDiggler/rpg-toolkit/...` requirements in `go.mod`, then update only the module that provides the API you need.
+Toolkit modules are independently versioned. Update only the module that provides
+the required interface, and carry any changed nested-module dependencies outward
+through their own consumer commits.
 
 ## Generated-Go version example (2026-08-03)
 
