@@ -760,6 +760,8 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 	// the proto, deprecated; nothing maps to them any more.
 	case sdk.EventConcealmentRevealed:
 		return sessionpb.EventKind_EVENT_KIND_CONCEALMENT_REVEALED
+	case sdk.EventRoomRevealed:
+		return sessionpb.EventKind_EVENT_KIND_ROOM_REVEALED
 	case sdk.EventSighted:
 		return sessionpb.EventKind_EVENT_KIND_SIGHTED
 	// Holdings (rpg-project#368). Each kind is a STATEMENT -- looted, held,
@@ -1050,6 +1052,14 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 		evt.Body = &sessionpb.Event_Looted{Looted: &sessionpb.Looted{
 			Looter: b.Looter, Body: b.Body,
 		}}
+	case sdk.RoomRevealedBody:
+		atlas := AtlasToProto(&sdk.Atlas{Regions: []sdk.AtlasRegion{b.Region}, Cells: b.Scenery,
+			Props: b.Props, Boundaries: b.Boundaries, Segments: b.Segments, Sealed: b.Sealed,
+			Doorways: b.Doorways, Placed: b.Placed, Exits: b.Exits})
+		evt.Body = &sessionpb.Event_RoomRevealed{RoomRevealed: &sessionpb.RegionRevealed{
+			Region: atlas.Regions[0], Scenery: atlas.Cells, Props: atlas.Props,
+			Boundaries: atlas.Boundaries, Segments: atlas.Segments, Sealed: atlas.Sealed,
+			Doorways: atlas.Doorways, Placed: atlas.Placed, Exits: atlas.Exits}}
 	case sdk.SightedBody:
 		// PASSED THROUGH, NAMES AND NOTHING ELSE -- and the nothing else is
 		// the design rather than an omission this seam should correct. What
@@ -1071,7 +1081,7 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 		// a fact rather than the news that their own view is stale, and the
 		// fact is exactly what an illusion has to be able to lie about.
 		evt.Body = &sessionpb.Event_Sighted{Sighted: &sessionpb.Sighted{
-			Gained: b.Gained, Lost: b.Lost, Changed: b.Changed,
+			Gained: b.Gained, Lost: b.Lost, Changed: b.Changed, KnowledgeChanged: b.KnowledgeChanged,
 		}}
 	case sdk.StanceChangedBody:
 		// Verbatim (rpg-project#375, design §6): the pair as the session

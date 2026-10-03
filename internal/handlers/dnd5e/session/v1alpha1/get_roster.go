@@ -27,9 +27,13 @@ func (h *Handler) GetRoster(ctx context.Context, req *sessionpb.GetRosterRequest
 	if req.GetSession() == "" {
 		return nil, sdkerr.StatusError(sdk.ErrNoSessionID)
 	}
+	if req.GetMember() == "" {
+		return nil, sdkerr.StatusError(sdk.ErrNoMemberID)
+	}
 
 	out, err := h.manager.Roster(ctx, &sdk.RosterInput{
 		Session: req.GetSession(),
+		Member:  req.GetMember(),
 		Player:  playerID,
 	})
 	if err != nil {

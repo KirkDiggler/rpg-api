@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
@@ -155,19 +156,30 @@ func (r *campRun) story(t *testing.T) []*sessionpb.Event {
 // side. A member in reserve has no row.
 func (r *campRun) factions(t *testing.T) map[string]string {
 	t.Helper()
-	roster, err := r.h.handler.GetRoster(r.alice, &sessionpb.GetRosterRequest{Session: r.sess})
+	// Reserve/faction assertions inspect the owner's persisted world, not the
+	// observer-scoped identity endpoint (which intentionally omits unseen NPCs).
+	session, err := sessionorch.NewSessionRepository(r.h.redis, 0).GetSession(r.alice, r.sess)
+	require.NoError(t, err)
+	data, err := sessionorch.NewEncounterRepository(r.h.redis, 0).GetEncounter(r.alice, session.Encounter)
+	require.NoError(t, err)
+	world, err := tkencounter.LoadEncounter(&tkencounter.LoadEncounterInput{
+		Data: *data, Standing: allStanding{}, Sight: allSeeing{}, Equipment: noHandsObserved{},
+		Initiative: orderAsGiven{}, TurnDriver: tkencounter.PassDriver{}, Striker: tkencounter.RefusingStriker{},
+		Mover: tkencounter.RefusingMover{}, Announcer: tkencounter.RefusingAnnouncer{},
+	})
+	require.NoError(t, err)
+	members, err := world.Members()
 	require.NoError(t, err)
 	out := map[string]string{}
-	for _, m := range roster.GetMembers() {
-		out[m.GetId()] = m.GetFaction()
+	for _, m := range members {
+		out[string(m.ID)] = m.Faction
 	}
 	return out
 }
 
 func (r *campRun) props(t *testing.T) []string {
 	t.Helper()
-	atlas, err := r.h.handler.GetAtlas(r.alice, &sessionpb.GetAtlasRequest{Session: r.sess, Member: "alice"})
-	require.NoError(t, err)
+	atlas := renderedKnowledgeAtlas(r.alice, t, r.h, r.sess, "alice")
 	out := make([]string, 0, len(atlas.GetProps()))
 	for _, p := range atlas.GetProps() {
 		out = append(out, p.GetId())

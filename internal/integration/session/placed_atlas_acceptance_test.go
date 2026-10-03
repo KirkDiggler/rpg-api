@@ -93,11 +93,7 @@ func (r *placedRun) ctxOf(member string) context.Context {
 
 func (r *placedRun) placedAtlas(t *testing.T, member string) *sessionpb.GetAtlasResponse {
 	t.Helper()
-	out, err := r.h.handler.GetAtlas(r.ctxOf(member), &sessionpb.GetAtlasRequest{
-		Session: placedTableSession, Member: member,
-	})
-	require.NoError(t, err)
-	return out
+	return renderedKnowledgeAtlas(r.ctxOf(member), t, r.h, placedTableSession, member)
 }
 
 // placedByID keys one member's placements by the author's id -- the only

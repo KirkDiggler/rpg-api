@@ -67,11 +67,12 @@ func TestAcceptance_BlessHostPolicyAndPersistedMixedOutcomes(t *testing.T) {
 			repo := sessionorch.NewEncounterRepository(h.redis, 0)
 			world, err := repo.GetEncounter(ctx, "room-encounter")
 			require.NoError(t, err)
-			holding := world.Perception.Intel.Holdings[core.EntityID(id)]["skel-1"]
+			holding, found := world.Perception.Intel.Holdings[core.EntityID("member|"+id)]["member|skel-1"]
+			require.True(t, found, "seed an existing sight holding, not a fabricated map entry")
 			holding.CurrentVia = nil
 			holding.Payload, err = encounter.EncodeSightTestimony(encounter.SightTestimony{State: encounter.LocationKnown, Position: at(3, 2)})
 			require.NoError(t, err)
-			world.Perception.Intel.Holdings[core.EntityID(id)]["skel-1"] = holding
+			world.Perception.Intel.Holdings[core.EntityID("member|"+id)]["member|skel-1"] = holding
 			require.NoError(t, repo.SaveEncounter(ctx, "room-encounter", world))
 
 			row = castRowFor(ctx, t, h, id, spells.Bless)

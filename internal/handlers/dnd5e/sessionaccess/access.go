@@ -69,7 +69,7 @@ func (a *Access) CallerActingAs(ctx context.Context, member string) error {
 // CallerSeated verifies the authenticated caller is seated in session. The
 // Session SDK owns membership and caller-seat authorization; this gate does
 // not enumerate character records.
-func (a *Access) CallerSeated(ctx context.Context, session string) error {
+func (a *Access) CallerSeated(ctx context.Context, session, member string) error {
 	playerID, err := authenticatedPlayerID(ctx)
 	if err != nil {
 		return err
@@ -77,7 +77,10 @@ func (a *Access) CallerSeated(ctx context.Context, session string) error {
 	if session == "" {
 		return status.Error(codes.InvalidArgument, errSessionRequired)
 	}
-	_, err = a.readRoster(ctx, session, playerID)
+	if member == "" {
+		return status.Error(codes.InvalidArgument, errMemberRequired)
+	}
+	_, err = a.readRoster(ctx, session, playerID, member)
 	return err
 }
 
@@ -99,7 +102,7 @@ func (a *Access) CallerMemberSeated(ctx context.Context, session, member string)
 		return ownershipErr
 	}
 
-	roster, err := a.readRoster(ctx, session, playerID)
+	roster, err := a.readRoster(ctx, session, playerID, member)
 	if err != nil {
 		return err
 	}
@@ -136,11 +139,11 @@ func (a *Access) verifyMemberOwnership(ctx context.Context, playerID, member str
 	return nil
 }
 
-func (a *Access) readRoster(ctx context.Context, session, playerID string) (*sdk.RosterOutput, error) {
+func (a *Access) readRoster(ctx context.Context, session, playerID, member string) (*sdk.RosterOutput, error) {
 	if a.roster == nil {
 		return nil, status.Error(codes.Internal, errRosterReaderRequired)
 	}
-	out, err := a.roster.Roster(ctx, &sdk.RosterInput{Session: session, Player: playerID})
+	out, err := a.roster.Roster(ctx, &sdk.RosterInput{Session: session, Player: playerID, Member: member})
 	if err != nil {
 		return nil, rosterError(err)
 	}
