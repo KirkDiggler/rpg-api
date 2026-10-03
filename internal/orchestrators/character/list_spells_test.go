@@ -116,4 +116,28 @@ func TestListSpellsByLevel_SpecificSpells(t *testing.T) {
 
 	assert.True(t, foundFireBolt, "Expected to find Fire Bolt cantrip")
 	assert.True(t, foundMageHand, "Expected to find Mage Hand cantrip")
+
+	// These executable spells were missing from the old catalog. Exercise
+	// the real pinned provider through the API read, not a mocked response.
+	byRef := make(map[string]SpellInfo)
+	for _, level := range []int{0, 1} {
+		listed, err := orchestrator.ListSpellsByLevel(context.Background(), &ListSpellsByLevelInput{Level: level})
+		require.NoError(t, err)
+		for _, spell := range listed.Spells {
+			byRef[spell.Ref] = spell
+		}
+	}
+	for _, ref := range []string{
+		"dnd5e:spells:blade-ward", "dnd5e:spells:faerie-fire", "dnd5e:spells:fog-cloud",
+		"dnd5e:spells:thunderclap", "dnd5e:spells:true-strike", "dnd5e:spells:vicious-mockery",
+	} {
+		spell, found := byRef[ref]
+		require.True(t, found, "published provider must supply %s", ref)
+		assert.NotEmpty(t, spell.Name)
+		assert.NotEmpty(t, spell.Description)
+	}
+	assert.Contains(t, byRef["dnd5e:spells:blade-ward"].Description, "half damage")
+	for _, word := range []string{"Approach:", "Flee:", "Grovel:"} {
+		assert.Contains(t, byRef["dnd5e:spells:command"].Description, word)
+	}
 }
