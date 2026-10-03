@@ -1144,7 +1144,10 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 		if err != nil {
 			return err
 		}
-		evt.Body = &sessionpb.Event_DiscoveryChecked{DiscoveryChecked: &sessionpb.DiscoveryChecked{Member: b.Member, Ability: b.Ability, Beaten: b.Beaten, Total: int32(b.Total), Calculation: calculation}}
+		evt.Body = &sessionpb.Event_DiscoveryChecked{DiscoveryChecked: &sessionpb.DiscoveryChecked{
+			Member: b.Member, Ability: b.Ability, Beaten: b.Beaten,
+			Total: int32(b.Total), Calculation: calculation,
+		}}
 	case sdk.IntimidatedBody:
 		// A threat, landed or missed (rpg-project#454). VERBATIM, and
 		// BEATEN IS COPIED rather than derived here from total against dc --

@@ -17,8 +17,8 @@ func (h *Handler) SetDiscoverySharing(ctx context.Context, req *sessionpb.SetDis
 	if err != nil {
 		return nil, err
 	}
-	if err = gate.CallerMemberSeated(ctx, req.GetSession(), req.GetMember()); err != nil {
-		return nil, err
+	if seatErr := gate.CallerMemberSeated(ctx, req.GetSession(), req.GetMember()); seatErr != nil {
+		return nil, seatErr
 	}
 	if req.Sharing == nil {
 		return nil, status.Error(codes.InvalidArgument, "sharing must be explicitly supplied")
