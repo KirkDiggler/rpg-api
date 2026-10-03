@@ -49,12 +49,6 @@ WORKDIR /home/appuser
 COPY --from=builder /app/server .
 RUN chown appuser:appuser /home/appuser/server
 
-# Keep the runtime content layout identical to Dockerfile. A mounted writable
-# content directory must not hide the immutable seed used by the registry.
-COPY --from=builder --chown=appuser:appuser /app/content ./content
-COPY --from=builder /app/content /usr/share/rpg-api/content
-ENV RPG_SHIPPED_CONTENT_DIR=/usr/share/rpg-api/content
-
 # Switch to the non-root user
 USER appuser
 
