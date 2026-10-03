@@ -79,7 +79,7 @@ func permissionLevel(level string) (auth.Permissions, error) {
 }
 
 func configuredDevWorldOwner(devMode bool) bool {
-	return devMode && os.Getenv(envDevWorldOwner) == "true"
+	return devMode && os.Getenv(envDevWorldOwner) == envEnabledValue
 }
 
 func registerWorldService(registrar grpc.ServiceRegistrar, repository worldrepo.Repository) error {
