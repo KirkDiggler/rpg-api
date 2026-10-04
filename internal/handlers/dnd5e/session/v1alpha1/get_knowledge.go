@@ -26,7 +26,8 @@ func (h *Handler) GetKnowledge(ctx context.Context, req *sessionpb.GetKnowledgeR
 		return nil, sdkerr.StatusError(errKnowledgeOutputRequired)
 	}
 	return &sessionpb.GetKnowledgeResponse{
-		Atlas: AtlasToProto(&out.Atlas), View: viewToProto(&out.View), Where: whereToProto(&out.Where),
+		DiscoverySharing: out.DiscoverySharing,
+		Atlas:            AtlasToProto(&out.Atlas), View: viewToProto(&out.View), Where: whereToProto(&out.Where),
 		Roster: rosterToProto(&out.Roster), Holding: append([]string(nil), out.Holding...), Seq: out.Seq,
 	}, nil
 }

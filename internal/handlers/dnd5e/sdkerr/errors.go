@@ -49,6 +49,10 @@ func StatusError(err error) error {
 	}
 
 	switch {
+	// Retired host verbs are unsupported, not transient world-state refusals.
+	case errors.Is(err, sdk.ErrSearchRetired):
+		return status.Error(codes.Unimplemented, err.Error())
+
 	// NOT_FOUND -- the caller named something that does not exist.
 	case errors.Is(err, sdk.ErrNoSession),
 		errors.Is(err, sdk.ErrNoEncounter),

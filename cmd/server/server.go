@@ -259,10 +259,11 @@ func runServer(_ *cobra.Command, _ []string) error {
 	// character REPOSITORY — so there is no cycle to break, only an order to
 	// state.
 	sessionOrch, err := sessionorch.New(sessionorch.Config{
-		StaleTargetPolicy: sdk.StaleTargetPolicy(os.Getenv(envStaleTargetPolicy)),
-		Redis:             redisClient,
-		Characters:        charRepo,
-		TTL:               24 * time.Hour,
+		AutomaticDiscovery: true,
+		StaleTargetPolicy:  sdk.StaleTargetPolicy(os.Getenv(envStaleTargetPolicy)),
+		Redis:              redisClient,
+		Characters:         charRepo,
+		TTL:                24 * time.Hour,
 	})
 	if err != nil {
 		return fmt.Errorf("session orchestrator: %w", err)

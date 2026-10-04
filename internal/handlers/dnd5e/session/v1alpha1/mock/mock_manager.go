@@ -386,19 +386,19 @@ func (mr *MockManagerMockRecorder) Roster(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Roster", reflect.TypeOf((*MockManager)(nil).Roster), ctx, in)
 }
 
-// Search mocks base method.
-func (m *MockManager) Search(ctx context.Context, in *session.SearchInput) (*session.SearchOutput, error) {
+// SetDiscoverySharing mocks base method.
+func (m *MockManager) SetDiscoverySharing(ctx context.Context, in *session.SetDiscoverySharingInput) (*session.SetDiscoverySharingOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Search", ctx, in)
-	ret0, _ := ret[0].(*session.SearchOutput)
+	ret := m.ctrl.Call(m, "SetDiscoverySharing", ctx, in)
+	ret0, _ := ret[0].(*session.SetDiscoverySharingOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// Search indicates an expected call of Search.
-func (mr *MockManagerMockRecorder) Search(ctx, in any) *gomock.Call {
+// SetDiscoverySharing indicates an expected call of SetDiscoverySharing.
+func (mr *MockManagerMockRecorder) SetDiscoverySharing(ctx, in any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Search", reflect.TypeOf((*MockManager)(nil).Search), ctx, in)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetDiscoverySharing", reflect.TypeOf((*MockManager)(nil).SetDiscoverySharing), ctx, in)
 }
 
 // Status mocks base method.

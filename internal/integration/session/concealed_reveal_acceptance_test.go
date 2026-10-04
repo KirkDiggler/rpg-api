@@ -154,7 +154,7 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 
 	// Search the hall. The roller this harness supplies answers the top face,
 	// so the perception check clears DC 15 every run rather than one in three.
-	_, err = h.handler.Search(ctx, &sessionpb.SearchRequest{
+	_, err = h.manager.Manager.Search(ctx, &sdk.SearchInput{
 		Session: "reveal-run", Member: "alice", Region: "hall",
 	})
 	require.NoError(t, err)
