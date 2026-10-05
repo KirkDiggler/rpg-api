@@ -38,9 +38,15 @@ func TestAfford_HappyPath_ProjectsNestedDeclaration(t *testing.T) {
 				Attack:     &sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
 				TargetKind: sdk.TargetMember,
 				Candidates: []sdk.TargetCandidate{
-					{Member: "goblin-1", Available: true},
+					{Member: "goblin-1", Available: true, Effects: []sdk.TargetEffect{
+						{ID: "row-1", State: sdk.EffectApplies, Reason: "target reason", Benefit: "benefit"},
+					}},
 					{Member: "skeleton-1", Available: false, Why: &sdk.Shortfall{Reason: sdk.ShortfallTargetOutOfReach, Text: "target out of reach"}},
 				},
+				Effects: []sdk.EffectRow{{
+					ID: "row-1", Ref: "ref-1", Name: "name", Description: "description",
+					State: sdk.EffectDepends, Reason: "reason", Participation: sdk.ContributesNow,
+				}},
 			},
 		},
 	}, nil)
@@ -64,6 +70,15 @@ func TestAfford_HappyPath_ProjectsNestedDeclaration(t *testing.T) {
 	require.Nil(t, decl.GetCandidates()[0].GetWhy())
 	require.False(t, decl.GetCandidates()[1].GetAvailable())
 	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_TARGET_OUT_OF_REACH, decl.GetCandidates()[1].GetWhy().GetReason())
+	require.Equal(t, []*sessionpb.EffectRow{{
+		Id: "row-1", Ref: "ref-1", Name: "name", Description: "description",
+		State: sessionpb.EffectState_EFFECT_STATE_DEPENDS, Reason: "reason",
+		Participation: sessionpb.EffectParticipation_EFFECT_PARTICIPATION_CONTRIBUTES_NOW,
+	}}, decl.GetEffects())
+	require.Equal(t, []*sessionpb.TargetEffect{
+		{Id: "row-1", State: sessionpb.EffectState_EFFECT_STATE_APPLIES, Reason: "target reason", Benefit: "benefit"},
+	}, decl.GetCandidates()[0].GetEffects())
+	require.Empty(t, decl.GetCandidates()[1].GetEffects())
 }
 
 func TestAfford_AreaFootprintsCrossWholeForAvailableAndUnavailableDeclarations(t *testing.T) {
