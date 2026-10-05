@@ -211,7 +211,18 @@ lobby handler suite, which still runs on a miniredis-backed manager).
 rpg-api's Redis-backed key-value repositories and the host's character
 repository; owns no rules. Covered by its own suite and by
 `internal/integration/session`. Held at B while rpg-api#800 (partial-failure
-orphans) is unruled.
+orphans) is unruled. Host-supplied SDK operation locking now covers
+session-shaped reads and writes, including creation: miniredis regression pauses
+a Move before save and proves that another read/write waits for committed state,
+both within one manager and across two managers sharing a coordinator. Unit
+coverage includes wait cancellation, independent keys, contention and idle-entry
+cleanup. With automatic discovery enabled, the game host broadens its default
+coordinator to the shared SDK store so cross-run exploration profiles are not
+raced by different session IDs. Profile round-trip/no-TTL and that broader guard
+have focused coverage. Coordination is process-local; cross-process exclusion,
+character-only writes and crash-atomic multi-repository saves remain outside
+that guarantee. Local rendered discovery smoke is not comprehensive party or
+authoring acceptance. No broader grade increase.
 
 ### Session presentation orchestrator — B+ (new, 2026-08-28)
 

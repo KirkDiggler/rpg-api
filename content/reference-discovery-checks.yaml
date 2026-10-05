@@ -1,0 +1,85 @@
+# Optional discoveries only. The ordinary floor and entrance remain usable
+# even when every roll fails. Choose "Discovery Check Walk" in the lobby.
+version: 4
+key: reference-discovery-checks
+play: {void: transparent, lighting: bright, standing: centre-covered}
+concealments:
+  perception-once:
+    checks: [{ability: perception, dc: 99}]
+    props: [perception-idol]
+  investigation-find:
+    checks: [{ability: investigation, dc: 5}]
+    props: [investigation-scroll]
+    attempts: {max: 3, reset_hexes: 3, lifetime: run}
+  survival-retry:
+    checks: [{ability: survival, dc: 99}]
+    props: [survival-bones]
+    attempts: {max: 3, reset_hexes: 3, lifetime: run}
+  religion-find:
+    checks: [{ability: religion, dc: 8}]
+    props: [religion-relic]
+exits:
+  - {id: entrance, cell: {q: -5, r: 0}}
+room:
+  version: 3
+  id: discovery-room
+  name: Discovery Check Walk
+  coordinateFrame: {horizontalPlane: world-xz, verticalAxis: world-y-up, distanceUnit: world-scene-unit, hexRadius: 1, footprintFrame: owner-local-xz}
+  workspace: {hexRadius: 9, horizontalLimit: 20}
+  scene:
+    version: 1
+    id: discovery-scene
+    name: Discovery Check Walk
+    items:
+      - id: perception-idol
+        kind: prop
+        assetRef: dnd5e:props:statue-reaper
+        label: Perception — one failed attempt
+        transform: {x: -0.8660254, y: 0, z: -1.5, rotationY: 0}
+      - id: investigation-scroll
+        kind: prop
+        assetRef: dnd5e:props:scroll
+        label: Investigation — optional scroll
+        transform: {x: 3.4641016, y: 0, z: 0, rotationY: 0}
+      - id: survival-bones
+        kind: prop
+        assetRef: dnd5e:props:bone-pile
+        label: Survival — three attempts with three-hex reset
+        transform: {x: 6.9282032, y: 0, z: 3, rotationY: 0}
+      - id: religion-relic
+        kind: prop
+        assetRef: dnd5e:props:reliquary
+        label: Religion — optional relic
+        transform: {x: 1.7320508, y: 0, z: 3, rotationY: 0}
+    groups: []
+  room:
+    implicitRegionId: discovery-room
+    walkableHexes: [
+      {q: -5, r: -2}, {q: -4, r: -2}, {q: -3, r: -2}, {q: -2, r: -2}, {q: -1, r: -2}, {q: 0, r: -2}, {q: 1, r: -2}, {q: 2, r: -2}, {q: 3, r: -2}, {q: 4, r: -2}, {q: 5, r: -2},
+      {q: -5, r: -1}, {q: -4, r: -1}, {q: -3, r: -1}, {q: -2, r: -1}, {q: -1, r: -1}, {q: 0, r: -1}, {q: 1, r: -1}, {q: 2, r: -1}, {q: 3, r: -1}, {q: 4, r: -1}, {q: 5, r: -1},
+      {q: -5, r: 0}, {q: -4, r: 0}, {q: -3, r: 0}, {q: -2, r: 0}, {q: -1, r: 0}, {q: 0, r: 0}, {q: 1, r: 0}, {q: 2, r: 0}, {q: 3, r: 0}, {q: 4, r: 0}, {q: 5, r: 0},
+      {q: -5, r: 1}, {q: -4, r: 1}, {q: -3, r: 1}, {q: -2, r: 1}, {q: -1, r: 1}, {q: 0, r: 1}, {q: 1, r: 1}, {q: 2, r: 1}, {q: 3, r: 1}, {q: 4, r: 1}, {q: 5, r: 1},
+      {q: -5, r: 2}, {q: -4, r: 2}, {q: -3, r: 2}, {q: -2, r: 2}, {q: -1, r: 2}, {q: 0, r: 2}, {q: 1, r: 2}, {q: 2, r: 2}, {q: 3, r: 2}, {q: 4, r: 2}, {q: 5, r: 2}]
+    propDeclarations:
+      perception-idol:
+        blocksMovement: true
+        blocksLineOfSight: true
+        footprint: {width: 0.6, depth: 0.6, offsetX: 0, offsetZ: 0}
+      investigation-scroll:
+        blocksMovement: false
+        blocksLineOfSight: false
+        footprint: {width: 0.4, depth: 0.4, offsetX: 0, offsetZ: 0}
+      survival-bones:
+        blocksMovement: false
+        blocksLineOfSight: false
+        footprint: {width: 0.5, depth: 0.5, offsetX: 0, offsetZ: 0}
+      religion-relic:
+        blocksMovement: false
+        blocksLineOfSight: false
+        footprint: {width: 0.4, depth: 0.4, offsetX: 0, offsetZ: 0}
+    arrangementDeclarations: {}
+    partyStart: {q: -5, r: 0}
+    monsterDeclarations: []
+    monsterBindings: {}
+    doorBindings: {}
+    propBindings: {}

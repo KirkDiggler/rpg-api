@@ -11,6 +11,22 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Automatic discovery release adoption (rpg-project#523)** — Adopts generated
+protos v0.1.220, released encounter v0.112.0 and session v0.114.1 from
+toolkit#1931/#1930/#1936. The real
+server enables automatic discovery, persists opaque character-owned profiles
+without a run TTL, and supplies store-wide SDK coordination for those shared
+records. Result beats, snapshot sharing presence and the exact-seat preference
+RPC cross the handler unchanged. Search no longer has an implementation.
+`reference-discovery-checks.yaml` provides four optional discoveries and an
+unblocked entrance. Local browser smoke shows an automatic failed Perception
+check, no Search button, a spent single attempt after departure/return, and a
+private setting surviving reload. The operator confirmed sharing in that walk.
+Broader party/authoring acceptance, independent review and API deployment remain
+pending; provider release pins are adopted, but this is not a shipped API release.
+Coordination remains process-local unless
+an appropriate shared coordinator is injected, and is not a transaction.
+
 **Individual dungeon knowledge (rpg-project#508)** — Adopts session v0.113.0,
 encounter v0.110.0 and generated protos v0.1.219. `GetKnowledge` returns one
 SDK snapshot; `GetView` carries creature, prop, door and sight-area observations.

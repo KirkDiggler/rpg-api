@@ -1,0 +1,54 @@
+package session
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/alicebob/miniredis/v2"
+	goredis "github.com/redis/go-redis/v9"
+	"github.com/stretchr/testify/suite"
+
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+)
+
+type ExplorationHostSuite struct{ suite.Suite }
+
+func TestExplorationHostSuite(t *testing.T) { suite.Run(t, new(ExplorationHostSuite)) }
+func (s *ExplorationHostSuite) TestProfileIsDetachedAndDoesNotExpireWithARun() {
+	server := miniredis.RunT(s.T())
+	client := goredis.NewClient(&goredis.Options{Addr: server.Addr()})
+	defer func() { _ = client.Close() }()
+	repo := &redisExplorationRepository{client: client}
+	ctx := context.Background()
+	_, err := repo.GetExploration(ctx, "alice")
+	s.ErrorIs(err, sdk.ErrNotFound)
+	data := &sdk.ExplorationData{Character: "alice", PrivateDiscoveries: true, Checks: map[string]encounter.DiscoveryMemoryData{"site/secret": {Used: 1, Learned: true}}}
+	s.Require().NoError(repo.SaveExploration(ctx, data))
+	server.FastForward(48 * time.Hour)
+	got, err := repo.GetExploration(ctx, "alice")
+	s.Require().NoError(err)
+	s.Equal(data, got)
+	delete(got.Checks, "site/secret")
+	again, err := repo.GetExploration(ctx, "alice")
+	s.Require().NoError(err)
+	s.Len(again.Checks, 1)
+	_, err = repo.GetExploration(ctx, "bob")
+	s.ErrorIs(err, sdk.ErrNotFound)
+}
+func (s *ExplorationHostSuite) TestSharedStoreGuardCoversProfilesAcrossSessionIDs() {
+	locker := sharedStoreLocker{inner: NewInProcessSessionLocker()}
+	first, err := locker.LockSession(context.Background(), &sdk.LockSessionInput{Session: "first-run"})
+	s.Require().NoError(err)
+	defer first.Release()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	_, err = locker.LockSession(ctx, &sdk.LockSessionInput{Session: "second-run"})
+	s.ErrorIs(err, context.DeadlineExceeded)
+	first.Release()
+	second, err := locker.LockSession(context.Background(), &sdk.LockSessionInput{Session: "second-run"})
+	s.Require().NoError(err)
+	second.Release()
+	s.Empty(locker.inner.entries)
+}
