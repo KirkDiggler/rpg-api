@@ -53,7 +53,7 @@ func (s *ReferenceTombSuite) TestTheFileNamesItself() {
 func (s *ReferenceTombSuite) load() *tkencounter.Encounter {
 	enc, err := tkencounter.LoadEncounter(&tkencounter.LoadEncounterInput{
 		Data:       *s.tomb.World,
-		Initiative: orderAsGiven{}, Standing: nobodyDown{}, Sight: nobodySees{}, Equipment: noHandsObserved{},
+		Initiative: tkencounter.InitiativeAsGiven{}, Standing: tkencounter.NobodyDown{}, Sight: tkencounter.ZeroSight{}, Equipment: tkencounter.UnobservedEquipment{},
 		TurnDriver: tkencounter.PassDriver{}, Striker: tkencounter.RefusingStriker{}, Mover: tkencounter.RefusingMover{},
 		// Nobody is in this world, so no clock can advance in it — the same
 		// argument RefusingStriker beside it is making.
@@ -302,24 +302,6 @@ func (monsterFirst) RollInitiative(_ []tkencounter.MemberID) ([]tkencounter.Memb
 	return []tkencounter.MemberID{"skel-1", "fighter"}, nil
 }
 
-// allSeeing gives every member a sight range large enough that two adjacent
-// members always see each other. nobodySees's range of zero -- this
-// package's own construction-time stand-in everywhere else, correct for a
-// throwaway placement probe and an empty real world -- would never let a
-// fight form at all here, which is exactly wrong for what this test needs
-// to prove.
-func TestNobodyDownAssessmentProjectsEverySuppliedMember(t *testing.T) {
-	members := []tkencounter.MemberID{"alice", "bob"}
-	assessment, err := (nobodyDown{}).Assess(members)
-	require.NoError(t, err)
-	require.False(t, assessment.PartyDefeated)
-	require.False(t, assessment.KeepTurnOrder)
-	require.Equal(t, []tkencounter.MemberParticipation{
-		{Member: "alice", Contact: true, Conscious: true, Turn: tkencounter.TurnParticipationWait},
-		{Member: "bob", Contact: true, Conscious: true, Turn: tkencounter.TurnParticipationWait},
-	}, assessment.Members)
-}
-
 type standingOnly struct{}
 
 func (standingOnly) Standing([]tkencounter.MemberID) ([]tkencounter.MemberID, error) {
@@ -328,12 +310,18 @@ func (standingOnly) Standing([]tkencounter.MemberID) ([]tkencounter.MemberID, er
 
 func TestStandingOnlyConstructionIsRefused(t *testing.T) {
 	_, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
-		Initiative: orderAsGiven{}, Standing: standingOnly{},
+		Initiative: tkencounter.InitiativeAsGiven{}, Standing: standingOnly{},
 		Endings: []tkencounter.EndingInput{{Key: "unused", Trigger: tkencounter.TriggerExternal{}}},
 	})
 	require.ErrorIs(t, err, tkencounter.ErrNoParticipation)
 }
 
+// allSeeing gives every member a sight range large enough that two adjacent
+// members always see each other. encounter's ZeroSight range of zero --
+// this package's construction-time stand-in everywhere else, correct for a
+// throwaway placement probe and an empty real world -- would never let a
+// fight form at all here, which is exactly wrong for what this test needs
+// to prove.
 type allSeeing struct{}
 
 func (allSeeing) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberID]int, error) {
@@ -364,9 +352,9 @@ func (allSeeing) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberID
 func TestAFightsUnplayedTurnPassesWithoutTouchingTheStriker(t *testing.T) {
 	enc, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
 		Initiative: monsterFirst{},
-		Standing:   nobodyDown{},
+		Standing:   tkencounter.NobodyDown{},
 		Sight:      allSeeing{},
-		Equipment:  noHandsObserved{},
+		Equipment:  tkencounter.UnobservedEquipment{},
 		TurnDriver: tkencounter.PassDriver{},
 		Striker:    tkencounter.RefusingStriker{},
 		Mover:      tkencounter.RefusingMover{},
@@ -577,7 +565,7 @@ func TestAConcealedDungeonCompiles(t *testing.T) {
 
 // TestAnOpenConcealedDoorCompilesToo pins the one deliberate asymmetry
 // between this package's two concealment stand-ins -- see the comment above
-// [orderAsGiven]. A door authored both concealed and open is legal content
+// [refusingCheckResolver]. A door authored both concealed and open is legal content
 // (a hidden passage nobody shut), and NewEncounter's first light asks
 // Witness about it UNCONDITIONALLY, even in this package's zero-member
 // world. If [nobodyPerceives] were ever "simplified" to refuse, matching
@@ -587,21 +575,4 @@ func TestAnOpenConcealedDoorCompilesToo(t *testing.T) {
 	d, err := Compile([]byte(concealedDungeon("concealed-seam-open", "")))
 	require.NoError(t, err, "an authored hidden passage left open must still compile")
 	require.NotNil(t, d)
-}
-
-// noHandsObserved answers the equipment question for fixtures that are not
-// about equipment: every member is answered for, and every answer is "no hands
-// to observe" — deliberately NOT "everybody is empty-handed", which would be
-// testimony this fixture has no standing to give (rpg-toolkit#1615).
-type noHandsObserved struct{}
-
-func (noHandsObserved) Equipment(
-	members []tkencounter.MemberID,
-) (map[tkencounter.MemberID]*tkencounter.HeldEquipment, error) {
-	out := make(map[tkencounter.MemberID]*tkencounter.HeldEquipment, len(members))
-	for _, id := range members {
-		out[id] = nil
-	}
-
-	return out, nil
 }

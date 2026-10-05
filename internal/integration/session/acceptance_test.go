@@ -85,7 +85,7 @@ func (allStanding) Standing(_ []tkencounter.MemberID) ([]tkencounter.MemberID, e
 // of a Standing capability (toolkit#1453): nobody is down, so everybody is up,
 // conscious, in contact, and waiting. Contact is what makes a member count as
 // a side of a fight, so the false zero value would dissolve every fight this
-// suite forms -- see sessionworld.nobodyDown.Assess, which is the same stand-in
+// suite forms -- see encounter.NobodyDown.Assess, which is the same stand-in
 // for the same reason.
 func (allStanding) Assess(members []tkencounter.MemberID) (*tkencounter.ParticipationAssessment, error) {
 	out := &tkencounter.ParticipationAssessment{
@@ -252,7 +252,7 @@ func buildTomb(t *testing.T, mutate func(*tkencounter.SetupInput)) *tkencounter.
 		Retention:  tkencounter.RetentionUnbounded,
 		Standing:   allStanding{},
 		Sight:      allSeeing{},
-		Equipment:  noHandsObserved{},
+		Equipment:  tkencounter.UnobservedEquipment{},
 		// tkencounter.PassDriver{}/RefusingStriker{} are the toolkit's own
 		// trivial, exported stand-ins (rpg-toolkit#1167 closed) --
 		// construction-time only, same as allStanding/allSeeing above: this
@@ -1135,21 +1135,4 @@ func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
 		Session: "doom-run", Member: "alice", Path: []*sessionpb.Position{pbAt(17, 3)},
 	})
 	requireGRPCCode(t, err, codes.FailedPrecondition)
-}
-
-// noHandsObserved answers the equipment question for fixtures that are not
-// about equipment: every member is answered for, and every answer is "no hands
-// to observe" — deliberately NOT "everybody is empty-handed", which would be
-// testimony this fixture has no standing to give (rpg-toolkit#1615).
-type noHandsObserved struct{}
-
-func (noHandsObserved) Equipment(
-	members []tkencounter.MemberID,
-) (map[tkencounter.MemberID]*tkencounter.HeldEquipment, error) {
-	out := make(map[tkencounter.MemberID]*tkencounter.HeldEquipment, len(members))
-	for _, id := range members {
-		out[id] = nil
-	}
-
-	return out, nil
 }

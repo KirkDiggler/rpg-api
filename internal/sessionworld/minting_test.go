@@ -104,7 +104,7 @@ func loadWorld(t *testing.T, d *Dungeon) *tkencounter.Encounter {
 
 	enc, err := tkencounter.LoadEncounter(&tkencounter.LoadEncounterInput{
 		Data:       *d.World,
-		Initiative: orderAsGiven{}, Standing: nobodyDown{}, Sight: nobodySees{}, Equipment: noHandsObserved{},
+		Initiative: tkencounter.InitiativeAsGiven{}, Standing: tkencounter.NobodyDown{}, Sight: tkencounter.ZeroSight{}, Equipment: tkencounter.UnobservedEquipment{},
 		TurnDriver: tkencounter.PassDriver{}, Striker: tkencounter.RefusingStriker{}, Mover: tkencounter.RefusingMover{},
 		Announcer: tkencounter.RefusingAnnouncer{},
 	})

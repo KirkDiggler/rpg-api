@@ -135,6 +135,63 @@ func TestTargetCandidateToProto_FieldForField(t *testing.T) {
 	require.Equal(t, "target out of reach", got.GetWhy().GetText())
 	require.NotNil(t, got.Effects, "no target answers stays non-nil empty")
 	require.Empty(t, got.Effects)
+	require.NotNil(t, got.HeldEffects, "no held rows stays non-nil empty")
+	require.Empty(t, got.HeldEffects)
+}
+
+// TestTargetCandidateToProto_CarriesHeldEffects pins R18 across the boundary:
+// the rows a target holds cross as full rows, every field, in the SDK's
+// order, and stay apart from the per-target answers to the actor's rows.
+func TestTargetCandidateToProto_CarriesHeldEffects(t *testing.T) {
+	got := targetCandidateToProto(sdk.TargetCandidate{
+		Member: "goblin-2", Available: true,
+		Effects: []sdk.TargetEffect{
+			{ID: "effect-a", State: sdk.EffectApplies, Reason: "answer a"},
+		},
+		HeldEffects: []sdk.EffectRow{
+			{
+				ID: "held-b", Ref: "ref:b", Name: "name b", Description: "description b",
+				State: sdk.EffectDepends, Reason: "reason b",
+				Participation: sdk.LaterChoice, Benefit: "benefit b",
+			},
+			{
+				ID: "held-a", Ref: "ref:a", Name: "name a", Description: "description a",
+				State: sdk.EffectApplies, Reason: "reason a",
+				Participation: sdk.ContributesNow, Benefit: "benefit a",
+			},
+		},
+	})
+	require.Equal(t, []*sessionpb.EffectRow{
+		{
+			Id: "held-b", Ref: "ref:b", Name: "name b", Description: "description b",
+			State: sessionpb.EffectState_EFFECT_STATE_DEPENDS, Reason: "reason b",
+			Participation: sessionpb.EffectParticipation_EFFECT_PARTICIPATION_LATER_CHOICE, Benefit: "benefit b",
+		},
+		{
+			Id: "held-a", Ref: "ref:a", Name: "name a", Description: "description a",
+			State: sessionpb.EffectState_EFFECT_STATE_APPLIES, Reason: "reason a",
+			Participation: sessionpb.EffectParticipation_EFFECT_PARTICIPATION_CONTRIBUTES_NOW, Benefit: "benefit a",
+		},
+	}, got.GetHeldEffects(), "every field, in the SDK's order")
+	require.Equal(t, []*sessionpb.TargetEffect{
+		{Id: "effect-a", State: sessionpb.EffectState_EFFECT_STATE_APPLIES, Reason: "answer a"},
+	}, got.GetEffects(), "per-target answers are not joined with held rows")
+}
+
+// TestTargetCandidateToProto_HeldEffectsUnknownEnumsAreUnspecified: a held
+// row goes through the shared row converter, so an unrecognized state or
+// participation reaches UNSPECIFIED (a producer defect the client refuses),
+// never a guessed value.
+func TestTargetCandidateToProto_HeldEffectsUnknownEnumsAreUnspecified(t *testing.T) {
+	got := targetCandidateToProto(sdk.TargetCandidate{
+		Member: "goblin-2",
+		HeldEffects: []sdk.EffectRow{
+			{ID: "held-x", State: sdk.EffectState("bogus"), Participation: sdk.EffectParticipation("bogus")},
+		},
+	})
+	require.Len(t, got.GetHeldEffects(), 1)
+	require.Equal(t, sessionpb.EffectState_EFFECT_STATE_UNSPECIFIED, got.GetHeldEffects()[0].GetState())
+	require.Equal(t, sessionpb.EffectParticipation_EFFECT_PARTICIPATION_UNSPECIFIED, got.GetHeldEffects()[0].GetParticipation())
 }
 
 func TestTargetCandidateToProto_CarriesTargetEffects(t *testing.T) {

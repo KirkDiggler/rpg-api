@@ -519,10 +519,11 @@ func buildWorld(
 		// answer no question about the game. They are trivial because there is
 		// nobody here yet to see or to be standing, not because a ruling was
 		// made quietly.
-		Initiative: orderAsGiven{},
-		Standing:   nobodyDown{},
-		Sight:      nobodySees{},
-		Equipment:  nobodyHasHands{},
+		// Encounter's own empty-world stand-ins (rpg-toolkit#1956).
+		Initiative: tkencounter.InitiativeAsGiven{},
+		Standing:   tkencounter.NobodyDown{},
+		Sight:      tkencounter.ZeroSight{},
+		Equipment:  tkencounter.UnobservedEquipment{},
 		// Same trivial stand-in as above: this world is empty at the moment
 		// it is built, so no clock ever lands on anyone here either
 		// (toolkit#1162, ADR-0043). Striker is the same story one seam over
@@ -702,16 +703,14 @@ const EndingWithdrawn = "withdrawn"
 // (TriggerMemberDown), never from a caller naming it.
 const EndingBossDown = "boss-down"
 
-// orderAsGiven, nobodyDown and nobodySees are three of the capabilities
-// NewEncounter refuses to default (rpg-toolkit#1033). TurnDriver and
-// Striker close two more, added by toolkit#1162/ADR-0043 and
-// rpg-project#254 respectively (supplied, never assumed) -- both are
-// tkencounter.PassDriver{} and tkencounter.RefusingStriker{} directly,
-// exported by the toolkit (rpg-toolkit#1167 closed), so there is no
-// hand-written stand-in for either any more.
+// Initiative, Standing, Sight and Equipment are among the capabilities
+// NewEncounter refuses to default (rpg-toolkit#1033); [buildWorld] passes
+// encounter's own exported empty-world stand-ins for them, as it does
+// PassDriver and RefusingStriker. Encounter owning every one of these
+// stand-ins is rpg-toolkit#1956.
 //
 // Concealment (rpg-toolkit#1371) closes two further -- CheckResolver and
-// Witness -- and the toolkit exports no refusing implementation of either,
+// Witness -- and the toolkit does not yet export an implementation of either,
 // so refusingCheckResolver and nobodyPerceives below are hand-written to
 // match (rpg-api#887). They are deliberately NOT a matched refusing pair
 // the way PassDriver/RefusingStriker are:
@@ -730,94 +729,10 @@ const EndingBossDown = "boss-down"
 //     the missing capability failed every dungeon's compile before this
 //     fix, so nobodyPerceives answers honestly instead.
 //
-// All five hand-written types in this file are construction-time only,
-// which is what makes a trivial or refusing implementation honest rather
-// than a hidden ruling -- see [buildWorld]: the world is empty at the
-// moment it is built, and the session package supplies its own
-// capabilities when it loads it.
-type orderAsGiven struct{}
-
-// RollInitiative returns the members in the order given. Never reached: the
-// world this package builds is empty, so no fight can form in the moment it
-// exists.
-func (orderAsGiven) RollInitiative(members []tkencounter.MemberID) ([]tkencounter.MemberID, error) {
-	return members, nil
-}
-
-type nobodyDown struct{}
-
-// Standing reports who is DOWN, not who is up -- the interface's own parameter
-// is named down, and reading it backwards would report a healthy party as a
-// wiped one. Nobody has been hit yet in a world this new, so: nobody, said as
-// an empty list rather than a nil one. A nil slice with a nil error is the
-// shape this repo never returns: a caller cannot tell "nobody is down" from
-// "nothing was answered".
-func (nobodyDown) Standing(_ []tkencounter.MemberID) ([]tkencounter.MemberID, error) {
-	return []tkencounter.MemberID{}, nil
-}
-
-// Assess is the richer half of the same answer, required of a Standing
-// capability since encounter/v0.51.0 (toolkit#1453): NewEncounter refuses a
-// Standing that is not also a Participation. It says exactly what Standing
-// above says, in the fuller vocabulary -- nobody is down, so everybody is up,
-// conscious, IN CONTACT, and waiting for their player or driver -- which is
-// the session package's own bridge answer for an undowned member, verbatim
-// (session.standingSeam.Assess).
-//
-// CONTACT IS TRUE ON PURPOSE. It is what decides whether a member counts as a
-// side of a fight (encounter.fightIsDecided), so answering false would dissolve
-// every fight the moment it formed, quietly, and this stand-in would be making
-// a ruling instead of standing in for one. Party-defeat and keep-turn-order
-// stay false: they are group policy the rulebook owns, and nothing here rules
-// on them.
-func (nobodyDown) Assess(members []tkencounter.MemberID) (*tkencounter.ParticipationAssessment, error) {
-	out := &tkencounter.ParticipationAssessment{
-		Members: make([]tkencounter.MemberParticipation, 0, len(members)),
-	}
-	for _, id := range members {
-		out.Members = append(out.Members, tkencounter.MemberParticipation{
-			Member:    id,
-			Contact:   true,
-			Conscious: true,
-			Turn:      tkencounter.TurnParticipationWait,
-		})
-	}
-	return out, nil
-}
-
-type nobodyHasHands struct{}
-
-// Equipment answers "no hands to observe" for every member -- there are no
-// members in a world this new, so it answers nothing; see [buildWorld].
-//
-// Nil rather than an empty pair, deliberately. Empty hands would be a claim
-// that somebody was looked at and found holding nothing, and nobody has been
-// looked at here. The session package supplies the real capability, reading
-// actual sheets, when it loads this world to play it.
-func (nobodyHasHands) Equipment(
-	members []tkencounter.MemberID,
-) (map[tkencounter.MemberID]*tkencounter.HeldEquipment, error) {
-	out := make(map[tkencounter.MemberID]*tkencounter.HeldEquipment, len(members))
-	for _, id := range members {
-		out[id] = nil
-	}
-
-	return out, nil
-}
-
-type nobodySees struct{}
-
-// Sight gives every member a range of zero -- there are no members in a world
-// this new, so it answers nothing; see [buildWorld].
-func (nobodySees) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberID]int, error) {
-	out := make(map[tkencounter.MemberID]int, len(members))
-	for _, id := range members {
-		out[id] = 0
-	}
-
-	return out, nil
-}
-
+// Both are construction-time only, which is what makes a trivial or
+// refusing implementation honest rather than a hidden ruling -- see
+// [buildWorld]: the world is empty at the moment it is built, and the
+// session package supplies its own capabilities when it loads it.
 type refusingCheckResolver struct{}
 
 // ResolveCheck always fails. Nothing during construction ever calls this --

@@ -163,7 +163,7 @@ func (r *campRun) factions(t *testing.T) map[string]string {
 	data, err := sessionorch.NewEncounterRepository(r.h.redis, 0).GetEncounter(r.alice, session.Encounter)
 	require.NoError(t, err)
 	world, err := tkencounter.LoadEncounter(&tkencounter.LoadEncounterInput{
-		Data: *data, Standing: allStanding{}, Sight: allSeeing{}, Equipment: noHandsObserved{},
+		Data: *data, Standing: allStanding{}, Sight: allSeeing{}, Equipment: tkencounter.UnobservedEquipment{},
 		Initiative: orderAsGiven{}, TurnDriver: tkencounter.PassDriver{}, Striker: tkencounter.RefusingStriker{},
 		Mover: tkencounter.RefusingMover{}, Announcer: tkencounter.RefusingAnnouncer{},
 	})
