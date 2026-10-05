@@ -83,6 +83,9 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// included, because the sibling static test only proves a case exists.
 		{"ErrBadLevelRequest", sdk.ErrBadLevelRequest, codes.InvalidArgument},
 
+		// A retired verb cannot become available by changing the game state.
+		{"ErrSearchRetired", sdk.ErrSearchRetired, codes.Unimplemented},
+
 		// FAILED_PRECONDITION -- well-formed request, world state refuses it.
 		{"ErrInBubble", sdk.ErrInBubble, codes.FailedPrecondition},
 		{"ErrNotInFight", sdk.ErrNotInFight, codes.FailedPrecondition},
