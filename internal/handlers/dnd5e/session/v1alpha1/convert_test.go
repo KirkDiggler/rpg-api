@@ -133,6 +133,73 @@ func TestTargetCandidateToProto_FieldForField(t *testing.T) {
 	require.False(t, got.GetAvailable())
 	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_TARGET_OUT_OF_REACH, got.GetWhy().GetReason())
 	require.Equal(t, "target out of reach", got.GetWhy().GetText())
+	require.NotNil(t, got.Effects, "no target answers stays non-nil empty")
+	require.Empty(t, got.Effects)
+}
+
+func TestTargetCandidateToProto_CarriesTargetEffects(t *testing.T) {
+	got := targetCandidateToProto(sdk.TargetCandidate{
+		Member: "goblin-2", Available: true,
+		Effects: []sdk.TargetEffect{
+			{ID: "effect-b", State: sdk.EffectDepends, Reason: "reason b"},
+			{ID: "effect-a", State: sdk.EffectApplies, Reason: "reason a", Benefit: "benefit a"},
+		},
+	})
+	require.Equal(t, []*sessionpb.TargetEffect{
+		{Id: "effect-b", State: sessionpb.EffectState_EFFECT_STATE_DEPENDS, Reason: "reason b"},
+		{Id: "effect-a", State: sessionpb.EffectState_EFFECT_STATE_APPLIES, Reason: "reason a", Benefit: "benefit a"},
+	}, got.GetEffects(), "every field, in the SDK's order")
+}
+
+func TestEffectStateToProto(t *testing.T) {
+	require.Equal(t, sessionpb.EffectState_EFFECT_STATE_APPLIES, effectStateToProto(sdk.EffectApplies))
+	require.Equal(t, sessionpb.EffectState_EFFECT_STATE_DOES_NOT_APPLY, effectStateToProto(sdk.EffectDoesNotApply))
+	require.Equal(t, sessionpb.EffectState_EFFECT_STATE_DEPENDS, effectStateToProto(sdk.EffectDepends))
+	require.Equal(t, sessionpb.EffectState_EFFECT_STATE_UNAVAILABLE, effectStateToProto(sdk.EffectUnavailable))
+}
+
+func TestEffectStateToProto_UnknownIsUnspecified(t *testing.T) {
+	require.Equal(t, sessionpb.EffectState_EFFECT_STATE_UNSPECIFIED, effectStateToProto(sdk.EffectState("bogus")))
+	require.Equal(t, sessionpb.EffectState_EFFECT_STATE_UNSPECIFIED, effectStateToProto(""))
+}
+
+func TestEffectParticipationToProto(t *testing.T) {
+	require.Equal(t, sessionpb.EffectParticipation_EFFECT_PARTICIPATION_CONTRIBUTES_NOW, effectParticipationToProto(sdk.ContributesNow))
+	require.Equal(t, sessionpb.EffectParticipation_EFFECT_PARTICIPATION_LATER_CHOICE, effectParticipationToProto(sdk.LaterChoice))
+}
+
+func TestEffectParticipationToProto_UnknownIsUnspecified(t *testing.T) {
+	require.Equal(t, sessionpb.EffectParticipation_EFFECT_PARTICIPATION_UNSPECIFIED, effectParticipationToProto(sdk.EffectParticipation("bogus")))
+	require.Equal(t, sessionpb.EffectParticipation_EFFECT_PARTICIPATION_UNSPECIFIED, effectParticipationToProto(""))
+}
+
+func TestDeclarationToProto_CarriesEffectRows(t *testing.T) {
+	out := declarationToProto(sdk.Declaration{
+		Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Available: true, ID: "decl-attack-1",
+		TargetKind: sdk.TargetMember,
+		Effects: []sdk.EffectRow{
+			{
+				ID: "row-2", Ref: "ref-2", Name: "name 2", Description: "description 2",
+				State: sdk.EffectDepends, Reason: "reason 2", Participation: sdk.ContributesNow,
+			},
+			{
+				ID: "row-1", Ref: "ref-1", Name: "name 1", Description: "description 1",
+				State: sdk.EffectApplies, Reason: "reason 1", Participation: sdk.LaterChoice, Benefit: "benefit 1",
+			},
+		},
+	})
+	require.Equal(t, []*sessionpb.EffectRow{
+		{
+			Id: "row-2", Ref: "ref-2", Name: "name 2", Description: "description 2",
+			State: sessionpb.EffectState_EFFECT_STATE_DEPENDS, Reason: "reason 2",
+			Participation: sessionpb.EffectParticipation_EFFECT_PARTICIPATION_CONTRIBUTES_NOW,
+		},
+		{
+			Id: "row-1", Ref: "ref-1", Name: "name 1", Description: "description 1",
+			State: sessionpb.EffectState_EFFECT_STATE_APPLIES, Reason: "reason 1",
+			Participation: sessionpb.EffectParticipation_EFFECT_PARTICIPATION_LATER_CHOICE, Benefit: "benefit 1",
+		},
+	}, out.GetEffects(), "every field, in the SDK's order")
 }
 
 func TestDeclarationToProto_FieldForField(t *testing.T) {
@@ -144,7 +211,7 @@ func TestDeclarationToProto_FieldForField(t *testing.T) {
 		Attack:     &sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
 		TargetKind: sdk.TargetMember,
 		Candidates: []sdk.TargetCandidate{
-			{Member: "goblin-1", Available: true},
+			{Member: "goblin-1", Available: true, Effects: []sdk.TargetEffect{{ID: "row-1", State: sdk.EffectApplies, Benefit: "benefit"}}},
 			{Member: "skeleton-1", Available: false, Why: &sdk.Shortfall{Reason: sdk.ShortfallTargetOutOfReach, Text: "target out of reach"}},
 		},
 		MinTargets: 1,
@@ -153,6 +220,10 @@ func TestDeclarationToProto_FieldForField(t *testing.T) {
 			{Currency: sdk.CurrencyAction, Needed: 1},
 			{Currency: sdk.CurrencyCharges, Needed: 1, Label: "1st-level Spell Slots"},
 		},
+		Effects: []sdk.EffectRow{{
+			ID: "row-1", Ref: "ref-1", Name: "name", Description: "description",
+			State: sdk.EffectDepends, Reason: "reason", Participation: sdk.ContributesNow,
+		}},
 	})
 	require.Equal(t, sessionpb.Verb_VERB_ATTACK, out.GetVerb())
 	require.Equal(t, sessionpb.Slot_SLOT_ACTION, out.GetSlot())
@@ -176,6 +247,15 @@ func TestDeclarationToProto_FieldForField(t *testing.T) {
 		{Currency: sessionpb.Currency_CURRENCY_ACTION, Needed: 1},
 		{Currency: sessionpb.Currency_CURRENCY_CHARGES, Needed: 1, Label: "1st-level Spell Slots"},
 	}, out.GetCost())
+	require.Equal(t, []*sessionpb.EffectRow{{
+		Id: "row-1", Ref: "ref-1", Name: "name", Description: "description",
+		State: sessionpb.EffectState_EFFECT_STATE_DEPENDS, Reason: "reason",
+		Participation: sessionpb.EffectParticipation_EFFECT_PARTICIPATION_CONTRIBUTES_NOW,
+	}}, out.GetEffects())
+	require.Equal(t, []*sessionpb.TargetEffect{
+		{Id: "row-1", State: sessionpb.EffectState_EFFECT_STATE_APPLIES, Benefit: "benefit"},
+	}, out.GetCandidates()[0].GetEffects(), "a target answer rides only its own candidate")
+	require.Empty(t, out.GetCandidates()[1].GetEffects())
 }
 
 func TestDeclarationToProto_PreservesOptionalAbsenceAndEmptyCandidates(t *testing.T) {
@@ -188,6 +268,8 @@ func TestDeclarationToProto_PreservesOptionalAbsenceAndEmptyCandidates(t *testin
 	require.Nil(t, out.Attack)
 	require.NotNil(t, out.Candidates)
 	require.Empty(t, out.Candidates)
+	require.NotNil(t, out.Effects, "no effect rows stays non-nil empty")
+	require.Empty(t, out.Effects)
 }
 
 // TestDeclarationsToProto_NilOrEmpty_StaysNonNilEmpty pins the "no null,
