@@ -85,7 +85,7 @@ func (allStanding) Standing(_ []tkencounter.MemberID) ([]tkencounter.MemberID, e
 // of a Standing capability (toolkit#1453): nobody is down, so everybody is up,
 // conscious, in contact, and waiting. Contact is what makes a member count as
 // a side of a fight, so the false zero value would dissolve every fight this
-// suite forms -- see encounter.NobodyDown.Assess, which is the same stand-in
+// suite forms -- see encounter.CompileOnlySetup's Standing, which is the same stand-in
 // for the same reason.
 func (allStanding) Assess(members []tkencounter.MemberID) (*tkencounter.ParticipationAssessment, error) {
 	out := &tkencounter.ParticipationAssessment{

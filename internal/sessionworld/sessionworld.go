@@ -511,58 +511,19 @@ func buildWorld(
 	field tkencounter.FieldInput, bossID string,
 	scenarioEndings, authoredEndings []tkencounter.EndingInput,
 ) (*tkencounter.EncounterData, error) {
-	enc, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
-		// Construction-time capabilities only. The session package supplies its
-		// own when it loads this world -- including the sight RANGE that decides
-		// who is in contact with whom -- so these satisfy NewEncounter's
-		// validation for a world that is empty at the moment it is built, and
-		// answer no question about the game. They are trivial because there is
-		// nobody here yet to see or to be standing, not because a ruling was
-		// made quietly.
-		// Encounter's own empty-world stand-ins (rpg-toolkit#1956).
-		Initiative: tkencounter.InitiativeAsGiven{},
-		Standing:   tkencounter.NobodyDown{},
-		Sight:      tkencounter.ZeroSight{},
-		Equipment:  tkencounter.UnobservedEquipment{},
-		// Same trivial stand-in as above: this world is empty at the moment
-		// it is built, so no clock ever lands on anyone here either
-		// (toolkit#1162, ADR-0043). Striker is the same story one seam over
-		// (rpg-project#254). The session package supplies its own
-		// TurnDriver -- session.Behavior() today -- and its own Striker
-		// when it loads this world to actually play it.
-		TurnDriver: tkencounter.PassDriver{},
-		Striker:    tkencounter.RefusingStriker{},
-		// Mover is Striker's exact twin (rpg-toolkit#1321): a step is
-		// announced before it is taken, and nobody steps in a world that is
-		// being built. The session package installs the real one when it
-		// loads this world to play it; here, reaching it is a host bug.
-		Mover: tkencounter.RefusingMover{},
-		// And REFUSING one seam further on. A world with nobody in it has no
-		// clock to advance, so a temporal boundary announced while building
-		// one is a bug rather than an event -- and this says so at the point
-		// of failure instead of succeeding quietly, which is the whole reason
-		// the capability was introduced (rpg-project#294). The session package
-		// supplies the real announcer when it loads this world to play it.
-		Announcer: tkencounter.RefusingAnnouncer{},
-		// Concealment (rpg-toolkit#1371) closes two more capabilities the
-		// moment a field carries any concealed door or region, and refuses
-		// to build AT ALL without them -- so before this pair existed, any
-		// dungeon declaring concealment failed to compile, full stop
-		// (rpg-api#887). They are not a matched refusing pair the way
-		// PassDriver/RefusingStriker are -- see the comment above
-		// orderAsGiven for why CheckResolver refuses and Witness does not.
-		CheckResolver: refusingCheckResolver{},
-		Witness:       nobodyPerceives{},
-		Retention:     tkencounter.RetentionUnbounded,
-		Field:         field,
-		// What ends a dungeon is not geometry, and the file says it: the
-		// party withdrawing (external, always declared), the boss going
-		// down when a placement carries the flag (rpg-project#268; see
-		// [Monster.Boss]), and — since rpg-project#368 — whatever each
-		// scenario the file BINDS declares for itself. A dungeon is
-		// geometry; a scenario is what it is for.
-		Endings: endingsFor(bossID, scenarioEndings, authoredEndings),
-	})
+	// Construction-time capabilities only: encounter's own compile-only
+	// stand-ins (rpg-toolkit#1956). The session package supplies the real
+	// ones when it loads this world to play it.
+	//
+	// What ends a dungeon is not geometry, and the file says it: the party
+	// withdrawing (external, always declared), the boss going down when a
+	// placement carries the flag (rpg-project#268; see [Monster.Boss]), and
+	// -- since rpg-project#368 -- whatever each scenario the file BINDS
+	// declares for itself. A dungeon is geometry; a scenario is what it is
+	// for.
+	setup := tkencounter.CompileOnlySetup(field, endingsFor(bossID, scenarioEndings, authoredEndings))
+	setup.Retention = tkencounter.RetentionUnbounded
+	enc, err := tkencounter.NewEncounter(setup)
 	if err != nil {
 		return nil, fmt.Errorf("build world: %w", err)
 	}
@@ -635,7 +596,7 @@ func endingsFor(bossID string, scenarioEndings, authoredEndings []tkencounter.En
 // compiles to depends on Go's map iteration.
 func endingsOfScenarios(spec tkdungeonspec.Compiled) ([]tkencounter.EndingInput, error) {
 	// An empty list, never a nil one with a nil error: this package's own law
-	// (see nobodyDown.Standing) is that a caller must not have to tell "this
+	// (see encounter's compile-only Standing) is that a caller must not have to tell "this
 	// dungeon binds no scenario" from "nothing was answered".
 	endings := []tkencounter.EndingInput{}
 	if len(spec.Scenarios) == 0 {
@@ -702,63 +663,3 @@ const EndingWithdrawn = "withdrawn"
 // (rpg-project#269 §6.3) — and this one fires from inside the composition
 // (TriggerMemberDown), never from a caller naming it.
 const EndingBossDown = "boss-down"
-
-// Initiative, Standing, Sight and Equipment are among the capabilities
-// NewEncounter refuses to default (rpg-toolkit#1033); [buildWorld] passes
-// encounter's own exported empty-world stand-ins for them, as it does
-// PassDriver and RefusingStriker. Encounter owning every one of these
-// stand-ins is rpg-toolkit#1956.
-//
-// Concealment (rpg-toolkit#1371) closes two further -- CheckResolver and
-// Witness -- and the toolkit does not yet export an implementation of either,
-// so refusingCheckResolver and nobodyPerceives below are hand-written to
-// match (rpg-api#887). They are deliberately NOT a matched refusing pair
-// the way PassDriver/RefusingStriker are:
-//
-//   - CheckResolver is reached only through an explicit Search
-//     (rulebooks/dnd5e/encounter's own conceal.go), and nothing in this
-//     package ever searches, so refusing it costs nothing and catches a
-//     real mistake if one is ever made.
-//   - Witness is reached UNCONDITIONALLY, at every construction's first
-//     light, for any door authored both concealed and open -- a "hidden
-//     passage nobody shut", which is legal authored content, not a bug
-//     (confirmed against the toolkit directly: NewEncounter calls
-//     Witness.Perceivers for such a door even with zero members, because
-//     first light perceives present state before anyone has joined). A
-//     refusing Witness would fail that dungeon's compile exactly the way
-//     the missing capability failed every dungeon's compile before this
-//     fix, so nobodyPerceives answers honestly instead.
-//
-// Both are construction-time only, which is what makes a trivial or
-// refusing implementation honest rather than a hidden ruling -- see
-// [buildWorld]: the world is empty at the moment it is built, and the
-// session package supplies its own capabilities when it loads it.
-type refusingCheckResolver struct{}
-
-// ResolveCheck always fails. Nothing during construction ever calls this --
-// [tkencounter.CheckResolver] is reached only through an explicit Search,
-// and this package never searches -- so reaching it at all means a caller
-// ran Search against the throwaway world this package builds instead of the
-// live one the session package loads from it, which is a bug and should say
-// so at the point of failure, the same argument [tkencounter.RefusingStriker]
-// makes for a driven attack, one capability over. See the comment above
-// [orderAsGiven] for why [nobodyPerceives] beside it does not follow suit.
-func (refusingCheckResolver) ResolveCheck(*tkencounter.ResolveCheckInput) (*tkencounter.ResolveCheckOutput, error) {
-	return nil, fmt.Errorf("sessionworld: an authored check was rolled against a world still being compiled, not played")
-}
-
-type nobodyPerceives struct{}
-
-// Perceivers answers that nobody perceives the door -- there is nobody in a
-// world this new to perceive anything, which happens to be the literal
-// answer a live Witness would give an encounter with no roster. NOT a
-// refusal, unlike [refusingCheckResolver] beside it: NewEncounter's first
-// light calls this UNCONDITIONALLY for any door authored both concealed and
-// open (a hidden passage nobody shut, legal authored content), so a
-// refusing stand-in here would fail that dungeon's compile the same way the
-// missing capability failed every concealed dungeon's compile before this
-// fix (rpg-api#887). See the comment above [orderAsGiven] for the full
-// reasoning.
-func (nobodyPerceives) Perceivers(*tkencounter.PerceiversInput) ([]tkencounter.MemberID, error) {
-	return []tkencounter.MemberID{}, nil // nobody, as an empty list: never nil with a nil error
-}
