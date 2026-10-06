@@ -43,6 +43,12 @@ func (s *PolicySuite) TestEveryGameRPCIsExplicitlyClassified() {
 	}
 }
 
+func (s *PolicySuite) TestCloseDoorRequiresPlayPermission() {
+	permission, known := auth.GameMethodPermission(sessionpb.SessionService_CloseDoor_FullMethodName)
+	s.Require().True(known)
+	s.Equal(auth.PermissionPlay, permission)
+}
+
 func (s *PolicySuite) TestWritesRequireBuildAndRenderingReadsRequirePlay() {
 	for method, want := range map[string]auth.Permissions{
 		"/api.composition.v1alpha1.CompositionService/CreateComposition": auth.PermissionBuild,

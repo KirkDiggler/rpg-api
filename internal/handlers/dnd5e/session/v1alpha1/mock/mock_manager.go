@@ -131,6 +131,21 @@ func (mr *MockManagerMockRecorder) Cast(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Cast", reflect.TypeOf((*MockManager)(nil).Cast), ctx, in)
 }
 
+// CloseDoor mocks base method.
+func (m *MockManager) CloseDoor(ctx context.Context, in *session.CloseDoorInput) (*session.CloseDoorOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CloseDoor", ctx, in)
+	ret0, _ := ret[0].(*session.CloseDoorOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CloseDoor indicates an expected call of CloseDoor.
+func (mr *MockManagerMockRecorder) CloseDoor(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseDoor", reflect.TypeOf((*MockManager)(nil).CloseDoor), ctx, in)
+}
+
 // DeathSave mocks base method.
 func (m *MockManager) DeathSave(ctx context.Context, in *session.DeathSaveInput) (*session.DeathSaveOutput, error) {
 	m.ctrl.T.Helper()
