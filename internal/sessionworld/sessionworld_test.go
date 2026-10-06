@@ -307,6 +307,30 @@ func (monsterFirst) RollInitiative(_ []tkencounter.MemberID) ([]tkencounter.Memb
 // hand-writing its own.
 var compileOnly = tkencounter.CompileOnlySetup(tkencounter.FieldInput{}, nil)
 
+// everyoneStanding is the Standing a test needs once it places members:
+// nobody is down, and every member is up, conscious, in contact and waiting.
+// Encounter's compile-only Standing refuses to assess members
+// (ErrRefusingParticipation) -- a compiled world has none -- so a test that
+// joins or seats somebody supplies this choice itself. Contact is a claim,
+// made because false would dissolve every fight the moment it formed.
+type everyoneStanding struct{}
+
+func (everyoneStanding) Standing([]tkencounter.MemberID) ([]tkencounter.MemberID, error) {
+	return []tkencounter.MemberID{}, nil
+}
+
+func (everyoneStanding) Assess(members []tkencounter.MemberID) (*tkencounter.ParticipationAssessment, error) {
+	out := &tkencounter.ParticipationAssessment{
+		Members: make([]tkencounter.MemberParticipation, 0, len(members)),
+	}
+	for _, id := range members {
+		out.Members = append(out.Members, tkencounter.MemberParticipation{
+			Member: id, Contact: true, Conscious: true, Turn: tkencounter.TurnParticipationWait,
+		})
+	}
+	return out, nil
+}
+
 type standingOnly struct{}
 
 func (standingOnly) Standing([]tkencounter.MemberID) ([]tkencounter.MemberID, error) {
@@ -357,7 +381,7 @@ func (allSeeing) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberID
 func TestAFightsUnplayedTurnPassesWithoutTouchingTheStriker(t *testing.T) {
 	enc, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
 		Initiative: monsterFirst{},
-		Standing:   compileOnly.Standing,
+		Standing:   everyoneStanding{},
 		Sight:      allSeeing{},
 		Equipment:  tkencounter.UnobservedEquipment{},
 		TurnDriver: tkencounter.PassDriver{},

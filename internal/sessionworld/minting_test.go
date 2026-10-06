@@ -103,8 +103,10 @@ func loadWorld(t *testing.T, d *Dungeon) *tkencounter.Encounter {
 	t.Helper()
 
 	enc, err := tkencounter.LoadEncounter(&tkencounter.LoadEncounterInput{
-		Data:       *d.World,
-		Initiative: compileOnly.Initiative, Standing: compileOnly.Standing, Sight: compileOnly.Sight, Equipment: compileOnly.Equipment,
+		Data: *d.World,
+		// Standing is the test's own: scenes here join members, which the
+		// compile-only Standing refuses to assess.
+		Initiative: compileOnly.Initiative, Standing: everyoneStanding{}, Sight: compileOnly.Sight, Equipment: compileOnly.Equipment,
 		TurnDriver: compileOnly.TurnDriver, Striker: compileOnly.Striker, Mover: compileOnly.Mover,
 		Announcer: compileOnly.Announcer,
 	})
