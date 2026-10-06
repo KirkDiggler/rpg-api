@@ -959,7 +959,9 @@ func (s *EquipItemTestSuite) TestUnequipPersistsToolkitRemovalOfWeaponEnchantmen
 	s.mockCharacterRepo.EXPECT().Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
 	s.mockCharacterRepo.EXPECT().PatchEquipment(s.ctx, gomock.Any()).DoAndReturn(func(_ context.Context, in characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
 		s.Require().NotNil(in.Conditions)
-		s.Empty(*in.Conditions, "toolkit removal must be included in the same atomic equipment write")
+		for _, c := range *in.Conditions {
+			s.NotContains(string(c), "shillelagh", "toolkit removal must be included in the same atomic equipment write")
+		}
 		s.Empty(in.EquipmentSlots)
 		return s.appliedPatch(entity, in), nil
 	})

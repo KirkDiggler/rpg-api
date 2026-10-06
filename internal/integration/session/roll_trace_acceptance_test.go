@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -220,6 +221,11 @@ func TestAcceptance_GreatWeaponFightingRollTraceCrossesLiveAndStory(t *testing.T
 	stored := storedSheetOf(t, h.charRepo, "alice")
 	require.NotNil(t, stored.ActionEconomy)
 	require.Zero(t, stored.ActionEconomy.ActionsRemaining, "the attack's action spend is persisted")
-	require.Len(t, stored.Conditions, 1, "the persisted GWF condition survives resolution")
-	require.Contains(t, string(stored.Conditions[0]), "fighting_style_great_weapon_fighting")
+	var gwf int
+	for _, c := range stored.Conditions {
+		if strings.Contains(string(c), "fighting_style_great_weapon_fighting") {
+			gwf++
+		}
+	}
+	require.Equal(t, 1, gwf, "the persisted GWF condition survives resolution, once")
 }

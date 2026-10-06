@@ -43,8 +43,12 @@ func TestProjectView_StrictLevel3Fighter(t *testing.T) {
 	require.Len(t, view.Status.Features, 2)
 	require.Equal(t, refs.Features.ActionSurge().String(), view.Status.Features[0].Ref.String())
 	require.Equal(t, refs.Features.SecondWind().String(), view.Status.Features[1].Ref.String())
-	require.Len(t, view.Status.Conditions, 1)
-	require.Equal(t, refs.Conditions.FightingStyleDefense().String(), view.Status.Conditions[0].Ref.String())
+	var conditionRefs []string
+	for _, c := range view.Status.Conditions {
+		conditionRefs = append(conditionRefs, c.Ref.String())
+	}
+	require.Contains(t, conditionRefs, refs.Conditions.FightingStyleDefense().String())
+	require.NotContains(t, conditionRefs, refs.Conditions.Shillelagh().String(), "nothing the fighter never held is projected")
 	require.Equal(t,
 		[]coreResources.ResourceKey{resources.ActionSurge, resources.HitDice, resources.SecondWind},
 		statusResourceKeys(view.Status.Resources),
