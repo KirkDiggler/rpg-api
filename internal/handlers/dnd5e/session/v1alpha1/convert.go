@@ -2428,12 +2428,17 @@ func targetKindToProto(k sdk.TargetKind) sessionpb.TargetKind {
 // targetCandidateToProto mirrors one ruled candidate. Candidate availability
 // and refusal are independent from the declaration-level gate and are copied
 // only from this candidate.
+// targetCandidateToProto mirrors one candidate. Effects are per-target
+// answers to the actor's declaration rows; HeldEffects are full rows for
+// effects THAT target holds (R18). The two lists cross separately and are
+// never joined here or with the declaration's rows.
 func targetCandidateToProto(c sdk.TargetCandidate) *sessionpb.TargetCandidate {
 	return &sessionpb.TargetCandidate{
-		Member:    c.Member,
-		Available: c.Available,
-		Why:       shortfallToProto(c.Why),
-		Effects:   targetEffectsToProto(c.Effects),
+		Member:      c.Member,
+		Available:   c.Available,
+		Why:         shortfallToProto(c.Why),
+		Effects:     targetEffectsToProto(c.Effects),
+		HeldEffects: effectRowsToProto(c.HeldEffects),
 	}
 }
 

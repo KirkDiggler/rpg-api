@@ -53,11 +53,11 @@ func (s *ReferenceTombSuite) TestTheFileNamesItself() {
 func (s *ReferenceTombSuite) load() *tkencounter.Encounter {
 	enc, err := tkencounter.LoadEncounter(&tkencounter.LoadEncounterInput{
 		Data:       *s.tomb.World,
-		Initiative: orderAsGiven{}, Standing: nobodyDown{}, Sight: nobodySees{}, Equipment: noHandsObserved{},
-		TurnDriver: tkencounter.PassDriver{}, Striker: tkencounter.RefusingStriker{}, Mover: tkencounter.RefusingMover{},
+		Initiative: compileOnly.Initiative, Standing: compileOnly.Standing, Sight: compileOnly.Sight, Equipment: compileOnly.Equipment,
+		TurnDriver: compileOnly.TurnDriver, Striker: compileOnly.Striker, Mover: compileOnly.Mover,
 		// Nobody is in this world, so no clock can advance in it — the same
-		// argument RefusingStriker beside it is making.
-		Announcer: tkencounter.RefusingAnnouncer{},
+		// argument the refusing Striker beside it is making.
+		Announcer: compileOnly.Announcer,
 	})
 	s.Require().NoError(err, "and the world it produced must be one the composition accepts back")
 
@@ -302,22 +302,33 @@ func (monsterFirst) RollInitiative(_ []tkencounter.MemberID) ([]tkencounter.Memb
 	return []tkencounter.MemberID{"skel-1", "fighter"}, nil
 }
 
-// allSeeing gives every member a sight range large enough that two adjacent
-// members always see each other. nobodySees's range of zero -- this
-// package's own construction-time stand-in everywhere else, correct for a
-// throwaway placement probe and an empty real world -- would never let a
-// fight form at all here, which is exactly wrong for what this test needs
-// to prove.
-func TestNobodyDownAssessmentProjectsEverySuppliedMember(t *testing.T) {
-	members := []tkencounter.MemberID{"alice", "bob"}
-	assessment, err := (nobodyDown{}).Assess(members)
-	require.NoError(t, err)
-	require.False(t, assessment.PartyDefeated)
-	require.False(t, assessment.KeepTurnOrder)
-	require.Equal(t, []tkencounter.MemberParticipation{
-		{Member: "alice", Contact: true, Conscious: true, Turn: tkencounter.TurnParticipationWait},
-		{Member: "bob", Contact: true, Conscious: true, Turn: tkencounter.TurnParticipationWait},
-	}, assessment.Members)
+// compileOnly lends tests encounter's compile-only capabilities -- the same
+// stand-ins buildWorld uses (rpg-toolkit#1956) -- without this package
+// hand-writing its own.
+var compileOnly = tkencounter.CompileOnlySetup(tkencounter.FieldInput{}, nil)
+
+// everyoneStanding is the Standing a test needs once it places members:
+// nobody is down, and every member is up, conscious, in contact and waiting.
+// Encounter's compile-only Standing refuses to assess members
+// (ErrRefusingParticipation) -- a compiled world has none -- so a test that
+// joins or seats somebody supplies this choice itself. Contact is a claim,
+// made because false would dissolve every fight the moment it formed.
+type everyoneStanding struct{}
+
+func (everyoneStanding) Standing([]tkencounter.MemberID) ([]tkencounter.MemberID, error) {
+	return []tkencounter.MemberID{}, nil
+}
+
+func (everyoneStanding) Assess(members []tkencounter.MemberID) (*tkencounter.ParticipationAssessment, error) {
+	out := &tkencounter.ParticipationAssessment{
+		Members: make([]tkencounter.MemberParticipation, 0, len(members)),
+	}
+	for _, id := range members {
+		out.Members = append(out.Members, tkencounter.MemberParticipation{
+			Member: id, Contact: true, Conscious: true, Turn: tkencounter.TurnParticipationWait,
+		})
+	}
+	return out, nil
 }
 
 type standingOnly struct{}
@@ -328,12 +339,18 @@ func (standingOnly) Standing([]tkencounter.MemberID) ([]tkencounter.MemberID, er
 
 func TestStandingOnlyConstructionIsRefused(t *testing.T) {
 	_, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
-		Initiative: orderAsGiven{}, Standing: standingOnly{},
+		Initiative: compileOnly.Initiative, Standing: standingOnly{},
 		Endings: []tkencounter.EndingInput{{Key: "unused", Trigger: tkencounter.TriggerExternal{}}},
 	})
 	require.ErrorIs(t, err, tkencounter.ErrNoParticipation)
 }
 
+// allSeeing gives every member a sight range large enough that two adjacent
+// members always see each other. the compile-only sight range of zero --
+// this package's construction-time stand-in everywhere else, correct for a
+// throwaway placement probe and an empty real world -- would never let a
+// fight form at all here, which is exactly wrong for what this test needs
+// to prove.
 type allSeeing struct{}
 
 func (allSeeing) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberID]int, error) {
@@ -364,9 +381,9 @@ func (allSeeing) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberID
 func TestAFightsUnplayedTurnPassesWithoutTouchingTheStriker(t *testing.T) {
 	enc, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
 		Initiative: monsterFirst{},
-		Standing:   nobodyDown{},
+		Standing:   everyoneStanding{},
 		Sight:      allSeeing{},
-		Equipment:  noHandsObserved{},
+		Equipment:  tkencounter.UnobservedEquipment{},
 		TurnDriver: tkencounter.PassDriver{},
 		Striker:    tkencounter.RefusingStriker{},
 		Mover:      tkencounter.RefusingMover{},
@@ -523,8 +540,8 @@ func (quietAnnouncer) Announce(context.Context, *tkencounter.Encounter, []tkenco
 // will accept (a concealed region needs every way in to be a concealed
 // door, or it is not a secret). doorState is spliced in verbatim so the
 // same fixture can author the door shut (the ordinary "hidden room" shape)
-// or left open (the "hidden passage nobody shut" shape [nobodyPerceives]
-// exists for) without duplicating the rest of the file.
+// or left open (the "hidden passage nobody shut" shape the compile-only
+// Witness exists for) without duplicating the rest of the file.
 func concealedDungeon(key, doorState string) string {
 	return `
 version: 2
@@ -568,7 +585,8 @@ doors:
 // stand-in for either. This dungeon declares both a concealed region and
 // the concealed door in front of it, closed the way a hidden room is
 // ordinarily authored, and used to fail here with "no check resolver
-// capability" before [refusingCheckResolver] and [nobodyPerceives] existed.
+// capability" before construction-time CheckResolver and Witness stand-ins
+// existed (now encounter's own, [tkencounter.CompileOnlySetup]).
 func TestAConcealedDungeonCompiles(t *testing.T) {
 	d, err := Compile([]byte(concealedDungeon("concealed-seam", "closed: true")))
 	require.NoError(t, err, "a dungeon that declares concealment must still compile")
@@ -576,32 +594,15 @@ func TestAConcealedDungeonCompiles(t *testing.T) {
 }
 
 // TestAnOpenConcealedDoorCompilesToo pins the one deliberate asymmetry
-// between this package's two concealment stand-ins -- see the comment above
-// [orderAsGiven]. A door authored both concealed and open is legal content
-// (a hidden passage nobody shut), and NewEncounter's first light asks
-// Witness about it UNCONDITIONALLY, even in this package's zero-member
-// world. If [nobodyPerceives] were ever "simplified" to refuse, matching
-// [refusingCheckResolver] beside it, this is the test that would catch a
-// dungeon authoring this shape failing to compile again.
+// between the two compile-only concealment stand-ins
+// ([tkencounter.CompileOnlySetup]). A door authored both concealed and open
+// is legal content (a hidden passage nobody shut), and NewEncounter's first
+// light asks Witness about it UNCONDITIONALLY, even in this package's
+// zero-member world. If that Witness were ever "simplified" to refuse,
+// matching the refusing CheckResolver beside it, this is the test that would
+// catch a dungeon authoring this shape failing to compile again.
 func TestAnOpenConcealedDoorCompilesToo(t *testing.T) {
 	d, err := Compile([]byte(concealedDungeon("concealed-seam-open", "")))
 	require.NoError(t, err, "an authored hidden passage left open must still compile")
 	require.NotNil(t, d)
-}
-
-// noHandsObserved answers the equipment question for fixtures that are not
-// about equipment: every member is answered for, and every answer is "no hands
-// to observe" — deliberately NOT "everybody is empty-handed", which would be
-// testimony this fixture has no standing to give (rpg-toolkit#1615).
-type noHandsObserved struct{}
-
-func (noHandsObserved) Equipment(
-	members []tkencounter.MemberID,
-) (map[tkencounter.MemberID]*tkencounter.HeldEquipment, error) {
-	out := make(map[tkencounter.MemberID]*tkencounter.HeldEquipment, len(members))
-	for _, id := range members {
-		out[id] = nil
-	}
-
-	return out, nil
 }
