@@ -18,14 +18,13 @@ import (
 )
 
 // TestEveryMemberTakingVerbRefusesAForeignMember is the pin for the entitlement
-// gate, and it is written as one table over ALL of them on purpose.
+// gate for the verbs explicitly listed in memberTakingVerbs.
 //
 // The bug it exists to prevent was not a wrong check; it was a MISSING one, in
 // eleven of the twelve handlers that take a member. A per-verb test would have
 // been added next to the verb that got fixed and would have said nothing about
-// the ten that did not. Anyone adding a verb to this service will find this
-// table failing until they route it through callerActingAs, which is the only
-// way a gate like this stays whole.
+// the ten that did not. Add new member-taking verbs to memberTakingVerbs;
+// this manually maintained table does not discover new methods automatically.
 //
 // Every case gives the manager a mock with NO expectations. That is the real
 // assertion: gomock fails on any unexpected call, so a verb that reached the
@@ -86,6 +85,18 @@ func memberTakingVerbs(member string) map[string]func(ctx context.Context, h *Ha
 		},
 		"Exit": func(ctx context.Context, h *Handler) error {
 			_, err := h.Exit(ctx, &sessionpb.ExitRequest{Session: "sess-1", Member: member})
+			return err
+		},
+		"OpenDoor": func(ctx context.Context, h *Handler) error {
+			_, err := h.OpenDoor(ctx, &sessionpb.OpenDoorRequest{Session: "sess-1", Member: member, Door: "gate"})
+			return err
+		},
+		"CloseDoor": func(ctx context.Context, h *Handler) error {
+			_, err := h.CloseDoor(ctx, &sessionpb.CloseDoorRequest{Session: "sess-1", Member: member, Door: "gate"})
+			return err
+		},
+		"Unlock": func(ctx context.Context, h *Handler) error {
+			_, err := h.Unlock(ctx, &sessionpb.UnlockRequest{Session: "sess-1", Member: member, Door: "gate"})
 			return err
 		},
 		"Move": func(ctx context.Context, h *Handler) error {

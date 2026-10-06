@@ -2432,11 +2432,17 @@ func targetKindToProto(k sdk.TargetKind) sessionpb.TargetKind {
 // targetCandidateToProto mirrors one ruled candidate. Candidate availability
 // and refusal are independent from the declaration-level gate and are copied
 // only from this candidate.
+// targetCandidateToProto mirrors one candidate. Effects are per-target
+// answers to the actor's declaration rows; HeldEffects are full rows for
+// effects THAT target holds (R18). The two lists cross separately and are
+// never joined here or with the declaration's rows.
 func targetCandidateToProto(c sdk.TargetCandidate) *sessionpb.TargetCandidate {
 	return &sessionpb.TargetCandidate{
-		Member:    c.Member,
-		Available: c.Available,
-		Why:       shortfallToProto(c.Why),
+		Member:      c.Member,
+		Available:   c.Available,
+		Why:         shortfallToProto(c.Why),
+		Effects:     targetEffectsToProto(c.Effects),
+		HeldEffects: effectRowsToProto(c.HeldEffects),
 	}
 }
 
@@ -2444,6 +2450,73 @@ func targetCandidatesToProto(cs []sdk.TargetCandidate) []*sessionpb.TargetCandid
 	out := make([]*sessionpb.TargetCandidate, len(cs))
 	for i, candidate := range cs {
 		out[i] = targetCandidateToProto(candidate)
+	}
+	return out
+}
+
+// effectStateToProto mirrors session.EffectState onto the wire enum. An
+// unrecognized string reaches UNSPECIFIED, a producer defect.
+func effectStateToProto(s sdk.EffectState) sessionpb.EffectState {
+	switch s {
+	case sdk.EffectApplies:
+		return sessionpb.EffectState_EFFECT_STATE_APPLIES
+	case sdk.EffectDoesNotApply:
+		return sessionpb.EffectState_EFFECT_STATE_DOES_NOT_APPLY
+	case sdk.EffectDepends:
+		return sessionpb.EffectState_EFFECT_STATE_DEPENDS
+	case sdk.EffectUnavailable:
+		return sessionpb.EffectState_EFFECT_STATE_UNAVAILABLE
+	default:
+		return sessionpb.EffectState_EFFECT_STATE_UNSPECIFIED
+	}
+}
+
+// effectParticipationToProto mirrors session.EffectParticipation onto the wire
+// enum. An unrecognized string reaches UNSPECIFIED, a producer defect.
+func effectParticipationToProto(p sdk.EffectParticipation) sessionpb.EffectParticipation {
+	switch p {
+	case sdk.ContributesNow:
+		return sessionpb.EffectParticipation_EFFECT_PARTICIPATION_CONTRIBUTES_NOW
+	case sdk.LaterChoice:
+		return sessionpb.EffectParticipation_EFFECT_PARTICIPATION_LATER_CHOICE
+	default:
+		return sessionpb.EffectParticipation_EFFECT_PARTICIPATION_UNSPECIFIED
+	}
+}
+
+// effectRowsToProto mirrors a declaration's effect rows in the SDK's order.
+// The API names no effect and rules on none: nothing is filtered, sorted or
+// derived, and a row's name, description, reason and benefit are the
+// toolkit's own text. Make-then-map, so an empty SDK answer stays non-nil.
+func effectRowsToProto(rows []sdk.EffectRow) []*sessionpb.EffectRow {
+	out := make([]*sessionpb.EffectRow, len(rows))
+	for i, row := range rows {
+		out[i] = &sessionpb.EffectRow{
+			Id:            row.ID,
+			Ref:           row.Ref,
+			Name:          row.Name,
+			Description:   row.Description,
+			State:         effectStateToProto(row.State),
+			Reason:        row.Reason,
+			Participation: effectParticipationToProto(row.Participation),
+			Benefit:       row.Benefit,
+		}
+	}
+	return out
+}
+
+// targetEffectsToProto mirrors one candidate's per-target answers. Each
+// replaces the declaration row with the same id on the client; this converter
+// neither joins nor checks them against the declaration's rows.
+func targetEffectsToProto(effects []sdk.TargetEffect) []*sessionpb.TargetEffect {
+	out := make([]*sessionpb.TargetEffect, len(effects))
+	for i, effect := range effects {
+		out[i] = &sessionpb.TargetEffect{
+			Id:      effect.ID,
+			State:   effectStateToProto(effect.State),
+			Reason:  effect.Reason,
+			Benefit: effect.Benefit,
+		}
 	}
 	return out
 }
@@ -2558,6 +2631,9 @@ func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
 		// selector out of rows.
 		Options:   castOptionsToProto(d.Options),
 		Footprint: footprintToProto(d.Footprint),
+		// WHAT BEARS ON THIS ROW, as the toolkit answered it. Rows never grant
+		// or refuse the declaration; Available and Why above stay the only gate.
+		Effects: effectRowsToProto(d.Effects),
 	}
 	if d.Remaining != nil {
 		remaining := int32(*d.Remaining)
