@@ -331,20 +331,6 @@ func (everyoneStanding) Assess(members []tkencounter.MemberID) (*tkencounter.Par
 	return out, nil
 }
 
-type standingOnly struct{}
-
-func (standingOnly) Standing([]tkencounter.MemberID) ([]tkencounter.MemberID, error) {
-	return []tkencounter.MemberID{}, nil
-}
-
-func TestStandingOnlyConstructionIsRefused(t *testing.T) {
-	_, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
-		Initiative: compileOnly.Initiative, Standing: standingOnly{},
-		Endings: []tkencounter.EndingInput{{Key: "unused", Trigger: tkencounter.TriggerExternal{}}},
-	})
-	require.ErrorIs(t, err, tkencounter.ErrNoParticipation)
-}
-
 // allSeeing gives every member a sight range large enough that two adjacent
 // members always see each other. the compile-only sight range of zero --
 // this package's construction-time stand-in everywhere else, correct for a

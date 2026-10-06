@@ -435,11 +435,18 @@ func (s *HandlerTestSuite) TestGetCharacterData_Success() {
 	s.Require().NotNil(cd.GetFeatures()[0].ResourceKey)
 	s.Assert().Equal(string(resources.ActionSurge), cd.GetFeatures()[0].GetResourceKey())
 
-	s.Require().Len(cd.GetConditions(), 1)
-	s.Assert().Equal("dnd5e", cd.GetConditions()[0].GetRef().GetModule())
-	s.Assert().Equal("conditions", cd.GetConditions()[0].GetRef().GetType())
-	s.Assert().Equal("fighting_style_defense", cd.GetConditions()[0].GetRef().GetId())
-	s.Assert().Nil(cd.GetConditions()[0].SourceMember)
+	// The sheet also records its free reactions, so the fighting style is
+	// found by ref rather than by position.
+	var defense *encounterv2pb.ConditionView
+	for _, c := range cd.GetConditions() {
+		if c.GetRef().GetId() == "fighting_style_defense" {
+			defense = c
+		}
+	}
+	s.Require().NotNil(defense, "the fighting style rides the character data")
+	s.Assert().Equal("dnd5e", defense.GetRef().GetModule())
+	s.Assert().Equal("conditions", defense.GetRef().GetType())
+	s.Assert().Nil(defense.SourceMember)
 
 	s.Require().Len(cd.GetResources(), 3)
 	for _, resource := range cd.GetResources() {
