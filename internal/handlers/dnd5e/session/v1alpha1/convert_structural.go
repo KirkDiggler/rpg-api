@@ -10,18 +10,32 @@ import (
 func atlasStructuralWallsToProto(walls []sdk.AtlasStructuralWall) []*sessionpb.AtlasStructuralWall {
 	out := make([]*sessionpb.AtlasStructuralWall, 0, len(walls))
 	for _, wall := range walls {
-		openings := make([]*sessionpb.AtlasStructuralOpening, 0, len(wall.Openings))
-		for _, opening := range wall.Openings {
-			openings = append(openings, &sessionpb.AtlasStructuralOpening{
-				Id: opening.ID, Position: opening.Position, Width: opening.Width,
-			})
-		}
 		out = append(out, &sessionpb.AtlasStructuralWall{
 			Id: wall.ID, Ref: wall.Ref,
 			From:   &sessionpb.FootprintPoint{X: wall.From.X, Y: wall.From.Y},
 			To:     &sessionpb.FootprintPoint{X: wall.To.X, Y: wall.To.Y},
 			Height: wall.Height, Thickness: wall.Thickness, Elevation: wall.Elevation,
-			Openings: openings,
+			Openings: atlasStructuralOpeningsToProto(wall.Openings),
+		})
+	}
+	return out
+}
+
+func atlasStructuralOpeningsToProto(openings []sdk.AtlasStructuralOpening) []*sessionpb.AtlasStructuralOpening {
+	out := make([]*sessionpb.AtlasStructuralOpening, 0, len(openings))
+	for _, opening := range openings {
+		out = append(out, &sessionpb.AtlasStructuralOpening{
+			Id: opening.ID, Position: opening.Position, Width: opening.Width,
+		})
+	}
+	return out
+}
+
+func structuralWallOpeningsReplacementsToProto(replacements []sdk.StructuralWallOpeningsReplacement) []*sessionpb.StructuralWallOpeningsReplacement {
+	out := make([]*sessionpb.StructuralWallOpeningsReplacement, 0, len(replacements))
+	for _, replacement := range replacements {
+		out = append(out, &sessionpb.StructuralWallOpeningsReplacement{
+			WallId: replacement.WallID, Openings: atlasStructuralOpeningsToProto(replacement.Openings),
 		})
 	}
 	return out

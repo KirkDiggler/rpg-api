@@ -1063,7 +1063,8 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			Region: atlas.Regions[0], Scenery: atlas.Cells, Props: atlas.Props,
 			Boundaries: atlas.Boundaries, Segments: atlas.Segments, Sealed: atlas.Sealed,
 			Doorways: atlas.Doorways, Placed: atlas.Placed, Exits: atlas.Exits,
-			StructuralWalls: atlas.StructuralWalls, StructuralDoors: atlas.StructuralDoors}}
+			StructuralWalls: atlas.StructuralWalls, StructuralDoors: atlas.StructuralDoors,
+			StructuralWallOpeningsReplacements: structuralWallOpeningsReplacementsToProto(b.StructuralWallOpeningsReplacements)}}
 	case sdk.SightedBody:
 		// PASSED THROUGH, NAMES AND NOTHING ELSE -- and the nothing else is
 		// the design rather than an omission this seam should correct. What
@@ -1388,17 +1389,18 @@ func setWorldEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			sealed[i] = positionToProto(c)
 		}
 		evt.Body = &sessionpb.Event_ConcealmentRevealed{ConcealmentRevealed: &sessionpb.ConcealmentRevealed{
-			Concealment:     b.Concealment,
-			Cells:           cells,
-			Props:           atlasPropsToProto(b.Props),
-			Doors:           doors,
-			Doorways:        atlasDoorwaysToProto(doorways),
-			Boundaries:      atlasBoundariesToProto(b.Boundaries),
-			Segments:        atlasSegmentsToProto(b.Segments),
-			Sealed:          sealed,
-			Regions:         atlasRegionsToProto(b.Regions),
-			StructuralWalls: atlasStructuralWallsToProto(b.StructuralWalls),
-			StructuralDoors: atlasStructuralDoorsToProto(b.StructuralDoors),
+			Concealment:                        b.Concealment,
+			Cells:                              cells,
+			Props:                              atlasPropsToProto(b.Props),
+			Doors:                              doors,
+			Doorways:                           atlasDoorwaysToProto(doorways),
+			Boundaries:                         atlasBoundariesToProto(b.Boundaries),
+			Segments:                           atlasSegmentsToProto(b.Segments),
+			Sealed:                             sealed,
+			Regions:                            atlasRegionsToProto(b.Regions),
+			StructuralWalls:                    atlasStructuralWallsToProto(b.StructuralWalls),
+			StructuralDoors:                    atlasStructuralDoorsToProto(b.StructuralDoors),
+			StructuralWallOpeningsReplacements: structuralWallOpeningsReplacementsToProto(b.StructuralWallOpeningsReplacements),
 		}}
 	case sdk.WindowOpenedBody:
 		// The fight stopped to ask somebody something (rpg-project#316 rung

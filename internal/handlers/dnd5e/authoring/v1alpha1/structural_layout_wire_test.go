@@ -2,6 +2,7 @@ package authoringv1alpha1_test
 
 import (
 	"context"
+	_ "embed"
 	"math"
 	"testing"
 
@@ -15,39 +16,9 @@ import (
 )
 
 const structuralLayoutKey = "structural-layout-wire"
-const structuralLayoutSource = `version: 4
-key: structural-layout-wire
-play: {void: transparent, lighting: bright, standing: centre-covered}
-room:
-  version: 3
-  id: room
-  name: Structural room
-  coordinateFrame: {horizontalPlane: world-xz, verticalAxis: world-y-up, distanceUnit: world-scene-unit, hexRadius: 1, footprintFrame: owner-local-xz}
-  workspace: {hexRadius: 6, horizontalLimit: 12}
-  scene: {version: 1, id: scene, name: Structural room, items: [], groups: []}
-  room:
-    implicitRegionId: region
-    walkableHexes: [{q: 0, r: 0}, {q: 1, r: 0}, {q: 2, r: 0}, {q: 3, r: 0}, {q: 4, r: 0}]
-    propDeclarations: {}
-    arrangementDeclarations: {}
-    monsterDeclarations: []
-    partyStart: {q: 0, r: 0}
-    walls:
-      - id: wall
-        label: Wall
-        line: {start: {x: 0, z: 3}, end: {x: 10, z: 3}}
-        appearance: {assetRef: 'dnd5e:env:dark-fortress:45_wall_01', height: 2, thickness: 0.3, elevation: 0}
-        blocker:
-          blocksMovement: true
-          blocksLineOfSight: true
-          footprint: {width: 14, depth: 0.5, offsetX: 2, offsetZ: 0.4}
-        openings:
-          - id: gap
-            position: 7
-            width: 2
-            door: {id: gate, assetRef: 'dnd5e:env:dark-fortress:wall_door_double_01'}
-    doorBindings: {gate: {closed: true}}
-`
+
+//go:embed testdata/structural_layout.yaml
+var structuralLayoutSource string
 
 type StructuralLayoutWireSuite struct{ suite.Suite }
 
@@ -62,10 +33,10 @@ func (s *StructuralLayoutWireSuite) TestRealRegistryAndSDKCarryAuthoredLayoutToT
 	s.Require().NoError(err)
 	k := 5 / math.Sqrt(3)
 	for _, validateOnly := range []bool{true, false} {
-		response, err := handler.PutDungeon(ctx, &authoringpb.PutDungeonRequest{
+		response, putErr := handler.PutDungeon(ctx, &authoringpb.PutDungeonRequest{
 			Key: structuralLayoutKey, Yaml: structuralLayoutSource, ValidateOnly: validateOnly,
 		})
-		s.Require().NoError(err)
+		s.Require().NoError(putErr)
 		s.Require().Empty(response.Errors)
 		s.Require().NotNil(response.Atlas)
 		s.Require().Len(response.Atlas.StructuralWalls, 1)

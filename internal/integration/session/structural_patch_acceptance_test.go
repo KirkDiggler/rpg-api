@@ -1,0 +1,101 @@
+package session_test
+
+import (
+	"context"
+	_ "embed"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/suite"
+	"google.golang.org/protobuf/proto"
+
+	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/auth"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
+	sessionhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1"
+	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+)
+
+// The wall crosses between axial cells (1,0) and (2,0). Only the door is
+// concealed; the five floor cells remain explicit ordinary room membership.
+//
+//go:embed testdata/structural_patch.yaml
+var structuralPatchSource string
+
+type StructuralPatchAcceptanceSuite struct{ suite.Suite }
+
+func TestStructuralPatchAcceptanceSuite(t *testing.T) {
+	suite.Run(t, new(StructuralPatchAcceptanceSuite))
+}
+
+func (s *StructuralPatchAcceptanceSuite) TestCompiledDoorDiscoveryReplacesOpeningsOnTheWire() {
+	h := newAcceptanceHarness(s.T())
+	// The shared older fixtures retain legacy Search. This case adopts the
+	// production automatic-discovery capability over the same real repositories.
+	automatic, err := sessionorch.New(sessionorch.Config{
+		Redis: h.redis, Characters: h.charRepo, TTL: time.Hour, Dice: testDice{},
+		PresentationIDs: idgen.NewSequential("patch-presentation"), AutomaticDiscovery: true,
+	})
+	s.Require().NoError(err)
+	h.manager = automatic
+	h.handler, err = sessionhandler.New(&sessionhandler.HandlerConfig{
+		Manager: automatic.Manager, Broker: automatic.Broker, Characters: h.charRepo,
+	})
+	s.Require().NoError(err)
+	ctx := auth.WithPlayerID(context.Background(), "player-alice")
+	_, err = h.charRepo.Create(ctx, characterrepo.CreateInput{
+		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
+	})
+	s.Require().NoError(err)
+	dungeon, err := sessionworld.Compile([]byte(structuralPatchSource))
+	s.Require().NoError(err)
+	_, err = h.manager.Manager.StartSession(ctx, &sdk.StartSessionInput{
+		Session: "structural-patch-run", Encounter: "structural-world", World: dungeon.World,
+	})
+	s.Require().NoError(err)
+	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{Session: "structural-patch-run", Member: "alice", Position: pbAt(4, 0)})
+	s.Require().NoError(err)
+	request := &sessionpb.GetKnowledgeRequest{Session: "structural-patch-run", Member: "alice"}
+	before, err := h.handler.GetKnowledge(ctx, request)
+	s.Require().NoError(err)
+	s.Require().Len(before.Atlas.StructuralWalls, 1)
+	s.Empty(before.Atlas.StructuralWalls[0].Openings)
+	s.Empty(before.Atlas.StructuralDoors)
+	s.Len(before.Atlas.Cells, 5, "door-only concealment must not remove its support floor")
+
+	moved, err := h.handler.Move(ctx, &sessionpb.MoveRequest{Session: "structural-patch-run", Member: "alice", Path: []*sessionpb.Position{pbAt(3, 0)}})
+	s.Require().NoError(err)
+	s.Require().Len(moved.Steps, 1, "the proximity-triggering step must actually complete")
+	story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: "structural-patch-run", Member: "alice"})
+	s.Require().NoError(err)
+	var reveal *sessionpb.ConcealmentRevealed
+	for _, entry := range story.Entries {
+		if body := entry.GetConcealmentRevealed(); body != nil {
+			s.Nil(reveal, "exactly one concealment reveal")
+			reveal = body
+		}
+	}
+	s.Require().NotNil(reveal, "real automatic discovery must produce the existing reveal event")
+	s.Empty(reveal.StructuralWalls, "a known wall is not reintroduced whole")
+	s.Empty(reveal.Cells, "discovery adds no unselected floor")
+	s.Require().Len(reveal.StructuralWallOpeningsReplacements, 1)
+	s.Require().Len(reveal.StructuralDoors, 1)
+	patch := reveal.StructuralWallOpeningsReplacements[0]
+	s.Equal("wall", patch.WallId)
+	s.Require().Len(patch.Openings, 1)
+	s.Equal("gap", patch.Openings[0].Id)
+	after, err := h.handler.GetKnowledge(ctx, request)
+	s.Require().NoError(err)
+	patched := proto.Clone(before.Atlas.StructuralWalls[0]).(*sessionpb.AtlasStructuralWall)
+	patched.Openings = patch.Openings
+	s.True(proto.Equal(patched, after.Atlas.StructuralWalls[0]))
+	s.True(proto.Equal(reveal.StructuralDoors[0], after.Atlas.StructuralDoors[0]))
+	s.Equal(before.Atlas.Cells, after.Atlas.Cells)
+	replay, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: "structural-patch-run", Member: "alice"})
+	s.Require().NoError(err)
+	s.True(proto.Equal(story, replay), "repository replay must retain the original wire payload")
+}
