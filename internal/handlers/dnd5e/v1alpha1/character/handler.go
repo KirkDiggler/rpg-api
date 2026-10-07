@@ -1015,7 +1015,8 @@ func (h *Handler) GetCharacterInventory(
 	}
 
 	// Get character data - equipment slots are part of character data
-	charResult, err := h.characterService.GetCharacter(ctx, &character.GetCharacterInput{
+	// Inventory carries no armour class, so it reads the unfolded record.
+	charResult, err := h.characterService.GetCharacterRecord(ctx, &character.GetCharacterRecordInput{
 		CharacterID: req.CharacterId,
 	})
 	if err != nil {

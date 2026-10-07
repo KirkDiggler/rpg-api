@@ -164,8 +164,8 @@ barbarian's Unarmored Defense reads (a monk answers 10 + DEX + WIS):
 
 | verb | where the fold happens | output field |
 |---|---|---|
-| `FinalizeDraft` | `projectArmorClass` over the record `Create` returned | `FinalizeDraftOutput.ArmorClass` |
-| `GetCharacter` (also LevelUp's re-read and every ownership gate) | `projectArmorClass` over the stored record | `GetCharacterOutput.ArmorClass` |
+| `FinalizeDraft` | the fold of the serialized sheet, BEFORE `Create`: a refusal saves nothing and the draft stands | `FinalizeDraftOutput.ArmorClass` |
+| `GetCharacter` (also LevelUp's re-read) | `projectArmorClass` over the stored record | `GetCharacterOutput.ArmorClass` |
 | `ListCharacters` | `projectArmorClasses`, one fold per listed record | `ListCharactersOutput.ArmorClasses` (keyed by character ID) |
 | `EquipItem` / `UnequipItem` | the post-state `projectLoaded` fold already composed before the patch | `EquipItemOutput.ArmorClass` / `UnequipItemOutput.ArmorClass` |
 
@@ -180,9 +180,12 @@ measured cost asks). One fold is one strict attach plus the AC fold and the equi
 view's second AC fold, measured at roughly 30µs and 14KB per character, so a list of N
 characters costs N of them.
 
-Because `GetCharacter` folds, the v1alpha1 ownership gates (`verifyCallerOwnsCharacter`
-on GetNextLevel/LevelUp) and `GetCharacterInventory` also refuse a sheet the door
-refuses, and LevelUp folds twice (gate, then re-read).
+Ownership gates never fold. The v1alpha1 and v1alpha2 `verifyCallerOwnsCharacter` and
+`GetCharacterInventory` read `GetCharacterRecord`, the unprojected record. A fold before
+the owner check would answer an unprojectable foreign sheet INTERNAL where a missing id
+answers NOT_FOUND, which is the existence oracle rpg-api#815 closed. The integration test
+`ownership_oracle_test.go` pins that GetNextLevel and GetCharacterData answer both cases
+with the same NOT_FOUND sentence. LevelUp folds once, on its re-read.
 
 HP, resources, conditions, action economy, inventory, identity, metadata, and nested
 `Data.Appearance` come from the latest stored toolkit data and are not replaced by the

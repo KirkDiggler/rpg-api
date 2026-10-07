@@ -332,7 +332,9 @@ func (h *Handler) verifyCallerOwnsCharacter(ctx context.Context, characterID str
 		return apierr.ToGRPCError(apierr.Unauthenticated("player not authenticated"))
 	}
 
-	out, err := h.characterService.GetCharacter(ctx, &character.GetCharacterInput{
+	// The unfolded record: a fold here would refuse an unprojectable foreign
+	// sheet with INTERNAL before ownership is compared (rpg-api#815).
+	out, err := h.characterService.GetCharacterRecord(ctx, &character.GetCharacterRecordInput{
 		CharacterID: characterID,
 	})
 	if err != nil {

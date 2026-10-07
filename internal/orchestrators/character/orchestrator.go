@@ -76,6 +76,7 @@ type Orchestrator struct {
 	idGen         idgen.Generator
 	draftIDGen    idgen.Generator
 	projectLoaded projectLoadedCharacterFunc
+	foldAC        projectArmorClassFunc
 	appearance    AppearanceNotifier
 }
 
@@ -95,6 +96,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 		idGen:         cfg.IDGenerator,
 		draftIDGen:    cfg.DraftIDGenerator,
 		projectLoaded: projectLoadedCharacter,
+		foldAC:        projectArmorClass,
 		appearance:    cfg.AppearanceNotifier,
 	}, nil
 }
@@ -723,6 +725,16 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		return nil, fmt.Errorf("failed to serialize character: %w", err)
 	}
 
+	// Fold the armour class of exactly the sheet about to be saved, BEFORE
+	// anything is written. A refusal saves nothing and leaves the draft
+	// standing, so the player can retry; folding after the save would leave a
+	// character nobody can read, no draft, and a roster that refuses to list
+	// (rpg-project#538 R11).
+	ac, err := o.foldAC(ctx, &projectArmorClassInput{Data: charData})
+	if err != nil {
+		return nil, characterDataUnavailable(fmt.Errorf("project armour class of character %s: %w", characterID, err))
+	}
+
 	charEntity := &entities.Character{Data: charData}
 
 	// Save character to character repository
@@ -751,14 +763,6 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 	finalChar, err := character.LoadFromData(ctx, createOutput.Character.Data, finalBus)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load character from data: %w", err)
-	}
-
-	// The saved sheet's armour class, folded at the door. The character is
-	// already saved, so a refusal here fails only this response, never the
-	// save; the next read asks again.
-	ac, err := projectArmorClass(ctx, &projectArmorClassInput{Data: createOutput.Character.Data})
-	if err != nil {
-		return nil, characterDataUnavailable(fmt.Errorf("project armour class of character %s: %w", characterID, err))
 	}
 
 	return &FinalizeDraftOutput{Character: finalChar, ArmorClass: ac.ArmorClass}, nil
@@ -892,7 +896,7 @@ func (o *Orchestrator) GetCharacter(ctx context.Context, input *GetCharacterInpu
 		return nil, apierr.Internal("failed to get character: repository returned no character data")
 	}
 
-	ac, err := projectArmorClass(ctx, &projectArmorClassInput{Data: result.Character.Data})
+	ac, err := o.foldAC(ctx, &projectArmorClassInput{Data: result.Character.Data})
 	if err != nil {
 		return nil, characterDataUnavailable(fmt.Errorf("project armour class of character %s: %w", input.CharacterID, err))
 	}
@@ -901,6 +905,32 @@ func (o *Orchestrator) GetCharacter(ctx context.Context, input *GetCharacterInpu
 		Character:  result.Character,
 		ArmorClass: ac.ArmorClass,
 	}, nil
+}
+
+// GetCharacterRecord reads the stored record without projecting it. Ownership
+// gates use it: a fold before the owner check would answer an unprojectable
+// foreign sheet INTERNAL where a missing one answers NOT_FOUND, which is the
+// existence oracle rpg-api#815 closed. Response-shaped reads use GetCharacter.
+func (o *Orchestrator) GetCharacterRecord(
+	ctx context.Context,
+	input *GetCharacterRecordInput,
+) (*GetCharacterRecordOutput, error) {
+	if input == nil {
+		return nil, apierr.InvalidArgument("input is required")
+	}
+	if input.CharacterID == "" {
+		return nil, apierr.InvalidArgument("character ID is required")
+	}
+
+	result, err := o.characterRepo.Get(ctx, characterrepo.GetInput{ID: input.CharacterID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get character: %w", err)
+	}
+	if result == nil || result.Character == nil || result.Character.Data == nil {
+		return nil, apierr.Internal("failed to get character: repository returned no character data")
+	}
+
+	return &GetCharacterRecordOutput{Character: result.Character}, nil
 }
 
 const (
@@ -1131,7 +1161,7 @@ func (o *Orchestrator) ListCharacters(ctx context.Context, input *ListCharacters
 			return nil, fmt.Errorf("failed to list characters by player: %w", err)
 		}
 
-		acs, err := projectArmorClasses(ctx, &projectArmorClassesInput{Characters: result.Characters})
+		acs, err := o.projectArmorClasses(ctx, &projectArmorClassesInput{Characters: result.Characters})
 		if err != nil {
 			return nil, err
 		}
@@ -1153,7 +1183,7 @@ func (o *Orchestrator) ListCharacters(ctx context.Context, input *ListCharacters
 			return nil, fmt.Errorf("failed to list characters by session: %w", err)
 		}
 
-		acs, err := projectArmorClasses(ctx, &projectArmorClassesInput{Characters: result.Characters})
+		acs, err := o.projectArmorClasses(ctx, &projectArmorClassesInput{Characters: result.Characters})
 		if err != nil {
 			return nil, err
 		}
@@ -1183,7 +1213,7 @@ type projectArmorClassesOutput struct {
 // is R9's, deferred until a measured cost asks). The list fails whole on the
 // first sheet the door refuses, naming that character (R11): a per-row
 // absence or a fallback number would be a list that looks right and is not.
-func projectArmorClasses(
+func (o *Orchestrator) projectArmorClasses(
 	ctx context.Context,
 	input *projectArmorClassesInput,
 ) (*projectArmorClassesOutput, error) {
@@ -1197,7 +1227,7 @@ func projectArmorClasses(
 			return nil, apierr.Internal(errListedCharacterMissingData)
 		}
 		id := listed.Data.ID
-		ac, err := projectArmorClass(ctx, &projectArmorClassInput{Data: listed.Data})
+		ac, err := o.foldAC(ctx, &projectArmorClassInput{Data: listed.Data})
 		if err != nil {
 			return nil, apierr.WrapWithCodef(err, apierr.CodeInternal, errListedCharacterUnprojectable, id)
 		}

@@ -131,6 +131,11 @@ type loadCharacterOutput struct {
 	Data      *tkcharacter.Data
 }
 
+type projectArmorClassFunc func(
+	context.Context,
+	*projectArmorClassInput,
+) (*projectArmorClassOutput, error)
+
 type projectLoadedCharacterFunc func(
 	context.Context,
 	*ProjectLoadedCharacterInput,

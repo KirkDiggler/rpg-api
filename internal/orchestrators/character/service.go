@@ -45,6 +45,9 @@ type Service interface {
 
 	// Character operations
 	GetCharacter(ctx context.Context, input *GetCharacterInput) (*GetCharacterOutput, error)
+	// GetCharacterRecord is the stored record alone, with no armour class
+	// fold: what an ownership gate reads before anything is projected.
+	GetCharacterRecord(ctx context.Context, input *GetCharacterRecordInput) (*GetCharacterRecordOutput, error)
 	ListCharacters(ctx context.Context, input *ListCharactersInput) (*ListCharactersOutput, error)
 	DeleteCharacter(ctx context.Context, input *DeleteCharacterInput) (*DeleteCharacterOutput, error)
 
@@ -288,6 +291,19 @@ type GetCharacterOutput struct {
 	// ArmorClass is the stored sheet's armour class, folded through the
 	// resolution door at this read. The repository stores none (#538 R1, R7).
 	ArmorClass *combat.ACBreakdown
+}
+
+// GetCharacterRecordInput reads one stored character record.
+type GetCharacterRecordInput struct {
+	CharacterID string
+}
+
+// GetCharacterRecordOutput is the stored record, unprojected. It carries no
+// armour class: an ownership gate must answer a foreign sheet exactly as it
+// answers a missing one (rpg-api#815), so nothing here may fail on the
+// sheet's contents before the owner is compared.
+type GetCharacterRecordOutput struct {
+	Character *entities.Character
 }
 
 // EquipItemInput equips an item to a slot
