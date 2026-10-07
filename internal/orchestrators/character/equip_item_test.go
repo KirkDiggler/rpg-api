@@ -858,6 +858,39 @@ func (s *EquipItemTestSuite) TestEquipItem_AMonkSavesTheWisdomInclusiveAC() {
 	s.Equal(15, out.View.Equipment.ACTotal, "the view's AC is the same fold the sheet stored")
 }
 
+// TestEquipItem_AConditionThatFailsToApplyRefusesAndWritesNothing: an Inspired
+// die with no granting bard parses but will not Apply. The post-state fold
+// (resolution.ProjectCharacter, strict since rpg-toolkit#1968) refuses, so the
+// equip refuses: no PatchEquipment, no AC written, and the repository's record
+// is untouched. Before, the fold dropped the condition and the degraded AC was
+// written back (rpg-api#1078 gate).
+func (s *EquipItemTestSuite) TestEquipItem_AConditionThatFailsToApplyRefusesAndWritesNothing() {
+	entity := s.unarmouredMonk()
+	inspired, err := (&conditions.InspiredCondition{MemberID: s.testCharacterID}).ToJSON()
+	s.Require().NoError(err)
+	entity.Data.Conditions = append(entity.Data.Conditions, inspired)
+	before, err := json.Marshal(entity.Data)
+	s.Require().NoError(err)
+
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
+	// Deliberately no PatchEquipment expectation: gomock fails if any AC is written.
+
+	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
+		CharacterID: s.testCharacterID,
+		ItemID:      "quarterstaff",
+		Slot:        character.SlotMainHand,
+	})
+	s.Require().Error(err)
+	s.Nil(out)
+	s.Contains(err.Error(), refs.Conditions.Inspired().String())
+	after, err := json.Marshal(entity.Data)
+	s.Require().NoError(err)
+	s.JSONEq(string(before), string(after), "the stored record is untouched")
+	s.Empty(s.notified.calls, "nothing was written, so nobody is told")
+}
+
 // TestUnequipItem_AMonkSavesTheWisdomInclusiveAC is the unequip twin: both
 // verbs write through one path, so both must store the folded AC.
 func (s *EquipItemTestSuite) TestUnequipItem_AMonkSavesTheWisdomInclusiveAC() {
