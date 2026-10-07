@@ -876,13 +876,16 @@ func (s *EquipItemTestSuite) TestUnequipItem_AMonkSavesTheWisdomInclusiveAC() {
 			return output, nil
 		})
 
-	_, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
+	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
 		CharacterID: s.testCharacterID,
 		Slot:        character.SlotMainHand,
 	})
 	s.Require().NoError(err)
 	s.Require().NotNil(persisted)
 	s.Equal(15, persisted.ArmorClass, "10 base + 3 DEX + 2 WIS")
+	s.Require().NotNil(out.View)
+	s.Require().NotNil(out.View.Equipment)
+	s.Equal(15, out.View.Equipment.ACTotal, "the view's AC agrees with the AC the sheet stored")
 }
 
 // recordingNotifier stands in for the thing that finds a player's live

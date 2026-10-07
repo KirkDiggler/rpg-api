@@ -74,8 +74,10 @@ type ProjectLoadedCharacterOutput struct {
 	View *View
 
 	// ArmorClass is the toolkit's folded armour class for the projected sheet —
-	// the number equip and unequip persist. The same fold produced
-	// View.Equipment's AC total, so the two cannot disagree.
+	// the number equip and unequip persist. View.Equipment's AC total is a second
+	// fold of the same sheet under the same installed context (EquipmentView
+	// folds again); the two agree because the AC chain is deterministic, not
+	// because one value feeds both.
 	ArmorClass *combat.ACBreakdown
 }
 

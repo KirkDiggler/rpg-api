@@ -116,7 +116,9 @@ The method shape is:
 
 1. `characterRepo.Get` returns the entity plus an opaque record version.
 2. The orchestrator copies `character.Data`, clones the retained EquipmentSlots map,
-   strictly calls `character.Load` (no bus; rpg-api never attaches a sheet), and
+   strictly calls `character.Load` (no bus: equip, unequip and the character view no
+   longer attach a sheet; `FinalizeDraft` still does, via `ToCharacter` and a lenient
+   `LoadFromData`, until rpg-toolkit#1965 tier-2 F absorbs it), and
    requires complete detached identity, EquipmentView, and StatusView projections
    before mutation. The EquipmentView and the folded armour class come from
    `resolution.ProjectCharacter` over the sheet's record. PlayerID,
