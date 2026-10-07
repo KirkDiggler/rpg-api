@@ -127,26 +127,27 @@ func (s *StructuralPatchAcceptanceSuite) TestCompiledDoorDiscoveryReplacesOpenin
 	s.Require().NoError(err)
 	s.True(proto.Equal(story, replay), "repository replay must retain the original wire payload")
 
-	// A new playthrough reuses the authored key and character, not the first
-	// encounter's discoveries. No profile deletion or content-key workaround.
-	_, err = h.manager.Manager.StartSession(ctx, &sdk.StartSessionInput{
-		Session: "structural-second-run", Encounter: "structural-second-world", World: dungeon.World,
+	s.Run("new playthrough resets discovery without resetting the first encounter", func() {
+		// Same authored key and character, with no profile deletion/workaround.
+		_, startErr := h.manager.Manager.StartSession(ctx, &sdk.StartSessionInput{
+			Session: "structural-second-run", Encounter: "structural-second-world", World: dungeon.World,
+		})
+		s.Require().NoError(startErr)
+		_, joinErr := h.handler.Join(ctx, &sessionpb.JoinRequest{Session: "structural-second-run", Member: "alice", Position: pbAt(4, 0)})
+		s.Require().NoError(joinErr)
+		freshRequest := &sessionpb.GetKnowledgeRequest{Session: "structural-second-run", Member: "alice"}
+		fresh, readErr := h.handler.GetKnowledge(ctx, freshRequest)
+		s.Require().NoError(readErr)
+		s.Require().Len(fresh.Atlas.StructuralWalls, 1)
+		s.Empty(fresh.Atlas.StructuralWalls[0].Openings, "new encounter starts undiscovered")
+		s.Empty(fresh.Atlas.StructuralDoors)
+		_, moveErr := h.handler.Move(ctx, &sessionpb.MoveRequest{Session: "structural-second-run", Member: "alice", Path: []*sessionpb.Position{pbAt(3, 0)}})
+		s.Require().NoError(moveErr)
+		freshAfter, afterErr := h.handler.GetKnowledge(ctx, freshRequest)
+		s.Require().NoError(afterErr)
+		s.Require().Len(freshAfter.Atlas.StructuralDoors, 1, "the new encounter has its own discovery attempt")
+		firstStillKnown, firstErr := h.handler.GetKnowledge(ctx, request)
+		s.Require().NoError(firstErr)
+		s.True(proto.Equal(after.Atlas, firstStillKnown.Atlas), "starting a new run does not reset the old encounter")
 	})
-	s.Require().NoError(err)
-	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{Session: "structural-second-run", Member: "alice", Position: pbAt(4, 0)})
-	s.Require().NoError(err)
-	freshRequest := &sessionpb.GetKnowledgeRequest{Session: "structural-second-run", Member: "alice"}
-	fresh, err := h.handler.GetKnowledge(ctx, freshRequest)
-	s.Require().NoError(err)
-	s.Require().Len(fresh.Atlas.StructuralWalls, 1)
-	s.Empty(fresh.Atlas.StructuralWalls[0].Openings, "new encounter starts undiscovered")
-	s.Empty(fresh.Atlas.StructuralDoors)
-	_, err = h.handler.Move(ctx, &sessionpb.MoveRequest{Session: "structural-second-run", Member: "alice", Path: []*sessionpb.Position{pbAt(3, 0)}})
-	s.Require().NoError(err)
-	freshAfter, err := h.handler.GetKnowledge(ctx, freshRequest)
-	s.Require().NoError(err)
-	s.Require().Len(freshAfter.Atlas.StructuralDoors, 1, "the new encounter has its own discovery attempt")
-	firstStillKnown, err := h.handler.GetKnowledge(ctx, request)
-	s.Require().NoError(err)
-	s.True(proto.Equal(after.Atlas, firstStillKnown.Atlas), "starting a new run does not reset the old encounter")
 }
