@@ -22,7 +22,8 @@ import (
 )
 
 // The wall crosses between axial cells (1,0) and (2,0). Only the door is
-// concealed; the five floor cells remain explicit ordinary room membership.
+// concealed; none of the five floor cells is a secret. Ordinary room discovery
+// still withholds the opposite side of the closed geometric divider.
 //
 //go:embed testdata/structural_patch.yaml
 var structuralPatchSource string
@@ -79,7 +80,10 @@ func (s *StructuralPatchAcceptanceSuite) TestCompiledDoorDiscoveryReplacesOpenin
 	s.Zero(wall.Elevation)
 	s.Empty(before.Atlas.StructuralWalls[0].Openings)
 	s.Empty(before.Atlas.StructuralDoors)
-	s.Len(before.Atlas.Cells, 5, "door-only concealment must not remove its support floor")
+	s.Require().Len(before.Atlas.Cells, 3, "the known side keeps its floor; the opposite room is still undiscovered")
+	for i, q := range []int{2, 3, 4} {
+		s.True(proto.Equal(before.Atlas.Cells[i], pbAt(q, 0)))
+	}
 
 	moved, err := h.handler.Move(ctx, &sessionpb.MoveRequest{Session: "structural-patch-run", Member: "alice", Path: []*sessionpb.Position{pbAt(3, 0)}})
 	s.Require().NoError(err)
@@ -122,7 +126,10 @@ func (s *StructuralPatchAcceptanceSuite) TestCompiledDoorDiscoveryReplacesOpenin
 	patched.Openings = patch.Openings
 	s.True(proto.Equal(patched, after.Atlas.StructuralWalls[0]))
 	s.True(proto.Equal(reveal.StructuralDoors[0], after.Atlas.StructuralDoors[0]))
-	s.Equal(before.Atlas.Cells, after.Atlas.Cells)
+	s.Require().Len(after.Atlas.Cells, len(before.Atlas.Cells))
+	for i, cell := range before.Atlas.Cells {
+		s.True(proto.Equal(cell, after.Atlas.Cells[i]), "finding the closed door reveals no new floor")
+	}
 	replay, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: "structural-patch-run", Member: "alice"})
 	s.Require().NoError(err)
 	s.True(proto.Equal(story, replay), "repository replay must retain the original wire payload")
