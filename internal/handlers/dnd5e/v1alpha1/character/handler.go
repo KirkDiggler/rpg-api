@@ -22,7 +22,11 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 )
 
-const draftNotFoundMessage = "draft not found"
+const (
+	draftNotFoundMessage       = "draft not found"
+	errConvertCharacterToProto = "failed to convert character to proto"
+	errCharacterRequired       = "character is required"
+)
 
 // HandlerConfig holds dependencies for the handler
 type HandlerConfig struct {
@@ -639,9 +643,9 @@ func (h *Handler) FinalizeDraft(
 	}
 
 	// Convert toolkit character to proto
-	protoChar := convertCharacterToProto(output.Character)
-	if protoChar == nil {
-		return nil, apierr.Internal("failed to convert character to proto")
+	protoChar, err := convertCharacterToProto(output.Character)
+	if err != nil {
+		return nil, apierr.WrapWithCode(err, apierr.CodeInternal, errConvertCharacterToProto)
 	}
 	return &dnd5ev1alpha1.FinalizeDraftResponse{
 		Character: protoChar,

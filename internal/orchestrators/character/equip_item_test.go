@@ -536,7 +536,9 @@ func (s *EquipItemTestSuite) TestEquipItem_PostProjectionFailureLeavesRepository
 	s.orchestrator.projectLoaded = func(ctx context.Context, input *ProjectLoadedCharacterInput) (*ProjectLoadedCharacterOutput, error) {
 		calls++
 		if calls == 2 {
-			workingSlots = input.Character.ToData().EquipmentSlots
+			working, err := input.Character.ToData()
+			s.Require().NoError(err)
+			workingSlots = working.EquipmentSlots
 			return nil, errors.New("post-state descriptor failed")
 		}
 		return projectLoadedCharacter(ctx, input)
@@ -576,7 +578,9 @@ func (s *EquipItemTestSuite) TestUnequipItem_PostProjectionFailureLeavesReposito
 	s.orchestrator.projectLoaded = func(ctx context.Context, input *ProjectLoadedCharacterInput) (*ProjectLoadedCharacterOutput, error) {
 		calls++
 		if calls == 2 {
-			workingSlots = input.Character.ToData().EquipmentSlots
+			working, err := input.Character.ToData()
+			s.Require().NoError(err)
+			workingSlots = working.EquipmentSlots
 			return nil, errors.New("post-state descriptor failed")
 		}
 		return projectLoadedCharacter(ctx, input)
@@ -792,6 +796,134 @@ func (s *EquipItemTestSuite) TestEquipItem_SyncsStoredArmorClass() {
 	s.Require().NoError(err)
 	s.Require().NotNil(persisted)
 	s.Assert().Equal(16, persisted.ArmorClass, "stored ArmorClass must be refreshed to the real EffectiveAC total")
+}
+
+// unarmouredMonk carries Unarmored Defense (monk) with DEX 16 and WIS 14, so
+// its folded AC is 15 = 10 + DEX 3 + WIS 2. The stored 10 is deliberately
+// stale. Unarmored Defense reads WIS through the cast resolution installs; a
+// fold on a host-attached sheet refuses (gamectx.ErrNotInCast) and, before
+// that refusal existed, silently answered 13 (rpg-toolkit#1276, #1965).
+func (s *EquipItemTestSuite) unarmouredMonk() *entities.Character {
+	entity := s.fighterWithLongswordAndShield()
+	entity.Data.Name = "Test Monk"
+	entity.Data.ClassID = "monk"
+	entity.Data.AbilityScores = shared.AbilityScores{
+		abilities.STR: 10,
+		abilities.DEX: 16,
+		abilities.CON: 12,
+		abilities.INT: 10,
+		abilities.WIS: 14,
+		abilities.CHA: 8,
+	}
+	entity.Data.Inventory = []character.InventoryItemData{
+		{Type: "weapon", ID: "quarterstaff", Quantity: 1},
+	}
+	unarmoredDefense, err := (&conditions.UnarmoredDefenseCondition{
+		MemberID: s.testCharacterID,
+		Type:     conditions.UnarmoredDefenseMonk,
+	}).ToJSON()
+	s.Require().NoError(err)
+	entity.Data.Conditions = []json.RawMessage{unarmoredDefense}
+	return entity
+}
+
+// TestEquipItem_AMonkSavesTheWisdomInclusiveAC is the rpg-toolkit#1965 tier-1
+// #2 regression: a monk's equip persists 10 + DEX + WIS, the number the
+// toolkit's resolution door folds, and the returned view carries the same one.
+func (s *EquipItemTestSuite) TestEquipItem_AMonkSavesTheWisdomInclusiveAC() {
+	entity := s.unarmouredMonk()
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
+
+	var persisted *character.Data
+	s.mockCharacterRepo.EXPECT().
+		PatchEquipment(s.ctx, gomock.Any()).
+		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
+			output := s.appliedPatch(entity, input)
+			persisted = output.Character.Data
+			return output, nil
+		})
+
+	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
+		CharacterID: s.testCharacterID,
+		ItemID:      "quarterstaff",
+		Slot:        character.SlotMainHand,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(persisted)
+	s.Equal(15, persisted.ArmorClass, "10 base + 3 DEX + 2 WIS")
+	s.Require().NotNil(out.View)
+	s.Require().NotNil(out.View.Equipment)
+	s.Equal(15, out.View.Equipment.ACTotal, "the view's AC is the same fold the sheet stored")
+}
+
+// TestEquipItem_AConditionThatFailsToApplyRefusesAndWritesNothing: an Inspired
+// die with no granting bard parses but will not Apply. The refusal comes BEFORE
+// the equip: the pre-state projection (resolution.ProjectCharacter, strict since
+// rpg-toolkit#1968) refuses the stored sheet, so the verb never runs and no
+// post-state fold happens. Before, the fold dropped the condition and the
+// degraded AC was written back (rpg-api#1078 gate).
+//
+// The no-write proof is the absent PatchEquipment expectation: gomock fails the
+// test on any write. The before/after marshal proves something narrower and is
+// kept for it: the repository-returned entity is not mutated in memory.
+func (s *EquipItemTestSuite) TestEquipItem_AConditionThatFailsToApplyRefusesAndWritesNothing() {
+	entity := s.unarmouredMonk()
+	inspired, err := (&conditions.InspiredCondition{MemberID: s.testCharacterID}).ToJSON()
+	s.Require().NoError(err)
+	entity.Data.Conditions = append(entity.Data.Conditions, inspired)
+	before, err := json.Marshal(entity.Data)
+	s.Require().NoError(err)
+
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
+	// Deliberately no PatchEquipment expectation: this is the no-write proof.
+	// gomock fails the test if any equipment or AC write is attempted.
+
+	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
+		CharacterID: s.testCharacterID,
+		ItemID:      "quarterstaff",
+		Slot:        character.SlotMainHand,
+	})
+	s.Require().Error(err)
+	s.Nil(out)
+	s.Contains(err.Error(), refs.Conditions.Inspired().String())
+	after, err := json.Marshal(entity.Data)
+	s.Require().NoError(err)
+	s.JSONEq(string(before), string(after), "the repository-returned entity is not mutated in memory")
+	s.Empty(s.notified.calls, "nothing was written, so nobody is told")
+}
+
+// TestUnequipItem_AMonkSavesTheWisdomInclusiveAC is the unequip twin: both
+// verbs write through one path, so both must store the folded AC.
+func (s *EquipItemTestSuite) TestUnequipItem_AMonkSavesTheWisdomInclusiveAC() {
+	entity := s.unarmouredMonk()
+	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotMainHand: "quarterstaff"}
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
+
+	var persisted *character.Data
+	s.mockCharacterRepo.EXPECT().
+		PatchEquipment(s.ctx, gomock.Any()).
+		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
+			output := s.appliedPatch(entity, input)
+			persisted = output.Character.Data
+			return output, nil
+		})
+
+	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
+		CharacterID: s.testCharacterID,
+		Slot:        character.SlotMainHand,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(persisted)
+	s.Equal(15, persisted.ArmorClass, "10 base + 3 DEX + 2 WIS")
+	s.Require().NotNil(out.View)
+	s.Require().NotNil(out.View.Equipment)
+	s.Equal(15, out.View.Equipment.ACTotal, "the view's AC agrees with the AC the sheet stored")
 }
 
 // recordingNotifier stands in for the thing that finds a player's live

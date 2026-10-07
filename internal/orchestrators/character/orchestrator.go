@@ -715,9 +715,12 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		return nil, fmt.Errorf("failed to convert draft to character: %w", err)
 	}
 
-	// Convert character to data for storage
-	// ToData is now a method on Character
-	charData := char.ToData()
+	// Convert character to data for storage. A sheet that cannot serialize
+	// whole is refused rather than saved missing an effect.
+	charData, err := char.ToData()
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize character: %w", err)
+	}
 
 	charEntity := &entities.Character{Data: charData}
 
@@ -920,7 +923,7 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 			return nil, apierr.Internal(errCharacterRepositoryMissingVersion)
 		}
 
-		loaded, loadErr := loadAttachedCharacter(ctx, &loadAttachedCharacterInput{Data: current.Character.Data})
+		loaded, loadErr := loadCharacter(ctx, &loadCharacterInput{Data: current.Character.Data})
 		if loadErr != nil {
 			return nil, characterDataUnavailable(fmt.Errorf("failed to load character: %w", loadErr))
 		}
@@ -937,26 +940,31 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 			return nil, mapEquipError(equipErr)
 		}
 
+		// The post-state projection folds the armour class through
+		// resolution.ProjectCharacter, the toolkit door that installs the cast
+		// a monk's or barbarian's Unarmored Defense reads. Derived, and a
+		// refusal is not written: no fallback AC reaches the sheet, because a
+		// persisted fallback is exactly how a monk's stored AC lost its WIS
+		// contribution (rpg-toolkit#1276, #1965).
 		post, projectErr := o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char})
 		if projectErr != nil {
 			return nil, characterDataUnavailable(fmt.Errorf("failed to project character after equip: %w", projectErr))
 		}
-		// Derived, and a refusal is not written. Persisting a fallback here is
-		// exactly how a monk's stored AC lost its WIS contribution: the number
-		// that reaches the sheet has to be one the chain actually produced
-		// (rpg-toolkit#1276).
-		breakdown, acErr := char.EffectiveAC(ctx)
-		if acErr != nil {
-			return nil, characterDataUnavailable(fmt.Errorf("compute effective AC: %w", acErr))
+		if post.ArmorClass == nil {
+			return nil, characterDataUnavailable(errors.New(errViewFoldMissing))
+		}
+		written, dataErr := char.ToData()
+		if dataErr != nil {
+			return nil, characterDataUnavailable(fmt.Errorf("failed to serialize character after equip: %w", dataErr))
 		}
 
 		patch, retry, patchErr := o.writeEquipment(ctx, &equipmentWriteInput{
 			CharacterID: input.CharacterID,
 			Slot:        input.Slot,
 			Current:     current,
-			Slots:       maps.Clone(char.ToData().EquipmentSlots),
-			Conditions:  char.ToData().Conditions,
-			ArmorClass:  breakdown.Total,
+			Slots:       maps.Clone(written.EquipmentSlots),
+			Conditions:  written.Conditions,
+			ArmorClass:  post.ArmorClass.Total,
 		})
 		if patchErr != nil {
 			return nil, patchErr
@@ -1005,7 +1013,7 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 			return nil, apierr.Internal(errCharacterRepositoryMissingVersion)
 		}
 
-		loaded, loadErr := loadAttachedCharacter(ctx, &loadAttachedCharacterInput{Data: current.Character.Data})
+		loaded, loadErr := loadCharacter(ctx, &loadCharacterInput{Data: current.Character.Data})
 		if loadErr != nil {
 			return nil, characterDataUnavailable(fmt.Errorf("failed to load character: %w", loadErr))
 		}
@@ -1022,26 +1030,31 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 			return nil, mapEquipError(unequipErr)
 		}
 
+		// The post-state projection folds the armour class through
+		// resolution.ProjectCharacter, the toolkit door that installs the cast
+		// a monk's or barbarian's Unarmored Defense reads. Derived, and a
+		// refusal is not written: no fallback AC reaches the sheet, because a
+		// persisted fallback is exactly how a monk's stored AC lost its WIS
+		// contribution (rpg-toolkit#1276, #1965).
 		post, projectErr := o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char})
 		if projectErr != nil {
 			return nil, characterDataUnavailable(fmt.Errorf("failed to project character after unequip: %w", projectErr))
 		}
-		// Derived, and a refusal is not written. Persisting a fallback here is
-		// exactly how a monk's stored AC lost its WIS contribution: the number
-		// that reaches the sheet has to be one the chain actually produced
-		// (rpg-toolkit#1276).
-		breakdown, acErr := char.EffectiveAC(ctx)
-		if acErr != nil {
-			return nil, characterDataUnavailable(fmt.Errorf("compute effective AC: %w", acErr))
+		if post.ArmorClass == nil {
+			return nil, characterDataUnavailable(errors.New(errViewFoldMissing))
+		}
+		written, dataErr := char.ToData()
+		if dataErr != nil {
+			return nil, characterDataUnavailable(fmt.Errorf("failed to serialize character after unequip: %w", dataErr))
 		}
 
 		patch, retry, patchErr := o.writeEquipment(ctx, &equipmentWriteInput{
 			CharacterID: input.CharacterID,
 			Slot:        input.Slot,
 			Current:     current,
-			Slots:       maps.Clone(char.ToData().EquipmentSlots),
-			Conditions:  char.ToData().Conditions,
-			ArmorClass:  breakdown.Total,
+			Slots:       maps.Clone(written.EquipmentSlots),
+			Conditions:  written.Conditions,
+			ArmorClass:  post.ArmorClass.Total,
 		})
 		if patchErr != nil {
 			return nil, patchErr
