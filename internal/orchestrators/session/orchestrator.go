@@ -51,7 +51,8 @@ type Config struct {
 	// covering every shared resource; independent local lockers are insufficient.
 	Locker sdk.SessionLocker
 
-	// AutomaticDiscovery adopts proximity checks and durable character profiles.
+	// AutomaticDiscovery adopts proximity checks and durable sharing preferences.
+	// Discovery facts and attempt history remain in each encounter, not profiles.
 	// The game server enables this explicitly; older embedded hosts can migrate
 	// independently. Custom lockers must also cover profiles shared across runs.
 	AutomaticDiscovery bool
