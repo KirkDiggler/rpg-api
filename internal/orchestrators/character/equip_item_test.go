@@ -536,7 +536,9 @@ func (s *EquipItemTestSuite) TestEquipItem_PostProjectionFailureLeavesRepository
 	s.orchestrator.projectLoaded = func(ctx context.Context, input *ProjectLoadedCharacterInput) (*ProjectLoadedCharacterOutput, error) {
 		calls++
 		if calls == 2 {
-			workingSlots = input.Character.ToData().EquipmentSlots
+			working, err := input.Character.ToData()
+			s.Require().NoError(err)
+			workingSlots = working.EquipmentSlots
 			return nil, errors.New("post-state descriptor failed")
 		}
 		return projectLoadedCharacter(ctx, input)
@@ -576,7 +578,9 @@ func (s *EquipItemTestSuite) TestUnequipItem_PostProjectionFailureLeavesReposito
 	s.orchestrator.projectLoaded = func(ctx context.Context, input *ProjectLoadedCharacterInput) (*ProjectLoadedCharacterOutput, error) {
 		calls++
 		if calls == 2 {
-			workingSlots = input.Character.ToData().EquipmentSlots
+			working, err := input.Character.ToData()
+			s.Require().NoError(err)
+			workingSlots = working.EquipmentSlots
 			return nil, errors.New("post-state descriptor failed")
 		}
 		return projectLoadedCharacter(ctx, input)

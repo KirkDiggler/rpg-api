@@ -715,9 +715,12 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		return nil, fmt.Errorf("failed to convert draft to character: %w", err)
 	}
 
-	// Convert character to data for storage
-	// ToData is now a method on Character
-	charData := char.ToData()
+	// Convert character to data for storage. A sheet that cannot serialize
+	// whole is refused rather than saved missing an effect.
+	charData, err := char.ToData()
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize character: %w", err)
+	}
 
 	charEntity := &entities.Character{Data: charData}
 
@@ -949,13 +952,17 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 		if acErr != nil {
 			return nil, characterDataUnavailable(fmt.Errorf("compute effective AC: %w", acErr))
 		}
+		written, dataErr := char.ToData()
+		if dataErr != nil {
+			return nil, characterDataUnavailable(fmt.Errorf("failed to serialize character after equip: %w", dataErr))
+		}
 
 		patch, retry, patchErr := o.writeEquipment(ctx, &equipmentWriteInput{
 			CharacterID: input.CharacterID,
 			Slot:        input.Slot,
 			Current:     current,
-			Slots:       maps.Clone(char.ToData().EquipmentSlots),
-			Conditions:  char.ToData().Conditions,
+			Slots:       maps.Clone(written.EquipmentSlots),
+			Conditions:  written.Conditions,
 			ArmorClass:  breakdown.Total,
 		})
 		if patchErr != nil {
@@ -1034,13 +1041,17 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 		if acErr != nil {
 			return nil, characterDataUnavailable(fmt.Errorf("compute effective AC: %w", acErr))
 		}
+		written, dataErr := char.ToData()
+		if dataErr != nil {
+			return nil, characterDataUnavailable(fmt.Errorf("failed to serialize character after unequip: %w", dataErr))
+		}
 
 		patch, retry, patchErr := o.writeEquipment(ctx, &equipmentWriteInput{
 			CharacterID: input.CharacterID,
 			Slot:        input.Slot,
 			Current:     current,
-			Slots:       maps.Clone(char.ToData().EquipmentSlots),
-			Conditions:  char.ToData().Conditions,
+			Slots:       maps.Clone(written.EquipmentSlots),
+			Conditions:  written.Conditions,
 			ArmorClass:  breakdown.Total,
 		})
 		if patchErr != nil {

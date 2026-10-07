@@ -2,6 +2,7 @@ package character
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -1175,15 +1176,17 @@ func createValidationFromProgress(progress toolkitchar.Progress) *dnd5ev1alpha1.
 	return result
 }
 
-// convertCharacterToProto converts toolkit character.Character to proto Character
-func convertCharacterToProto(char *toolkitchar.Character) *dnd5ev1alpha1.Character {
+// convertCharacterToProto converts toolkit character.Character to proto Character.
+// A sheet that cannot serialize whole is an error, never a partial character.
+func convertCharacterToProto(char *toolkitchar.Character) (*dnd5ev1alpha1.Character, error) {
 	if char == nil {
-		return nil
+		return nil, errors.New(errCharacterRequired)
 	}
-	// Convert to Data first, then use existing converter
-	// ToData is now a method on Character
-	data := char.ToData()
-	return ConvertCharacterDataToProto(data)
+	data, err := char.ToData()
+	if err != nil {
+		return nil, fmt.Errorf("serialize character: %w", err)
+	}
+	return ConvertCharacterDataToProto(data), nil
 }
 
 // ConvertCharacterDataToProto converts toolkit character.Data to proto Character

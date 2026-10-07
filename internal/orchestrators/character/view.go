@@ -157,7 +157,10 @@ func projectLoadedCharacter(
 		return nil, apierr.InvalidArgument("character is required")
 	}
 
-	data := input.Character.ToData()
+	data, err := input.Character.ToData()
+	if err != nil {
+		return nil, fmt.Errorf("serialize character: %w", err)
+	}
 	if data.PlayerID == "" {
 		return nil, errors.New(errViewPlayerIDMissing)
 	}
