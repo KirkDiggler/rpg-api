@@ -859,11 +859,15 @@ func (s *EquipItemTestSuite) TestEquipItem_AMonkSavesTheWisdomInclusiveAC() {
 }
 
 // TestEquipItem_AConditionThatFailsToApplyRefusesAndWritesNothing: an Inspired
-// die with no granting bard parses but will not Apply. The post-state fold
-// (resolution.ProjectCharacter, strict since rpg-toolkit#1968) refuses, so the
-// equip refuses: no PatchEquipment, no AC written, and the repository's record
-// is untouched. Before, the fold dropped the condition and the degraded AC was
-// written back (rpg-api#1078 gate).
+// die with no granting bard parses but will not Apply. The refusal comes BEFORE
+// the equip: the pre-state projection (resolution.ProjectCharacter, strict since
+// rpg-toolkit#1968) refuses the stored sheet, so the verb never runs and no
+// post-state fold happens. Before, the fold dropped the condition and the
+// degraded AC was written back (rpg-api#1078 gate).
+//
+// The no-write proof is the absent PatchEquipment expectation: gomock fails the
+// test on any write. The before/after marshal proves something narrower and is
+// kept for it: the repository-returned entity is not mutated in memory.
 func (s *EquipItemTestSuite) TestEquipItem_AConditionThatFailsToApplyRefusesAndWritesNothing() {
 	entity := s.unarmouredMonk()
 	inspired, err := (&conditions.InspiredCondition{MemberID: s.testCharacterID}).ToJSON()
@@ -875,7 +879,8 @@ func (s *EquipItemTestSuite) TestEquipItem_AConditionThatFailsToApplyRefusesAndW
 	s.mockCharacterRepo.EXPECT().
 		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
 		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
-	// Deliberately no PatchEquipment expectation: gomock fails if any AC is written.
+	// Deliberately no PatchEquipment expectation: this is the no-write proof.
+	// gomock fails the test if any equipment or AC write is attempted.
 
 	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
 		CharacterID: s.testCharacterID,
@@ -887,7 +892,7 @@ func (s *EquipItemTestSuite) TestEquipItem_AConditionThatFailsToApplyRefusesAndW
 	s.Contains(err.Error(), refs.Conditions.Inspired().String())
 	after, err := json.Marshal(entity.Data)
 	s.Require().NoError(err)
-	s.JSONEq(string(before), string(after), "the stored record is untouched")
+	s.JSONEq(string(before), string(after), "the repository-returned entity is not mutated in memory")
 	s.Empty(s.notified.calls, "nothing was written, so nobody is told")
 }
 
