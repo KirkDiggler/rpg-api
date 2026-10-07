@@ -12,6 +12,7 @@ import (
 
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	dnd5ecombat "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
@@ -101,6 +102,7 @@ func (s *LevelUpHandlerTestSuite) ownedCharacter(classID classes.Class, level in
 			Level:      level,
 			Experience: 300,
 		}},
+		ArmorClass: &dnd5ecombat.ACBreakdown{Total: 13},
 	}
 }
 

@@ -228,7 +228,6 @@ func level3FighterData(t *testing.T, id string) *tkcharacter.Data {
 		},
 		HitPoints:    24,
 		MaxHitPoints: 30,
-		ArmorClass:   10,
 		Wallet:       currency.FromGold(15),
 		Inventory: []tkcharacter.InventoryItemData{
 			{Type: "weapon", ID: "longsword", Quantity: 1},
@@ -242,7 +241,7 @@ func level3FighterData(t *testing.T, id string) *tkcharacter.Data {
 		Features: []json.RawMessage{
 			mustJSON(t, features.SecondWindData{
 				Ref: refs.Features.SecondWind(), ID: "second-wind", Name: "Second Wind",
-				Level: 3, CharacterID: id, Uses: 1, MaxUses: 1,
+				CharacterID: id, Uses: 1, MaxUses: 1,
 			}),
 			mustJSON(t, features.ActionSurgeData{
 				Ref: refs.Features.ActionSurge(), ID: "action-surge", Name: "Action Surge",

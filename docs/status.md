@@ -541,7 +541,9 @@ unavailable`; the detailed strict-load/projection cause remains wrapped internal
 Equip/Unequip strictly load and attach an isolated working sheet, require complete pre-
 and post-views, and only then call the Redis repository's atomic `PatchEquipment`. The
 patch uses WATCH/MULTI semantics, compares the expected equipment state and record
-version, and writes only EquipmentSlots plus cached ArmorClass onto the latest record.
+version, and writes only EquipmentSlots (plus changed Conditions) onto the latest record.
+Armour class is no longer stored anywhere: every response folds it through
+`resolution.ProjectCharacter` (rpg-project#538 slice 5).
 A stale equipment expectation is ABORTED. An unrelated revision is returned without a
 write so the orchestrator can strictly reproject and retry; concurrent HP, resources,
 conditions, economy, appearance, and every other field survive. The repository returns

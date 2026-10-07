@@ -31,7 +31,7 @@ func populatedStoredSession() *sdk.SessionData {
 func populatedStoredEncounter() *tkencounter.EncounterData {
 	return &tkencounter.EncounterData{
 		Clock: playclock.TickData{Budgets: map[core.EntityID]int{"member-a": 2}, DriverProgress: map[core.EntityID]int{"member-a": 5}, HighWater: 5},
-		Members: []tkencounter.MemberData{{ID: "member-a", Name: "Stored member", Cell: &tkencounter.PositionData{X: -3, Y: 4}, SpeedFeet: 25},
+		Members: []tkencounter.MemberData{{ID: "member-a", Name: "Stored member", Cell: &tkencounter.PositionData{X: -3, Y: 4}},
 			{ID: "member-b", Cell: &tkencounter.PositionData{}}},
 		Field:       tkencounter.FieldData{Scenery: []tkencounter.PositionData{{X: 7, Y: -2}}},
 		EverMembers: []tkencounter.MemberID{"member-a", "member-b", "departed"}, Retention: 17,

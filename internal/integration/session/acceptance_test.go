@@ -102,6 +102,20 @@ func (allStanding) Assess(members []tkencounter.MemberID) (*tkencounter.Particip
 	return out, nil
 }
 
+// standStillSheets answers every member asked about as standing still with
+// no attack and no strategy. It is construction-time only, like allSeeing:
+// the played session answers Sheets from the real sheets when it loads the
+// world.
+type standStillSheets struct{}
+
+func (standStillSheets) Sheets(members []tkencounter.MemberID) (map[tkencounter.MemberID]tkencounter.SheetFacts, error) {
+	out := make(map[tkencounter.MemberID]tkencounter.SheetFacts, len(members))
+	for _, id := range members {
+		out[id] = tkencounter.SheetFacts{}
+	}
+	return out, nil
+}
+
 type allSeeing struct{}
 
 func (allSeeing) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberID]int, error) {
@@ -253,6 +267,7 @@ func buildTomb(t *testing.T, mutate func(*tkencounter.SetupInput)) *tkencounter.
 		Standing:   allStanding{},
 		Sight:      allSeeing{},
 		Equipment:  tkencounter.UnobservedEquipment{},
+		Sheets:     standStillSheets{},
 		// tkencounter.PassDriver{}/RefusingStriker{} are the toolkit's own
 		// trivial, exported stand-ins (rpg-toolkit#1167 closed) --
 		// construction-time only, same as allStanding/allSeeing above: this
@@ -329,7 +344,6 @@ func armedFighter(id, playerID string) *tkcharacter.Data {
 		},
 		HitPoints:           24,
 		MaxHitPoints:        28,
-		ArmorClass:          16,
 		ProficiencyBonus:    2,
 		WeaponProficiencies: []proficiencies.Weapon{proficiencies.WeaponMartial},
 		Inventory: []tkcharacter.InventoryItemData{

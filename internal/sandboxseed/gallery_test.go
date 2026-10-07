@@ -26,6 +26,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/languages"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/proficiencies"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/saves"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/skills"
@@ -640,7 +641,6 @@ func galleryCharacter(id string, inventory []tkcharacter.InventoryItemData) *ent
 			},
 			HitPoints:      9,
 			MaxHitPoints:   11,
-			ArmorClass:     18,
 			DeathSaveState: &saves.DeathSaveState{Successes: 1, Failures: 2},
 			Skills: map[skills.Skill]shared.ProficiencyLevel{
 				skills.Athletics:  shared.Proficient,
@@ -927,9 +927,11 @@ func (c *galleryFakeClient) GetCharacter(ctx context.Context, request *dnd5ev1al
 	// it was told would be a test that cannot fail on its own claim.
 	if c.seedStore != nil {
 		if stored, ok := c.seedStore.byID[request.GetCharacterId()]; ok {
-			return &dnd5ev1alpha1.GetCharacterResponse{
-				Character: charconv.ConvertCharacterDataToProto(stored.Data),
-			}, nil
+			projected, err := projectStoredCharacter(ctx, stored.Data)
+			if err != nil {
+				return nil, err
+			}
+			return &dnd5ev1alpha1.GetCharacterResponse{Character: projected}, nil
 		}
 	}
 	character := &dnd5ev1alpha1.Character{
@@ -992,4 +994,14 @@ func TestSeed_RefusesABardThatFinalizedKnowingNothing(t *testing.T) {
 			require.ErrorContains(t, err, tc.want)
 		})
 	}
+}
+
+// projectStoredCharacter answers the way the real server does: the armour
+// class folded through the resolution door, then the PRODUCTION converter.
+func projectStoredCharacter(ctx context.Context, data *tkcharacter.Data) (*dnd5ev1alpha1.Character, error) {
+	folded, err := resolution.ProjectCharacter(ctx, &resolution.ProjectCharacterInput{Character: data})
+	if err != nil {
+		return nil, err
+	}
+	return charconv.ConvertCharacterDataToProto(&charconv.CharacterProtoInput{Data: data, ArmorClass: folded.ArmorClass})
 }

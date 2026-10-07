@@ -59,7 +59,6 @@ func TestPatchEquipment_ConcurrentCombatStateSurvives(t *testing.T) {
 		EquipmentSlots: tkcharacter.EquipmentSlots{
 			tkcharacter.SlotMainHand: "longsword",
 		},
-		ArmorClass: 16,
 	})
 	require.NoError(t, err)
 	require.False(t, first.Applied, "an unrelated concurrent revision must be returned for strict reprojection before writing")
@@ -72,7 +71,6 @@ func TestPatchEquipment_ConcurrentCombatStateSurvives(t *testing.T) {
 		EquipmentSlots: tkcharacter.EquipmentSlots{
 			tkcharacter.SlotMainHand: "longsword",
 		},
-		ArmorClass: 16,
 	})
 	require.NoError(t, err)
 	require.True(t, patched.Applied)
@@ -85,7 +83,6 @@ func TestPatchEquipment_ConcurrentCombatStateSurvives(t *testing.T) {
 	require.Equal(t, concurrent.Data.ActionEconomy, stored.Character.Data.ActionEconomy)
 	require.Equal(t, concurrent.Data.Appearance, stored.Character.Data.Appearance)
 	require.Equal(t, "longsword", stored.Character.Data.EquipmentSlots.Get(tkcharacter.SlotMainHand))
-	require.Equal(t, 16, stored.Character.Data.ArmorClass)
 }
 
 func TestPatchEquipment_StaleExpectedEquipmentRefusesAndPreservesNewerData(t *testing.T) {
@@ -101,7 +98,6 @@ func TestPatchEquipment_StaleExpectedEquipmentRefusesAndPreservesNewerData(t *te
 
 	newer := stale.Character
 	newer.Data.EquipmentSlots = tkcharacter.EquipmentSlots{tkcharacter.SlotOffHand: "shield"}
-	newer.Data.ArmorClass = 12
 	newer.Data.HitPoints = 5
 	_, err = repo.Update(ctx, characterrepo.UpdateInput{Character: newer})
 	require.NoError(t, err)
@@ -111,7 +107,6 @@ func TestPatchEquipment_StaleExpectedEquipmentRefusesAndPreservesNewerData(t *te
 		ExpectedVersion:        stale.Version,
 		ExpectedEquipmentSlots: expectedSlots,
 		EquipmentSlots:         tkcharacter.EquipmentSlots{tkcharacter.SlotMainHand: "longsword"},
-		ArmorClass:             16,
 	})
 	require.Error(t, err)
 	require.Nil(t, out)
@@ -120,7 +115,6 @@ func TestPatchEquipment_StaleExpectedEquipmentRefusesAndPreservesNewerData(t *te
 	stored, err := repo.Get(ctx, characterrepo.GetInput{ID: original.Data.ID})
 	require.NoError(t, err)
 	require.Equal(t, newer.Data.EquipmentSlots, stored.Character.Data.EquipmentSlots)
-	require.Equal(t, 12, stored.Character.Data.ArmorClass)
 	require.Equal(t, 5, stored.Character.Data.HitPoints)
 }
 
@@ -145,7 +139,6 @@ func repositoryCharacter(id string) *entities.Character {
 		RaceID:         "human",
 		HitPoints:      12,
 		MaxHitPoints:   12,
-		ArmorClass:     10,
 		EquipmentSlots: tkcharacter.EquipmentSlots{},
 	}}
 }

@@ -102,7 +102,6 @@ type equipmentWriteInput struct {
 	Slot       character.InventorySlot
 	Current    *characterrepo.GetOutput
 	Slots      character.EquipmentSlots
-	ArmorClass int
 	Conditions []json.RawMessage
 }
 
@@ -147,7 +146,6 @@ func (o *Orchestrator) writeEquipment(
 		ExpectedVersion:        in.Current.Version,
 		ExpectedEquipmentSlots: maps.Clone(in.Current.Character.Data.EquipmentSlots),
 		EquipmentSlots:         in.Slots,
-		ArmorClass:             in.ArmorClass,
 		Conditions:             changedConditions,
 	})
 	if err != nil {

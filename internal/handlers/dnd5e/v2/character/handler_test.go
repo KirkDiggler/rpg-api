@@ -95,7 +95,6 @@ func (s *HandlerTestSuite) fighterCharacterEntity() *entities.Character {
 			ProficiencyBonus: 2,
 			HitPoints:        20,
 			MaxHitPoints:     30,
-			ArmorClass:       10,
 			Wallet:           currency.FromGold(15),
 			AbilityScores: shared.AbilityScores{
 				abilities.STR: 16,
@@ -116,7 +115,7 @@ func (s *HandlerTestSuite) fighterCharacterEntity() *entities.Character {
 			Features: []json.RawMessage{
 				s.mustJSON(features.SecondWindData{
 					Ref: refs.Features.SecondWind(), ID: "second-wind", Name: "Second Wind",
-					Level: 3, CharacterID: s.testCharacterID, Uses: 1, MaxUses: 1,
+					CharacterID: s.testCharacterID, Uses: 1, MaxUses: 1,
 				}),
 				s.mustJSON(features.ActionSurgeData{
 					Ref: refs.Features.ActionSurge(), ID: "action-surge", Name: "Action Surge",

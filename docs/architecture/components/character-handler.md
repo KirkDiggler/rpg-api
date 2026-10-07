@@ -48,12 +48,22 @@ delegate to the same character orchestrator methods as the v1alpha2 owner-privat
 surface. That shared path strictly loads and attaches an isolated working character,
 composes the complete post-mutation identity/equipment/status View **before** an atomic
 repository equipment patch, and writes nothing if strict application or post-state
-projection fails. The patch changes only EquipmentSlots and cached ArmorClass on the
-latest record. This handler does not inspect feature/condition JSON, derive status, or
+projection fails. The patch changes only EquipmentSlots (and changed Conditions) on the
+latest record; no armour class is stored. This handler does not inspect feature/condition JSON, derive status, or
 duplicate toolkit rules.
 
 The orchestrator output carries both the actual persisted post-state entity and its
-matching detached View. Legacy Equip/Unequip convert the persisted entity's nested
+matching detached View, plus the post-state's folded armour class.
+
+## Armour class on the wire (rpg-project#538)
+
+`CombatStats.armor_class` on every Character this handler returns — FinalizeDraft,
+GetCharacter, ListCharacters, LevelUp, EquipItem, UnequipItem — is the orchestrator's
+`resolution.ProjectCharacter` fold, handed to `ConvertCharacterDataToProto` through
+`CharacterProtoInput.ArmorClass`. The converter refuses a missing fold instead of
+sending zero. ListCharacters fails whole as INTERNAL when any listed character lacks
+one, carrying the orchestrator's `character data unavailable: character "<id>"`
+message. Legacy Equip/Unequip convert the persisted entity's nested
 `Data.Appearance`; they no longer call `GetCharacter` after a successful write. Internal strict projection
 failures become generic INTERNAL `character data unavailable` at this boundary.
 

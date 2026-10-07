@@ -9,6 +9,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 )
@@ -204,6 +205,10 @@ type FinalizeDraftInput struct {
 // FinalizeDraftOutput returns the created character.
 type FinalizeDraftOutput struct {
 	Character *character.Character
+
+	// ArmorClass is the saved sheet's armour class, folded through the
+	// resolution door. Nothing stores it; nil is never a valid answer.
+	ArmorClass *combat.ACBreakdown
 }
 
 // ListRacesInput lists available races
@@ -279,6 +284,10 @@ type GetCharacterInput struct {
 // GetCharacterOutput returns the character
 type GetCharacterOutput struct {
 	Character *entities.Character // includes appearance
+
+	// ArmorClass is the stored sheet's armour class, folded through the
+	// resolution door at this read. The repository stores none (#538 R1, R7).
+	ArmorClass *combat.ACBreakdown
 }
 
 // EquipItemInput equips an item to a slot
@@ -293,6 +302,7 @@ type EquipItemOutput struct {
 	PreviousItemID string              // Item that was previously in the slot, if any
 	Character      *entities.Character // Actual persisted post-equip entity for legacy conversion
 	View           *View               // Complete detached post-equip projection
+	ArmorClass     *combat.ACBreakdown // Post-equip armour class, folded through the resolution door
 }
 
 // UnequipItemInput unequips an item from a slot
@@ -306,6 +316,7 @@ type UnequipItemOutput struct {
 	UnequippedItemID string              // Item that was removed from the slot
 	Character        *entities.Character // Actual persisted post-unequip entity for legacy conversion
 	View             *View               // Complete detached post-unequip projection
+	ArmorClass       *combat.ACBreakdown // Post-unequip armour class, folded through the resolution door
 }
 
 // ListCharactersInput lists characters with optional filters
@@ -318,7 +329,14 @@ type ListCharactersInput struct {
 
 // ListCharactersOutput returns the character list
 type ListCharactersOutput struct {
-	Characters    []*entities.Character
+	Characters []*entities.Character
+
+	// ArmorClasses holds every listed character's armour class, keyed by
+	// character ID, each folded through the resolution door at this read. The
+	// list is whole or it is an error: one sheet the door refuses fails the
+	// list (#538 R11), so a listed character missing from this map is a bug.
+	ArmorClasses map[string]*combat.ACBreakdown
+
 	NextPageToken string
 	TotalSize     int
 }

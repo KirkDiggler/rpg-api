@@ -140,8 +140,16 @@ func (h *Handler) LevelUp(
 		return nil, apierr.ToGRPCError(apierr.Internal("level up saved but the character could not be re-read"))
 	}
 
+	protoChar, err := ConvertCharacterDataToProto(&CharacterProtoInput{
+		Data:       current.Character.Data,
+		ArmorClass: current.ArmorClass,
+	})
+	if err != nil {
+		return nil, apierr.ToGRPCError(apierr.WrapWithCode(err, apierr.CodeInternal, character.CharacterDataUnavailableMessage))
+	}
+
 	return &dnd5ev1alpha1.LevelUpResponse{
-		Character: ConvertCharacterDataToProto(current.Character.Data),
+		Character: protoChar,
 		// The class name comes from the sheet, because LevelGained does not
 		// carry one -- and the sheet is the better source anyway: it is the
 		// same stored character being projected one field above, so the two

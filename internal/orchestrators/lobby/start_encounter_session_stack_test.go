@@ -114,7 +114,7 @@ func (s *SessionStackSuite) seedCharacter(id, playerID, name string) {
 	_, err := s.charRepo.Create(s.ctx, characterrepo.CreateInput{
 		Character: &entities.Character{Data: &tkcharacter.Data{
 			ID: id, PlayerID: playerID, Name: name, Level: 1,
-			HitPoints: 10, MaxHitPoints: 10, ArmorClass: 10,
+			HitPoints: 10, MaxHitPoints: 10,
 		}},
 	})
 	s.Require().NoError(err)
@@ -128,7 +128,7 @@ func (s *SessionStackSuite) seedCharacterWithWallet(id, playerID, name string, w
 	_, err := s.charRepo.Create(s.ctx, characterrepo.CreateInput{
 		Character: &entities.Character{Data: &tkcharacter.Data{
 			ID: id, PlayerID: playerID, Name: name, Level: 1,
-			HitPoints: 10, MaxHitPoints: 10, ArmorClass: 10,
+			HitPoints: 10, MaxHitPoints: 10,
 			Wallet: wallet,
 		}},
 	})
@@ -146,7 +146,7 @@ func (s *SessionStackSuite) seedCharacterWithInventory(
 	_, err := s.charRepo.Create(s.ctx, characterrepo.CreateInput{
 		Character: &entities.Character{Data: &tkcharacter.Data{
 			ID: id, PlayerID: playerID, Name: name, Level: 1,
-			HitPoints: 10, MaxHitPoints: 10, ArmorClass: 10,
+			HitPoints: 10, MaxHitPoints: 10,
 			Inventory: items,
 		}},
 	})
@@ -870,7 +870,7 @@ func (s *SessionStackSuite) TestStartEncounter_StartSessionFailureLeavesCharacte
 func (s *SessionStackSuite) spentFighter(id, playerID string) (*entities.Character, *customization.Appearance) {
 	secondWind, err := json.Marshal(features.SecondWindData{
 		Ref: refs.Features.SecondWind(), ID: id + "-second-wind", Name: "Second Wind",
-		Level: 4, CharacterID: id, Uses: 0, MaxUses: 1,
+		CharacterID: id, Uses: 0, MaxUses: 1,
 	})
 	s.Require().NoError(err)
 	defense, err := json.Marshal(conditions.FightingStyleDefenseData{
@@ -898,7 +898,7 @@ func (s *SessionStackSuite) spentFighter(id, playerID string) (*entities.Charact
 			abilities.STR: 16, abilities.DEX: 14, abilities.CON: 14,
 			abilities.INT: 10, abilities.WIS: 12, abilities.CHA: 8,
 		},
-		HitPoints: 7, MaxHitPoints: 36, ArmorClass: 16,
+		HitPoints: 7, MaxHitPoints: 36,
 		ActionEconomy: &tkcharacter.ActionEconomyData{
 			TurnNumber: 1, ActionsRemaining: 0, BonusActionsRemaining: 0,
 			ReactionsRemaining: 1, MovementRemaining: 10,
@@ -923,7 +923,7 @@ func (s *SessionStackSuite) spentBarbarian(id, playerID string) (*entities.Chara
 	})
 	s.Require().NoError(err)
 	raging, err := json.Marshal(conditions.RagingData{
-		Ref: refs.Conditions.Raging(), CharacterID: id, DamageBonus: 2, Level: 4,
+		Ref: refs.Conditions.Raging(), CharacterID: id,
 		Source: refs.Features.Rage().String(), SawTurnEnd: true, TurnsActive: 2,
 	})
 	s.Require().NoError(err)
@@ -947,7 +947,7 @@ func (s *SessionStackSuite) spentBarbarian(id, playerID string) (*entities.Chara
 			abilities.STR: 16, abilities.DEX: 14, abilities.CON: 16,
 			abilities.INT: 8, abilities.WIS: 12, abilities.CHA: 10,
 		},
-		HitPoints: 0, MaxHitPoints: 45, ArmorClass: 15,
+		HitPoints: 0, MaxHitPoints: 45,
 		DeathSaveState: &saves.DeathSaveState{Failures: 3, Dead: true},
 		Resources: map[coreResources.ResourceKey]tkcharacter.RecoverableResourceData{
 			dnd5eResources.HitDice:     {Current: 1, Maximum: 4, ResetType: coreResources.ResetLongRest},
