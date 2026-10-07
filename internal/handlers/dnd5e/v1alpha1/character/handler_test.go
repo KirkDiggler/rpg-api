@@ -13,6 +13,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
+	dnd5ecombat "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
@@ -328,13 +329,14 @@ func (s *HandlerTestSuite) TestGetCharacter_IncludesEquipmentSlotsAndHairAppeara
 				charData.Appearance = appearance
 				return charData
 			}(),
-		}}, nil)
+		}, ArmorClass: &dnd5ecombat.ACBreakdown{Total: 18}}, nil)
 
 	resp, err := s.handler.GetCharacter(s.ctx, req)
 
 	s.NoError(err)
 	s.Require().NotNil(resp)
 	s.Require().NotNil(resp.Character)
+	s.Equal(int32(18), resp.Character.GetCombatStats().GetArmorClass(), "the orchestrator's fold is the wire's armour class")
 	s.Require().NotNil(resp.Character.EquipmentSlots, "EquipmentSlots must be present in GetCharacter response")
 	s.Require().NotNil(resp.Character.EquipmentSlots.MainHand)
 	s.Equal("item-longsword", resp.Character.EquipmentSlots.MainHand.ItemId)
@@ -354,13 +356,56 @@ func (s *HandlerTestSuite) TestListCharacters_IncludesHairAppearance() {
 		Characters: []*entities.Character{{
 			Data: &toolkitchar.Data{ID: "char-123", Name: "Test Fighter", Appearance: appearance},
 		}},
-		TotalSize: 1,
+		ArmorClasses: map[string]*dnd5ecombat.ACBreakdown{"char-123": {Total: 17}},
+		TotalSize:    1,
 	}, nil)
 
 	resp, err := s.handler.ListCharacters(ctx, &dnd5ev1alpha1.ListCharactersRequest{})
 	s.Require().NoError(err)
 	s.Require().Len(resp.GetCharacters(), 1)
 	s.assertHairAppearance(resp.GetCharacters()[0].GetAppearance())
+	s.Equal(int32(17), resp.GetCharacters()[0].GetCombatStats().GetArmorClass())
+}
+
+// TestListCharacters_ACharacterWithNoFoldFailsTheWholeList pins R11 at the
+// wire: one listed character without a folded armour class fails the list as
+// INTERNAL, never a row with a zero or a default and never a shorter list.
+func (s *HandlerTestSuite) TestListCharacters_ACharacterWithNoFoldFailsTheWholeList() {
+	ctx := auth.WithPlayerID(s.ctx, "player-1")
+	s.mockService.EXPECT().ListCharacters(ctx, &character.ListCharactersInput{
+		PlayerID: "player-1",
+	}).Return(&character.ListCharactersOutput{
+		Characters: []*entities.Character{
+			{Data: &toolkitchar.Data{ID: "char-folded", Name: "Folded"}},
+			{Data: &toolkitchar.Data{ID: "char-unfolded", Name: "Unfolded"}},
+		},
+		ArmorClasses: map[string]*dnd5ecombat.ACBreakdown{"char-folded": {Total: 12}},
+		TotalSize:    2,
+	}, nil)
+
+	resp, err := s.handler.ListCharacters(ctx, &dnd5ev1alpha1.ListCharactersRequest{})
+	s.Nil(resp)
+	s.Equal(codes.Internal, status.Code(err))
+}
+
+// TestListCharacters_AnUnprojectableSheetIsNamedInTheRefusal: the
+// orchestrator's refusal names the character whose sheet the door refused,
+// and that name reaches the caller; the toolkit's cause does not.
+func (s *HandlerTestSuite) TestListCharacters_AnUnprojectableSheetIsNamedInTheRefusal() {
+	const secret = "PRIVATE_FOLD_CAUSE"
+	ctx := auth.WithPlayerID(s.ctx, "player-1")
+	s.mockService.EXPECT().ListCharacters(ctx, &character.ListCharactersInput{
+		PlayerID: "player-1",
+	}).Return(nil, apierr.WrapWithCodef(errors.New(secret), apierr.CodeInternal,
+		"%s: character %q", character.CharacterDataUnavailableMessage, "char-broken"))
+
+	resp, err := s.handler.ListCharacters(ctx, &dnd5ev1alpha1.ListCharactersRequest{})
+	s.Nil(resp)
+	st, ok := status.FromError(err)
+	s.Require().True(ok)
+	s.Equal(codes.Internal, st.Code())
+	s.Contains(st.Message(), "char-broken")
+	s.NotContains(st.Message(), secret)
 }
 
 func handlerHairAppearance() *customization.Appearance {
@@ -485,6 +530,7 @@ func (s *HandlerTestSuite) TestEquipItem_ReturnsPersistedPostStateWithoutRefetch
 		Return(&character.EquipItemOutput{
 			PreviousItemID: "handaxe",
 			Character:      postState,
+			ArmorClass:     &dnd5ecombat.ACBreakdown{Total: 14},
 		}, nil)
 	s.mockService.EXPECT().
 		GetCharacter(s.ctx, &character.GetCharacterInput{CharacterID: "char-equip"}).
@@ -501,6 +547,7 @@ func (s *HandlerTestSuite) TestEquipItem_ReturnsPersistedPostStateWithoutRefetch
 	s.Equal("longsword", resp.GetCharacter().GetEquipmentSlots().GetMainHand().GetItemId())
 	s.Equal("modular-fantasy-hero:hair:38", resp.GetCharacter().GetAppearance().GetHair().GetScalp().GetStyleRef())
 	s.Equal("handaxe", resp.GetPreviouslyEquippedItem().GetItemId())
+	s.Equal(int32(14), resp.GetCharacter().GetCombatStats().GetArmorClass())
 }
 
 func (s *HandlerTestSuite) TestUnequipItem_ReturnsPersistedPostStateWithoutRefetch() {
@@ -523,6 +570,7 @@ func (s *HandlerTestSuite) TestUnequipItem_ReturnsPersistedPostStateWithoutRefet
 		Return(&character.UnequipItemOutput{
 			UnequippedItemID: "longsword",
 			Character:        postState,
+			ArmorClass:       &dnd5ecombat.ACBreakdown{Total: 11},
 		}, nil)
 	s.mockService.EXPECT().
 		GetCharacter(s.ctx, &character.GetCharacterInput{CharacterID: "char-unequip"}).
@@ -537,6 +585,7 @@ func (s *HandlerTestSuite) TestUnequipItem_ReturnsPersistedPostStateWithoutRefet
 	s.Equal("char-unequip", resp.GetCharacter().GetId())
 	s.NotNil(resp.GetCharacter().GetEquipmentSlots())
 	s.Nil(resp.GetCharacter().GetEquipmentSlots().GetMainHand())
+	s.Equal(int32(11), resp.GetCharacter().GetCombatStats().GetArmorClass())
 }
 
 func (s *HandlerTestSuite) TestEquipmentProjectionErrorsAreSanitized() {

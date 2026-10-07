@@ -171,7 +171,7 @@ is responsible for got smaller, which is the direction it should move.
 
 **Update (rpg-api#680/#844, 2026-08-25):** `EquipItem`/`UnequipItem` strictly
 load/attach, call the toolkit's rules-aware verbs, precompose complete post-views, and
-persist only EquipmentSlots plus cached ArmorClass through the repository's atomic
+persist only EquipmentSlots (plus changed Conditions) through the repository's atomic
 optimistic patch. Unrelated concurrent character changes are reprojected and preserved;
 stale equipment is aborted. The orchestrator returns the actual patched entity and the
 matching detached View. Grade held at B- because older draft/catalog TODO debt elsewhere
@@ -382,7 +382,7 @@ separate.
 addition to CRUD/index operations it now exposes an Input/Output-typed atomic equipment
 patch. Redis WATCH/MULTI guards the record, expected equipment rejects stale equip
 writers with ABORTED, unrelated record revisions are returned without writing, and the
-successful transaction changes only EquipmentSlots plus cached ArmorClass on the latest
+successful transaction changes only EquipmentSlots (plus changed Conditions; no armour class is stored, rpg-project#538) on the latest
 entity. Miniredis regressions cover concurrent combat-state preservation and stale
 expected-equipment refusal. #1047 adds populated CRUD, player-index maintenance,
 read-side session-index resolution, detached reads, successful patch preservation,

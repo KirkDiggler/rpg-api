@@ -12,6 +12,7 @@ import (
 
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	dnd5ecombat "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
@@ -101,14 +102,20 @@ func (s *LevelUpHandlerTestSuite) ownedCharacter(classID classes.Class, level in
 			Level:      level,
 			Experience: 300,
 		}},
+		ArmorClass: &dnd5ecombat.ACBreakdown{Total: 13},
 	}
 }
 
 // expectOwned answers the ownership gate once.
 func (s *LevelUpHandlerTestSuite) expectOwned(classID classes.Class) {
 	s.mockService.EXPECT().
-		GetCharacter(gomock.Any(), &character.GetCharacterInput{CharacterID: levelUpCharacterID}).
-		Return(s.ownedCharacter(classID, 1), nil)
+		GetCharacterRecord(gomock.Any(), &character.GetCharacterRecordInput{CharacterID: levelUpCharacterID}).
+		Return(s.ownedRecord(classID), nil)
+}
+
+// ownedRecord is the gate's unfolded read of the caller's own level-1 sheet.
+func (s *LevelUpHandlerTestSuite) ownedRecord(classID classes.Class) *character.GetCharacterRecordOutput {
+	return &character.GetCharacterRecordOutput{Character: s.ownedCharacter(classID, 1).Character}
 }
 
 // TestGetNextLevel_ProjectsWhatTheSDKHandsIt is the whole of this handler's
@@ -202,8 +209,8 @@ func (s *LevelUpHandlerTestSuite) TestGetNextLevel_AConfirmationNamesWhatItBring
 // handed a character id and has no notion of who holds the connection.
 func (s *LevelUpHandlerTestSuite) TestGetNextLevel_AForeignCharacterIsNotFoundAndNeverReachesTheSDK() {
 	s.mockService.EXPECT().
-		GetCharacter(gomock.Any(), &character.GetCharacterInput{CharacterID: levelUpCharacterID}).
-		Return(&character.GetCharacterOutput{
+		GetCharacterRecord(gomock.Any(), &character.GetCharacterRecordInput{CharacterID: levelUpCharacterID}).
+		Return(&character.GetCharacterRecordOutput{
 			Character: &entities.Character{Data: &toolkitchar.Data{
 				ID: levelUpCharacterID, PlayerID: "somebody-else",
 			}},
@@ -221,8 +228,8 @@ func (s *LevelUpHandlerTestSuite) TestGetNextLevel_AForeignCharacterIsNotFoundAn
 // refuses the same way the read does, and for the same reason.
 func (s *LevelUpHandlerTestSuite) TestLevelUp_AForeignCharacterIsNotFoundAndNeverReachesTheSDK() {
 	s.mockService.EXPECT().
-		GetCharacter(gomock.Any(), &character.GetCharacterInput{CharacterID: levelUpCharacterID}).
-		Return(&character.GetCharacterOutput{
+		GetCharacterRecord(gomock.Any(), &character.GetCharacterRecordInput{CharacterID: levelUpCharacterID}).
+		Return(&character.GetCharacterRecordOutput{
 			Character: &entities.Character{Data: &toolkitchar.Data{
 				ID: levelUpCharacterID, PlayerID: "somebody-else",
 			}},
@@ -257,8 +264,8 @@ func (s *LevelUpHandlerTestSuite) TestLevelUp_UnspecifiedMethodNeverReachesTheSD
 // free to disagree with the first. What crosses is the id and the refs.
 func (s *LevelUpHandlerTestSuite) TestLevelUp_SendsTheChoiceIdAndRefsAndNoCategory() {
 	s.mockService.EXPECT().
-		GetCharacter(gomock.Any(), &character.GetCharacterInput{CharacterID: levelUpCharacterID}).
-		Return(s.ownedCharacter(classes.Bard, 1), nil)
+		GetCharacterRecord(gomock.Any(), &character.GetCharacterRecordInput{CharacterID: levelUpCharacterID}).
+		Return(s.ownedRecord(classes.Bard), nil)
 	s.mockService.EXPECT().
 		GetCharacter(gomock.Any(), &character.GetCharacterInput{CharacterID: levelUpCharacterID}).
 		Return(s.ownedCharacter(classes.Bard, 2), nil)
@@ -299,8 +306,8 @@ func (s *LevelUpHandlerTestSuite) TestLevelUp_SendsTheChoiceIdAndRefsAndNoCatego
 // would mention it unless the engine said so.
 func (s *LevelUpHandlerTestSuite) TestLevelUp_ReportsWhatTheLevelBroughtAndRereadsTheSheet() {
 	s.mockService.EXPECT().
-		GetCharacter(gomock.Any(), &character.GetCharacterInput{CharacterID: levelUpCharacterID}).
-		Return(s.ownedCharacter(classes.Bard, 1), nil)
+		GetCharacterRecord(gomock.Any(), &character.GetCharacterRecordInput{CharacterID: levelUpCharacterID}).
+		Return(s.ownedRecord(classes.Bard), nil)
 	s.mockService.EXPECT().
 		GetCharacter(gomock.Any(), &character.GetCharacterInput{CharacterID: levelUpCharacterID}).
 		Return(s.ownedCharacter(classes.Bard, 2), nil)

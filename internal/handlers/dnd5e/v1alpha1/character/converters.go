@@ -15,6 +15,7 @@ import (
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	dnd5ecombat "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
@@ -1178,7 +1179,10 @@ func createValidationFromProgress(progress toolkitchar.Progress) *dnd5ev1alpha1.
 
 // convertCharacterToProto converts toolkit character.Character to proto Character.
 // A sheet that cannot serialize whole is an error, never a partial character.
-func convertCharacterToProto(char *toolkitchar.Character) (*dnd5ev1alpha1.Character, error) {
+func convertCharacterToProto(
+	char *toolkitchar.Character,
+	armorClass *dnd5ecombat.ACBreakdown,
+) (*dnd5ev1alpha1.Character, error) {
 	if char == nil {
 		return nil, errors.New(errCharacterRequired)
 	}
@@ -1186,14 +1190,28 @@ func convertCharacterToProto(char *toolkitchar.Character) (*dnd5ev1alpha1.Charac
 	if err != nil {
 		return nil, fmt.Errorf("serialize character: %w", err)
 	}
-	return ConvertCharacterDataToProto(data), nil
+	return ConvertCharacterDataToProto(&CharacterProtoInput{Data: data, ArmorClass: armorClass})
 }
 
-// ConvertCharacterDataToProto converts toolkit character.Data to proto Character
-func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Character {
-	if data == nil {
-		return nil
+// CharacterProtoInput is one stored sheet and the armour class folded for it.
+// The sheet carries no armour class of its own (rpg-project#538 R1): the
+// orchestrator folds it through the resolution door and hands it over here.
+type CharacterProtoInput struct {
+	Data       *toolkitchar.Data
+	ArmorClass *dnd5ecombat.ACBreakdown
+}
+
+// ConvertCharacterDataToProto converts toolkit character.Data plus its folded
+// armour class to proto Character. A missing armour class is an error, never
+// a zero or a default on the wire.
+func ConvertCharacterDataToProto(in *CharacterProtoInput) (*dnd5ev1alpha1.Character, error) {
+	if in == nil || in.Data == nil {
+		return nil, errors.New(errCharacterRequired)
 	}
+	if in.ArmorClass == nil {
+		return nil, fmt.Errorf("character %s: %s", in.Data.ID, errArmorClassNotProjected)
+	}
+	data := in.Data
 
 	char := &dnd5ev1alpha1.Character{
 		Id:         data.ID,
@@ -1248,7 +1266,7 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 	// Convert combat stats using nested structure
 	char.CombatStats = &dnd5ev1alpha1.CombatStats{
 		HitPointMaximum:  int32(data.MaxHitPoints),
-		ArmorClass:       int32(data.ArmorClass),
+		ArmorClass:       int32(in.ArmorClass.Total),
 		ProficiencyBonus: int32(data.ProficiencyBonus),
 		// TODO: Add initiative and speed when available in toolkit
 	}
@@ -1459,7 +1477,7 @@ func ConvertCharacterDataToProto(data *toolkitchar.Data) *dnd5ev1alpha1.Characte
 		}
 	}
 
-	return char
+	return char, nil
 }
 
 // convertEquipmentSlotToToolkit converts a proto EquipmentSlot enum to toolkit InventorySlot.

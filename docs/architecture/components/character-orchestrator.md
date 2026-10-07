@@ -129,25 +129,63 @@ The method shape is:
    fold refuses the equip (no fallback AC is written), and there is no fallible
    projection afterward.
 4. `characterRepo.PatchEquipment` receives only CharacterID, expected version, expected
-   pre-mutation slots, post-mutation slots, and toolkit-computed cached ArmorClass. It
-   never receives a full replacement entity from this path.
+   pre-mutation slots, post-mutation slots, and (when the toolkit changed them) the
+   post-equipment conditions. It never receives a full replacement entity or an armour
+   class from this path.
 5. If an unrelated writer changed the record while equipment remained the same, the
    repository returns the newer entity without writing. The orchestrator strictly
    reapplies the operation to that entity and retries. If equipment itself changed, the
    repository returns ABORTED. On success it returns the actual patched entity.
-6. The orchestrator returns that entity plus the matching precomposed View. Legacy
-   conversion (including Appearance) and v1alpha2 CharacterData conversion therefore
-   consume the same persisted post-state; neither handler performs a post-write Get.
+6. The orchestrator returns that entity, the matching precomposed View, and the
+   post-state's folded armour class (`EquipItemOutput.ArmorClass`). Legacy conversion
+   (including Appearance and `CombatStats.armor_class`) and v1alpha2 CharacterData
+   conversion therefore consume the same post-state; neither handler performs a
+   post-write Get.
 
-### Atomic two-field persistence
+### Atomic equipment persistence
 
 The Redis implementation uses WATCH plus a transactional SET. It compares both the
 expected equipment map and opaque version against the latest JSON record. The committed
 record is decoded from the latest value and changes only:
 
 - `EquipmentSlots`, cloned from the toolkit's post-mutation occupancy; and
-- cached `ArmorClass`, copied from the post-state `resolution.ProjectCharacter`
-  `ArmorClass.Total` (a monk stores 10 + DEX + WIS; rpg-toolkit#1276, #1965).
+- `Conditions`, only when the toolkit's post-equipment state differs.
+
+No armour class is written: `character.Data` no longer has the field
+(rpg-toolkit#1971), and an old record carrying `armor_class` loads with the key
+ignored and is rewritten without it on its next save (rpg-project#538 R13; no
+migration).
+
+## Armour class is a projection (rpg-project#538 slice 5)
+
+rpg-api stores no armour class. Every response that carries one fills it from
+`resolution.ProjectCharacter`, the toolkit door that installs the cast a monk's or
+barbarian's Unarmored Defense reads (a monk answers 10 + DEX + WIS):
+
+| verb | where the fold happens | output field |
+|---|---|---|
+| `FinalizeDraft` | the fold of the serialized sheet, BEFORE `Create`: a refusal saves nothing and the draft stands | `FinalizeDraftOutput.ArmorClass` |
+| `GetCharacter` (also LevelUp's re-read) | `projectArmorClass` over the stored record | `GetCharacterOutput.ArmorClass` |
+| `ListCharacters` | `projectArmorClasses`, one fold per listed record | `ListCharactersOutput.ArmorClasses` (keyed by character ID) |
+| `EquipItem` / `UnequipItem` | the post-state `projectLoaded` fold already composed before the patch | `EquipItemOutput.ArmorClass` / `UnequipItemOutput.ArmorClass` |
+
+`projectArmorClass` (`view.go`) asks the door alone, not the full View: the status half
+is a separate toolkit question with its own refusals, and a response that only carries
+`CombatStats` must not fail on it. The door attaches strictly, so an unreadable sheet is
+refused; a refusal fails the request as INTERNAL `character data unavailable` (R11).
+`ListCharacters` fails whole on the first refused sheet, with the transport message
+`character data unavailable: character "<id>"`; there is no per-row absence and no
+fallback number. There is no cache (R7; a cached projection is R9's, deferred until a
+measured cost asks). One fold is one strict attach plus the AC fold and the equipment
+view's second AC fold, measured at roughly 30µs and 14KB per character, so a list of N
+characters costs N of them.
+
+Ownership gates never fold. The v1alpha1 and v1alpha2 `verifyCallerOwnsCharacter` and
+`GetCharacterInventory` read `GetCharacterRecord`, the unprojected record. A fold before
+the owner check would answer an unprojectable foreign sheet INTERNAL where a missing id
+answers NOT_FOUND, which is the existence oracle rpg-api#815 closed. The integration test
+`ownership_oracle_test.go` pins that GetNextLevel and GetCharacterData answer both cases
+with the same NOT_FOUND sentence. LevelUp folds once, on its re-read.
 
 HP, resources, conditions, action economy, inventory, identity, metadata, and nested
 `Data.Appearance` come from the latest stored toolkit data and are not replaced by the

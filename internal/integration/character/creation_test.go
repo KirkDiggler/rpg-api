@@ -911,6 +911,33 @@ func (s *CharacterCreationSuite) TestCreateDwarfBarbarianWithToolChoice() {
 	s.Require().NoError(err)
 	s.Require().NotNil(finalizeResp.GetCharacter())
 	s.Equal(dnd5ev1alpha1.Race_RACE_DWARF, finalizeResp.GetCharacter().GetRace())
+
+	// Armour class is folded at every read and stored nowhere
+	// (rpg-project#538 slice 5): unarmoured barbarian, 10 + DEX 1 + CON 3
+	// (14 + dwarf 2 = 16).
+	const foldedAC = int32(14)
+	characterID := finalizeResp.GetCharacter().GetId()
+	s.Equal(foldedAC, finalizeResp.GetCharacter().GetCombatStats().GetArmorClass(), "FinalizeDraft")
+
+	got, err := s.server.CharacterClient.GetCharacter(ctx, &dnd5ev1alpha1.GetCharacterRequest{CharacterId: characterID})
+	s.Require().NoError(err)
+	s.Equal(foldedAC, got.GetCharacter().GetCombatStats().GetArmorClass(), "GetCharacter")
+
+	listed, err := s.server.CharacterClient.ListCharacters(ctx, &dnd5ev1alpha1.ListCharactersRequest{})
+	s.Require().NoError(err)
+	var listedAC *int32
+	for _, c := range listed.GetCharacters() {
+		if c.GetId() == characterID {
+			ac := c.GetCombatStats().GetArmorClass()
+			listedAC = &ac
+		}
+	}
+	s.Require().NotNil(listedAC, "the finalized character is listed")
+	s.Equal(foldedAC, *listedAC, "ListCharacters")
+
+	stored, err := s.server.RedisClient().Get(ctx, "character:"+characterID).Result()
+	s.Require().NoError(err)
+	s.NotContains(stored, "armor_class", "no record rpg-api writes carries an armour class")
 }
 
 func (s *CharacterCreationSuite) TestCreateBarbarian() {

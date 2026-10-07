@@ -26,6 +26,7 @@ const (
 	draftNotFoundMessage       = "draft not found"
 	errConvertCharacterToProto = "failed to convert character to proto"
 	errCharacterRequired       = "character is required"
+	errArmorClassNotProjected  = "armour class was not projected"
 )
 
 // HandlerConfig holds dependencies for the handler
@@ -643,7 +644,7 @@ func (h *Handler) FinalizeDraft(
 	}
 
 	// Convert toolkit character to proto
-	protoChar, err := convertCharacterToProto(output.Character)
+	protoChar, err := convertCharacterToProto(output.Character, output.ArmorClass)
 	if err != nil {
 		return nil, apierr.WrapWithCode(err, apierr.CodeInternal, errConvertCharacterToProto)
 	}
@@ -679,8 +680,15 @@ func (h *Handler) GetCharacter(
 		return nil, status.Error(codes.Internal, "failed to get character")
 	}
 
-	// Convert character data, including nested Appearance, to proto.
-	protoCharacter := ConvertCharacterDataToProto(result.Character.Data)
+	// Convert character data, including nested Appearance, to proto, with
+	// the armour class the orchestrator folded at this read.
+	protoCharacter, err := ConvertCharacterDataToProto(&CharacterProtoInput{
+		Data:       result.Character.Data,
+		ArmorClass: result.ArmorClass,
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to get character")
+	}
 
 	return &dnd5ev1alpha1.GetCharacterResponse{
 		Character: protoCharacter,
@@ -709,13 +717,24 @@ func (h *Handler) ListCharacters(
 	// Call orchestrator
 	output, err := h.characterService.ListCharacters(ctx, input)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, listCharactersRPCError(err)
 	}
 
-	// Convert character entities to proto Character
+	// Convert character entities to proto Character. Each armour class is the
+	// orchestrator's fold for that character; the list is whole or it fails,
+	// never a row with a missing or invented armour class (#538 R11).
 	protoCharacters := make([]*dnd5ev1alpha1.Character, 0, len(output.Characters))
 	for _, charEntity := range output.Characters {
-		protoChar := ConvertCharacterDataToProto(charEntity.Data)
+		if charEntity == nil || charEntity.Data == nil {
+			return nil, listCharactersRPCError(errors.New(errCharacterRequired))
+		}
+		protoChar, convErr := ConvertCharacterDataToProto(&CharacterProtoInput{
+			Data:       charEntity.Data,
+			ArmorClass: output.ArmorClasses[charEntity.Data.ID],
+		})
+		if convErr != nil {
+			return nil, listCharactersRPCError(convErr)
+		}
 		protoCharacters = append(protoCharacters, protoChar)
 	}
 
@@ -996,7 +1015,8 @@ func (h *Handler) GetCharacterInventory(
 	}
 
 	// Get character data - equipment slots are part of character data
-	charResult, err := h.characterService.GetCharacter(ctx, &character.GetCharacterInput{
+	// Inventory carries no armour class, so it reads the unfolded record.
+	charResult, err := h.characterService.GetCharacterRecord(ctx, &character.GetCharacterRecordInput{
 		CharacterID: req.CharacterId,
 	})
 	if err != nil {
@@ -1057,7 +1077,13 @@ func (h *Handler) EquipItem(
 
 	// Convert the orchestrator's actual persisted post-state. There is no
 	// fallible repository read after the successful write.
-	protoChar := ConvertCharacterDataToProto(equipResult.Character.Data)
+	protoChar, err := ConvertCharacterDataToProto(&CharacterProtoInput{
+		Data:       equipResult.Character.Data,
+		ArmorClass: equipResult.ArmorClass,
+	})
+	if err != nil {
+		return nil, equipmentRPCError(err)
+	}
 	// Build response
 	response := &dnd5ev1alpha1.EquipItemResponse{
 		Character: protoChar,
@@ -1105,10 +1131,28 @@ func (h *Handler) UnequipItem(
 		return nil, equipmentRPCError(errors.New("unequip item returned no persisted character"))
 	}
 
-	protoChar := ConvertCharacterDataToProto(unequipResult.Character.Data)
+	protoChar, err := ConvertCharacterDataToProto(&CharacterProtoInput{
+		Data:       unequipResult.Character.Data,
+		ArmorClass: unequipResult.ArmorClass,
+	})
+	if err != nil {
+		return nil, equipmentRPCError(err)
+	}
 	return &dnd5ev1alpha1.UnequipItemResponse{
 		Character: protoChar,
 	}, nil
+}
+
+// listCharactersRPCError keeps a coded error's own code and message -- the
+// orchestrator's refusal names the character whose sheet could not be
+// projected -- and turns anything uncoded into INTERNAL without echoing its
+// cause as transport text.
+func listCharactersRPCError(err error) error {
+	var coded *apierr.Error
+	if errors.As(err, &coded) {
+		return apierr.ToGRPCError(err)
+	}
+	return apierr.ToGRPCError(apierr.WrapWithCode(err, apierr.CodeInternal, character.CharacterDataUnavailableMessage))
 }
 
 func equipmentRPCError(err error) error {

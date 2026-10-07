@@ -54,6 +54,7 @@ func (s *ReferenceTombSuite) load() *tkencounter.Encounter {
 	enc, err := tkencounter.LoadEncounter(&tkencounter.LoadEncounterInput{
 		Data:       *s.tomb.World,
 		Initiative: compileOnly.Initiative, Standing: compileOnly.Standing, Sight: compileOnly.Sight, Equipment: compileOnly.Equipment,
+		Sheets:     compileOnly.Sheets,
 		TurnDriver: compileOnly.TurnDriver, Striker: compileOnly.Striker, Mover: compileOnly.Mover,
 		// Nobody is in this world, so no clock can advance in it — the same
 		// argument the refusing Striker beside it is making.
@@ -307,6 +308,21 @@ func (monsterFirst) RollInitiative(_ []tkencounter.MemberID) ([]tkencounter.Memb
 // hand-writing its own.
 var compileOnly = tkencounter.CompileOnlySetup(tkencounter.FieldInput{}, nil)
 
+// standStillSheets is the Sheets a test needs once it places members: every
+// member asked about stands still, carries no attack and follows no strategy
+// -- exactly the facts these members had when encounter stored them, and the
+// compile-only Sheets refuses to answer for any member at all
+// (ErrRefusingSheets).
+type standStillSheets struct{}
+
+func (standStillSheets) Sheets(members []tkencounter.MemberID) (map[tkencounter.MemberID]tkencounter.SheetFacts, error) {
+	out := make(map[tkencounter.MemberID]tkencounter.SheetFacts, len(members))
+	for _, id := range members {
+		out[id] = tkencounter.SheetFacts{}
+	}
+	return out, nil
+}
+
 // everyoneStanding is the Standing a test needs once it places members:
 // nobody is down, and every member is up, conscious, in contact and waiting.
 // Encounter's compile-only Standing refuses to assess members
@@ -370,6 +386,7 @@ func TestAFightsUnplayedTurnPassesWithoutTouchingTheStriker(t *testing.T) {
 		Standing:   everyoneStanding{},
 		Sight:      allSeeing{},
 		Equipment:  tkencounter.UnobservedEquipment{},
+		Sheets:     standStillSheets{},
 		TurnDriver: tkencounter.PassDriver{},
 		Striker:    tkencounter.RefusingStriker{},
 		Mover:      tkencounter.RefusingMover{},

@@ -74,11 +74,52 @@ type ProjectLoadedCharacterOutput struct {
 	View *View
 
 	// ArmorClass is the toolkit's folded armour class for the projected sheet —
-	// the number equip and unequip persist. View.Equipment's AC total is a second
+	// the number every response carries; nothing persists it. View.Equipment's AC total is a second
 	// fold of the same sheet under the same installed context (EquipmentView
 	// folds again); the two agree because the AC chain is deterministic, not
 	// because one value feeds both.
 	ArmorClass *combat.ACBreakdown
+}
+
+type projectArmorClassInput struct {
+	Data *tkcharacter.Data
+}
+
+type projectArmorClassOutput struct {
+	ArmorClass *combat.ACBreakdown
+}
+
+// projectArmorClass is every stored sheet's armour class on its way into a
+// response, folded through the resolution door -- the same door equip and
+// unequip fold through. rpg-api stores no armour class, so this is the only
+// answer there is. The door attaches the sheet strictly, so an unreadable
+// sheet is refused, and a refusal is an error: no fallback number exists to
+// send instead (rpg-project#538 R7, R11).
+//
+// It asks the door alone, not projectLoadedCharacter: the status half of that
+// view is a separate toolkit question with its own refusals, and a response
+// carrying only the legacy CombatStats must not fail on a question it never
+// asked.
+func projectArmorClass(
+	ctx context.Context,
+	input *projectArmorClassInput,
+) (*projectArmorClassOutput, error) {
+	if input == nil {
+		return nil, apierr.InvalidArgument("input is required")
+	}
+	if input.Data == nil {
+		return nil, apierr.InvalidArgument("character data is required")
+	}
+
+	projected, err := resolution.ProjectCharacter(ctx, &resolution.ProjectCharacterInput{Character: input.Data})
+	if err != nil {
+		return nil, fmt.Errorf("project armour class: %w", err)
+	}
+	if projected == nil || projected.ArmorClass == nil {
+		return nil, errors.New(errViewFoldMissing)
+	}
+
+	return &projectArmorClassOutput{ArmorClass: projected.ArmorClass}, nil
 }
 
 type loadCharacterInput struct {
@@ -89,6 +130,11 @@ type loadCharacterOutput struct {
 	Character *tkcharacter.Character
 	Data      *tkcharacter.Data
 }
+
+type projectArmorClassFunc func(
+	context.Context,
+	*projectArmorClassInput,
+) (*projectArmorClassOutput, error)
 
 type projectLoadedCharacterFunc func(
 	context.Context,

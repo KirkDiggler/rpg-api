@@ -131,6 +131,21 @@ func (mr *MockServiceMockRecorder) GetCharacter(ctx, input any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCharacter", reflect.TypeOf((*MockService)(nil).GetCharacter), ctx, input)
 }
 
+// GetCharacterRecord mocks base method.
+func (m *MockService) GetCharacterRecord(ctx context.Context, input *character.GetCharacterRecordInput) (*character.GetCharacterRecordOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCharacterRecord", ctx, input)
+	ret0, _ := ret[0].(*character.GetCharacterRecordOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetCharacterRecord indicates an expected call of GetCharacterRecord.
+func (mr *MockServiceMockRecorder) GetCharacterRecord(ctx, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCharacterRecord", reflect.TypeOf((*MockService)(nil).GetCharacterRecord), ctx, input)
+}
+
 // GetDraft mocks base method.
 func (m *MockService) GetDraft(ctx context.Context, input *character.GetDraftInput) (*character.GetDraftOutput, error) {
 	m.ctrl.T.Helper()

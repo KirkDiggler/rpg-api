@@ -51,7 +51,7 @@ func dualWieldingFighter(
 			abilities.STR: 16, abilities.DEX: 14, abilities.CON: 14,
 			abilities.INT: 10, abilities.WIS: 12, abilities.CHA: 8,
 		},
-		HitPoints: 24, MaxHitPoints: 28, ArmorClass: 16, ProficiencyBonus: 2,
+		HitPoints: 24, MaxHitPoints: 28, ProficiencyBonus: 2,
 		WeaponProficiencies: []proficiencies.Weapon{proficiencies.WeaponMartial},
 		Inventory: []tkcharacter.InventoryItemData{
 			{Type: shared.EquipmentTypeWeapon, ID: weapons.Shortsword, Quantity: 1},

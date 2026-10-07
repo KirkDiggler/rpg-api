@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,7 +48,7 @@ func populatedCharacter() *entities.Character {
 	zero := uint32(0)
 	return &entities.Character{Data: &tkcharacter.Data{
 		ID: "char-a", PlayerID: "owner-a", Name: "Stored name", Level: 3, ClassID: "fighter", RaceID: "human",
-		HitPoints: 7, MaxHitPoints: 23, ArmorClass: 17,
+		HitPoints: 7, MaxHitPoints: 23,
 		EquipmentSlots: tkcharacter.EquipmentSlots{tkcharacter.SlotMainHand: "item-a"},
 		Resources:      map[coreResources.ResourceKey]tkcharacter.RecoverableResourceData{"opaque-pool": {Current: 2, Maximum: 5}},
 		Conditions:     []json.RawMessage{json.RawMessage(`{"opaque":"payload","count":2}`)},
@@ -193,14 +194,12 @@ func (s *CharacterRedisContractSuite) TestPatchChangesOnlyEquipmentAndVersion() 
 	slots := tkcharacter.EquipmentSlots{tkcharacter.SlotOffHand: "item-b"}
 	out, err := s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{
 		CharacterID: "char-a", ExpectedVersion: before.Version, ExpectedEquipmentSlots: in.Data.EquipmentSlots,
-		EquipmentSlots: slots, ArmorClass: 31,
+		EquipmentSlots: slots,
 	})
 	s.Require().NoError(err)
 	s.Require().True(out.Applied)
-	// 31 is supplied, never derived from item-b by this adapter.
 	expected := populatedCharacter()
 	expected.Data.EquipmentSlots = tkcharacter.EquipmentSlots{tkcharacter.SlotOffHand: "item-b"}
-	expected.Data.ArmorClass = 31
 	s.Equal(expected, out.Character)
 	s.NotEqual(before.Version, out.Version)
 	stored := s.get("char-a")
@@ -209,6 +208,34 @@ func (s *CharacterRedisContractSuite) TestPatchChangesOnlyEquipmentAndVersion() 
 	slots[tkcharacter.SlotOffHand] = "mutated-input"
 	s.Equal(expected, s.get("char-a").Character)
 	s.Zero(s.server.TTL("character:char-a"))
+}
+
+// TestAnOldRecordCarryingArmorClassLoadsAndIsNeverWrittenBack pins R13 of
+// rpg-project#538: a record saved when rpg-api stored an armour class loads
+// with the key ignored, and no write -- create or equipment patch -- puts an
+// armour class back. The fold behind the resolution door is the only answer.
+func (s *CharacterRedisContractSuite) TestAnOldRecordCarryingArmorClassLoadsAndIsNeverWrittenBack() {
+	in := populatedCharacter()
+	s.create(in)
+	created, err := s.server.Get("character:char-a")
+	s.Require().NoError(err)
+	s.NotContains(created, "armor_class", "a created record carries no armour class")
+
+	old := strings.Replace(created, `"data":{`, `"data":{"armor_class":17,`, 1)
+	s.Require().NotEqual(created, old, "the fixture must carry the old key")
+	s.Require().NoError(s.server.Set("character:char-a", old))
+
+	loaded := s.get("char-a")
+	s.Equal(in, loaded.Character, "the old key is ignored; nothing else about the record changes")
+
+	_, err = s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{
+		CharacterID: "char-a", ExpectedVersion: loaded.Version, ExpectedEquipmentSlots: in.Data.EquipmentSlots,
+		EquipmentSlots: tkcharacter.EquipmentSlots{tkcharacter.SlotOffHand: "item-b"},
+	})
+	s.Require().NoError(err)
+	patched, err := s.server.Get("character:char-a")
+	s.Require().NoError(err)
+	s.NotContains(patched, "armor_class", "a patched record drops the old armour class")
 }
 
 func (s *CharacterRedisContractSuite) TestMissingRecordsKeepNotFoundIdentity() {
@@ -226,7 +253,7 @@ func (s *CharacterRedisContractSuite) TestPatchRejectsNullDataWithoutWriting() {
 	const corruptRecord = `{"data":null}`
 	s.Require().NoError(s.server.Set("character:char-a", corruptRecord))
 	out, err := s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{
-		CharacterID: "char-a", ExpectedVersion: "version", ArmorClass: 31,
+		CharacterID: "char-a", ExpectedVersion: "version",
 	})
 	s.Require().True(apierr.IsInternal(err), "%v", err)
 	s.Nil(out)
@@ -319,7 +346,7 @@ func (s *CharacterRedisContractSuite) TestTransactionFailuresPropagateWithoutCla
 	s.ErrorIs(err, cause)
 	_, err = s.repo.Delete(s.ctx, characterrepo.DeleteInput{ID: "char-a"})
 	s.ErrorIs(err, cause)
-	_, err = s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{CharacterID: "char-a", ExpectedVersion: version, ExpectedEquipmentSlots: in.Data.EquipmentSlots, ArmorClass: 31})
+	_, err = s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{CharacterID: "char-a", ExpectedVersion: version, ExpectedEquipmentSlots: in.Data.EquipmentSlots})
 	s.ErrorIs(err, cause)
 	s.Equal(in, s.get("char-a").Character)
 	s.False(s.server.Exists("character:new"))
@@ -370,7 +397,7 @@ func (s *CharacterRedisContractSuite) TestEquipmentConditionReplacementIsAtomicA
 	_, err = s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: &entities.Character{Data: &concurrent}})
 	s.Require().NoError(err)
 	cleared := []json.RawMessage{}
-	input := characterrepo.PatchEquipmentInput{CharacterID: original.Data.ID, ExpectedVersion: before.Version, ExpectedEquipmentSlots: original.Data.EquipmentSlots, EquipmentSlots: tkcharacter.EquipmentSlots{}, ArmorClass: 12, Conditions: &cleared}
+	input := characterrepo.PatchEquipmentInput{CharacterID: original.Data.ID, ExpectedVersion: before.Version, ExpectedEquipmentSlots: original.Data.EquipmentSlots, EquipmentSlots: tkcharacter.EquipmentSlots{}, Conditions: &cleared}
 	raced, err := s.repo.PatchEquipment(s.ctx, input)
 	s.Require().NoError(err)
 	s.False(raced.Applied)

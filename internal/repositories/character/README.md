@@ -14,8 +14,10 @@ The Redis adapter stores `entities.Character`, a wrapper around canonical toolki
 - `ListByPlayerID` and `ListBySessionID` resolve members from their respective Redis sets.
   Missing record IDs are lazily removed; malformed records return an error. List order
   is not promised.
-- `PatchEquipment` changes only supplied EquipmentSlots and cached ArmorClass. WATCH
-  guards the transaction. Stale equipment returns ABORTED; a changed version with the
+- `PatchEquipment` changes only the supplied EquipmentSlots and, when supplied (non-nil),
+  Conditions; an empty slice clears them. No armour class is stored: an old record
+  carrying `armor_class` loads with the key ignored and drops it on this write
+  (rpg-project#538 R13). WATCH guards the transaction. Stale equipment returns ABORTED; a changed version with the
   same equipment returns the latest record with Applied=false so the caller can
   reproject; success returns the patched record/version. No AC calculation occurs here.
 
