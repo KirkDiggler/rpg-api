@@ -65,6 +65,39 @@ func TestProjectView_StrictLevel3Fighter(t *testing.T) {
 	require.Equal(t, "longsword", view.Equipment.Items[0].ItemID)
 }
 
+// TestProjectView_AMonksEquipmentCarriesTheWisdomInclusiveAC pins the character
+// view's AC to the toolkit's resolution door: Unarmored Defense reads WIS
+// through the cast only resolution installs, so a host-attached sheet's
+// EquipmentView refuses for this monk (gamectx.ErrNotInCast) and, before that
+// refusal existed, answered 13 (rpg-toolkit#1276, #1965).
+func TestProjectView_AMonksEquipmentCarriesTheWisdomInclusiveAC(t *testing.T) {
+	data := level3FighterData(t, "monk-3")
+	data.ClassID = classes.Monk
+	data.Levels = levelfixture.Synthetic(classes.Monk, 3)
+	data.AbilityScores = shared.AbilityScores{
+		abilities.STR: 10,
+		abilities.DEX: 16,
+		abilities.CON: 12,
+		abilities.INT: 10,
+		abilities.WIS: 14,
+		abilities.CHA: 8,
+	}
+	data.Inventory = []tkcharacter.InventoryItemData{{Type: "weapon", ID: "quarterstaff", Quantity: 1}}
+	data.EquipmentSlots = tkcharacter.EquipmentSlots{tkcharacter.SlotMainHand: "quarterstaff"}
+	data.Features = nil
+	unarmoredDefense, err := (&conditions.UnarmoredDefenseCondition{
+		MemberID: data.ID,
+		Type:     conditions.UnarmoredDefenseMonk,
+	}).ToJSON()
+	require.NoError(t, err)
+	data.Conditions = []json.RawMessage{unarmoredDefense}
+
+	out, err := ProjectView(context.Background(), &ProjectViewInput{Data: data})
+	require.NoError(t, err)
+	require.NotNil(t, out.View.Equipment)
+	require.Equal(t, 15, out.View.Equipment.ACTotal, "10 base + 3 DEX + 2 WIS")
+}
+
 func TestCharacterDataUnavailableRetainsDetailedCause(t *testing.T) {
 	const secret = "PRIVATE_CHARACTER_JSON_MARKER"
 	wrapped := characterDataUnavailable(errors.New("malformed feature: " + secret))

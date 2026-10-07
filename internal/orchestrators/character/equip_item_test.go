@@ -798,6 +798,93 @@ func (s *EquipItemTestSuite) TestEquipItem_SyncsStoredArmorClass() {
 	s.Assert().Equal(16, persisted.ArmorClass, "stored ArmorClass must be refreshed to the real EffectiveAC total")
 }
 
+// unarmouredMonk carries Unarmored Defense (monk) with DEX 16 and WIS 14, so
+// its folded AC is 15 = 10 + DEX 3 + WIS 2. The stored 10 is deliberately
+// stale. Unarmored Defense reads WIS through the cast resolution installs; a
+// fold on a host-attached sheet refuses (gamectx.ErrNotInCast) and, before
+// that refusal existed, silently answered 13 (rpg-toolkit#1276, #1965).
+func (s *EquipItemTestSuite) unarmouredMonk() *entities.Character {
+	entity := s.fighterWithLongswordAndShield()
+	entity.Data.Name = "Test Monk"
+	entity.Data.ClassID = "monk"
+	entity.Data.AbilityScores = shared.AbilityScores{
+		abilities.STR: 10,
+		abilities.DEX: 16,
+		abilities.CON: 12,
+		abilities.INT: 10,
+		abilities.WIS: 14,
+		abilities.CHA: 8,
+	}
+	entity.Data.Inventory = []character.InventoryItemData{
+		{Type: "weapon", ID: "quarterstaff", Quantity: 1},
+	}
+	unarmoredDefense, err := (&conditions.UnarmoredDefenseCondition{
+		MemberID: s.testCharacterID,
+		Type:     conditions.UnarmoredDefenseMonk,
+	}).ToJSON()
+	s.Require().NoError(err)
+	entity.Data.Conditions = []json.RawMessage{unarmoredDefense}
+	return entity
+}
+
+// TestEquipItem_AMonkSavesTheWisdomInclusiveAC is the rpg-toolkit#1965 tier-1
+// #2 regression: a monk's equip persists 10 + DEX + WIS, the number the
+// toolkit's resolution door folds, and the returned view carries the same one.
+func (s *EquipItemTestSuite) TestEquipItem_AMonkSavesTheWisdomInclusiveAC() {
+	entity := s.unarmouredMonk()
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
+
+	var persisted *character.Data
+	s.mockCharacterRepo.EXPECT().
+		PatchEquipment(s.ctx, gomock.Any()).
+		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
+			output := s.appliedPatch(entity, input)
+			persisted = output.Character.Data
+			return output, nil
+		})
+
+	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
+		CharacterID: s.testCharacterID,
+		ItemID:      "quarterstaff",
+		Slot:        character.SlotMainHand,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(persisted)
+	s.Equal(15, persisted.ArmorClass, "10 base + 3 DEX + 2 WIS")
+	s.Require().NotNil(out.View)
+	s.Require().NotNil(out.View.Equipment)
+	s.Equal(15, out.View.Equipment.ACTotal, "the view's AC is the same fold the sheet stored")
+}
+
+// TestUnequipItem_AMonkSavesTheWisdomInclusiveAC is the unequip twin: both
+// verbs write through one path, so both must store the folded AC.
+func (s *EquipItemTestSuite) TestUnequipItem_AMonkSavesTheWisdomInclusiveAC() {
+	entity := s.unarmouredMonk()
+	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotMainHand: "quarterstaff"}
+	s.mockCharacterRepo.EXPECT().
+		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
+
+	var persisted *character.Data
+	s.mockCharacterRepo.EXPECT().
+		PatchEquipment(s.ctx, gomock.Any()).
+		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
+			output := s.appliedPatch(entity, input)
+			persisted = output.Character.Data
+			return output, nil
+		})
+
+	_, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
+		CharacterID: s.testCharacterID,
+		Slot:        character.SlotMainHand,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(persisted)
+	s.Equal(15, persisted.ArmorClass, "10 base + 3 DEX + 2 WIS")
+}
+
 // recordingNotifier stands in for the thing that finds a player's live
 // encounter, so these tests can ask whether the doorbell rang and what it
 // carried — while this package still knows nothing about encounters.

@@ -116,12 +116,16 @@ The method shape is:
 
 1. `characterRepo.Get` returns the entity plus an opaque record version.
 2. The orchestrator copies `character.Data`, clones the retained EquipmentSlots map,
-   strictly calls `character.Load` + `character.Attach`, and requires complete detached
-   identity, EquipmentView, and StatusView projections before mutation. PlayerID,
+   strictly calls `character.Load` (no bus; rpg-api never attaches a sheet), and
+   requires complete detached identity, EquipmentView, and StatusView projections
+   before mutation. The EquipmentView and the folded armour class come from
+   `resolution.ProjectCharacter` over the sheet's record. PlayerID,
    ClassID, and RaceID are required. Malformed conditions, features, catalog items,
    resources, or status descriptors fail before any write.
 3. The toolkit `EquipItem`/`UnequipItem` verb mutates the isolated sheet. The complete
-   post-view is composed before persistence; there is no fallible projection afterward.
+   post-view and its folded armour class are composed before persistence; a refused
+   fold refuses the equip (no fallback AC is written), and there is no fallible
+   projection afterward.
 4. `characterRepo.PatchEquipment` receives only CharacterID, expected version, expected
    pre-mutation slots, post-mutation slots, and toolkit-computed cached ArmorClass. It
    never receives a full replacement entity from this path.
@@ -140,7 +144,8 @@ expected equipment map and opaque version against the latest JSON record. The co
 record is decoded from the latest value and changes only:
 
 - `EquipmentSlots`, cloned from the toolkit's post-mutation occupancy; and
-- cached `ArmorClass`, copied from `EffectiveAC(ctx).Total`.
+- cached `ArmorClass`, copied from the post-state `resolution.ProjectCharacter`
+  `ArmorClass.Total` (a monk stores 10 + DEX + WIS; rpg-toolkit#1276, #1965).
 
 HP, resources, conditions, action economy, inventory, identity, metadata, and nested
 `Data.Appearance` come from the latest stored toolkit data and are not replaced by the

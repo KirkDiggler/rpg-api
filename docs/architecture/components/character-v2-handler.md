@@ -36,9 +36,11 @@ characters return the same canonical NOT_FOUND code and text; a malformed foreig
 still returns NOT_FOUND because private projection is never attempted before ownership.
 
 `GetCharacterData` then calls the orchestrator package's `ProjectView`: strict toolkit
-`character.Load` + `character.Attach`, followed by detached `EquipmentView` and
-`StatusView`. Malformed condition/feature/item/resource state or an unknown status
-descriptor becomes INTERNAL, never a forgiving partial response.
+`character.Load` (no bus), the equipment view and folded armour class from
+`resolution.ProjectCharacter` (the toolkit door that installs the cast Unarmored
+Defense reads), and `StatusView` from the loaded sheet. Malformed
+condition/feature/item/resource state, an unknown status descriptor, or a refused fold
+becomes INTERNAL, never a forgiving partial response.
 
 Equip/Unequip receive the actual persisted post-state entity and an already-composed
 matching detached View from the orchestrator. The handler performs no repository re-fetch
