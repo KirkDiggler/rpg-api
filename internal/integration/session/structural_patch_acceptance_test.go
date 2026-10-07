@@ -3,6 +3,7 @@ package session_test
 import (
 	"context"
 	_ "embed"
+	"math"
 	"testing"
 	"time"
 
@@ -63,6 +64,19 @@ func (s *StructuralPatchAcceptanceSuite) TestCompiledDoorDiscoveryReplacesOpenin
 	before, err := h.handler.GetKnowledge(ctx, request)
 	s.Require().NoError(err)
 	s.Require().Len(before.Atlas.StructuralWalls, 1)
+	wall := before.Atlas.StructuralWalls[0]
+	s.Equal("wall", wall.Id)
+	s.Equal("dnd5e:env:dark-fortress:45_wall_01", wall.Ref)
+	feetPerSceneUnit := 5 / math.Sqrt(3)
+	s.Require().NotNil(wall.From)
+	s.Require().NotNil(wall.To)
+	s.InDelta(7.5, wall.From.X, 1e-12)
+	s.InDelta(-3*feetPerSceneUnit, wall.From.Y, 1e-12)
+	s.InDelta(7.5, wall.To.X, 1e-12)
+	s.InDelta(3*feetPerSceneUnit, wall.To.Y, 1e-12)
+	s.InDelta(2*feetPerSceneUnit, wall.Height, 1e-12)
+	s.InDelta(0.25*feetPerSceneUnit, wall.Thickness, 1e-12)
+	s.Zero(wall.Elevation)
 	s.Empty(before.Atlas.StructuralWalls[0].Openings)
 	s.Empty(before.Atlas.StructuralDoors)
 	s.Len(before.Atlas.Cells, 5, "door-only concealment must not remove its support floor")
@@ -88,6 +102,20 @@ func (s *StructuralPatchAcceptanceSuite) TestCompiledDoorDiscoveryReplacesOpenin
 	s.Equal("wall", patch.WallId)
 	s.Require().Len(patch.Openings, 1)
 	s.Equal("gap", patch.Openings[0].Id)
+	s.InDelta(3*feetPerSceneUnit, patch.Openings[0].Position, 1e-12)
+	s.InDelta(2*feetPerSceneUnit, patch.Openings[0].Width, 1e-12)
+	door := reveal.StructuralDoors[0]
+	s.Equal("structural-patch-acceptance/gate", door.Id)
+	s.Equal("dnd5e:env:dark-fortress:wall_door_double_01", door.Ref)
+	s.Require().NotNil(door.From)
+	s.Require().NotNil(door.To)
+	s.InDelta(7.5, door.From.X, 1e-12)
+	s.InDelta(-feetPerSceneUnit, door.From.Y, 1e-12)
+	s.InDelta(7.5, door.To.X, 1e-12)
+	s.InDelta(feetPerSceneUnit, door.To.Y, 1e-12)
+	s.InDelta(2*feetPerSceneUnit, door.Height, 1e-12)
+	s.InDelta(0.25*feetPerSceneUnit, door.Thickness, 1e-12)
+	s.Zero(door.Elevation)
 	after, err := h.handler.GetKnowledge(ctx, request)
 	s.Require().NoError(err)
 	patched := proto.Clone(before.Atlas.StructuralWalls[0]).(*sessionpb.AtlasStructuralWall)

@@ -62,6 +62,9 @@ func (s *StructuralConversionSuite) TestSnapshotCarriesAllFieldsWithoutChangingU
 	out := AtlasToProto(&in)
 	s.checkRows(out.StructuralWalls, out.StructuralDoors)
 	s.Empty(out.RoomSceneJson)
+	// Document ownership/input preservation. Current cross-type allocation and
+	// value-field copies already preclude pointer aliasing; this is not an
+	// independent mutation test of an alias-prone implementation.
 	out.StructuralWalls[0].From.X = 999
 	out.StructuralWalls[0].Openings[0].Width = 999
 	out.StructuralDoors[0].To.Y = 999
@@ -115,6 +118,8 @@ func (s *StructuralConversionSuite) TestBothRevealKindsPreserveOpeningReplacemen
 			s.Empty(got[1].Openings)
 			s.Equal("wall-c", got[2].WallId)
 			s.Empty(got[2].Openings)
+			// Contract documentation: protobuf rows are independently allocated
+			// from SDK value rows; the SDK input remains untouched.
 			got[0].Openings[0].Width = 999
 			s.Equal(2.75, patches[0].Openings[0].Width)
 		})
