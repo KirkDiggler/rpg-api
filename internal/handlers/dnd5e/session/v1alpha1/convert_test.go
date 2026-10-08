@@ -1056,6 +1056,33 @@ func TestRollCalculationToProto_FieldForFieldOrderPresenceAndIsolation(t *testin
 	require.Zero(t, *in.Components[0].Modifier, "the proto owns its optional scalar")
 }
 
+// A target's answer (rpg-project#539) is its own modifier-only line, sourced
+// to the rule that gave it and labeled with what it did. Nothing on the wire
+// is new for it: the label and the signed change ride the ordinary Roll
+// projection, and no multiplier is fabricated from the label.
+func TestDamageComponentsToProto_TargetAnswerLineRidesRoll(t *testing.T) {
+	change := -7
+
+	out, err := damageComponentsToProto([]sdk.DamageComponent{{
+		Source: "trait",
+		Roll: sdk.RollComponent{
+			Source:   sdk.RollSource{Ref: "dnd5e:traits:poison_immunity", Name: "Poison Immunity", Label: "immune"},
+			Modifier: &change,
+		},
+		DamageType: sdk.DamagePoison,
+	}})
+	require.NoError(t, err)
+	require.Len(t, out, 1, "one line in, one line out")
+
+	line := out[0]
+	require.Equal(t, "immune", line.GetRoll().GetSource().GetLabel())
+	require.Equal(t, "dnd5e:traits:poison_immunity", line.GetRoll().GetSource().GetRef())
+	require.NotNil(t, line.GetRoll().Modifier)
+	require.Equal(t, int32(-7), line.GetRoll().GetModifier())
+	require.Nil(t, line.GetRoll().GetDice())
+	require.Nil(t, line.Multiplier, "the label is the answer; no factor is invented")
+}
+
 func TestRollDamageComponentToProto_NewAndLegacyRepresentationsNeverMix(t *testing.T) {
 	zeroModifier := 0
 	zeroMultiplier := 0.0
