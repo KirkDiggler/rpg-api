@@ -815,6 +815,12 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 	// that happened and could not be read.
 	case sdk.EventConcentrationEnded:
 		return sessionpb.EventKind_EVENT_KIND_CONCENTRATION_ENDED
+	// The equip and rest beats (rpg-project#542). Both land here and in
+	// setEventBody in the same change, for the reason above.
+	case sdk.EventEquipmentChanged:
+		return sessionpb.EventKind_EVENT_KIND_EQUIPMENT_CHANGED
+	case sdk.EventRested:
+		return sessionpb.EventKind_EVENT_KIND_RESTED
 	default:
 		return sessionpb.EventKind_EVENT_KIND_UNKNOWN
 	}
@@ -1472,6 +1478,23 @@ func setWorldEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			Spell:  spellRefToProto(b.Spell),
 			Reason: b.Reason,
 		}}
+	case sdk.EquipmentChangedBody:
+		change, err := equipmentChangeToProto(b.Change)
+		if err != nil {
+			return err
+		}
+		evt.Body = &sessionpb.Event_EquipmentChanged{EquipmentChanged: &sessionpb.EquipmentChanged{
+			Member: b.Member,
+			Slot:   b.Slot,
+			Item:   b.Item,
+			Change: change,
+		}}
+	case sdk.RestedBody:
+		rested, err := restedToProto(&b)
+		if err != nil {
+			return err
+		}
+		evt.Body = &sessionpb.Event_Rested{Rested: rested}
 	case sdk.RollWindowOpenedBody:
 		// A roll stopped to ask (rpg-project#398). The d20 is already on the
 		// table and the fight is waiting on the one member who rolled it.

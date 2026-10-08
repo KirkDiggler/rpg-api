@@ -14,7 +14,6 @@ not recalculated. Tests exercise the real adapters with miniredis.
 | Character `Create`, `Get` | Populated record equality (resources, conditions, economy, equipment, optional appearance), stable version, duplicate refusal without overwrite/reindex, detached nested reads, no TTL | JSON representation follows canonical tags, not a new universal nil/empty guarantee |
 | Character `Update`, `Delete` | Read-after-write equality, changed version, player-index movement/removal/assignment (raw set checked immediately after Delete, before lazy list cleanup), neighbor preservation, missing/invalid records | General Update remains full-record last-writer behavior, not optimistic concurrency; null-Data stored envelopes can panic in Update (#1057) |
 | Character `ListByPlayerID`, `ListBySessionID` | Index-key isolation, record resolution, missing-index empty result, stale-ID cleanup, decode failure propagation, detached listed records | Session index is seeded directly: character CRUD does **not** maintain it; no membership writer is invented here |
-| Character `PatchEquipment` | Successful patch changes only supplied EquipmentSlots (no armour class is stored; an old `armor_class` key loads ignored and is dropped on patch, rpg-project#538 R13), full other-data equality, returned/stored version agreement, caller mutation isolation, missing/invalid/syntactically malformed record and transaction errors; INTERNAL refusal of null Data without writing | Existing `redis_equipment_test.go` retains unrelated-revision/no-write/retry and stale-equipment ABORTED cases; real concurrent WATCH invalidation/retry exhaustion is not newly proved |
 | Draft `Create`, `Get`, `GetByPlayerID` | Populated data/choices/ability scores, generated or supplied ID, player replacement deletes old record, another player's distinct-ID record survives, detached reads, missing/malformed records | Existing `redis_appearance_test.go` retains full appearance and present-zero optional-pointer evidence; supplied-ID collisions across owners overwrite a record (#1058) |
 | Draft `Update`, `Delete` | Same-owner update persists and refreshes 24-hour TTL; reads do not refresh; expiry makes record missing; GetByPlayerID lazily clears stale mapping; delete clears record/mapping without touching neighbor | Owner reassignment is not supported by mapping maintenance in Update and is not asserted as a feature; player mapping itself has no TTL |
 | Dice `Create`, `Get` | Supplied roll arrays/totals/metadata, nil versus empty dropped lists, timestamps, detached reads, entity/context isolation for ordinary IDs, default/custom Redis expiry, application-clock expiry cleanup, decode/read errors | No notation parsing or roll legality. Delimiter-bearing key components are not covered; no encoding/validation redesign |
@@ -77,8 +76,7 @@ production fix.
 [rpg-api#1057](https://github.com/KirkDiggler/rpg-api/issues/1057) records the separate
 semantic corruption gap: store `character:char-a = {"data":null}`; Get succeeds with
 nil Data, and Update with a valid incoming record panics at `redis.go:185` while reading
-`existing.Data.PlayerID`. PatchEquipment already returns INTERNAL without writing (now
-covered directly); Delete guards nil Data and can remove the record. Parent and reviewer
+`existing.Data.PlayerID`. Delete guards nil Data and can remove the record. Parent and reviewer
 reproduced the Update panic in report-only overlays. No passing test endorses the panic,
 and no claim is made that all syntactically valid corrupt records are rejected.
 

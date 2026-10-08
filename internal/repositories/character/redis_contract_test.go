@@ -187,32 +187,9 @@ func (s *CharacterRedisContractSuite) TestListsResolveStoredRecordsAndCleanStale
 	s.Equal(in, s.get("char-a").Character)
 }
 
-func (s *CharacterRedisContractSuite) TestPatchChangesOnlyEquipmentAndVersion() {
-	in := populatedCharacter()
-	s.create(in)
-	before := s.get("char-a")
-	slots := tkcharacter.EquipmentSlots{tkcharacter.SlotOffHand: "item-b"}
-	out, err := s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{
-		CharacterID: "char-a", ExpectedVersion: before.Version, ExpectedEquipmentSlots: in.Data.EquipmentSlots,
-		EquipmentSlots: slots,
-	})
-	s.Require().NoError(err)
-	s.Require().True(out.Applied)
-	expected := populatedCharacter()
-	expected.Data.EquipmentSlots = tkcharacter.EquipmentSlots{tkcharacter.SlotOffHand: "item-b"}
-	s.Equal(expected, out.Character)
-	s.NotEqual(before.Version, out.Version)
-	stored := s.get("char-a")
-	s.Equal(expected, stored.Character)
-	s.Equal(out.Version, stored.Version)
-	slots[tkcharacter.SlotOffHand] = "mutated-input"
-	s.Equal(expected, s.get("char-a").Character)
-	s.Zero(s.server.TTL("character:char-a"))
-}
-
 // TestAnOldRecordCarryingArmorClassLoadsAndIsNeverWrittenBack pins R13 of
 // rpg-project#538: a record saved when rpg-api stored an armour class loads
-// with the key ignored, and no write -- create or equipment patch -- puts an
+// with the key ignored, and no write -- create or update -- puts an
 // armour class back. The fold behind the resolution door is the only answer.
 func (s *CharacterRedisContractSuite) TestAnOldRecordCarryingArmorClassLoadsAndIsNeverWrittenBack() {
 	in := populatedCharacter()
@@ -228,14 +205,11 @@ func (s *CharacterRedisContractSuite) TestAnOldRecordCarryingArmorClassLoadsAndI
 	loaded := s.get("char-a")
 	s.Equal(in, loaded.Character, "the old key is ignored; nothing else about the record changes")
 
-	_, err = s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{
-		CharacterID: "char-a", ExpectedVersion: loaded.Version, ExpectedEquipmentSlots: in.Data.EquipmentSlots,
-		EquipmentSlots: tkcharacter.EquipmentSlots{tkcharacter.SlotOffHand: "item-b"},
-	})
+	_, err = s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: loaded.Character})
 	s.Require().NoError(err)
-	patched, err := s.server.Get("character:char-a")
+	updated, err := s.server.Get("character:char-a")
 	s.Require().NoError(err)
-	s.NotContains(patched, "armor_class", "a patched record drops the old armour class")
+	s.NotContains(updated, "armor_class", "an updated record drops the old armour class")
 }
 
 func (s *CharacterRedisContractSuite) TestMissingRecordsKeepNotFoundIdentity() {
@@ -245,23 +219,6 @@ func (s *CharacterRedisContractSuite) TestMissingRecordsKeepNotFoundIdentity() {
 	s.True(apierr.IsNotFound(err))
 	_, err = s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: populatedCharacter()})
 	s.True(apierr.IsNotFound(err))
-	_, err = s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{CharacterID: "missing", ExpectedVersion: "version"})
-	s.True(apierr.IsNotFound(err))
-}
-
-func (s *CharacterRedisContractSuite) TestPatchRejectsNullDataWithoutWriting() {
-	const corruptRecord = `{"data":null}`
-	s.Require().NoError(s.server.Set("character:char-a", corruptRecord))
-	out, err := s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{
-		CharacterID: "char-a", ExpectedVersion: "version",
-	})
-	s.Require().True(apierr.IsInternal(err), "%v", err)
-	s.Nil(out)
-	stored, readErr := s.server.Get("character:char-a")
-	s.Require().NoError(readErr)
-	s.Equal(corruptRecord, stored)
-	// Update does not share this guard: its pre-existing panic is #1057,
-	// not a behavior this test should endorse.
 }
 
 func (s *CharacterRedisContractSuite) TestMalformedPayloadIsNotMissing_AndListDoesNotDiscardIt() {
@@ -276,10 +233,6 @@ func (s *CharacterRedisContractSuite) TestMalformedPayloadIsNotMissing_AndListDo
 		},
 		func() error {
 			_, e := s.repo.ListBySessionID(s.ctx, characterrepo.ListBySessionIDInput{SessionID: "session-a"})
-			return e
-		},
-		func() error {
-			_, e := s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{CharacterID: "broken", ExpectedVersion: "v"})
 			return e
 		},
 	}
@@ -310,10 +263,6 @@ func (s *CharacterRedisContractSuite) TestInvalidInputsDoNotWrite() {
 	s.True(apierr.IsInvalidArgument(err))
 	_, err = s.repo.ListBySessionID(s.ctx, characterrepo.ListBySessionIDInput{})
 	s.True(apierr.IsInvalidArgument(err))
-	for _, in := range []characterrepo.PatchEquipmentInput{{}, {CharacterID: "char-a"}} {
-		_, err = s.repo.PatchEquipment(s.ctx, in)
-		s.True(apierr.IsInvalidArgument(err))
-	}
 	s.Empty(s.server.Keys())
 }
 
@@ -333,7 +282,6 @@ func (h characterWriteFailure) ProcessPipelineHook(_ redis.ProcessPipelineHook) 
 func (s *CharacterRedisContractSuite) TestTransactionFailuresPropagateWithoutClaimingSuccess() {
 	in := populatedCharacter()
 	s.create(in)
-	version := s.get("char-a").Version
 	cause := errors.New("injected transaction failure")
 	s.client.AddHook(characterWriteFailure{cause: cause})
 	fresh := populatedCharacter()
@@ -345,8 +293,6 @@ func (s *CharacterRedisContractSuite) TestTransactionFailuresPropagateWithoutCla
 	_, err = s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: changed})
 	s.ErrorIs(err, cause)
 	_, err = s.repo.Delete(s.ctx, characterrepo.DeleteInput{ID: "char-a"})
-	s.ErrorIs(err, cause)
-	_, err = s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{CharacterID: "char-a", ExpectedVersion: version, ExpectedEquipmentSlots: in.Data.EquipmentSlots})
 	s.ErrorIs(err, cause)
 	s.Equal(in, s.get("char-a").Character)
 	s.False(s.server.Exists("character:new"))
@@ -374,53 +320,10 @@ func (s *CharacterRedisContractSuite) TestStorageReadFailuresAreNotNotFound() {
 			_, e := s.repo.ListBySessionID(s.ctx, characterrepo.ListBySessionIDInput{SessionID: "session-a"})
 			return e
 		},
-		func() error {
-			_, e := s.repo.PatchEquipment(s.ctx, characterrepo.PatchEquipmentInput{CharacterID: "char-a", ExpectedVersion: "v"})
-			return e
-		},
 	}
 	for _, call := range calls {
 		err := call()
 		s.ErrorIs(err, redis.ErrClosed)
 		s.False(apierr.IsNotFound(err))
 	}
-}
-
-func (s *CharacterRedisContractSuite) TestEquipmentConditionReplacementIsAtomicAndVersionProtected() {
-	original := populatedCharacter()
-	s.create(original)
-	before, err := s.repo.Get(s.ctx, characterrepo.GetInput{ID: original.Data.ID})
-	s.Require().NoError(err)
-	concurrent := *before.Character.Data
-	concurrent.HitPoints = 3
-	concurrent.Conditions = append(concurrent.Conditions, json.RawMessage(`{"new":"combat-condition"}`))
-	_, err = s.repo.Update(s.ctx, characterrepo.UpdateInput{Character: &entities.Character{Data: &concurrent}})
-	s.Require().NoError(err)
-	cleared := []json.RawMessage{}
-	input := characterrepo.PatchEquipmentInput{CharacterID: original.Data.ID, ExpectedVersion: before.Version, ExpectedEquipmentSlots: original.Data.EquipmentSlots, EquipmentSlots: tkcharacter.EquipmentSlots{}, Conditions: &cleared}
-	raced, err := s.repo.PatchEquipment(s.ctx, input)
-	s.Require().NoError(err)
-	s.False(raced.Applied)
-	s.Len(raced.Character.Data.Conditions, 2, "stale equipment projection cannot erase a new combat effect")
-	preserved := []json.RawMessage{concurrent.Conditions[1]}
-	input.ExpectedVersion = raced.Version
-	input.Conditions = &preserved
-	patched, err := s.repo.PatchEquipment(s.ctx, input)
-	s.Require().NoError(err)
-	s.True(patched.Applied)
-	stored, err := s.repo.Get(s.ctx, characterrepo.GetInput{ID: original.Data.ID})
-	s.Require().NoError(err)
-	s.Equal(preserved, stored.Character.Data.Conditions)
-	s.Equal(3, stored.Character.Data.HitPoints)
-	s.Equal(concurrent.Resources, stored.Character.Data.Resources)
-	s.Equal(concurrent.ActionEconomy, stored.Character.Data.ActionEconomy)
-	input.ExpectedVersion = stored.Version
-	input.ExpectedEquipmentSlots = stored.Character.Data.EquipmentSlots
-	input.Conditions = &cleared
-	patched, err = s.repo.PatchEquipment(s.ctx, input)
-	s.Require().NoError(err)
-	s.True(patched.Applied)
-	stored, err = s.repo.Get(s.ctx, characterrepo.GetInput{ID: original.Data.ID})
-	s.Require().NoError(err)
-	s.Empty(stored.Character.Data.Conditions)
 }

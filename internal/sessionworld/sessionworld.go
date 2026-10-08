@@ -30,7 +30,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/KirkDiggler/rpg-toolkit/core"
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 	tkscenarios "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/scenarios"
@@ -50,18 +49,12 @@ type Dungeon struct {
 	// Name is the display name, exactly as the file's `name:` line says it.
 	Name string
 
-	// World is the compiled world, and it is EMPTY OF MEMBERS on purpose.
-	//
-	// session.StartSessionInput.World is documented as "authored content...
-	// not a live encounter", and the composition enforces that reading:
-	// encounter.Join refuses a member who is already in the encounter, so a
-	// world with the party baked in could never be joined -- and Join is what
-	// loads a character's sheet through the host's repository. Monsters have
-	// the mirror problem: a construction-time monster has no sheet, and
-	// session.Spawn is what builds one from a ref.
-	//
-	// So the world carries the FIELD -- chambers, walls, doors, props -- and
-	// everybody who stands in it arrives through a session verb.
+	// World is the compiled field with nobody standing in it, and it serves
+	// ONE reader: the registry's atlas preview (session.Manager.AtlasOf takes
+	// a world, not a compiled spec). A run is never started from it —
+	// session.Manager.Launch builds its own world from Spec. It is built
+	// through encounter's compile-only constructor, the one such call left in
+	// rpg-api, until the SDK projects an atlas from a compiled spec.
 	World *tkencounter.EncounterData
 
 	// PartySeats are where the party comes in, dungeon-absolute, best seat
@@ -73,255 +66,14 @@ type Dungeon struct {
 	// first four and gets them standing together at the way in.
 	PartySeats []spatial.Position
 
-	// Monsters is every authored monster, dungeon-absolute, in the order the
-	// compiler reported them.
-	Monsters []Monster
+	// Spec is the toolkit compiler's own output, every monster's member id
+	// already minted by the compile (dungeonspec MonsterPlacement.MemberID).
+	// session.Manager.Launch takes it whole: placing, arming, ordering and
+	// arriving the garrison is the SDK's, and this package re-projects none
+	// of it (rpg-project#542, "rpg-api keeps transport").
+	Spec *tkdungeonspec.Compiled
 }
 
-// Monster is one authored monster, ready to hand to session.Spawn.
-type Monster struct {
-	// Ref is content's identifier, exactly as authored -- "dnd5e:monsters:skeleton".
-	Ref string
-
-	// MemberID is the ID this monster is known by inside the encounter, and it
-	// is derived here rather than left to the caller because it is the ONLY
-	// thing a client ever sees of it: a Member on the wire is {id, kind,
-	// position}, with no ref and no display name anywhere on it. An opaque
-	// "monster-2" would therefore be all a UI had to draw a skeleton with.
-	//
-	// THE AUTHOR'S ID WHEN THEY GAVE ONE (`place[].id`; rpg-project#375,
-	// ruled on the hold-out): a placement named `chief` is the member
-	// `chief`. That is what lets `factions[].mind: chief` and
-	// `{ down: chief }` in the file mean the same member in the run — the
-	// composition validates a faction's mind against the id the member
-	// JOINS under, so a launch that renamed the chief on the way in would
-	// spawn a camp whose mind never arrives and which can never learn.
-	//
-	// Otherwise the ref's own id plus a per-ref ordinal -- skeleton-1,
-	// skeleton-2, skeleton-captain-1 -- which is unique, stable across a
-	// recompile of the same content, and legible in a log, a story beat and a
-	// client alike. Numbering PER REF rather than per dungeon so that adding a
-	// prop or reordering a chamber cannot silently renumber a monster that
-	// nothing about it changed; and an ordinal is spent on every placement
-	// of the ref, named or not, for the same reason -- naming one skeleton
-	// `scout` must not renumber the one after it.
-	//
-	// ONE ID, ONE MONSTER. An authored id that spells what the ordinal would
-	// have minted for some other placement (`id: skeleton-1` on the second
-	// skeleton) is refused at compile, naming both placements, rather than
-	// letting the second spawn fail as "no such member" halfway through a
-	// launch. The launch makes the same refusal one seam out, against the
-	// party's own ids ([lobby.StartEncounter]).
-	MemberID string
-
-	// At is its cell, dungeon-absolute.
-	At spatial.Position
-
-	// Facing is the direction the monster faces when it arrives, verbatim
-	// from the authored `startingCell.facing` word (rpg-toolkit#1899), or
-	// empty when the author stated none — the asset's own default facing.
-	// It is the authored word, never an angle, and this package never turns
-	// it into one: which way the model is turned at spawn is a render
-	// concern. Carried to the seam that holds the authored record, exactly
-	// as Targeting is — never acted on here.
-	Facing string
-
-	// Boss is whether this is the monster whose death ends things.
-	//
-	// ACTED ON since rpg-project#268 — this was "carried and not yet acted
-	// on" through the wave that recorded it so the trigger's wave would have
-	// the fact already flowing, and that wave is here: Compile turns the
-	// flag into a declared [tkencounter.TriggerMemberDown] ending keyed
-	// [EndingBossDown], naming this monster's MemberID. When the member the
-	// launch spawns under that ID goes down, the encounter closes with that
-	// outcome — the fight dissolves first, the run ends on the world clock
-	// (rpg-project#269 §6.6).
-	Boss bool
-
-	// Targeting is the author's word for how it picks a target, or empty.
-	//
-	// ALSO CARRIED AND NOT YET ACTED ON, and for a sharper reason: session's
-	// SpawnInput has no field for it, so it cannot cross the seam today even
-	// though both sides know it. It is kept here rather than dropped at the
-	// compile so the gap is visible at the seam that has it, not invisible in
-	// the package that threw it away.
-	Targeting string
-
-	// Actions is what this monster can do, in the author's order
-	// (`place[].actions`, rpg-project#448). Nil when the author armed it
-	// with nothing, which leaves the stat block's own arms alone.
-	//
-	// UNLIKE Targeting ABOVE, THIS ONE CROSSES. session.SpawnInput has a
-	// field for it, so the launch forwards it verbatim and a placement's
-	// weapons reach the live monster — which is the whole point of the
-	// slice: two goblins in one room, one with a blade for when you close
-	// and one without, and no Go between the file and the board.
-	//
-	// WEAPON REFS, `dnd5e:weapons:shortbow`, VERBATIM AND IN ORDER. Both
-	// drivers take the first action whose target is in reach, so the order
-	// is the instruction rather than a list to tidy: nothing here sorts it,
-	// deduplicates it, or reads it. Whether the catalog has a named weapon
-	// is the rulebook's question, answered at spawn, which refuses the
-	// launch by name rather than placing a monster that cannot act.
-	Actions []string
-
-	// PlacementID is the author's own name for this placement
-	// (`place[].id`), or empty when they gave it none (rpg-project#368,
-	// design P2).
-	//
-	// SEPARATE FROM MemberID, and deliberately: MemberID is derived here so
-	// every monster has one, and this is the author's word, which most
-	// placements do not have. Nothing binds a monster by id in this slice —
-	// the scenario that will is kill-the-captain, R8's named follow-up — so
-	// this is carried for the same reason Targeting beside it is: the fact
-	// exists in the file and belongs at the seam that has it.
-	PlacementID string
-
-	// Holds is the intel records this monster carries, by COMPILED record id
-	// (`<key>/<id>`) — the author's knowledge, which Loot copies off the
-	// body (rpg-project#372). Nil when the monster holds nothing.
-	//
-	// A RECORD, NOT A DOOR. Until this slice a monster carried a door id
-	// directly, which made "what does knowing this tell you" a question with
-	// exactly one possible answer forever. The record puts one indirection
-	// in the middle: what it reveals is read from the field's intel table
-	// when it changes hands, so the same fact kind serves a region, a
-	// treasure's location or a lock's approach the day a use case asks for
-	// one — and none of that touches who holds it. `Knows` is deleted
-	// upstream and refused by name in the file.
-	//
-	// COMPILED IDS, NOT THE AUTHOR'S. dungeonspec mints `<key>/<id>` so two
-	// dungeons in one process cannot collide, and it is the minted form that
-	// arrives here. Forwarding the raw authored id names a record the
-	// composition does not have, and the seam says so loudly rather than
-	// spawning a monster that holds nothing (session.ErrNoIntel).
-	//
-	// NEVER PROJECTED. Who carries intel reaches no wire, no atlas and no
-	// beat (slice 2 design P3): a monster holding nothing and one holding
-	// the way into the vault are byte-identical to every observer until
-	// somebody loots them.
-	Holds []string
-
-	// Faction is the faction this monster was placed in, AS AUTHORED
-	// (`place[].faction`, rpg-project#375): empty when the author wrote
-	// none, which the composition reads as the reserved `monsters` faction
-	// -- so a dungeon authored before factions existed spawns exactly as it
-	// did. Verbatim, not key-prefixed: a faction is a word the roster shows
-	// and a scenario binds by name.
-	//
-	// THE ONE FACT ABOUT SIDES THAT NEEDS FORWARDING. Factions, dispositions
-	// and what a record reveals are field structure and ride Compiled.Field
-	// whole into the world ([TestFactionsRideTheFieldRatherThanBeingForwarded]);
-	// a monster's membership is the one thing that is about the MEMBER, and
-	// a member enters the run through session.Spawn rather than the field,
-	// so it is hand-carried across that seam exactly as Holds is.
-	//
-	// FORWARDED VERBATIM by the launch (internal/orchestrators/lobby's
-	// StartEncounter) to session.SpawnInput.Faction -- empty stays empty,
-	// never defaulted on this side. It has to be: the composition refuses a
-	// faction's MIND that joins any faction but its own (ErrNoFaction), so a
-	// launch that dropped this field would fail closed at the chief's spawn,
-	// naming him, rather than start a camp that can never learn.
-	Faction string
-
-	// Arrives is the predicate that brings this monster into the run
-	// (`place[].arrives`, rpg-project#375 step B, design §3.7, R6),
-	// compiled by dungeonspec to the composition's own Trigger: a
-	// `{ down: chief }` is a TriggerMemberDown naming the member id the
-	// chief spawns under -- which is why an authored id IS the member id
-	// (see MemberID). Nil when the monster stands there from the first
-	// frame, as every monster always did.
-	//
-	// A MONSTER IN RESERVE IS SPAWNED AT LAUNCH and held by the composition:
-	// no cell, no roster row, absent from every projection for every member
-	// until its predicate holds, then placed at its authored cell on the
-	// first verb after. Content resolves at launch; presence is the run's.
-	// A prop's arrival needs no line here -- it rides Compiled.Field on the
-	// PropInput, like everything else about a prop.
-	//
-	// FORWARDED by the launch (internal/orchestrators/lobby's arrivalOf) as
-	// the session seam's sealed Arrival, arm for arm; a launch that dropped
-	// it would spawn a reserved monster as PLACED -- three zombies standing
-	// at the gate from frame one -- which is what scene A4 exists to catch.
-	Arrives tkencounter.Trigger
-
-	// Intimidate is the author's priced check for frightening this monster
-	// (`place[].intimidate`, rpg-project#454): the same approach list a lock
-	// carries, one entry per route through. Nil when the author priced none,
-	// which is the ordinary case and means DERIVED, not ungated -- the
-	// rulebook rolls Intimidation against the stat block's own passive
-	// Insight (goblin 9, thug 10).
-	//
-	// UNLIKE Targeting ABOVE, THIS ONE CROSSES, as of rpg-toolkit#1790:
-	// session.SpawnInput grew a field for it, so the launch forwards it
-	// verbatim and an authored difficulty reaches the live monster. Until
-	// that field existed the value was carried here and stopped, on the
-	// Targeting precedent -- keep the fact at the seam that has it rather
-	// than drop it in the package that threw it away -- and two tests
-	// pinned the gap so its closing would be noticed. It closed; they are
-	// deleted.
-	//
-	// NIL STAYS NIL ALL THE WAY DOWN. Nothing here defaults it, because
-	// absent is not "no check" but "derive one": the rulebook rolls
-	// Intimidation against the stat block's own passive Insight at threat
-	// time. A zero value invented on this side would be a DC nobody chose.
-	Intimidate []tkencounter.CheckApproach
-
-	// Persuade is the author's priced check for talking this monster round
-	// (`place[].persuade`, rpg-project#458). Intimidate's twin above, with
-	// Intimidate's contracts: nil means DERIVED, not ungated, and the
-	// rulebook rolls Persuasion against the same passive Insight a threat is
-	// read by -- a creature reads a liar and a flatterer with one sense.
-	Persuade []tkencounter.CheckApproach
-
-	// Table is this monster's whole POLICY -- what it does, keyed by what
-	// happened (`place[].on` laid over its faction's, rpg-project#465), as the
-	// COMPILED entries dungeonspec produced: weights resolved, fact ids
-	// minted, the author's lines verbatim.
-	//
-	// IT REPLACED `Answers`, which was the same map under a narrower name
-	// while the four social verdicts were the only keys. `time` is a key of
-	// this same table now -- what a creature does when it is given time, its
-	// turn in a fight or a round of the world clock -- so a name about
-	// answering a verb stopped describing it. There is no second spelling
-	// beside this one: two representations of one authored table is what this
-	// workspace bans, and the old field is gone rather than kept in step.
-	//
-	// TWO OF THE THREE LAYERS (design §1). dungeonspec laid the placement's
-	// `on:` over its faction's; the RULEBOOK's default table for the monster's
-	// kind goes underneath, and that happens inside session.Spawn, which is
-	// the only side that can resolve a ref to a kind. Which is why a nil here
-	// does NOT mean a creature that does nothing: it means the author wrote no
-	// orders and the rulebook's default speaks alone.
-	//
-	// THE MAP CROSSES WHOLE. Nothing here reads a key or picks an entry --
-	// which entry fires is the world's die, rolled inside the encounter, and a
-	// package that peeked at the table here would be a second reader of an
-	// authored fact.
-	Table tkencounter.Table
-
-	// Temper is the temperament loading this monster's die: the word the
-	// author wrote on the placement, else its faction's word, else the
-	// faction's MIX for the composition to deal one from (`place[].temper`,
-	// `factions[].temper`, rpg-project#465 §3).
-	//
-	// A WEIGHT PROFILE AND NOTHING ELSE -- four goblins off one sheet with one
-	// table are four different creatures because their dice are loaded
-	// differently, not because they were given different orders.
-	//
-	// THE PROFILES ARE NOT FILLED HERE AND MUST NOT BE. What `coward` MEANS is
-	// rulebook content, and filling in numbers on this side would be this
-	// package naming a rules value -- the smell CLAUDE.md opens with.
-	// dungeonspec carries the word, session.Spawn looks the profile up, and
-	// this field crosses between them untouched.
-	//
-	// THE ZERO VALUE IS A SOLDIER: a monster nobody gave a temperament and one
-	// authored `temper: soldier` are the same creature, every factor 100.
-	Temper tkencounter.Temper
-}
-
-// Compile turns one authored dungeon file into a [Dungeon].
-//
 // A file that does not decode, validate or compile fails with an error that
 // wraps [tkdungeonspec.ErrBadSpec] -- a validation failure is a
 // *tkdungeonspec.ValidationError carrying every defect and its YAML path;
@@ -361,48 +113,6 @@ func Compile(raw []byte) (*Dungeon, error) {
 		}
 	}
 
-	monsters := make([]Monster, len(spec.Monsters))
-	ordinals := map[string]int{}
-	claimed := map[string]int{}
-	for i, m := range spec.Monsters {
-		id, idErr := memberIDFor(m.ID, m.Ref, ordinals)
-		if idErr != nil {
-			return nil, fmt.Errorf("monster %d: %w", i, idErr)
-		}
-		if prev, taken := claimed[id]; taken {
-			return nil, fmt.Errorf(
-				"member id %q is claimed twice: by %s and by %s — a monster's member id is its authored id, "+
-					"or its ref plus an ordinal when it has none, and two monsters cannot share one",
-				id, describePlacement(spec.Monsters[prev]), describePlacement(m),
-			)
-		}
-		claimed[id] = i
-		monsters[i] = Monster{
-			Ref: m.Ref, MemberID: id, At: cellOf(orientation, m.At), Facing: m.Facing,
-			Boss: m.Boss, Targeting: m.Targeting, Actions: m.Actions,
-			PlacementID: m.ID, Holds: m.Holds, Faction: m.Faction,
-			Arrives: m.Arrives,
-			// The shenanigan half (rpg-project#454, rpg-project#458) and
-			// the creature's table beside it (rpg-project#465), carried
-			// whole rather than read: the author's two priced checks, the
-			// policy keyed by what happened, and the word that loads its
-			// die. Absent means absent -- no defaulting here, because nil
-			// is "derive the check" for the two lists, "the rulebook's
-			// default speaks alone" for the table, and "a soldier" for the
-			// temperament, and each is the ordinary case.
-			//
-			// THE TABLE IS NO LONGER FLATTENED. This used to pull one fact
-			// out of one key (`m.On[OnIntimidated]`), which was all the
-			// composition had room for; `on:` is now five keys of weighted
-			// entries and the whole map crosses, so adding a sixth trigger
-			// is a dungeonspec change and not a line here.
-			Intimidate: m.Intimidate,
-			Persuade:   m.Persuade,
-			Table:      m.Table,
-			Temper:     m.Temper,
-		}
-	}
-
 	// dungeonspec validates at most one boss PER REGION; across regions a
 	// file could still author several, and "whose death ends things" cannot
 	// be plural while the doom names one member — refused here, loudly, so
@@ -410,7 +120,7 @@ func Compile(raw []byte) (*Dungeon, error) {
 	// never ends when the "real" boss falls. Softens when the builder
 	// (#169) brings authored multi-ending variety.
 	var bossID string
-	for _, m := range monsters {
+	for _, m := range spec.Monsters {
 		if !m.Boss {
 			continue
 		}
@@ -442,7 +152,7 @@ func Compile(raw []byte) (*Dungeon, error) {
 
 	return &Dungeon{
 		Key: spec.Key, Name: spec.Name,
-		World: world, PartySeats: seats, Monsters: monsters,
+		World: world, PartySeats: seats, Spec: &spec,
 	}, nil
 }
 
@@ -450,38 +160,6 @@ func Compile(raw []byte) (*Dungeon, error) {
 // dungeon-absolute axial cell the session speaks, by asking the toolkit.
 func cellOf(o tkencounter.Orientation, at spatial.Position) spatial.Position {
 	return tkencounter.HexCellAt(o, int(at.X), int(at.Y))
-}
-
-// memberIDFor derives a monster's in-encounter ID: the author's own when the
-// placement has one, else its ref plus how many of that ref have been placed
-// so far. See [Monster.MemberID] for why the ID is built from the ref at all,
-// and why the ordinal is spent whether or not it is used.
-//
-// The ref is PARSED rather than string-split, and parsed for a named
-// placement too, so a malformed one is an error here instead of a member
-// called "dnd5e:monsters:skeleton-1" that nothing downstream can read.
-func memberIDFor(authored, ref string, ordinals map[string]int) (string, error) {
-	parsed, err := core.ParseString(ref)
-	if err != nil {
-		return "", fmt.Errorf("parse ref %q: %w", ref, err)
-	}
-	ordinals[ref]++
-	if authored != "" {
-		return authored, nil
-	}
-
-	return fmt.Sprintf("%s-%d", parsed.ID, ordinals[ref]), nil
-}
-
-// describePlacement names one monster placement the way an author would find
-// it in the file: by its id when it has one, and by its ref and authored
-// cell either way.
-func describePlacement(m tkdungeonspec.MonsterPlacement) string {
-	where := fmt.Sprintf("%s at [%d,%d]", m.Ref, int(m.At.X), int(m.At.Y))
-	if m.ID == "" {
-		return where
-	}
-	return fmt.Sprintf("%q (%s)", m.ID, where)
 }
 
 // buildWorld constructs the world the session actually plays in: the compiled

@@ -23,8 +23,11 @@ import (
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
+	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sdkerr"
 	orchcharacter "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // HandlerConfig configures a v1alpha2 character Handler.
@@ -89,7 +92,7 @@ func (h *Handler) EquipItem(
 		Slot:        tkcharacter.InventorySlot(req.GetSlotKey()),
 	})
 	if err != nil {
-		return nil, characterRPCError(err)
+		return nil, equipVerbError(err)
 	}
 	if out == nil || out.Character == nil || out.Character.Data == nil || out.View == nil {
 		return nil, characterRPCError(errors.New("equip item returned incomplete character post-state"))
@@ -125,7 +128,7 @@ func (h *Handler) UnequipItem(
 		Slot:        tkcharacter.InventorySlot(req.GetSlotKey()),
 	})
 	if err != nil {
-		return nil, characterRPCError(err)
+		return nil, equipVerbError(err)
 	}
 	if out == nil || out.Character == nil || out.Character.Data == nil || out.View == nil {
 		return nil, characterRPCError(errors.New("unequip item returned incomplete character post-state"))
@@ -216,6 +219,25 @@ func (h *Handler) verifyCallerOwnsCharacter(ctx context.Context, characterID str
 // canonical message, never the repository's.
 func notFoundCharacter(characterID string) *apierr.Error {
 	return apierr.NotFoundf("character %q not found", characterID)
+}
+
+// equipVerbError translates what the equip path answered. A coded error is
+// this service's own and keeps characterRPCError's treatment; anything else
+// came from the session SDK's Equip/Unequip verb and goes to the SDK's one
+// translation table, so ErrNotYourTurn is FAILED_PRECONDITION, not INTERNAL
+// (rpg-project#542).
+func equipVerbError(err error) error {
+	var coded *apierr.Error
+	if errors.As(err, &coded) {
+		return characterRPCError(err)
+	}
+	translated := sdkerr.StatusError(err)
+	if status.Code(translated) == codes.Internal {
+		// Not a refusal the caller can act on: keep the sanitized answer,
+		// never the cause's text on the wire.
+		return characterRPCError(err)
+	}
+	return translated
 }
 
 func characterRPCError(err error) error {

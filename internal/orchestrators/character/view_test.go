@@ -258,9 +258,6 @@ func level3FighterData(t *testing.T, id string) *tkcharacter.Data {
 				Current: 2, Maximum: 3, ResetType: coreResources.ResetLongRest,
 			},
 		},
-		ClassResources: map[shared.ClassResourceType]tkcharacter.ResourceData{
-			shared.ClassResourceType(99): {Name: "legacy-resource", Current: 1, Max: 1},
-		},
 	}
 }
 

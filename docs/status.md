@@ -11,6 +11,23 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**Session verbs (rpg-project#542, toolkit#1965 tier 2 F)** — Draft on toolkit
+pseudo-versions (root `8531d337`, encounter `5ccd6e3c`, resolution `501f551e`,
+session `1bc79f04`) and protos v0.1.228; not walked. rpg-api is transport for
+equip, rest and launch: `EquipItem`/`UnequipItem` call the SDK's `Equip`/`Unequip`
+and project armour class from the saved record (the equipment patch, version
+check, retry loop and appearance notifier are deleted, `PatchEquipment` with
+them); the lobby start is one `Launch` handed the compiled `dungeonspec.Compiled`
+and the party (the re-projection, member-id minting, id-collision checks and
+StartSession/Spawn/Join sequence are deleted; the demo vendor stays one
+`PlaceNPC`); `SessionService.Rest` maps resters onto `Manager.Rest`; the
+`EquipmentChanged` and `Rested` beats reach the wire. A Redis seat repository
+(`session-seat:v1alpha1:<character>`, no TTL, a seat naming an expired run reads
+as unseated) and per-character guards (a key space separate from session
+guards) back the seat. One compile-only constructor remains:
+`sessionworld.buildWorld` builds the world the registry's atlas preview needs,
+until the SDK projects an atlas from a compiled spec.
+
 **Automatic discovery release adoption (rpg-project#523)** — Adopts generated
 protos v0.1.220, released encounter v0.112.0 and session v0.114.1 from
 toolkit#1931/#1930/#1936. The real
@@ -538,18 +555,10 @@ mapping. Missing owner/class/race identity or malformed private state fails rath
 producing a partial sheet. INTERNAL transport text is the generic `character data
 unavailable`; the detailed strict-load/projection cause remains wrapped internally.
 
-Equip/Unequip strictly load and attach an isolated working sheet, require complete pre-
-and post-views, and only then call the Redis repository's atomic `PatchEquipment`. The
-patch uses WATCH/MULTI semantics, compares the expected equipment state and record
-version, and writes only EquipmentSlots (plus changed Conditions) onto the latest record.
-Armour class is no longer stored anywhere: every response folds it through
-`resolution.ProjectCharacter` (rpg-project#538 slice 5).
-A stale equipment expectation is ABORTED. An unrelated revision is returned without a
-write so the orchestrator can strictly reproject and retry; concurrent HP, resources,
-conditions, economy, appearance, and every other field survive. The repository returns
-the actual patched entity. The orchestrator returns that entity and the precomposed
-matching View, so both v1alpha1 and v1alpha2 equipment handlers answer from the same
-post-state with no post-write Get or fallible projection.
+Equip/Unequip call the session SDK's verbs (rpg-project#542): the verb takes the
+guard the character's seat decides, applies and prices the change, saves the record
+and tells the beat. The orchestrator projects armour class from the record the verb
+saved through `resolution.ProjectCharacter`; nothing is read or written around it.
 
 The toolkit still owns equip legality, occupancy, AC calculation, status descriptors,
 and resources. rpg-api clones the retained EquipmentSlots map, translates typed values,

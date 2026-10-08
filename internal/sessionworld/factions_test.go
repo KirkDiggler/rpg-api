@@ -109,7 +109,7 @@ func TestAMonstersFactionIsCarriedToTheSeam(t *testing.T) {
 	dungeon, spec := compileRaiderCamp(t)
 
 	byPlacement := map[string]Monster{}
-	for _, m := range dungeon.Monsters {
+	for _, m := range monstersOf(dungeon) {
 		byPlacement[m.PlacementID] = m
 	}
 	require.Len(t, byPlacement, len(spec.Monsters), "every monster the compiler produced, each under its own name")
@@ -140,8 +140,8 @@ func TestADungeonAuthoredBeforeFactionsSpawnsAsItDid(t *testing.T) {
 
 	require.Empty(t, tomb.World.Field.Factions, "the tomb declares no faction")
 	require.Empty(t, tomb.World.Field.Dispositions, "and no disposition: the defaults are the whole story")
-	require.NotEmpty(t, tomb.Monsters)
-	for _, m := range tomb.Monsters {
+	require.NotEmpty(t, monstersOf(tomb))
+	for _, m := range monstersOf(tomb) {
 		require.Empty(t, m.Faction, "%s names no faction, so the composition puts it where it always was", m.MemberID)
 	}
 }
@@ -157,8 +157,8 @@ func TestADungeonAuthoredBeforeFacingsSpawnsLookingItsOwnWay(t *testing.T) {
 	tomb, err := Compile(raw)
 	require.NoError(t, err)
 
-	require.NotEmpty(t, tomb.Monsters)
-	for _, m := range tomb.Monsters {
+	require.NotEmpty(t, monstersOf(tomb))
+	for _, m := range monstersOf(tomb) {
 		require.Empty(t, m.Facing, "%s names no facing, so the model keeps its own default", m.MemberID)
 	}
 }

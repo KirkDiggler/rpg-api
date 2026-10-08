@@ -7,12 +7,15 @@ import (
 	"testing"
 	"time"
 
+	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
+
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
-	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
@@ -97,13 +100,13 @@ func startHeirloomRunWith(t *testing.T, captainHolds bool) *heirloomRun {
 	// That forwarding is the whole of rpg-api's part in path 2, and this is
 	// the call that exercises it -- the same three-plus-one fields
 	// StartEncounter builds, with the COMPILED record ids Compiled carries.
-	for _, m := range dungeon.Monsters {
+	for _, m := range dungeon.Spec.Monsters {
 		holds := m.Holds
 		if !captainHolds {
 			holds = nil
 		}
 		_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-			Session: heirloomSession, ID: m.MemberID, Ref: m.Ref, Position: m.At, Holds: holds,
+			Session: heirloomSession, ID: m.MemberID, Ref: m.Ref, Position: cellOfPlacement(dungeon, m), Holds: holds,
 		})
 		require.NoError(t, err, "spawning %s", m.MemberID)
 	}
@@ -737,9 +740,9 @@ func TestAcceptance_ForwardingTheAuthorsRawRecordIDIsRefusedByName(t *testing.T)
 	})
 	require.NoError(t, err)
 
-	var captain sessionworld.Monster
-	for _, m := range dungeon.Monsters {
-		if m.PlacementID == dungeonstest.HeirloomCaptainPlacementID {
+	var captain tkdungeonspec.MonsterPlacement
+	for _, m := range dungeon.Spec.Monsters {
+		if m.ID == dungeonstest.HeirloomCaptainPlacementID {
 			captain = m
 		}
 	}
@@ -747,7 +750,7 @@ func TestAcceptance_ForwardingTheAuthorsRawRecordIDIsRefusedByName(t *testing.T)
 		"the compiled id is what the launch forwards")
 
 	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-		Session: heirloomSession, ID: captain.MemberID, Ref: captain.Ref, Position: captain.At,
+		Session: heirloomSession, ID: captain.MemberID, Ref: captain.Ref, Position: cellOfPlacement(dungeon, captain),
 		// The AUTHOR's spelling — what a host reaching for the file's own
 		// word instead of the compiler's would send.
 		Holds: []string{dungeonstest.HeirloomIntelAuthoredID},
@@ -759,7 +762,7 @@ func TestAcceptance_ForwardingTheAuthorsRawRecordIDIsRefusedByName(t *testing.T)
 	// The compiled id, on the same call, is accepted — so the refusal above
 	// is about the ID and not about anything else in this spawn.
 	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-		Session: heirloomSession, ID: captain.MemberID, Ref: captain.Ref, Position: captain.At,
+		Session: heirloomSession, ID: captain.MemberID, Ref: captain.Ref, Position: cellOfPlacement(dungeon, captain),
 		Holds: captain.Holds,
 	})
 	require.NoError(t, err)
@@ -1037,4 +1040,10 @@ func startRunOn(t *testing.T, authored string) *heirloomRun {
 	require.NoError(t, err)
 
 	return run
+}
+
+// cellOfPlacement is the axial cell the session speaks for a compiled
+// placement's authored offset cell, asked of the toolkit.
+func cellOfPlacement(d *sessionworld.Dungeon, m tkdungeonspec.MonsterPlacement) spatial.Position {
+	return tkencounter.HexCellAt(d.Spec.Field.Canvas.Orientation, int(m.At.X), int(m.At.Y))
 }

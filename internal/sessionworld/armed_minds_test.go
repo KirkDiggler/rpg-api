@@ -38,7 +38,7 @@ func (s *ArmedMindsSuite) SetupTest() {
 func (s *ArmedMindsSuite) goblins() []Monster {
 	s.T().Helper()
 	out := make([]Monster, 0, 2)
-	for _, m := range s.minds.Monsters {
+	for _, m := range monstersOf(s.minds) {
 		if m.Ref == "dnd5e:monsters:goblin" {
 			out = append(out, m)
 		}
@@ -67,7 +67,7 @@ func (s *ArmedMindsSuite) TestTwoGoblinsOneStatBlockTwoLoadouts() {
 // than about compiling a monster at all.
 func (s *ArmedMindsSuite) TestAnUnarmedPlacementForwardsNothing() {
 	var checked int
-	for _, m := range s.minds.Monsters {
+	for _, m := range monstersOf(s.minds) {
 		if m.Ref == "dnd5e:monsters:goblin" {
 			continue
 		}

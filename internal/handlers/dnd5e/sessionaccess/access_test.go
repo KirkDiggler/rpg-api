@@ -203,10 +203,6 @@ func (r *characterFixture) Update(context.Context, characterrepo.UpdateInput) (*
 	return nil, errors.New("not implemented")
 }
 
-func (r *characterFixture) PatchEquipment(context.Context, characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
-	return nil, errors.New("not implemented")
-}
-
 func (r *characterFixture) Delete(context.Context, characterrepo.DeleteInput) (*characterrepo.DeleteOutput, error) {
 	return nil, errors.New("not implemented")
 }

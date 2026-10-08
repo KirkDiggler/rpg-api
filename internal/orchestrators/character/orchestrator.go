@@ -4,11 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"strings"
 
+	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/events"
-	"github.com/KirkDiggler/rpg-toolkit/rpgerr"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
@@ -16,6 +15,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells"
 
@@ -35,14 +35,11 @@ type Config struct {
 	IDGenerator      idgen.Generator
 	DraftIDGenerator idgen.Generator
 
-	// AppearanceNotifier is told when something an observer could SEE about
-	// a character changes. REQUIRED, and required for the reason every
-	// capability on this seam is: a nil one would mean "nobody is ever
-	// told", which is a decision no caller made out loud
-	// (rpg-toolkit#1033 — supplied, never defaulted). A deployment with no
-	// encounters supplies one that does nothing, and says so by supplying
-	// it.
-	AppearanceNotifier AppearanceNotifier
+	// Equipment is the session SDK's equip verbs (*sdk.Manager). REQUIRED:
+	// equipping is the SDK's, never this service's (rpg-project#542), and a
+	// character service that cannot equip is a wiring mistake to refuse at
+	// construction, not at the first equip.
+	Equipment Equipment
 }
 
 // Validate ensures all required dependencies are present
@@ -56,8 +53,8 @@ func (c *Config) Validate() error {
 	if c.DiceService == nil {
 		return apierr.InvalidArgument("dice service is required")
 	}
-	if c.AppearanceNotifier == nil {
-		return apierr.InvalidArgument("appearance notifier is required")
+	if c.Equipment == nil {
+		return apierr.InvalidArgument("equipment verbs are required")
 	}
 	if c.IDGenerator == nil {
 		return apierr.InvalidArgument("ID generator is required")
@@ -77,7 +74,7 @@ type Orchestrator struct {
 	draftIDGen    idgen.Generator
 	projectLoaded projectLoadedCharacterFunc
 	foldAC        projectArmorClassFunc
-	appearance    AppearanceNotifier
+	equipment     Equipment
 }
 
 // New creates a new character orchestrator
@@ -97,7 +94,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 		draftIDGen:    cfg.DraftIDGenerator,
 		projectLoaded: projectLoadedCharacter,
 		foldAC:        projectArmorClass,
-		appearance:    cfg.AppearanceNotifier,
+		equipment:     cfg.Equipment,
 	}, nil
 }
 
@@ -938,17 +935,19 @@ const (
 	errListedCharacterUnprojectable = CharacterDataUnavailableMessage + ": character %q"
 )
 
-const (
-	maxEquipmentPatchAttempts            = 8
-	errEquipmentPatchRetryExhausted      = "character changed concurrently during equipment update"
-	errCharacterRepositoryMissingVersion = "character repository contract violation: missing character version"
-)
-
-// EquipItem equips an item to a specific slot through the toolkit's rules
-// engine, not a bare data write. It is the SINGLE equip path: the v1alpha1
-// handler and the v1alpha2 character service both call this method, so
-// occupancy (two-handed weapons claiming/clearing off_hand, swap-on-occupied)
-// is enforced exactly once, in the toolkit, for every caller.
+// EquipItem equips an item to a slot through the session SDK's Equip verb. It
+// is the SINGLE equip path: the v1alpha1 handler and the v1alpha2 character
+// service both call this method, and it holds no equipment rule of its own.
+// The verb decides everything the change means — occupancy, two-handed
+// weapons, a swap, whether the character's seat puts it in a run and that run
+// in a fight, what the change costs and who is told (rpg-project#542, "rpg-api
+// keeps transport").
+//
+// What this method adds is the response: the armour class projected from the
+// record the verb saved, folded through resolution.ProjectCharacter as every
+// read of a sheet is. A projection failure after the verb succeeded answers
+// the call as failed with the change already durable; the sheet is the truth
+// and the next read shows it.
 func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*EquipItemOutput, error) {
 	if input == nil {
 		return nil, apierr.InvalidArgument("input is required")
@@ -963,85 +962,30 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 		return nil, apierr.InvalidArgument("slot is required")
 	}
 
-	current, err := o.characterRepo.Get(ctx, characterrepo.GetInput{ID: input.CharacterID})
+	changed, err := o.equipment.Equip(ctx, &sdk.EquipInput{
+		Character: input.CharacterID,
+		Slot:      string(input.Slot),
+		Item:      input.ItemID,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get character: %w", err)
+		return nil, fmt.Errorf("equip item: %w", err)
+	}
+	post, err := o.projectEquipped(ctx, changed)
+	if err != nil {
+		return nil, err
 	}
 
-	for range maxEquipmentPatchAttempts {
-		if current == nil || current.Character == nil || current.Character.Data == nil {
-			return nil, fmt.Errorf("failed to get character: repository returned no character data")
-		}
-		if current.Version == "" {
-			return nil, apierr.Internal(errCharacterRepositoryMissingVersion)
-		}
-
-		loaded, loadErr := loadCharacter(ctx, &loadCharacterInput{Data: current.Character.Data})
-		if loadErr != nil {
-			return nil, characterDataUnavailable(fmt.Errorf("failed to load character: %w", loadErr))
-		}
-		char := loaded.Character
-		if _, projectErr := o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char}); projectErr != nil {
-			return nil, characterDataUnavailable(fmt.Errorf("failed to project character before equip: %w", projectErr))
-		}
-
-		previousItemID := ""
-		if previous := char.GetEquippedSlot(input.Slot); previous != nil {
-			previousItemID = previous.Item.EquipmentID()
-		}
-		if equipErr := char.EquipItem(input.Slot, input.ItemID); equipErr != nil {
-			return nil, mapEquipError(equipErr)
-		}
-
-		// The post-state projection folds the armour class through
-		// resolution.ProjectCharacter, the toolkit door that installs the cast
-		// a monk's or barbarian's Unarmored Defense reads. The fold answers the
-		// response and is never written: a stored AC is exactly how a monk's
-		// AC lost its WIS contribution (rpg-toolkit#1276, #1965), and a
-		// refusal fails the verb before anything is written.
-		post, projectErr := o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char})
-		if projectErr != nil {
-			return nil, characterDataUnavailable(fmt.Errorf("failed to project character after equip: %w", projectErr))
-		}
-		if post.ArmorClass == nil {
-			return nil, characterDataUnavailable(errors.New(errViewFoldMissing))
-		}
-		written, dataErr := char.ToData()
-		if dataErr != nil {
-			return nil, characterDataUnavailable(fmt.Errorf("failed to serialize character after equip: %w", dataErr))
-		}
-
-		patch, retry, patchErr := o.writeEquipment(ctx, &equipmentWriteInput{
-			CharacterID: input.CharacterID,
-			Slot:        input.Slot,
-			Current:     current,
-			Slots:       maps.Clone(written.EquipmentSlots),
-			Conditions:  written.Conditions,
-		})
-		if patchErr != nil {
-			return nil, patchErr
-		}
-		if patch == nil {
-			// A version race: the stored slots moved under us. Re-read and
-			// try again — nothing was written, so nobody is told.
-			current = retry
-			continue
-		}
-
-		return &EquipItemOutput{
-			PreviousItemID: previousItemID,
-			Character:      patch.Character,
-			View:           post.View,
-			ArmorClass:     post.ArmorClass,
-		}, nil
-	}
-
-	return nil, apierr.Aborted(errEquipmentPatchRetryExhausted)
+	return &EquipItemOutput{
+		PreviousItemID: firstStowedItemID(changed.Stowed),
+		Character:      post.Character,
+		View:           post.View,
+		ArmorClass:     post.ArmorClass,
+	}, nil
 }
 
-// UnequipItem removes an item from a slot through the toolkit's rules
-// engine — see EquipItem's doc comment for why this is the single path
-// both API surfaces share.
+// UnequipItem empties a slot through the session SDK's Unequip verb — see
+// EquipItem's doc comment for why this is the single path both API surfaces
+// share and why it holds no rule.
 func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput) (*UnequipItemOutput, error) {
 	if input == nil {
 		return nil, apierr.InvalidArgument("input is required")
@@ -1053,97 +997,71 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 		return nil, apierr.InvalidArgument("slot is required")
 	}
 
-	current, err := o.characterRepo.Get(ctx, characterrepo.GetInput{ID: input.CharacterID})
+	changed, err := o.equipment.Unequip(ctx, &sdk.UnequipInput{
+		Character: input.CharacterID,
+		Slot:      string(input.Slot),
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get character: %w", err)
+		return nil, fmt.Errorf("unequip item: %w", err)
+	}
+	post, err := o.projectEquipped(ctx, changed)
+	if err != nil {
+		return nil, err
 	}
 
-	for range maxEquipmentPatchAttempts {
-		if current == nil || current.Character == nil || current.Character.Data == nil {
-			return nil, fmt.Errorf("failed to get character: repository returned no character data")
-		}
-		if current.Version == "" {
-			return nil, apierr.Internal(errCharacterRepositoryMissingVersion)
-		}
-
-		loaded, loadErr := loadCharacter(ctx, &loadCharacterInput{Data: current.Character.Data})
-		if loadErr != nil {
-			return nil, characterDataUnavailable(fmt.Errorf("failed to load character: %w", loadErr))
-		}
-		char := loaded.Character
-		if _, projectErr := o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char}); projectErr != nil {
-			return nil, characterDataUnavailable(fmt.Errorf("failed to project character before unequip: %w", projectErr))
-		}
-
-		unequippedItemID := ""
-		if equipped := char.GetEquippedSlot(input.Slot); equipped != nil {
-			unequippedItemID = equipped.Item.EquipmentID()
-		}
-		if unequipErr := char.UnequipItem(input.Slot); unequipErr != nil {
-			return nil, mapEquipError(unequipErr)
-		}
-
-		// The post-state projection folds the armour class through
-		// resolution.ProjectCharacter, the toolkit door that installs the cast
-		// a monk's or barbarian's Unarmored Defense reads. The fold answers the
-		// response and is never written: a stored AC is exactly how a monk's
-		// AC lost its WIS contribution (rpg-toolkit#1276, #1965), and a
-		// refusal fails the verb before anything is written.
-		post, projectErr := o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char})
-		if projectErr != nil {
-			return nil, characterDataUnavailable(fmt.Errorf("failed to project character after unequip: %w", projectErr))
-		}
-		if post.ArmorClass == nil {
-			return nil, characterDataUnavailable(errors.New(errViewFoldMissing))
-		}
-		written, dataErr := char.ToData()
-		if dataErr != nil {
-			return nil, characterDataUnavailable(fmt.Errorf("failed to serialize character after unequip: %w", dataErr))
-		}
-
-		patch, retry, patchErr := o.writeEquipment(ctx, &equipmentWriteInput{
-			CharacterID: input.CharacterID,
-			Slot:        input.Slot,
-			Current:     current,
-			Slots:       maps.Clone(written.EquipmentSlots),
-			Conditions:  written.Conditions,
-		})
-		if patchErr != nil {
-			return nil, patchErr
-		}
-		if patch == nil {
-			// A version race: the stored slots moved under us. Re-read and
-			// try again — nothing was written, so nobody is told.
-			current = retry
-			continue
-		}
-
-		return &UnequipItemOutput{
-			UnequippedItemID: unequippedItemID,
-			Character:        patch.Character,
-			View:             post.View,
-			ArmorClass:       post.ArmorClass,
-		}, nil
-	}
-
-	return nil, apierr.Aborted(errEquipmentPatchRetryExhausted)
+	return &UnequipItemOutput{
+		UnequippedItemID: firstStowedItemID(changed.Stowed),
+		Character:        post.Character,
+		View:             post.View,
+		ArmorClass:       post.ArmorClass,
+	}, nil
 }
 
-// mapEquipError translates the toolkit's rpgerr equip-rule errors (item not
-// in inventory, item incompatible with the requested slot) into apierr codes
-// the handler layer already knows how to turn into gRPC status codes. Any
-// other error (a genuine toolkit bug) is wrapped rather than swallowed.
-func mapEquipError(err error) error {
-	var rpgErr *rpgerr.Error
-	if errors.As(err, &rpgErr) {
-		switch rpgErr.Code {
-		case rpgerr.CodeNotFound:
-			return apierr.NotFound(rpgErr.Message)
-		case rpgerr.CodeInvalidArgument:
-			return apierr.InvalidArgument(rpgErr.Message)
-		}
+// projectedEquip is the response half of an equip: the saved record and what
+// it projects to.
+type projectedEquip struct {
+	Character  *entities.Character
+	View       *View
+	ArmorClass *combat.ACBreakdown
+}
+
+// projectEquipped projects the record an equip verb saved. It reads nothing:
+// EquipOutput.Character is the record the verb wrote, and a re-read could
+// show a later writer's sheet as this call's answer.
+func (o *Orchestrator) projectEquipped(ctx context.Context, changed *sdk.EquipOutput) (*projectedEquip, error) {
+	if changed == nil || changed.Character == nil {
+		return nil, characterDataUnavailable(errors.New("equip verb returned no saved record"))
 	}
-	return fmt.Errorf("failed to equip item: %w", err)
+	loaded, err := loadCharacter(ctx, &loadCharacterInput{Data: changed.Character})
+	if err != nil {
+		return nil, characterDataUnavailable(fmt.Errorf("failed to load equipped character: %w", err))
+	}
+	post, err := o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: loaded.Character})
+	if err != nil {
+		return nil, characterDataUnavailable(fmt.Errorf("failed to project equipped character: %w", err))
+	}
+	if post.ArmorClass == nil {
+		return nil, characterDataUnavailable(errors.New(errViewFoldMissing))
+	}
+	return &projectedEquip{
+		Character:  &entities.Character{Data: changed.Character},
+		View:       post.View,
+		ArmorClass: post.ArmorClass,
+	}, nil
+}
+
+// firstStowedItemID is the bare item id of the first item the change put away,
+// or empty when nothing was. The verb reports full refs; the id is everything
+// after the second colon, the key the v1alpha1 wire's inventory uses.
+func firstStowedItemID(stowed []sdk.EquipmentMove) string {
+	if len(stowed) == 0 {
+		return ""
+	}
+	ref, err := core.ParseString(stowed[0].Item)
+	if err != nil {
+		return stowed[0].Item
+	}
+	return ref.ID
 }
 
 // ListCharacters returns characters for a player or session

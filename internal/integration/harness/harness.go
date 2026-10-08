@@ -254,10 +254,9 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	}
 
 	// BUILT AHEAD OF THE CHARACTER SERVICE, mirroring cmd/server: the
-	// character service takes an AppearanceNotifier as a required capability
-	// and the only thing that can answer it needs both of these. Wired for
-	// real here rather than stubbed, so an integration test that equips
-	// something mid-encounter exercises the whole doorbell.
+	// character service equips through the session Manager's verbs, wired
+	// for real here so an integration test that equips something
+	// mid-encounter exercises the whole verb.
 	sessOrch, err := sessionorch.New(sessionorch.Config{
 		Redis: ts.redisClient, Characters: charRepo, TTL: 24 * time.Hour,
 		PresentationIDs: idgen.NewSequential("presentation"),
@@ -268,12 +267,12 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	ts.LobbyRepo = lobbyrepo.NewInMemory()
 
 	characterService, err := character.New(&character.Config{
-		DraftRepo:          draftRepo,
-		CharacterRepo:      charRepo,
-		DiceService:        diceService,
-		IDGenerator:        idgen.NewUUID("char"),
-		DraftIDGenerator:   idgen.NewUUID("draft"),
-		AppearanceNotifier: lobbyorch.NewAppearanceNotifier(ts.LobbyRepo, sessOrch.Manager),
+		DraftRepo:        draftRepo,
+		CharacterRepo:    charRepo,
+		DiceService:      diceService,
+		IDGenerator:      idgen.NewUUID("char"),
+		DraftIDGenerator: idgen.NewUUID("draft"),
+		Equipment:        sessOrch.Manager,
 	})
 	if err != nil {
 		return fmt.Errorf("character service: %w", err)

@@ -130,9 +130,6 @@ func (s *HandlerTestSuite) fighterCharacterEntity() *entities.Character {
 			Resources: map[coreResources.ResourceKey]character.RecoverableResourceData{
 				resources.HitDice: {Current: 2, Maximum: 3, ResetType: coreResources.ResetLongRest},
 			},
-			ClassResources: map[shared.ClassResourceType]character.ResourceData{
-				shared.ClassResourceType(99): {Name: "legacy-resource", Current: 1, Max: 1},
-			},
 		},
 	}
 }

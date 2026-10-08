@@ -105,3 +105,46 @@ func (s *SessionLockerSuite) TestContendedKeysNeverLoseAnUpdateOrLeakAnEntry() {
 	s.Equal(workers*operations, count)
 	s.Empty(s.locker.entries)
 }
+
+// TestCharacterGuardsAreAKeySpaceOfTheirOwn: a character id equal to a held
+// session id is a different guard. The SDK holds a session guard and then
+// takes character guards (Launch, Join, Exit); a shared key would deadlock it.
+func (s *SessionLockerSuite) TestCharacterGuardsAreAKeySpaceOfTheirOwn() {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	held, err := s.locker.LockSession(ctx, &sdk.LockSessionInput{Session: "same-id"})
+	s.Require().NoError(err)
+	character, err := s.locker.LockCharacter(ctx, &sdk.LockCharacterInput{Character: "same-id"})
+	s.Require().NoError(err, "a character guard never waits on a session guard")
+	character.Release()
+	held.Release()
+	s.Empty(s.locker.entries)
+	s.Empty(s.locker.characters)
+}
+
+func (s *SessionLockerSuite) TestACharacterGuardExcludesTheSameCharacterOnly() {
+	first, err := s.locker.LockCharacter(context.Background(), &sdk.LockCharacterInput{Character: "alice"})
+	s.Require().NoError(err)
+	other, err := s.locker.LockCharacter(context.Background(), &sdk.LockCharacterInput{Character: "bob"})
+	s.Require().NoError(err)
+	other.Release()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	_, err = s.locker.LockCharacter(ctx, &sdk.LockCharacterInput{Character: "alice"})
+	s.ErrorIs(err, context.DeadlineExceeded)
+	first.Release()
+	first.Release() // idempotent
+	again, err := s.locker.LockCharacter(context.Background(), &sdk.LockCharacterInput{Character: "alice"})
+	s.Require().NoError(err)
+	again.Release()
+	s.Empty(s.locker.characters)
+}
+
+func (s *SessionLockerSuite) TestACharacterGuardRefusesAnEmptyID() {
+	_, err := s.locker.LockCharacter(context.Background(), nil)
+	s.ErrorIs(err, sdk.ErrNilInput)
+	_, err = s.locker.LockCharacter(context.Background(), &sdk.LockCharacterInput{})
+	s.ErrorIs(err, sdk.ErrNoMemberID)
+	s.Empty(s.locker.characters)
+}

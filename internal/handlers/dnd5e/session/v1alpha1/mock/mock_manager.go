@@ -386,6 +386,21 @@ func (mr *MockManagerMockRecorder) React(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "React", reflect.TypeOf((*MockManager)(nil).React), ctx, in)
 }
 
+// Rest mocks base method.
+func (m *MockManager) Rest(ctx context.Context, in *session.RestInput) (*session.RestOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Rest", ctx, in)
+	ret0, _ := ret[0].(*session.RestOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Rest indicates an expected call of Rest.
+func (mr *MockManagerMockRecorder) Rest(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Rest", reflect.TypeOf((*MockManager)(nil).Rest), ctx, in)
+}
+
 // Roster mocks base method.
 func (m *MockManager) Roster(ctx context.Context, in *session.RosterInput) (*session.RosterOutput, error) {
 	m.ctrl.T.Helper()

@@ -19,7 +19,7 @@ The character orchestrator handles character creation (draft lifecycle), charact
 ## Purpose
 
 - **Draft lifecycle:** create → update (name, race, class, background, ability scores, Appearance) → validate → finalize → toolkit `character.Data`/`DraftData` in Redis.
-- **Character management:** equip/unequip through the toolkit's rules engine (rpg-api#680 — see "Equipment" below, this used to be a bare data write); get/list/delete characters.
+- **Character management:** equip/unequip through the session SDK's Equip/Unequip verbs (rpg-project#542 — see "Equipment" below); get/list/delete characters.
 - **Data loading:** list races, classes, backgrounds, equipment by type, spells, ability scores — delegates to rpg-toolkit for actual data.
 
 ## Public interface
@@ -106,55 +106,33 @@ is still involved in exactly one way: the handler reads through `GetCharacter`
 to bind the calling player, and again after a successful level to project the
 stored sheet, because the SDK returns no character by its own boundary law.
 
-## Equipment (rpg-api#680/#844)
+## Equipment (rpg-project#542)
 
-`EquipItem`/`UnequipItem` are the one rules-correct path shared by the v1alpha1 and
-v1alpha2 CharacterService handlers. The toolkit owns item/slot validation, occupancy,
-and effective AC. rpg-api coordinates strict application and persistence.
+`EquipItem`/`UnequipItem` are the one equip path shared by the v1alpha1 and v1alpha2
+CharacterService handlers, and they hold no equipment rule. Each calls the session
+SDK's `Equip`/`Unequip` verb through the required `Config.Equipment` capability
+(`equipment.go`; `*sdk.Manager` in production), then projects armour class from the
+record the verb saved (`EquipOutput.Character` → `resolution.ProjectCharacter`). Nothing
+is read or written around the verb.
 
-The method shape is:
+The verb owns everything the change means: it takes the guard the character's seat
+decides (its own guard when unseated, the session's when seated), applies the
+rulebook's change (occupancy, two-handed weapons, a swap), prices it on the member's
+turn in a fight (stow = the action, draw = the object interaction), saves the record
+through its one sheet store, tells the equip beat to everyone who perceives the
+member and rechecks sight. That is why the equipment patch, its version check, its
+retry loop and the appearance notifier are gone: each was a copy of something the
+verb now owns.
 
-1. `characterRepo.Get` returns the entity plus an opaque record version.
-2. The orchestrator copies `character.Data`, clones the retained EquipmentSlots map,
-   strictly calls `character.Load` (no bus: equip, unequip and the character view no
-   longer attach a sheet; `FinalizeDraft` still does, via `ToCharacter` and a lenient
-   `LoadFromData`, until rpg-toolkit#1965 tier-2 F absorbs it), and
-   requires complete detached identity, EquipmentView, and StatusView projections
-   before mutation. The EquipmentView and the folded armour class come from
-   `resolution.ProjectCharacter` over the sheet's record. PlayerID,
-   ClassID, and RaceID are required. Malformed conditions, features, catalog items,
-   resources, or status descriptors fail before any write.
-3. The toolkit `EquipItem`/`UnequipItem` verb mutates the isolated sheet. The complete
-   post-view and its folded armour class are composed before persistence; a refused
-   fold refuses the equip (no fallback AC is written), and there is no fallible
-   projection afterward.
-4. `characterRepo.PatchEquipment` receives only CharacterID, expected version, expected
-   pre-mutation slots, post-mutation slots, and (when the toolkit changed them) the
-   post-equipment conditions. It never receives a full replacement entity or an armour
-   class from this path.
-5. If an unrelated writer changed the record while equipment remained the same, the
-   repository returns the newer entity without writing. The orchestrator strictly
-   reapplies the operation to that entity and retries. If equipment itself changed, the
-   repository returns ABORTED. On success it returns the actual patched entity.
-6. The orchestrator returns that entity, the matching precomposed View, and the
-   post-state's folded armour class (`EquipItemOutput.ArmorClass`). Legacy conversion
-   (including Appearance and `CombatStats.armor_class`) and v1alpha2 CharacterData
-   conversion therefore consume the same post-state; neither handler performs a
-   post-write Get.
+The verb's refusals reach the client through the SDK's one translation table
+(`internal/handlers/dnd5e/sdkerr`): `ErrNotYourTurn`, `ErrDowned`, `ErrCannotAfford`,
+`ErrArmorInFight` → FAILED_PRECONDITION; `ErrBadEquip` → INVALID_ARGUMENT;
+`ErrNoCharacter` → NOT_FOUND. A failure that maps to INTERNAL keeps the handler's
+sanitized `character data unavailable` text. A projection failure after a successful
+verb answers the call as failed with the change already durable.
 
-### Atomic equipment persistence
-
-The Redis implementation uses WATCH plus a transactional SET. It compares both the
-expected equipment map and opaque version against the latest JSON record. The committed
-record is decoded from the latest value and changes only:
-
-- `EquipmentSlots`, cloned from the toolkit's post-mutation occupancy; and
-- `Conditions`, only when the toolkit's post-equipment state differs.
-
-No armour class is written: `character.Data` no longer has the field
-(rpg-toolkit#1971), and an old record carrying `armor_class` loads with the key
-ignored and is rewritten without it on its next save (rpg-project#538 R13; no
-migration).
+`EquipItemOutput.PreviousItemID` (v1alpha1's `previously_equipped_item`) is the bare id
+of the first item the verb put away, or empty.
 
 ## Armour class is a projection (rpg-project#538 slice 5)
 
@@ -167,7 +145,7 @@ barbarian's Unarmored Defense reads (a monk answers 10 + DEX + WIS):
 | `FinalizeDraft` | the fold of the serialized sheet, BEFORE `Create`: a refusal saves nothing and the draft stands | `FinalizeDraftOutput.ArmorClass` |
 | `GetCharacter` (also LevelUp's re-read) | `projectArmorClass` over the stored record | `GetCharacterOutput.ArmorClass` |
 | `ListCharacters` | `projectArmorClasses`, one fold per listed record | `ListCharactersOutput.ArmorClasses` (keyed by character ID) |
-| `EquipItem` / `UnequipItem` | the post-state `projectLoaded` fold already composed before the patch | `EquipItemOutput.ArmorClass` / `UnequipItemOutput.ArmorClass` |
+| `EquipItem` / `UnequipItem` | `projectLoaded` over the record the SDK verb saved | `EquipItemOutput.ArmorClass` / `UnequipItemOutput.ArmorClass` |
 
 `projectArmorClass` (`view.go`) asks the door alone, not the full View: the status half
 is a separate toolkit question with its own refusals, and a response that only carries
@@ -187,16 +165,10 @@ answers NOT_FOUND, which is the existence oracle rpg-api#815 closed. The integra
 `ownership_oracle_test.go` pins that GetNextLevel and GetCharacterData answer both cases
 with the same NOT_FOUND sentence. LevelUp folds once, on its re-read.
 
-HP, resources, conditions, action economy, inventory, identity, metadata, and nested
-`Data.Appearance` come from the latest stored toolkit data and are not replaced by the
-orchestrator's earlier snapshot. This also avoids the known lossiness of a full
-`Character.ToData()` overwrite for non-round-tripped fields.
-
-Regression coverage in `equip_item_test.go` proves pre/post strict projection, map
-isolation, patch-only inputs, retry over an unrelated combat-state revision, stale patch
-errors, and persisted entity/View agreement for Equip and Unequip. Repository miniredis
-tests prove a concurrent combat update survives and stale expected equipment cannot
-replace newer slots or other data.
+Regression coverage in `equip_item_test.go` proves the verb is handed the request, its
+refusal passes through with its sentinel, the response projects the saved record
+(chain mail 16, a monk 10 + DEX + WIS), an unprojectable saved record is INTERNAL, and
+that the orchestrator neither reads nor writes the character repository around the verb.
 
 ## Production provider pins (#844)
 

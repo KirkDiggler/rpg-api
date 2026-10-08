@@ -87,9 +87,9 @@ func TestTheCaptainCarriesTheRecordByItsCompiledID(t *testing.T) {
 	require.NoError(t, err)
 
 	var captain *Monster
-	for i, m := range dungeon.Monsters {
+	for i, m := range monstersOf(dungeon) {
 		if m.PlacementID == "captain" {
-			captain = &dungeon.Monsters[i]
+			captain = &monstersOf(dungeon)[i]
 		}
 	}
 	require.NotNil(t, captain, "the fixture places a monster the author named captain")
@@ -97,7 +97,7 @@ func TestTheCaptainCarriesTheRecordByItsCompiledID(t *testing.T) {
 		"the compiled RECORD id, which is what Spawn takes")
 
 	// And nobody else holds anything: intel is placed, not sprayed.
-	for _, m := range dungeon.Monsters {
+	for _, m := range monstersOf(dungeon) {
 		if m.PlacementID == "captain" {
 			continue
 		}

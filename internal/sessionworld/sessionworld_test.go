@@ -124,10 +124,10 @@ func (s *ReferenceTombSuite) TestPlacementsAreProjectedThroughTheCompositionNotC
 // land in the chambers they were authored into -- the second half of the
 // projection, and the half a seats-only implementation would leave broken.
 func (s *ReferenceTombSuite) TestTheGarrisonHoldsTheHallAndTheCaptainWaitsBeyondIt() {
-	s.Require().Len(s.tomb.Monsters, 3, "two skeletons and their captain")
+	s.Require().Len(monstersOf(s.tomb), 3, "two skeletons and their captain")
 
 	byRegion := map[string][]Monster{}
-	for _, m := range s.tomb.Monsters {
+	for _, m := range monstersOf(s.tomb) {
 		region := s.regionOf(m.At)
 		byRegion[region] = append(byRegion[region], m)
 	}
@@ -150,7 +150,7 @@ func (s *ReferenceTombSuite) TestTheGarrisonHoldsTheHallAndTheCaptainWaitsBeyond
 func (s *ReferenceTombSuite) TestTheAuthorsWordsAboutMonstersSurviveTheCompile() {
 	targeting := map[string]int{}
 	bosses := 0
-	for _, m := range s.tomb.Monsters {
+	for _, m := range monstersOf(s.tomb) {
 		targeting[m.Targeting]++
 		if m.Boss {
 			bosses++
@@ -172,7 +172,7 @@ func (s *ReferenceTombSuite) TestTheAuthorsWordsAboutMonstersSurviveTheCompile()
 // about which changed.
 func (s *ReferenceTombSuite) TestEveryMonsterIsNamedAfterWhatItIs() {
 	byID := map[string]Monster{}
-	for _, m := range s.tomb.Monsters {
+	for _, m := range monstersOf(s.tomb) {
 		s.Require().NotEmptyf(m.MemberID, "monster %s has no member ID", m.Ref)
 		s.Require().NotContains(m.MemberID, ":", "a member ID is not a ref")
 		_, repeated := byID[m.MemberID]
@@ -486,10 +486,10 @@ func TestNoSeatIsAlsoSomebodyElsesCell(t *testing.T) {
 
 	d, err := Compile([]byte(monsterInTheEntrance))
 	require.NoError(t, err)
-	require.Len(t, d.Monsters, 1)
+	require.Len(t, monstersOf(d), 1)
 
 	for i, seat := range d.PartySeats {
-		require.NotEqualf(t, d.Monsters[0].At, seat, "seat %d is the monster's cell", i)
+		require.NotEqualf(t, monstersOf(d)[0].At, seat, "seat %d is the monster's cell", i)
 	}
 }
 

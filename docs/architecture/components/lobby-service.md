@@ -44,14 +44,13 @@ pending.
 The toolkit has **zero** lobby concept, and this component keeps it that way
 (CLAUDE.md's Boundary Rule: "if it's data storage or API orchestration → rpg-api"). A
 lobby's `Data`/`Member` types are rpg-api-owned entities (`internal/repositories/lobby`),
-not a toolkit mirror. `StartEncounter`'s session construction
-(`SessionManager.StartSession`, then `Spawn` per monster, then `Join` per ready
-member, then the reference tomb's demo `PlaceNPC`, all against a world the
-registry compiled through `internal/sessionworld`) is data movement — building the
-toolkit's own session by reference, authoring no game rules. Session `Join`
-owns first-admission recovery from its persisted `EverMembers` record and
-persists the provider-authored result through the character repository adapter;
-the lobby neither loads runtime D&D characters nor creates event buses.
+not a toolkit mirror. `StartEncounter`'s session construction (ONE
+`SessionManager.Launch` handed the registry's compiled `dungeonspec.Compiled` and
+the party in seat order, then the reference tomb's demo `PlaceNPC`) is data
+movement — the lobby re-projects no placement, mints no member id, checks no
+id collision, orders no spawn and declares no ending; all of that is Launch's
+(rpg-project#542). Launch owns the first-admission long rest and the seats; the
+lobby neither loads runtime D&D characters nor creates event buses.
 
 ## Layers
 
@@ -103,8 +102,8 @@ generators (`LobbyIDGenerator`, `JoinRefGenerator` and `EncounterIDGenerator`),
 and a `SessionManager` — the single handle onto the session stack. There is no
 encounter repository and no combat/movement resolver builder in this package.
 
-- **`session_manager.go`** — the six-method `SessionManager` interface
-  (`StartSession`, `Spawn`, `Join`, `PlaceNPC`, `Status`, `End`) declared at the
+- **`session_manager.go`** — the four-method `SessionManager` interface
+  (`Launch`, `PlaceNPC`, `Status`, `End`) declared at the
   point of use instead of depending on the concrete, unmockable `*sdk.Manager`.
   Its `//go:generate` directive produces `mock/mock_session_manager.go`
   (`lobbymock.MockSessionManager`) through the repository's gomock convention;
@@ -130,19 +129,17 @@ encounter repository and no combat/movement resolver builder in this package.
   way a session comes into existence. Under the per-lobby lock: snapshot the ready
   members; resolve `DungeonKey` against `Config.Dungeons` (empty →
   `dungeons.DefaultKey`, unknown → `ErrDungeonNotFound` → `NotFound`, refused
-  before anything is written); then, in this exact order, `StartSession` on the
-  entry's compiled world; `Spawn` every authored monster in authored order;
-  `Join` every ready member in lobby `MemberOrder` at the authored party seats;
-  on the default key only, `PlaceNPC` the demo vendor after the joins; flip the
-  lobby to STARTED and `Save`; only then `Publish` `EncounterStarted`. **Every
-  Spawn precedes every Join, and persist-then-emit ordering is load-bearing**: a
-  client reacting to the event must find the session already started. Every verb
-  is a separate load-act-save through `SessionManager`. StartSession failure
-  precedes every Spawn and Join and therefore every character write. During
-  Join, first-admission recovery is saved before projection and placement; a
-  later failure intentionally
-  leaves that valid between-runs transition durable and the SDK error carries its
-  `SaveReport`. The lobby adds no all-member preflight, rollback, or rule branch.
+  before anything is written); then ONE `Launch{Session, DungeonKey, Dungeon:
+  entry.Dungeon.Spec, Party}` with the party in lobby `MemberOrder` (seat order);
+  on the default key only, `PlaceNPC` the demo vendor after the launch (R11); flip
+  the lobby to STARTED and `Save`; only then `Publish` `EncounterStarted`.
+  **Persist-then-emit ordering is load-bearing**: a client reacting to the event
+  must find the session already started. Launch refuses before any write a party
+  bigger than the seats, an id claimed twice and an unresolvable sheet, monster
+  or faction; it saves each party member's first-admission rest and seat before
+  the board, places the whole board, and forms the fight once. A failed launch
+  carries the SDK's `SaveReport`. The lobby adds no preflight, rollback, or rule
+  branch.
 - **`abandon_encounter.go`** (rpg-api#663) — load lobby, host check, `ErrLobbyNotStarted`
   guard, then `SessionManager.End(Session: EncounterID, Ending: sessionworld.EndingWithdrawn)`
   — the one external ending the tomb declares. It never writes the lobby record:
@@ -167,8 +164,8 @@ lobby test now coexist and must not be conflated:
   session orchestrator, no playable character and no dice. The SDK mock is
   controller-isolated with no permissive `AnyTimes` defaults: an unauthorized or
   premature SDK call fails the test, and the launch-contract suite asserts the
-  exact inputs and the required order — `StartSession` -> every `Spawn` -> every
-  `Join` -> default-key `PlaceNPC` -> `Save` -> `Publish`.
+  exact inputs and the required order — `Launch` -> default-key `PlaceNPC` ->
+  `Save` -> `Publish`.
 - **Real-stack, retained pending #1049** — `SessionStackSuite` keeps its real
   miniredis-backed `session.Manager` and the real shipped content registry and
   stays active for the coverage this pilot did not map to an API-owned assertion:

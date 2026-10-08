@@ -250,14 +250,11 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create dice service: %w", err)
 	}
 
-	// BUILT AHEAD OF THE CHARACTER SERVICE, which is why these two sit here
-	// rather than beside the rest of their own wiring further down: the
-	// character service takes an AppearanceNotifier as a required
-	// capability, and the only thing that can answer "which live encounter
-	// is this player in" needs both of these. Neither depends on the
-	// character service in turn — the session orchestrator takes the
-	// character REPOSITORY — so there is no cycle to break, only an order to
-	// state.
+	// BUILT AHEAD OF THE CHARACTER SERVICE, which is why this sits here
+	// rather than beside the rest of its own wiring further down: the
+	// character service equips through the session Manager's Equip/Unequip
+	// verbs (rpg-project#542). The session orchestrator takes the character
+	// REPOSITORY, not the service, so there is no cycle, only an order.
 	sessionOrch, err := sessionorch.New(sessionorch.Config{
 		AutomaticDiscovery: true,
 		StaleTargetPolicy:  sdk.StaleTargetPolicy(os.Getenv(envStaleTargetPolicy)),
@@ -277,9 +274,9 @@ func runServer(_ *cobra.Command, _ []string) error {
 		DiceService:      diceService,
 		IDGenerator:      idgen.NewUUID("char"),
 		DraftIDGenerator: idgen.NewUUID("draft"),
-		// An equip changes what watchers can SEE, and the lobby is the only
-		// index from a player to the encounter they are standing in.
-		AppearanceNotifier: lobbyorch.NewAppearanceNotifier(lobbyRepo, sessionOrch.Manager),
+		// Equipping is the SDK's verb: the character's seat decides whether
+		// it touches a run, and the verb tells watchers itself.
+		Equipment: sessionOrch.Manager,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create character service: %w", err)
@@ -291,7 +288,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 		// Advancement is the SDK's, not this service's (design R6.1). The
 		// character handler calls the session Manager for it and projects
 		// the answer; the same Manager already flows into the character
-		// service's AppearanceNotifier above, so it is built by here.
+		// service's Equipment above, so it is built by here.
 		Sessions: sessionOrch.Manager,
 	})
 	if err != nil {

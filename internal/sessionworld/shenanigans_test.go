@@ -52,7 +52,7 @@ func (s *ShenanigansSuite) compile(path string) *Dungeon {
 
 func (s *ShenanigansSuite) monsterOf(d *Dungeon, ref string) Monster {
 	s.T().Helper()
-	for _, m := range d.Monsters {
+	for _, m := range monstersOf(d) {
 		if m.Ref == ref {
 			return m
 		}
@@ -63,7 +63,7 @@ func (s *ShenanigansSuite) monsterOf(d *Dungeon, ref string) Monster {
 
 func (s *ShenanigansSuite) placement(d *Dungeon, id string) Monster {
 	s.T().Helper()
-	for _, m := range d.Monsters {
+	for _, m := range monstersOf(d) {
 		if m.PlacementID == id {
 			return m
 		}
@@ -92,7 +92,7 @@ func (s *ShenanigansSuite) TestTheAuthoredCheckSurvivesTheCompile() {
 // invented on this side would be a DC nobody chose.
 func (s *ShenanigansSuite) TestAnUnpricedPlacementCarriesNothing() {
 	var checked int
-	for _, m := range s.minds.Monsters {
+	for _, m := range monstersOf(s.minds) {
 		if m.Ref == "dnd5e:monsters:thug" {
 			continue
 		}
@@ -114,7 +114,7 @@ func (s *ShenanigansSuite) TestAnUnpricedPlacementCarriesNothing() {
 // AUTHOR added nothing over it, which is why the file still reads as a plain
 // tomb.
 func (s *ShenanigansSuite) TestTheMindsDungeonAuthorsNoOrders() {
-	for _, m := range s.minds.Monsters {
+	for _, m := range monstersOf(s.minds) {
 		s.Nil(m.Table, "%s", m.Ref)
 		s.Empty(m.Temper.Word, "%s is given no temperament, which is a soldier", m.Ref)
 		s.Empty(m.Temper.Mix, "%s is in no faction with a mix to be dealt from", m.Ref)

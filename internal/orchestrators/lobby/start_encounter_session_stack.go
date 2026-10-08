@@ -5,14 +5,12 @@ import (
 	"errors"
 	"fmt"
 
-	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
-	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 )
 
 // demoVendorMemberID is the member id of the TEMPORARY demo vendor placed on
@@ -64,41 +62,21 @@ type StartEncounterOutput struct {
 // which is how the picker and this call can never disagree about what
 // exists (rpg-api#806, rpg-project#256).
 //
-// # What is still narrow here, stated rather than implied
+// # The launch is one SDK verb
 //
-//   - THE GARRISON ACTS AT LAUNCH, and this bullet used to say the
-//     opposite. It read "NO MONSTER BEHAVIOR ... the garrison is placed,
-//     perceived and remembered correctly and does not act", which was true
-//     while session.Spawn took no decider and stopped being true when the
-//     creature's table shipped with the monster (rpg-project#465). A room
-//     that seats the party in sight of its garrison forms a fight inside
-//     this call, and a monster that wins initiative takes its whole turn
-//     before this function returns — which is why the placement order
-//     below is load-bearing (rpg-api#1029). It DOES also carry the intel
-//     records the author placed in it (rpg-project#368, #372): a monster
-//     arrives holding what it was authored to know, so a body can be worth
-//     looting.
-//   - The authored endings are BOTH declared now (rpg-project#268): the
-//     party withdrawing (sessionworld.EndingWithdrawn, external) and the
-//     boss going down (sessionworld.EndingBossDown, TriggerMemberDown over
-//     the member ID this launch spawns the flagged placement under).
-//   - FIRST ADMISSION RECOVERY is provider-owned. StartEncounter supplies
-//     member IDs and authored seats to sdk.Manager.Join; the Session SDK uses
-//     its persisted EverMembers admission record and saves the normal-rested
-//     character before projection and placement. This host neither loads a
-//     runtime D&D character nor authors lifecycle policy. Stale ACTION-ECONOMY
-//     is likewise mostly the SDK's own problem now: since session v0.24.1 it
-//     clears a member's economy when their fight dissolves (rpg-toolkit#1222);
-//     only sessions that end while a fight is still running — Manager.End /
-//     Manager.Exit — can still leak one into a later encounter
-//     (rpg-toolkit#1223).
+// session.Manager.Launch takes the compiled dungeon (dungeonspec's own
+// output, monster member ids minted by the compile) and the party in seat
+// order, and places the whole board in one load-act-save (rpg-project#542):
+// the first-admission long rest, the seats, every authored monster with its
+// faction, holdings, arms, social prices, table and arrival, the party on the
+// dungeon's seats, the endings (withdrawn, boss-down, every bound scenario's
+// and the authored ones), and then ONE look that forms the fight with
+// everybody in it. This host re-projects none of that, and checks none of
+// it: a party too big for the seats, an id claimed twice and an unresolvable
+// monster are Launch's refusals, made before anything is written.
 //
-// # One thing that is NOT a shortcut any more
-//
-// Nothing in this file supplies a capability: the construction-time ones
-// live in internal/sessionworld, and the session package supplies its own —
-// including the sight range that decides who is in contact — when it loads
-// the world.
+// The demo vendor is the one thing still placed here, as its own PlaceNPC
+// call after the launch (R11: authored world NPCs are deferred).
 func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInput) (*StartEncounterOutput, error) {
 	if in == nil {
 		return nil, errors.New("lobby orchestrator: StartEncounterInput is required")
@@ -139,189 +117,33 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		return nil, fmt.Errorf("load dungeon %q: %w", key, err)
 	}
 	dungeon := entry.Dungeon
-	// Checked BEFORE anything is written, so a party too big for the dungeon's
-	// entrance is refused rather than half-seated: the alternative is a session
-	// that exists with some members in it and an error returned, which is the
-	// one outcome a caller cannot recover from.
-	if len(members) > len(dungeon.PartySeats) {
-		return nil, fmt.Errorf("lobby %q has %d members and the dungeon seats %d",
-			in.LobbyID, len(members), len(dungeon.PartySeats))
-	}
-	// ONE ID, ONE MEMBER, also checked before anything is written. The
-	// compile already refuses two monsters claiming one id
-	// (sessionworld.Monster.MemberID, rpg-project#375: a named placement
-	// joins under its own id); this is the same refusal one seam out,
-	// against the ids only the launch knows — the party's characters, and
-	// the demo vendor on the tomb. The composition would refuse the
-	// duplicate too, but at its second arrival, halfway through a launch,
-	// and it reports a duplicate as "no such member", the opposite of what
-	// happened (session's own spawn tests pin the misreport as upstream's).
-	if err := refuseSharedMemberIDs(members, dungeon.Monsters, key == dungeons.DefaultKey); err != nil {
-		return nil, fmt.Errorf("lobby %q: %w", in.LobbyID, err)
-	}
 
+	party := make([]string, len(members))
+	for i, m := range members {
+		party[i] = m.CharacterID
+	}
 	encID := o.encounterIDGen.Generate()
 
-	if _, err := o.sessionManager.StartSession(ctx, &sdk.StartSessionInput{
-		Session: encID, Encounter: encID, World: dungeon.World,
+	// ONE CALL PLACES THE WHOLE BOARD (rpg-project#542, R7). Launch is one
+	// load-act-save under the session's guard and each party character's
+	// guard: it refuses before anything is written when the party outnumbers
+	// the seats, an id is claimed twice, or a sheet, monster or faction cannot
+	// be resolved; it rests and seats every party member, places the garrison
+	// and then the party, and lets the fight form once over the finished
+	// board. The ordering, id and ending rules this function used to carry
+	// (garrison first, one id one member, withdrawn/boss-down) are the SDK's,
+	// and the monster member ids are the compile's own.
+	if _, err := o.sessionManager.Launch(ctx, &sdk.LaunchInput{
+		Session: encID,
 		// The RESOLVED key, after the default fallback above -- what this
-		// launch actually loaded, not what the request asked for
-		// (rpg-project#479). It is written on the session record and reaches
-		// a client on GetAtlasResponse.dungeon_key, which is how a play view
-		// fetches the room's appearance from the same registry entry this
-		// world was compiled from. Passing in.DungeonKey instead would hand
-		// a client an empty string for every default launch and send it
-		// looking for content under no key at all.
-		Dungeon: key,
+		// launch actually loaded (rpg-project#479). It reaches a client on
+		// GetAtlasResponse.dungeon_key, which is how a play view fetches the
+		// room's appearance from the same registry entry.
+		DungeonKey: key,
+		Dungeon:    dungeon.Spec,
+		Party:      party,
 	}); err != nil {
-		return nil, fmt.Errorf("start session %q on new stack: %w", encID, err)
-	}
-
-	// THE GARRISON GOES DOWN BEFORE THE PARTY DOES, and the order is the
-	// whole point rather than a tidy-up (rpg-api#1029).
-	//
-	// Every call below is its own load-act-save against a LIVE world: the
-	// moment a member is placed where something hostile can see them, the
-	// composition forms the fight, and if initiative rolls an unplayed member
-	// first it drives that member's turn inside the very verb that placed
-	// somebody (rpg-toolkit#1162, encounter's form). So a launch that seats
-	// the party first is running the game while it is still setting the
-	// table: the first monster placed in sight of a seat fought a party
-	// standing next to half a garrison, the monsters still to be placed
-	// missed the initiative roll and were transferred into a bubble already
-	// running, and a skeleton that won initiative and critted the only
-	// level-1 character left nobody conscious -- `party_defeated`, the run
-	// closed, and the NEXT monster's spawn refused with ErrClosed while a
-	// session record was already written.
-	//
-	// Placing the whole garrison first makes "the board is finished" and "the
-	// fight may start" the same moment: nothing here is hostile to anything
-	// else on the board until the party arrives, so no verb below can form a
-	// fight, and the party's own arrival forms exactly one with everybody in
-	// it.
-	//
-	// WHAT THIS DOES NOT REACH, said plainly rather than left to be
-	// rediscovered: a dungeon that declares two factions hostile to EACH
-	// OTHER would form a fight partway through this loop the same way, and no
-	// ordering this host can choose fixes that -- it needs a session verb that
-	// places a whole board in one load-act-save. No authored dungeon does that
-	// today.
-	for _, monster := range dungeon.Monsters {
-		arrives, err := arrivalOf(monster.Arrives)
-		if err != nil {
-			return nil, fmt.Errorf("spawn %q into session %q on new stack: %w", monster.MemberID, encID, err)
-		}
-		_, err = o.sessionManager.Spawn(ctx, &sdk.SpawnInput{
-			Session: encID, ID: monster.MemberID, Ref: monster.Ref, Position: monster.At,
-			// The intel records the author placed in this monster
-			// (rpg-project#372), as COMPILED ids: dungeonspec mints
-			// `<key>/<id>` so two dungeons in one process cannot collide,
-			// and sessionworld.Monster.Holds carries that minted form
-			// already. Passing the author's raw id names a record the
-			// composition does not have, and the seam refuses it by name
-			// (ErrNoIntel) rather than spawning a monster that holds
-			// nothing and is looted for an empty answer.
-			//
-			// This is what makes a body worth looting: the seam seeds the
-			// holding when the monster ENTERS the world, and Loot copies it
-			// to the looter, who learns whatever the record reveals.
-			// Nothing on any wire ever says who carries intel (slice 2
-			// design P3) — the holding is engine-internal from here on.
-			Holds: monster.Holds,
-			// The faction the author placed this monster in
-			// (rpg-project#375), VERBATIM: the file's own word, or empty
-			// when the author wrote none, which the composition reads as
-			// the reserved `monsters` -- nothing here defaults it, so a
-			// dungeon authored before factions existed spawns exactly as
-			// it did. What a faction MEANS (who fights whom, and what
-			// turns it) is the run's world's business; this forwards a
-			// name. The seam refuses a name the dungeon does not declare,
-			// and a faction's MIND arriving in any faction but its own
-			// (ErrNoFaction) -- which is why the member id above is the
-			// placement's own: the mind the file names must be the member
-			// that enters.
-			Faction: monster.Faction,
-			// The predicate that brings this monster into the run
-			// (rpg-project#375 step B, design §3.7, R6), or nil for one
-			// that stands there from the first frame. A monster in
-			// reserve is SPAWNED NOW -- its sheet resolves at launch --
-			// and held by the composition: no cell, no roster row,
-			// absent from every projection for every member until the
-			// predicate holds, then placed at its authored cell with an
-			// `arrived` beat. Spawn's answer says so (Reserved), and this
-			// launch reads nothing off that answer: what a member's
-			// presence means is the run's, and the session's own reads
-			// already leave a reserved member out.
-			Arrives: arrives,
-			// What the author armed this monster with
-			// (`place[].actions`, rpg-project#448), VERBATIM AND IN
-			// ORDER. Nil is the ordinary case and leaves the stat
-			// block's own arms alone; a list replaces them with the
-			// weapons named. The ORDER is the instruction — both
-			// drivers take the first action whose target is in reach,
-			// so a placement listing the blade first swings when you
-			// close on it and one listing only a bow shoots you point
-			// blank. Nothing here sorts or tidies it.
-			//
-			// The seam refuses a weapon the catalog does not have
-			// (session.ErrUnknownContent, naming the ref), so a bad
-			// file fails the launch rather than putting a monster on
-			// the board that cannot act.
-			Actions: monster.Actions,
-			// What it takes to lean on this monster or talk it round,
-			// and what it DOES about either (`place[].intimidate`,
-			// `place[].persuade` and `place[].on`, rpg-project#454 and
-			// rpg-project#458) -- forwarded verbatim beside Actions, and
-			// converted at this boundary and nowhere else: the compiler
-			// speaks the composition's CheckApproach and the seam takes
-			// the session's own DoorApproach, so a route crosses here in
-			// the SDK's vocabulary rather than the composition's.
-			//
-			// NIL MEANS DERIVED, NOT UNGATED, and nothing here defaults
-			// either list. An unpriced monster is checked against its own
-			// stat block's passive Insight at verb time -- a goblin is DC
-			// 9 and a thug DC 10 -- so a zero invented on this side would
-			// be a difficulty nobody chose sitting where the rulebook's
-			// own answer belongs.
-			//
-			Intimidate: socialApproachesOf(monster.Intimidate),
-			Persuade:   socialApproachesOf(monster.Persuade),
-			// THE CREATURE'S TABLE AND THE WORD THAT LOADS ITS DIE
-			// (rpg-project#465), HAND-CARRIED OFF THE COMPILED PLACEMENT
-			// AND NOT CONVERTED. Both are the composition's own types on
-			// both sides of this call -- dungeonspec compiled them and the
-			// SDK's SpawnInput takes them -- so there is nothing to
-			// translate, and inventing a converter here would be this
-			// package holding a second copy of the author's grammar.
-			//
-			// NOTHING IS FOLDED AND NO WORD IS RESOLVED HERE. The rulebook's
-			// default table for the monster's kind goes UNDER these orders
-			// inside Spawn, and what `coward` means in numbers is looked up
-			// there too: both need a ref resolved to a kind, which is a
-			// rulebook's job and never this one's. A nil table is therefore
-			// not a creature that does nothing -- it is a creature the
-			// author gave no orders, driven by its kind's default.
-			//
-			// A MIX CROSSES INTACT. `temper: { coward: 1, soldier: 2 }` on a
-			// faction is dealt per member inside the composition, through the
-			// world's dice with the FACTION as the die's entity, and the
-			// beat that says which goblin came out the coward is written
-			// there. Dealing one here would be the API rolling.
-			Table:  monster.Table,
-			Temper: monster.Temper,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("spawn %q into session %q on new stack: %w", monster.MemberID, encID, err)
-		}
-	}
-
-	// AND THE PARTY ARRIVES LAST, onto a finished board.
-	for i, m := range members {
-		if _, err := o.sessionManager.Join(ctx, &sdk.JoinInput{
-			Session: encID, Member: m.CharacterID, Position: dungeon.PartySeats[i],
-		}); err != nil {
-			return nil, fmt.Errorf("join %q to session %q on new stack: %w", m.CharacterID, encID, err)
-		}
+		return nil, fmt.Errorf("launch session %q: %w", encID, err)
 	}
 
 	// TEMPORARY (rpg-api#903 Phase 1): one hardcoded demo vendor, placed one
@@ -367,103 +189,4 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	})
 
 	return &StartEncounterOutput{EncounterID: encID}, nil
-}
-
-// refuseSharedMemberIDs is the launch's one-id-one-member check: every id
-// StartEncounter is about to hand the session — the party's characters, the
-// dungeon's monsters, and the demo vendor when the tomb is being played —
-// must be distinct, and a collision names both claimants the way each is
-// known: the character by its id and player, the monster by its member id
-// and ref. Fails closed before any write.
-func refuseSharedMemberIDs(members []*lobbyrepo.Member, monsters []sessionworld.Monster, withDemoVendor bool) error {
-	claimed := make(map[string]string, len(members)+len(monsters)+1)
-	claim := func(id, who string) error {
-		if prev, taken := claimed[id]; taken {
-			return fmt.Errorf("member id %q is claimed twice: by %s and by %s — every member of a run needs an id of its own",
-				id, prev, who)
-		}
-		claimed[id] = who
-		return nil
-	}
-	for _, m := range members {
-		if err := claim(m.CharacterID, fmt.Sprintf("character %q of player %q", m.CharacterID, m.PlayerID)); err != nil {
-			return err
-		}
-	}
-	for _, mo := range monsters {
-		if err := claim(mo.MemberID, fmt.Sprintf("the dungeon's monster %q (%s)", mo.MemberID, mo.Ref)); err != nil {
-			return err
-		}
-	}
-	if withDemoVendor {
-		if err := claim(demoVendorMemberID, "the demo vendor"); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// socialApproachesOf spells the author's priced routes for a social verb
-// (`place[].intimidate` and `place[].persuade`, rpg-project#454 and
-// rpg-project#458) from the composition's own CheckApproach into the session
-// seam's DoorApproach.
-//
-// ONE FUNCTION FOR BOTH VERBS, unlike the two roll converters at the handler
-// seam. The distinction is what each function is named for: those keep a
-// PRESENCE LAW that belongs to one verb's output and could diverge, while this
-// one is a struct spelling that belongs to the two modules' vocabularies. A
-// third social verb reuses it without a decision; the day Persuade's routes
-// stop being CheckApproach, splitting it is a rename.
-//
-// THE TRANSLATION IS SPELLING ONLY, like arrivalOf below it: the two structs
-// carry the same three fields and neither side is interpreted here. It exists
-// because the two modules own their own vocabulary at this boundary (S2), not
-// because anything is being decided -- what an ability ref or a tool ref
-// MEANS is the rulebook's, and what a DC is worth is the resolver's.
-//
-// NIL IN, NIL OUT, and that is the load-bearing case rather than an edge:
-// absent does not mean "no check", it means the rulebook derives one from the
-// monster's own passive Insight at verb time. Returning an empty non-nil
-// slice would hand the seam a monster priced with no way through, which is a
-// different and much worse claim.
-func socialApproachesOf(approaches []tkencounter.CheckApproach) []sdk.DoorApproach {
-	if approaches == nil {
-		return nil
-	}
-	out := make([]sdk.DoorApproach, len(approaches))
-	for i, approach := range approaches {
-		out[i] = sdk.DoorApproach{Ability: approach.Ability, Tool: approach.Tool, DC: approach.DC}
-	}
-	return out
-}
-
-// arrivalOf translates a placement's compiled arrival predicate -- the
-// composition's own Trigger, as dungeonspec hands it to sessionworld -- into
-// the session seam's sealed Arrival. Nil in, nil out: a monster with no
-// predicate is placed at once, as every monster always was.
-//
-// FOUR ARMS, ONE EACH FOR THE GRAMMAR'S FORMS (design §2: round | down |
-// fact | stance), and the translation is spelling only: a `{ down: chief }`
-// is TriggerMemberDown naming the member id the chief spawns under, and
-// arrives as ArrivesOnFall naming the same id. Whether a predicate can ever
-// hold is not this launch's to judge -- the session refuses one nothing can
-// fire (ErrNoMember), in its own words. A Trigger this switch does not know
-// is a compiler that grew a form ahead of this seam, and the launch fails
-// closed naming the type rather than spawning the monster placed as if it
-// had never been in reserve.
-func arrivalOf(t tkencounter.Trigger) (sdk.Arrival, error) {
-	switch t := t.(type) {
-	case nil:
-		return nil, nil //nolint:nilnil // nil is the documented "placed at once"; there is no arrival to hand over
-	case tkencounter.TriggerRound:
-		return sdk.ArrivesAtRound{Round: t.Round}, nil
-	case tkencounter.TriggerMemberDown:
-		return sdk.ArrivesOnFall{Member: string(t.Member)}, nil
-	case tkencounter.TriggerFact:
-		return sdk.ArrivesOnFact{Fact: t.Fact}, nil
-	case tkencounter.TriggerStance:
-		return sdk.ArrivesOnStance{Between: [2]string{t.Between[0], t.Between[1]}, Stance: string(t.Stance)}, nil
-	default:
-		return nil, fmt.Errorf("arrival predicate %T is not one this launch can hand to the session", t)
-	}
 }

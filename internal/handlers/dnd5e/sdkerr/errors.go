@@ -147,7 +147,14 @@ func StatusError(err error) error {
 		// a reach no world could honor, so rebuilding it is the remedy; that
 		// is what separates it from ErrOutOfRange in FAILED_PRECONDITION
 		// below, where a well-formed reach simply does not get there.
-		errors.Is(err, sdk.ErrBadReach):
+		errors.Is(err, sdk.ErrBadReach),
+		// ErrBadEquip, ErrBadRest, ErrDuplicateMember (rpg-project#542) --
+		// the request names a change the sheet cannot make (an item not
+		// carried, a slot it cannot occupy), more hit dice than remain, or
+		// one member twice. Rebuilding the request is the remedy.
+		errors.Is(err, sdk.ErrBadEquip),
+		errors.Is(err, sdk.ErrBadRest),
+		errors.Is(err, sdk.ErrDuplicateMember):
 		return status.Error(codes.InvalidArgument, err.Error())
 
 	// FAILED_PRECONDITION -- the request is well-formed but the world's
@@ -427,7 +434,14 @@ func StatusError(err error) error {
 		// change the answer. The same request becomes legal once the
 		// situation does -- experience arrives, or the content lands.
 		errors.Is(err, sdk.ErrCannotAdvance),
-		errors.Is(err, sdk.ErrLevelNotOffered):
+		errors.Is(err, sdk.ErrLevelNotOffered),
+		// ErrArmorInFight, ErrSeatedElsewhere (rpg-project#542) -- body
+		// armour cannot change while its wearer is in a fight, and a
+		// character another run holds cannot join this one. Both requests
+		// become legal once the situation does: the fight ends, or the
+		// character leaves the other run.
+		errors.Is(err, sdk.ErrArmorInFight),
+		errors.Is(err, sdk.ErrSeatedElsewhere):
 		return status.Error(codes.FailedPrecondition, err.Error())
 
 	// PERMISSION_DENIED -- the authenticated principal is real but owns no
