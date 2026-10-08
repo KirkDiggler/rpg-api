@@ -141,7 +141,13 @@ func StatusError(err error) error {
 		// the list. The request itself is wrong, which is what separates it
 		// from ErrCannotAdvance above -- rebuilding this request can succeed
 		// where waiting cannot.
-		errors.Is(err, sdk.ErrBadLevelRequest):
+		errors.Is(err, sdk.ErrBadLevelRequest),
+		// ErrBadReach (rpg-project#539) -- a negative range forwarded on
+		// Interact, Hold, Loot or a believed aim. The request itself carries
+		// a reach no world could honor, so rebuilding it is the remedy; that
+		// is what separates it from ErrOutOfRange in FAILED_PRECONDITION
+		// below, where a well-formed reach simply does not get there.
+		errors.Is(err, sdk.ErrBadReach):
 		return status.Error(codes.InvalidArgument, err.Error())
 
 	// FAILED_PRECONDITION -- the request is well-formed but the world's

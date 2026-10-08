@@ -8,7 +8,6 @@ import (
 
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
-	charconv "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
@@ -110,7 +109,8 @@ func TestSeed_WritesLevelUpExperienceThroughTheRepository(t *testing.T) {
 
 	// The projection the fixture verified: entitled to 2 while still level 1,
 	// with 900 named as what the level after that costs.
-	projected := charconv.ConvertCharacterDataToProto(store.byID["level-up-bard-id"].Data)
+	projected, err := projectStoredCharacter(context.Background(), store.byID["level-up-bard-id"].Data)
+	require.NoError(t, err)
 	require.Equal(t, int32(300), projected.GetExperiencePoints())
 	require.Equal(t, int32(2), projected.GetEntitledLevel())
 	require.Equal(t, int32(900), projected.GetNextLevelThreshold())

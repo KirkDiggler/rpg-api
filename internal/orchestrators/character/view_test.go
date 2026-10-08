@@ -7,7 +7,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/testsupport/levelfixture"
 	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
@@ -63,6 +66,62 @@ func TestProjectView_StrictLevel3Fighter(t *testing.T) {
 	data.Inventory[0].ID = "greatsword"
 	require.Equal(t, 3, view.Status.Level)
 	require.Equal(t, "longsword", view.Equipment.Items[0].ItemID)
+}
+
+// TestProjectView_AMonksEquipmentCarriesTheWisdomInclusiveAC pins the character
+// view's AC to the toolkit's resolution door: Unarmored Defense reads WIS
+// through the cast only resolution installs, so a host-attached sheet's
+// EquipmentView refuses for this monk (gamectx.ErrNotInCast) and, before that
+// refusal existed, answered 13 (rpg-toolkit#1276, #1965).
+func TestProjectView_AMonksEquipmentCarriesTheWisdomInclusiveAC(t *testing.T) {
+	data := level3FighterData(t, "monk-3")
+	data.ClassID = classes.Monk
+	data.Levels = levelfixture.Synthetic(classes.Monk, 3)
+	data.AbilityScores = shared.AbilityScores{
+		abilities.STR: 10,
+		abilities.DEX: 16,
+		abilities.CON: 12,
+		abilities.INT: 10,
+		abilities.WIS: 14,
+		abilities.CHA: 8,
+	}
+	data.Inventory = []tkcharacter.InventoryItemData{{Type: "weapon", ID: "quarterstaff", Quantity: 1}}
+	data.EquipmentSlots = tkcharacter.EquipmentSlots{tkcharacter.SlotMainHand: "quarterstaff"}
+	data.Features = nil
+	unarmoredDefense, err := (&conditions.UnarmoredDefenseCondition{
+		MemberID: data.ID,
+		Type:     conditions.UnarmoredDefenseMonk,
+	}).ToJSON()
+	require.NoError(t, err)
+	data.Conditions = []json.RawMessage{unarmoredDefense}
+
+	out, err := ProjectView(context.Background(), &ProjectViewInput{Data: data})
+	require.NoError(t, err)
+	require.NotNil(t, out.View.Equipment)
+	require.Equal(t, 15, out.View.Equipment.ACTotal, "10 base + 3 DEX + 2 WIS")
+}
+
+// TestProjectView_RefusesAConditionThatFailsToApply is the rpg-api#1078 gate
+// probe. An Inspired die with no granting bard parses (strict Load accepts it)
+// and then refuses to Apply. The projection used to fold around it and report
+// the AC without it; resolution.ProjectCharacter now attaches strictly
+// (rpg-toolkit#1968), so the view refuses as INTERNAL and the cause names the
+// condition. rpg-api attaches nothing itself: the refusal is resolution's.
+func TestProjectView_RefusesAConditionThatFailsToApply(t *testing.T) {
+	data := level3FighterData(t, "fighter-inspired")
+	inspired, err := (&conditions.InspiredCondition{MemberID: data.ID}).ToJSON()
+	require.NoError(t, err)
+	data.Conditions = append(data.Conditions, inspired)
+
+	_, err = tkcharacter.Load(context.Background(), data)
+	require.NoError(t, err, "the condition parses: this is an Apply refusal, not a parse one")
+
+	out, err := ProjectView(context.Background(), &ProjectViewInput{Data: data})
+	require.Error(t, err)
+	require.Nil(t, out)
+	require.Equal(t, codes.Internal, status.Code(apierr.ToGRPCError(err)))
+	require.Contains(t, err.Error(), refs.Conditions.Inspired().String(),
+		"the refusal names the condition that would not apply")
 }
 
 func TestCharacterDataUnavailableRetainsDetailedCause(t *testing.T) {
@@ -169,7 +228,6 @@ func level3FighterData(t *testing.T, id string) *tkcharacter.Data {
 		},
 		HitPoints:    24,
 		MaxHitPoints: 30,
-		ArmorClass:   10,
 		Wallet:       currency.FromGold(15),
 		Inventory: []tkcharacter.InventoryItemData{
 			{Type: "weapon", ID: "longsword", Quantity: 1},
@@ -183,7 +241,7 @@ func level3FighterData(t *testing.T, id string) *tkcharacter.Data {
 		Features: []json.RawMessage{
 			mustJSON(t, features.SecondWindData{
 				Ref: refs.Features.SecondWind(), ID: "second-wind", Name: "Second Wind",
-				Level: 3, CharacterID: id, Uses: 1, MaxUses: 1,
+				CharacterID: id, Uses: 1, MaxUses: 1,
 			}),
 			mustJSON(t, features.ActionSurgeData{
 				Ref: refs.Features.ActionSurge(), ID: "action-surge", Name: "Action Surge",

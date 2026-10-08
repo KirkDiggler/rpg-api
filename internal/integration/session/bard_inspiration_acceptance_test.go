@@ -63,7 +63,7 @@ func levelOneBard(id, playerID string, uses int) *tkcharacter.Data {
 			abilities.STR: 8, abilities.DEX: 14, abilities.CON: 12,
 			abilities.INT: 10, abilities.WIS: 12, abilities.CHA: 16,
 		},
-		HitPoints: 9, MaxHitPoints: 9, ArmorClass: 12, ProficiencyBonus: 2,
+		HitPoints: 9, MaxHitPoints: 9, ProficiencyBonus: 2,
 		Features: []json.RawMessage{feature},
 		Resources: map[coreResources.ResourceKey]tkcharacter.RecoverableResourceData{
 			resources.Inspiration: {

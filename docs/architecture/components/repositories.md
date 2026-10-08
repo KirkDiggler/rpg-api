@@ -34,7 +34,10 @@ served. The later v2 encounter repository is also deleted with rpg-project#227.
 Interface methods use value Input and pointer Output types: `Create`, `Get`, `Update`,
 `PatchEquipment`, `Delete`, `ListByPlayerID`, and `ListBySessionID`. `GetOutput` includes
 an opaque version derived from the stored bytes. `PatchEquipmentInput` carries the
-expected version/equipment plus only the proposed EquipmentSlots and cached ArmorClass.
+expected version/equipment plus only the proposed EquipmentSlots and (optionally) the
+post-equipment Conditions. The repository stores no armour class (rpg-project#538): an
+old record carrying `armor_class` loads with the key ignored and drops it on its next
+write.
 
 **Storage:** `character:{id}` — JSON-serialized `entities.Character`, whose only
 field is toolkit `character.Data` (including nested `Data.Appearance`), with

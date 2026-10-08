@@ -7,11 +7,12 @@ import (
 	"maps"
 
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
-	"github.com/KirkDiggler/rpg-toolkit/events"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/currency"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution"
 )
 
 const (
@@ -23,6 +24,7 @@ const (
 	errViewPlayerIDMissing = "project character identity: player ID is required"
 	errViewClassIDMissing  = "project character identity: class ID is required"
 	errViewRaceIDMissing   = "project character identity: race ID is required"
+	errViewFoldMissing     = "project character equipment: toolkit returned no armour class or equipment view"
 )
 
 // IdentityView is the detached owner and typed class/race identity needed by
@@ -59,26 +61,80 @@ type ProjectViewOutput struct {
 	View *View
 }
 
-// ProjectLoadedCharacterInput contains an already strictly loaded and attached
-// character. Equip and unequip use this after mutating their in-memory sheet so
-// the complete post-state is projected before persistence.
+// ProjectLoadedCharacterInput contains an already strictly loaded character.
+// Equip and unequip use this after mutating their in-memory sheet so the
+// complete post-state is projected before persistence.
 type ProjectLoadedCharacterInput struct {
 	Character *tkcharacter.Character
 }
 
-// ProjectLoadedCharacterOutput contains the detached projection.
+// ProjectLoadedCharacterOutput contains the detached projection and the folded
+// armour class it was computed with.
 type ProjectLoadedCharacterOutput struct {
 	View *View
+
+	// ArmorClass is the toolkit's folded armour class for the projected sheet —
+	// the number every response carries; nothing persists it. View.Equipment's AC total is a second
+	// fold of the same sheet under the same installed context (EquipmentView
+	// folds again); the two agree because the AC chain is deterministic, not
+	// because one value feeds both.
+	ArmorClass *combat.ACBreakdown
 }
 
-type loadAttachedCharacterInput struct {
+type projectArmorClassInput struct {
 	Data *tkcharacter.Data
 }
 
-type loadAttachedCharacterOutput struct {
+type projectArmorClassOutput struct {
+	ArmorClass *combat.ACBreakdown
+}
+
+// projectArmorClass is every stored sheet's armour class on its way into a
+// response, folded through the resolution door -- the same door equip and
+// unequip fold through. rpg-api stores no armour class, so this is the only
+// answer there is. The door attaches the sheet strictly, so an unreadable
+// sheet is refused, and a refusal is an error: no fallback number exists to
+// send instead (rpg-project#538 R7, R11).
+//
+// It asks the door alone, not projectLoadedCharacter: the status half of that
+// view is a separate toolkit question with its own refusals, and a response
+// carrying only the legacy CombatStats must not fail on a question it never
+// asked.
+func projectArmorClass(
+	ctx context.Context,
+	input *projectArmorClassInput,
+) (*projectArmorClassOutput, error) {
+	if input == nil {
+		return nil, apierr.InvalidArgument("input is required")
+	}
+	if input.Data == nil {
+		return nil, apierr.InvalidArgument("character data is required")
+	}
+
+	projected, err := resolution.ProjectCharacter(ctx, &resolution.ProjectCharacterInput{Character: input.Data})
+	if err != nil {
+		return nil, fmt.Errorf("project armour class: %w", err)
+	}
+	if projected == nil || projected.ArmorClass == nil {
+		return nil, errors.New(errViewFoldMissing)
+	}
+
+	return &projectArmorClassOutput{ArmorClass: projected.ArmorClass}, nil
+}
+
+type loadCharacterInput struct {
+	Data *tkcharacter.Data
+}
+
+type loadCharacterOutput struct {
 	Character *tkcharacter.Character
 	Data      *tkcharacter.Data
 }
+
+type projectArmorClassFunc func(
+	context.Context,
+	*projectArmorClassInput,
+) (*projectArmorClassOutput, error)
 
 type projectLoadedCharacterFunc func(
 	context.Context,
@@ -87,14 +143,14 @@ type projectLoadedCharacterFunc func(
 
 // ProjectView is the one persisted-data projection path. Strict Load refuses
 // malformed condition, feature, item, and resource data instead of silently
-// dropping it; Attach applies every loaded effect before either detached view
-// is composed.
+// dropping it; the folded halves of the view come from the toolkit's
+// resolution door, never from a sheet this package attached itself.
 func ProjectView(ctx context.Context, input *ProjectViewInput) (*ProjectViewOutput, error) {
 	if input == nil {
 		return nil, apierr.InvalidArgument("input is required")
 	}
 
-	loaded, err := loadAttachedCharacter(ctx, &loadAttachedCharacterInput{Data: input.Data})
+	loaded, err := loadCharacter(ctx, &loadCharacterInput{Data: input.Data})
 	if err != nil {
 		return nil, characterDataUnavailable(err)
 	}
@@ -110,10 +166,16 @@ func characterDataUnavailable(cause error) *apierr.Error {
 	return apierr.WrapWithCode(cause, apierr.CodeInternal, CharacterDataUnavailableMessage)
 }
 
-func loadAttachedCharacter(
+// loadCharacter strictly loads persisted data into an inert sheet: no bus, no
+// subscriptions. The sheet is what the equip verbs mutate and what StatusView
+// reads; anything folded (armour class, the equipment view) is asked of
+// resolution.ProjectCharacter, which installs the game context a fold needs.
+// Attaching here instead would be a host building rules truth on its own bus,
+// and Unarmored Defense refuses that fold outright (gamectx.ErrNotInCast).
+func loadCharacter(
 	ctx context.Context,
-	input *loadAttachedCharacterInput,
-) (*loadAttachedCharacterOutput, error) {
+	input *loadCharacterInput,
+) (*loadCharacterOutput, error) {
 	if input == nil {
 		return nil, apierr.InvalidArgument("input is required")
 	}
@@ -136,16 +198,15 @@ func loadAttachedCharacter(
 	if err != nil {
 		return nil, fmt.Errorf("strictly load character: %w", err)
 	}
-	if err := tkcharacter.Attach(ctx, char, events.NewEventBus()); err != nil {
-		return nil, fmt.Errorf("attach character: %w", err)
-	}
 
-	return &loadAttachedCharacterOutput{Character: char, Data: workingData}, nil
+	return &loadCharacterOutput{Character: char, Data: workingData}, nil
 }
 
-// projectLoadedCharacter composes both detached views from one attached live
-// sheet. StatusView is fallible and therefore completes before any caller may
-// persist or return a partial projection.
+// projectLoadedCharacter composes both detached views from one loaded sheet:
+// the equipment view and armour class from the sheet's record through
+// resolution.ProjectCharacter, the status view from the sheet itself. Every
+// half is fallible and completes before any caller may persist or return a
+// partial projection.
 func projectLoadedCharacter(
 	ctx context.Context,
 	input *ProjectLoadedCharacterInput,
@@ -157,7 +218,10 @@ func projectLoadedCharacter(
 		return nil, apierr.InvalidArgument("character is required")
 	}
 
-	data := input.Character.ToData()
+	data, err := input.Character.ToData()
+	if err != nil {
+		return nil, fmt.Errorf("serialize character: %w", err)
+	}
 	if data.PlayerID == "" {
 		return nil, errors.New(errViewPlayerIDMissing)
 	}
@@ -168,13 +232,18 @@ func projectLoadedCharacter(
 		return nil, errors.New(errViewRaceIDMissing)
 	}
 
-	// EquipmentView carries a FOLDED armour class rather than the scalar on the
-	// sheet, so it can refuse (rpg-toolkit#1276). A refusal must surface: the
-	// alternative is a projection reporting base armour as though it were the
-	// whole answer, which is the bug this chain exists to close.
-	equipment, err := input.Character.EquipmentView(ctx)
+	// The equipment view carries a FOLDED armour class rather than the scalar on
+	// the sheet, and a fold needs the game context only resolution installs: a
+	// monk's Unarmored Defense reads WIS through the cast. A refusal surfaces;
+	// the alternative is a projection reporting 10+DEX as though it were the
+	// whole answer, which is the bug this path exists to close
+	// (rpg-toolkit#1276, #1965).
+	projected, err := resolution.ProjectCharacter(ctx, &resolution.ProjectCharacterInput{Character: data})
 	if err != nil {
 		return nil, fmt.Errorf("project character equipment: %w", err)
+	}
+	if projected.ArmorClass == nil || projected.Equipment == nil {
+		return nil, errors.New(errViewFoldMissing)
 	}
 
 	status, err := input.Character.StatusView(&tkcharacter.StatusViewInput{})
@@ -191,8 +260,8 @@ func projectLoadedCharacter(
 			ClassID:  data.ClassID,
 			RaceID:   data.RaceID,
 		},
-		Equipment: equipment,
+		Equipment: projected.Equipment,
 		Status:    status.View,
 		Wallet:    data.Wallet,
-	}}, nil
+	}, ArmorClass: projected.ArmorClass}, nil
 }

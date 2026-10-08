@@ -27,7 +27,7 @@ import (
 func quarterstaffMonkAcceptance(t *testing.T, id, playerID string) *tkcharacter.Data {
 	t.Helper()
 	martialArts, err := conditions.NewMartialArtsCondition(conditions.MartialArtsInput{
-		MemberID: id, MonkLevel: 1,
+		MemberID: id,
 	}).ToJSON()
 	require.NoError(t, err)
 
@@ -38,7 +38,7 @@ func quarterstaffMonkAcceptance(t *testing.T, id, playerID string) *tkcharacter.
 			abilities.STR: 12, abilities.DEX: 18, abilities.CON: 14,
 			abilities.INT: 10, abilities.WIS: 15, abilities.CHA: 8,
 		},
-		HitPoints: 10, MaxHitPoints: 10, ArmorClass: 15, ProficiencyBonus: 2,
+		HitPoints: 10, MaxHitPoints: 10, ProficiencyBonus: 2,
 		WeaponProficiencies: []proficiencies.Weapon{proficiencies.WeaponSimple},
 		Inventory: []tkcharacter.InventoryItemData{{
 			Type: shared.EquipmentTypeWeapon, ID: weapons.Quarterstaff, Quantity: 1,

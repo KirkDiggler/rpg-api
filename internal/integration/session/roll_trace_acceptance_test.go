@@ -81,7 +81,7 @@ func greatWeaponFighter(t *testing.T, id, playerID string) *tkcharacter.Data {
 			abilities.STR: 16, abilities.DEX: 14, abilities.CON: 14,
 			abilities.INT: 10, abilities.WIS: 12, abilities.CHA: 8,
 		},
-		HitPoints: 12, MaxHitPoints: 12, ArmorClass: 16, ProficiencyBonus: 2,
+		HitPoints: 12, MaxHitPoints: 12, ProficiencyBonus: 2,
 		WeaponProficiencies: []proficiencies.Weapon{proficiencies.WeaponMartial},
 		Inventory: []tkcharacter.InventoryItemData{{
 			Type: shared.EquipmentTypeWeapon, ID: weapons.Greatsword, Quantity: 1,

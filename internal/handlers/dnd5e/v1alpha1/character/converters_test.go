@@ -13,6 +13,7 @@ import (
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	dnd5ecombat "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
@@ -30,6 +31,36 @@ type ConvertersTestSuite struct {
 
 func TestConvertersTestSuite(t *testing.T) {
 	suite.Run(t, new(ConvertersTestSuite))
+}
+
+// convertWithArmorClass converts a stored sheet with a stated folded armour
+// class: these tests pin other fields, and the orchestrator owns the fold.
+func (s *ConvertersTestSuite) convertWithArmorClass(data *toolkitchar.Data) *dnd5ev1alpha1.Character {
+	got, err := ConvertCharacterDataToProto(&CharacterProtoInput{
+		Data:       data,
+		ArmorClass: &dnd5ecombat.ACBreakdown{Total: 13},
+	})
+	s.Require().NoError(err)
+	return got
+}
+
+// TestConvertCharacterDataToProto_ArmorClassIsTheFold pins that the wire's
+// armour class is exactly the folded answer handed over, and that a sheet
+// with no fold is refused rather than sent with a zero or a default.
+func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ArmorClassIsTheFold() {
+	data := &toolkitchar.Data{ID: "char-ac", Name: "Shen", Level: 1, ClassID: classes.Monk}
+
+	got, err := ConvertCharacterDataToProto(&CharacterProtoInput{
+		Data:       data,
+		ArmorClass: &dnd5ecombat.ACBreakdown{Total: 15},
+	})
+	s.Require().NoError(err)
+	s.Equal(int32(15), got.GetCombatStats().GetArmorClass())
+
+	refused, err := ConvertCharacterDataToProto(&CharacterProtoInput{Data: data})
+	s.Require().Error(err)
+	s.Nil(refused)
+	s.Contains(err.Error(), "char-ac")
 }
 
 func (s *ConvertersTestSuite) TestClericCatalogUsesProviderDomainsAndSpellcasting() {
@@ -764,7 +795,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_WithFeatures() {
 	}
 
 	// Convert to proto
-	result := ConvertCharacterDataToProto(testData)
+	result := s.convertWithArmorClass(testData)
 
 	// Verify features are converted
 	require.NotNil(s.T(), result, "Result should not be nil")
@@ -790,7 +821,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_EmptyFeatures() {
 	}
 
 	// Convert to proto
-	result := ConvertCharacterDataToProto(testData)
+	result := s.convertWithArmorClass(testData)
 
 	// Verify no features
 	require.NotNil(s.T(), result, "Result should not be nil")
@@ -815,7 +846,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_InvalidFeatureJSON
 	}
 
 	// Convert to proto - should skip invalid feature and include valid one
-	result := ConvertCharacterDataToProto(testData)
+	result := s.convertWithArmorClass(testData)
 
 	// Verify only valid feature is included
 	require.NotNil(s.T(), result, "Result should not be nil")
@@ -843,7 +874,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_FeatureWithToolkit
 		},
 	}
 
-	result := ConvertCharacterDataToProto(testData)
+	result := s.convertWithArmorClass(testData)
 
 	require.NotNil(s.T(), result, "Result should not be nil")
 	require.Len(s.T(), result.Features, 1, "Should have 1 feature")
@@ -885,7 +916,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_WithConditions() {
 	}
 
 	// Convert to proto
-	result := ConvertCharacterDataToProto(testData)
+	result := s.convertWithArmorClass(testData)
 
 	// Verify conditions are converted
 	require.NotNil(s.T(), result, "Result should not be nil")
@@ -926,7 +957,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ProjectsStoredProt
 		},
 	}
 
-	result := ConvertCharacterDataToProto(testData)
+	result := s.convertWithArmorClass(testData)
 
 	require.NotNil(s.T(), result)
 	require.Len(s.T(), result.GetActiveConditions(), 1)
@@ -945,7 +976,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_EmptyConditions() 
 	}
 
 	// Convert to proto
-	result := ConvertCharacterDataToProto(testData)
+	result := s.convertWithArmorClass(testData)
 
 	// Verify no conditions
 	require.NotNil(s.T(), result, "Result should not be nil")
@@ -969,7 +1000,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_InvalidConditionJS
 	}
 
 	// Convert to proto - should skip invalid condition and include valid one
-	result := ConvertCharacterDataToProto(testData)
+	result := s.convertWithArmorClass(testData)
 
 	// Verify only valid condition is included
 	require.NotNil(s.T(), result, "Result should not be nil")
@@ -1000,7 +1031,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionNameFallb
 	}
 
 	// Convert to proto
-	result := ConvertCharacterDataToProto(testData)
+	result := s.convertWithArmorClass(testData)
 
 	// Verify name derivation from ref
 	require.NotNil(s.T(), result, "Result should not be nil")
@@ -1035,7 +1066,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionWithNoRef
 	}
 
 	// Convert to proto
-	result := ConvertCharacterDataToProto(testData)
+	result := s.convertWithArmorClass(testData)
 
 	// Verify condition with no ref is skipped
 	require.NotNil(s.T(), result, "Result should not be nil")
@@ -1123,7 +1154,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_FeaturesWithAction
 		},
 	}
 
-	result := ConvertCharacterDataToProto(testData)
+	result := s.convertWithArmorClass(testData)
 
 	require.NotNil(s.T(), result)
 	require.Len(s.T(), result.Features, 2, "Should have 2 features")
@@ -1430,7 +1461,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ProjectsExperience
 		{"the top of the table has no next level", 355000, 20, 0},
 	} {
 		s.Run(tc.name, func() {
-			got := ConvertCharacterDataToProto(&toolkitchar.Data{
+			got := s.convertWithArmorClass(&toolkitchar.Data{
 				ID:         "char-xp",
 				Name:       "Arthur",
 				Level:      1,

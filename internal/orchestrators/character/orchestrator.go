@@ -13,6 +13,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
@@ -75,6 +76,7 @@ type Orchestrator struct {
 	idGen         idgen.Generator
 	draftIDGen    idgen.Generator
 	projectLoaded projectLoadedCharacterFunc
+	foldAC        projectArmorClassFunc
 	appearance    AppearanceNotifier
 }
 
@@ -94,6 +96,7 @@ func New(cfg *Config) (*Orchestrator, error) {
 		idGen:         cfg.IDGenerator,
 		draftIDGen:    cfg.DraftIDGenerator,
 		projectLoaded: projectLoadedCharacter,
+		foldAC:        projectArmorClass,
 		appearance:    cfg.AppearanceNotifier,
 	}, nil
 }
@@ -715,9 +718,22 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		return nil, fmt.Errorf("failed to convert draft to character: %w", err)
 	}
 
-	// Convert character to data for storage
-	// ToData is now a method on Character
-	charData := char.ToData()
+	// Convert character to data for storage. A sheet that cannot serialize
+	// whole is refused rather than saved missing an effect.
+	charData, err := char.ToData()
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize character: %w", err)
+	}
+
+	// Fold the armour class of exactly the sheet about to be saved, BEFORE
+	// anything is written. A refusal saves nothing and leaves the draft
+	// standing, so the player can retry; folding after the save would leave a
+	// character nobody can read, no draft, and a roster that refuses to list
+	// (rpg-project#538 R11).
+	ac, err := o.foldAC(ctx, &projectArmorClassInput{Data: charData})
+	if err != nil {
+		return nil, characterDataUnavailable(fmt.Errorf("project armour class of character %s: %w", characterID, err))
+	}
 
 	charEntity := &entities.Character{Data: charData}
 
@@ -749,7 +765,7 @@ func (o *Orchestrator) FinalizeDraft(ctx context.Context, input *FinalizeDraftIn
 		return nil, fmt.Errorf("failed to load character from data: %w", err)
 	}
 
-	return &FinalizeDraftOutput{Character: finalChar}, nil
+	return &FinalizeDraftOutput{Character: finalChar, ArmorClass: ac.ArmorClass}, nil
 }
 
 // ListRaces returns all available races
@@ -876,11 +892,51 @@ func (o *Orchestrator) GetCharacter(ctx context.Context, input *GetCharacterInpu
 	if err != nil {
 		return nil, fmt.Errorf("failed to get character: %w", err)
 	}
+	if result == nil || result.Character == nil || result.Character.Data == nil {
+		return nil, apierr.Internal("failed to get character: repository returned no character data")
+	}
+
+	ac, err := o.foldAC(ctx, &projectArmorClassInput{Data: result.Character.Data})
+	if err != nil {
+		return nil, characterDataUnavailable(fmt.Errorf("project armour class of character %s: %w", input.CharacterID, err))
+	}
 
 	return &GetCharacterOutput{
-		Character: result.Character,
+		Character:  result.Character,
+		ArmorClass: ac.ArmorClass,
 	}, nil
 }
+
+// GetCharacterRecord reads the stored record without projecting it. Ownership
+// gates use it: a fold before the owner check would answer an unprojectable
+// foreign sheet INTERNAL where a missing one answers NOT_FOUND, which is the
+// existence oracle rpg-api#815 closed. Response-shaped reads use GetCharacter.
+func (o *Orchestrator) GetCharacterRecord(
+	ctx context.Context,
+	input *GetCharacterRecordInput,
+) (*GetCharacterRecordOutput, error) {
+	if input == nil {
+		return nil, apierr.InvalidArgument("input is required")
+	}
+	if input.CharacterID == "" {
+		return nil, apierr.InvalidArgument("character ID is required")
+	}
+
+	result, err := o.characterRepo.Get(ctx, characterrepo.GetInput{ID: input.CharacterID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get character: %w", err)
+	}
+	if result == nil || result.Character == nil || result.Character.Data == nil {
+		return nil, apierr.Internal("failed to get character: repository returned no character data")
+	}
+
+	return &GetCharacterRecordOutput{Character: result.Character}, nil
+}
+
+const (
+	errListedCharacterMissingData   = "list characters: repository returned a character with no data"
+	errListedCharacterUnprojectable = CharacterDataUnavailableMessage + ": character %q"
+)
 
 const (
 	maxEquipmentPatchAttempts            = 8
@@ -920,7 +976,7 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 			return nil, apierr.Internal(errCharacterRepositoryMissingVersion)
 		}
 
-		loaded, loadErr := loadAttachedCharacter(ctx, &loadAttachedCharacterInput{Data: current.Character.Data})
+		loaded, loadErr := loadCharacter(ctx, &loadCharacterInput{Data: current.Character.Data})
 		if loadErr != nil {
 			return nil, characterDataUnavailable(fmt.Errorf("failed to load character: %w", loadErr))
 		}
@@ -937,26 +993,30 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 			return nil, mapEquipError(equipErr)
 		}
 
+		// The post-state projection folds the armour class through
+		// resolution.ProjectCharacter, the toolkit door that installs the cast
+		// a monk's or barbarian's Unarmored Defense reads. The fold answers the
+		// response and is never written: a stored AC is exactly how a monk's
+		// AC lost its WIS contribution (rpg-toolkit#1276, #1965), and a
+		// refusal fails the verb before anything is written.
 		post, projectErr := o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char})
 		if projectErr != nil {
 			return nil, characterDataUnavailable(fmt.Errorf("failed to project character after equip: %w", projectErr))
 		}
-		// Derived, and a refusal is not written. Persisting a fallback here is
-		// exactly how a monk's stored AC lost its WIS contribution: the number
-		// that reaches the sheet has to be one the chain actually produced
-		// (rpg-toolkit#1276).
-		breakdown, acErr := char.EffectiveAC(ctx)
-		if acErr != nil {
-			return nil, characterDataUnavailable(fmt.Errorf("compute effective AC: %w", acErr))
+		if post.ArmorClass == nil {
+			return nil, characterDataUnavailable(errors.New(errViewFoldMissing))
+		}
+		written, dataErr := char.ToData()
+		if dataErr != nil {
+			return nil, characterDataUnavailable(fmt.Errorf("failed to serialize character after equip: %w", dataErr))
 		}
 
 		patch, retry, patchErr := o.writeEquipment(ctx, &equipmentWriteInput{
 			CharacterID: input.CharacterID,
 			Slot:        input.Slot,
 			Current:     current,
-			Slots:       maps.Clone(char.ToData().EquipmentSlots),
-			Conditions:  char.ToData().Conditions,
-			ArmorClass:  breakdown.Total,
+			Slots:       maps.Clone(written.EquipmentSlots),
+			Conditions:  written.Conditions,
 		})
 		if patchErr != nil {
 			return nil, patchErr
@@ -972,6 +1032,7 @@ func (o *Orchestrator) EquipItem(ctx context.Context, input *EquipItemInput) (*E
 			PreviousItemID: previousItemID,
 			Character:      patch.Character,
 			View:           post.View,
+			ArmorClass:     post.ArmorClass,
 		}, nil
 	}
 
@@ -1005,7 +1066,7 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 			return nil, apierr.Internal(errCharacterRepositoryMissingVersion)
 		}
 
-		loaded, loadErr := loadAttachedCharacter(ctx, &loadAttachedCharacterInput{Data: current.Character.Data})
+		loaded, loadErr := loadCharacter(ctx, &loadCharacterInput{Data: current.Character.Data})
 		if loadErr != nil {
 			return nil, characterDataUnavailable(fmt.Errorf("failed to load character: %w", loadErr))
 		}
@@ -1022,26 +1083,30 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 			return nil, mapEquipError(unequipErr)
 		}
 
+		// The post-state projection folds the armour class through
+		// resolution.ProjectCharacter, the toolkit door that installs the cast
+		// a monk's or barbarian's Unarmored Defense reads. The fold answers the
+		// response and is never written: a stored AC is exactly how a monk's
+		// AC lost its WIS contribution (rpg-toolkit#1276, #1965), and a
+		// refusal fails the verb before anything is written.
 		post, projectErr := o.projectLoaded(ctx, &ProjectLoadedCharacterInput{Character: char})
 		if projectErr != nil {
 			return nil, characterDataUnavailable(fmt.Errorf("failed to project character after unequip: %w", projectErr))
 		}
-		// Derived, and a refusal is not written. Persisting a fallback here is
-		// exactly how a monk's stored AC lost its WIS contribution: the number
-		// that reaches the sheet has to be one the chain actually produced
-		// (rpg-toolkit#1276).
-		breakdown, acErr := char.EffectiveAC(ctx)
-		if acErr != nil {
-			return nil, characterDataUnavailable(fmt.Errorf("compute effective AC: %w", acErr))
+		if post.ArmorClass == nil {
+			return nil, characterDataUnavailable(errors.New(errViewFoldMissing))
+		}
+		written, dataErr := char.ToData()
+		if dataErr != nil {
+			return nil, characterDataUnavailable(fmt.Errorf("failed to serialize character after unequip: %w", dataErr))
 		}
 
 		patch, retry, patchErr := o.writeEquipment(ctx, &equipmentWriteInput{
 			CharacterID: input.CharacterID,
 			Slot:        input.Slot,
 			Current:     current,
-			Slots:       maps.Clone(char.ToData().EquipmentSlots),
-			Conditions:  char.ToData().Conditions,
-			ArmorClass:  breakdown.Total,
+			Slots:       maps.Clone(written.EquipmentSlots),
+			Conditions:  written.Conditions,
 		})
 		if patchErr != nil {
 			return nil, patchErr
@@ -1057,6 +1122,7 @@ func (o *Orchestrator) UnequipItem(ctx context.Context, input *UnequipItemInput)
 			UnequippedItemID: unequippedItemID,
 			Character:        patch.Character,
 			View:             post.View,
+			ArmorClass:       post.ArmorClass,
 		}, nil
 	}
 
@@ -1095,8 +1161,14 @@ func (o *Orchestrator) ListCharacters(ctx context.Context, input *ListCharacters
 			return nil, fmt.Errorf("failed to list characters by player: %w", err)
 		}
 
+		acs, err := o.projectArmorClasses(ctx, &projectArmorClassesInput{Characters: result.Characters})
+		if err != nil {
+			return nil, err
+		}
+
 		return &ListCharactersOutput{
 			Characters:    result.Characters,
+			ArmorClasses:  acs.ArmorClasses,
 			NextPageToken: "", // TODO: Add pagination support
 			TotalSize:     len(result.Characters),
 		}, nil
@@ -1111,8 +1183,14 @@ func (o *Orchestrator) ListCharacters(ctx context.Context, input *ListCharacters
 			return nil, fmt.Errorf("failed to list characters by session: %w", err)
 		}
 
+		acs, err := o.projectArmorClasses(ctx, &projectArmorClassesInput{Characters: result.Characters})
+		if err != nil {
+			return nil, err
+		}
+
 		return &ListCharactersOutput{
 			Characters:    result.Characters,
+			ArmorClasses:  acs.ArmorClasses,
 			NextPageToken: "", // TODO: Add pagination support
 			TotalSize:     len(result.Characters),
 		}, nil
@@ -1120,6 +1198,43 @@ func (o *Orchestrator) ListCharacters(ctx context.Context, input *ListCharacters
 
 	// No filter provided - return error
 	return nil, apierr.InvalidArgument("either player_id or session_id must be provided")
+}
+
+type projectArmorClassesInput struct {
+	Characters []*entities.Character
+}
+
+type projectArmorClassesOutput struct {
+	ArmorClasses map[string]*combat.ACBreakdown
+}
+
+// projectArmorClasses folds every listed sheet's armour class through the
+// resolution door, one projection per character, nothing cached (R7; a cache
+// is R9's, deferred until a measured cost asks). The list fails whole on the
+// first sheet the door refuses, naming that character (R11): a per-row
+// absence or a fallback number would be a list that looks right and is not.
+func (o *Orchestrator) projectArmorClasses(
+	ctx context.Context,
+	input *projectArmorClassesInput,
+) (*projectArmorClassesOutput, error) {
+	if input == nil {
+		return nil, apierr.InvalidArgument("input is required")
+	}
+
+	acs := make(map[string]*combat.ACBreakdown, len(input.Characters))
+	for _, listed := range input.Characters {
+		if listed == nil || listed.Data == nil {
+			return nil, apierr.Internal(errListedCharacterMissingData)
+		}
+		id := listed.Data.ID
+		ac, err := o.foldAC(ctx, &projectArmorClassInput{Data: listed.Data})
+		if err != nil {
+			return nil, apierr.WrapWithCodef(err, apierr.CodeInternal, errListedCharacterUnprojectable, id)
+		}
+		acs[id] = ac.ArmorClass
+	}
+
+	return &projectArmorClassesOutput{ArmorClasses: acs}, nil
 }
 
 // DeleteCharacter deletes a character permanently

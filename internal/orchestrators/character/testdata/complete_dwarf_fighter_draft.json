@@ -1,0 +1,115 @@
+{
+  "id": "draft_3ada856e-3b16-4da4-b58a-c268b914b992",
+  "player_id": "player-fixture",
+  "name": "Dagna Ironbraid",
+  "race": "dwarf",
+  "class": "fighter",
+  "background": "soldier",
+  "base_ability_scores": {
+    "cha": 8,
+    "con": 14,
+    "dex": 13,
+    "int": 10,
+    "str": 15,
+    "wis": 12
+  },
+  "choices": [
+    {
+      "category": "name",
+      "source": "player",
+      "name": "Dagna Ironbraid"
+    },
+    {
+      "category": "tool_proficiency",
+      "source": "race",
+      "choice_id": "dwarf-tool-proficiency",
+      "tools": [
+        "smith-tools"
+      ]
+    },
+    {
+      "category": "skills",
+      "source": "class",
+      "choice_id": "fighter-skills",
+      "skills": [
+        "athletics",
+        "perception"
+      ]
+    },
+    {
+      "category": "fighting_style",
+      "source": "class",
+      "choice_id": "fighter-fighting-style",
+      "fighting_style": "defense"
+    },
+    {
+      "category": "equipment",
+      "source": "class",
+      "choice_id": "fighter-armor",
+      "option_id": "fighter-armor-a",
+      "equipment": [
+        "chain-mail"
+      ]
+    },
+    {
+      "category": "equipment",
+      "source": "class",
+      "choice_id": "fighter-weapons-primary",
+      "option_id": "fighter-weapon-a",
+      "equipment": [
+        "shield",
+        "longsword"
+      ]
+    },
+    {
+      "category": "equipment",
+      "source": "class",
+      "choice_id": "fighter-weapons-secondary",
+      "option_id": "fighter-ranged-a",
+      "equipment": [
+        "light-crossbow",
+        "bolts-20"
+      ]
+    },
+    {
+      "category": "equipment",
+      "source": "class",
+      "choice_id": "fighter-pack",
+      "option_id": "fighter-pack-a",
+      "equipment": [
+        "dungeoneer-pack"
+      ]
+    },
+    {
+      "category": "tool_proficiency",
+      "source": "background",
+      "choice_id": "soldier-gaming-set-proficiency",
+      "tools": [
+        "dice-set"
+      ]
+    },
+    {
+      "category": "equipment",
+      "source": "background",
+      "choice_id": "soldier-gaming-set-item",
+      "option_id": "soldier-gaming-set-a",
+      "equipment": [
+        "dice-set"
+      ]
+    },
+    {
+      "category": "ability_scores",
+      "source": "player",
+      "ability_scores": {
+        "cha": 8,
+        "con": 14,
+        "dex": 13,
+        "int": 10,
+        "str": 15,
+        "wis": 12
+      },
+      "method": "manual"
+    }
+  ],
+  "progress": 31
+}

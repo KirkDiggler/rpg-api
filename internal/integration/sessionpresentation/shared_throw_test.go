@@ -126,7 +126,6 @@ func seedCharacter(ctx context.Context, t *testing.T, repo characterrepo.Reposit
 		Level:        1,
 		HitPoints:    10,
 		MaxHitPoints: 10,
-		ArmorClass:   10,
 	}}})
 	require.NoError(t, err)
 }

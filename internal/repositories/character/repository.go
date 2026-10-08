@@ -86,13 +86,14 @@ type UpdateOutput struct {
 }
 
 // PatchEquipmentInput contains the optimistic revision/equipment expectation
-// and equipment-derived fields the repository is permitted to change.
+// and the equipment state the repository is permitted to change. It carries no
+// armour class: that is a projection folded through the resolution door at
+// read time, and this repository stores none (rpg-project#538 R1, R7).
 type PatchEquipmentInput struct {
 	CharacterID            string
 	ExpectedVersion        string
 	ExpectedEquipmentSlots tkcharacter.EquipmentSlots
 	EquipmentSlots         tkcharacter.EquipmentSlots
-	ArmorClass             int
 	// Conditions is the toolkit's post-equipment state. Nil preserves conditions;
 	// a present empty slice clears them. The expected version protects concurrent
 	// combat changes before this replacement is accepted.
