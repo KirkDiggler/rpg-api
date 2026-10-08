@@ -1,7 +1,7 @@
 ---
 name: authoring service + dungeon content registry
 description: internal/dungeons (the file registry every authored dungeon lives in) and AuthoringService v1alpha1 (PutDungeon / GetDungeon) on the session stack
-updated: 2026-09-19
+updated: 2026-10-05
 confidence: medium-high — rpg-api#1003 single-room v3 adoption verified on released
 provider tags through registry byte/metadata/full-scene preservation, real-launch member-atlas,
 reload/author-edit snapshot isolation, seat-capacity and unknown-ref refusal suites; legacy v2
@@ -22,6 +22,21 @@ internal/orchestrators/authoring/            PutDungeon / GetDungeon business lo
 internal/handlers/dnd5e/authoring/v1alpha1/  proto <-> input, status mapping
 content/reference-tomb.yaml                  the shipped dungeon
 ```
+
+## Structural wall promotion
+
+The toolkit compiles wall lines, independent blocking footprints, openings and
+attached doors. Its fixed layout records carry opaque content refs and canonical-
+feet geometry; the API copies these through the same `AtlasToProto` used by
+PutDungeon and session reads. Gameplay snapshots and the existing room/concealment
+reveal events carry the toolkit-permitted wall and independent door records.
+The API does not reconstruct cuts, prefix door ids, calculate visibility, or
+supply mutable door state from authored starting bindings.
+
+This adapter is an in-flight step of rpg-project#527. The real builder/game walk
+and the remaining door interaction/observation work are not claimed complete by
+conversion tests. The provider development pins are real pushed commits; release
+pins are required before consumer merge.
 
 ## The registry (`internal/dungeons`)
 
@@ -49,8 +64,8 @@ why. Each entry's `Atlas` comes from the `AtlasProjector` — production wires
 and the same projection `Manager.Atlas` uses), so `PutDungeon`'s atlas and
 the started game's `GetAtlas` have one producer. The registry hands the
 projector the ENTRY's own key, which is echoed onto `Atlas.DungeonKey`, so a
-builder previewing a draft and a player in a session name the dungeon the
-same way and one client code path fetches the room's appearance for both. A
+builder previewing a draft and a player in a session identify the same source.
+The key is not authorization to fetch the full builder document in gameplay. A
 world that compiled but will not load is a boot refusal / `Internal`, never a
 `FieldError`: the stack disagreed with itself, the author did nothing.
 

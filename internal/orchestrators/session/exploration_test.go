@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -9,14 +10,13 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
 
 type ExplorationHostSuite struct{ suite.Suite }
 
 func TestExplorationHostSuite(t *testing.T) { suite.Run(t, new(ExplorationHostSuite)) }
-func (s *ExplorationHostSuite) TestProfileIsDetachedAndDoesNotExpireWithARun() {
+func (s *ExplorationHostSuite) TestPreferenceIsDetachedAndDoesNotExpireWithARun() {
 	server := miniredis.RunT(s.T())
 	client := goredis.NewClient(&goredis.Options{Addr: server.Addr()})
 	defer func() { _ = client.Close() }()
@@ -24,19 +24,38 @@ func (s *ExplorationHostSuite) TestProfileIsDetachedAndDoesNotExpireWithARun() {
 	ctx := context.Background()
 	_, err := repo.GetExploration(ctx, "alice")
 	s.ErrorIs(err, sdk.ErrNotFound)
-	data := &sdk.ExplorationData{Character: "alice", PrivateDiscoveries: true, Checks: map[string]encounter.DiscoveryMemoryData{"site/secret": {Used: 1, Learned: true}}}
+	data := &sdk.ExplorationData{Character: "alice", PrivateDiscoveries: true}
 	s.Require().NoError(repo.SaveExploration(ctx, data))
 	server.FastForward(48 * time.Hour)
 	got, err := repo.GetExploration(ctx, "alice")
 	s.Require().NoError(err)
 	s.Equal(data, got)
-	delete(got.Checks, "site/secret")
+	got.PrivateDiscoveries = false
 	again, err := repo.GetExploration(ctx, "alice")
 	s.Require().NoError(err)
-	s.Len(again.Checks, 1)
+	s.True(again.PrivateDiscoveries)
 	_, err = repo.GetExploration(ctx, "bob")
 	s.ErrorIs(err, sdk.ErrNotFound)
 }
+func (s *ExplorationHostSuite) TestLegacyProfileChecksAreIgnoredWithoutMutatingTheStoredRecord() {
+	server := miniredis.RunT(s.T())
+	client := goredis.NewClient(&goredis.Options{Addr: server.Addr()})
+	defer func() { _ = client.Close() }()
+	repo := &redisExplorationRepository{client: client}
+	ctx := context.Background()
+	legacy := `{"character":"alice","private":true,"checks":{"site/secret":{"used":1,"learned":true}}}`
+	s.Require().NoError(client.Set(ctx, explorationPrefix+"alice", legacy, 0).Err())
+	got, err := repo.GetExploration(ctx, "alice")
+	s.Require().NoError(err)
+	s.True(got.PrivateDiscoveries)
+	raw, err := json.Marshal(got)
+	s.Require().NoError(err)
+	s.NotContains(string(raw), "checks", "only preferences cross the host/SDK boundary")
+	stored, err := client.Get(ctx, explorationPrefix+"alice").Result()
+	s.Require().NoError(err)
+	s.Equal(legacy, stored, "a read must not delete the old data")
+}
+
 func (s *ExplorationHostSuite) TestSharedStoreGuardCoversProfilesAcrossSessionIDs() {
 	locker := sharedStoreLocker{inner: NewInProcessSessionLocker()}
 	first, err := locker.LockSession(context.Background(), &sdk.LockSessionInput{Session: "first-run"})
