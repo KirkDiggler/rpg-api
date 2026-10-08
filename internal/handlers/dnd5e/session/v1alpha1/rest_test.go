@@ -182,6 +182,34 @@ func TestTheRestBeatReachesTheWire(t *testing.T) {
 		Member: "char-a", Kind: sessionpb.RestKind_REST_KIND_SHORT, HitPointsRestored: 7, HitPoints: 19,
 		HitDiceSpent: 2, HitDiceRemaining: 1, ResourcesRefilled: []string{"dnd5e:features:second_wind"},
 	}, evt.GetRested())
+	require.Nil(t, evt.GetRested().GetConcentrationEnded(), "nothing ended, nothing sent")
+	require.Nil(t, evt.GetRested().GetEnded())
 	_, err = eventToProto(sdk.Event{Kind: sdk.EventRested, Body: sdk.RestedBody{Kind: "nap"}})
 	require.Error(t, err, "a rest kind this build cannot spell fails the beat")
+}
+
+// TestTheRestBeatCarriesWhatTheRestEnded: the rest's own beat is the one
+// account of what it ended — each concentration the rester held and each
+// condition taken off them — so a client renders one beat for one rest.
+func TestTheRestBeatCarriesWhatTheRestEnded(t *testing.T) {
+	body := sdk.RestedBody{Member: "bard", Kind: string(sdk.RestShort)}
+	body.ConcentrationEnded = []sdk.RestConcentrationEnded{{
+		ConcentrationEndedBody: sdk.ConcentrationEndedBody{
+			Caster: "bard", Spell: sdk.SpellRef{Ref: "dnd5e:spells:bane", Name: "Bane"}, Reason: "rest",
+		},
+		Removed: []sdk.ConditionRemovedBody{{Target: "goblin-1", Ref: "dnd5e:conditions:baned", Reason: "rest"}},
+	}}
+	body.Ended = []sdk.ConditionRemovedBody{
+		{Target: "bard", Ref: "dnd5e:conditions:prone", Name: "Prone", Reason: "rest", SourceID: "bard"},
+		{Target: "bard", Ref: "dnd5e:conditions:dodging", Name: "Dodging", Reason: "rest"},
+	}
+	evt, err := eventToProto(sdk.Event{Seq: 3, Kind: sdk.EventRested, Body: body})
+	require.NoError(t, err)
+	require.Equal(t, []*sessionpb.ConcentrationEnded{{
+		Caster: "bard", Spell: &sessionpb.SpellRef{Ref: "dnd5e:spells:bane", Name: "Bane"}, Reason: "rest",
+	}}, evt.GetRested().GetConcentrationEnded())
+	require.Equal(t, []*sessionpb.ConditionRemoved{
+		{Target: "bard", Ref: "dnd5e:conditions:prone", Name: "Prone", Reason: "rest", SourceId: "bard"},
+		{Target: "bard", Ref: "dnd5e:conditions:dodging", Name: "Dodging", Reason: "rest"},
+	}, evt.GetRested().GetEnded(), "in the rulebook's order")
 }

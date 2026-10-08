@@ -144,10 +144,12 @@ func equipmentChangeToProto(change sdk.EquipmentChange) (sessionpb.EquipmentChan
 	}
 }
 
-// restedToProto projects one rester's RESTED beat. ConcentrationEnded and
-// Ended have no wire field at this protos pin; they land as Rested fields
-// when the protos carrying them are pinned, so the rest's own beat stays the
-// one account of what it ended.
+// restedToProto projects one rester's RESTED beat, including what the rest
+// ended: each concentration (caster, spell, reason) and each condition taken
+// off the rester. They ride the rest's own beat, never beats of their own, so
+// a client reads one account of one rest. A concentration's Removed list (the
+// conditions the hold kept on others) has no field on the wire's
+// ConcentrationEnded and is not sent.
 func restedToProto(b *sdk.RestedBody) (*sessionpb.Rested, error) {
 	kind, err := restKindToProto(b.Kind)
 	if err != nil {
@@ -158,14 +160,42 @@ func restedToProto(b *sdk.RestedBody) (*sessionpb.Rested, error) {
 		return nil, err
 	}
 	return &sessionpb.Rested{
-		Member:            b.Member,
-		Kind:              kind,
-		HitPointsRestored: int32(b.HitPointsRestored),
-		HitPoints:         int32(b.HitPoints),
-		HitDiceSpent:      int32(b.HitDiceSpent),
-		HitDiceReturned:   int32(b.HitDiceReturned),
-		HitDiceRemaining:  int32(b.HitDiceRemaining),
-		ResourcesRefilled: b.ResourcesRefilled,
-		Calculation:       calculation,
+		Member:             b.Member,
+		Kind:               kind,
+		HitPointsRestored:  int32(b.HitPointsRestored),
+		HitPoints:          int32(b.HitPoints),
+		HitDiceSpent:       int32(b.HitDiceSpent),
+		HitDiceReturned:    int32(b.HitDiceReturned),
+		HitDiceRemaining:   int32(b.HitDiceRemaining),
+		ResourcesRefilled:  b.ResourcesRefilled,
+		Calculation:        calculation,
+		ConcentrationEnded: restConcentrationEndedToProto(b.ConcentrationEnded),
+		Ended:              conditionsRemovedToProto(b.Ended),
 	}, nil
+}
+
+func restConcentrationEndedToProto(ended []sdk.RestConcentrationEnded) []*sessionpb.ConcentrationEnded {
+	if len(ended) == 0 {
+		return nil
+	}
+	out := make([]*sessionpb.ConcentrationEnded, len(ended))
+	for i, e := range ended {
+		out[i] = &sessionpb.ConcentrationEnded{
+			Caster: e.Caster,
+			Spell:  spellRefToProto(e.Spell),
+			Reason: e.Reason,
+		}
+	}
+	return out
+}
+
+func conditionsRemovedToProto(ended []sdk.ConditionRemovedBody) []*sessionpb.ConditionRemoved {
+	if len(ended) == 0 {
+		return nil
+	}
+	out := make([]*sessionpb.ConditionRemoved, len(ended))
+	for i := range ended {
+		out[i] = conditionRemovedBodyToProto(&ended[i])
+	}
+	return out
 }
