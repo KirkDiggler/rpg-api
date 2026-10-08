@@ -32,10 +32,11 @@ served. The later v2 encounter repository is also deleted with rpg-project#227.
 **Path:** `repositories/character/`
 
 Interface methods use value Input and pointer Output types: `Create`, `Get`, `Update`,
-`PatchEquipment`, `Delete`, `ListByPlayerID`, and `ListBySessionID`. `GetOutput` includes
-an opaque version derived from the stored bytes. `PatchEquipmentInput` carries the
-expected version/equipment plus only the proposed EquipmentSlots and (optionally) the
-post-equipment Conditions. The repository stores no armour class (rpg-project#538): an
+`Delete`, `ListByPlayerID`, and `ListBySessionID`. `GetOutput` includes an opaque version
+derived from the stored bytes. There is no equipment write of its own: the session SDK's
+Equip/Unequip verbs save the whole record through `Update` (via the session
+orchestrator's `CharacterRepository` adapter) under the guard the character's seat
+decides (rpg-project#542). The repository stores no armour class (rpg-project#538): an
 old record carrying `armor_class` loads with the key ignored and drops it on its next
 write.
 
@@ -44,13 +45,8 @@ field is toolkit `character.Data` (including nested `Data.Appearance`), with
 a maintained player index and a legacy session-index read path. Character CRUD does
 not populate or migrate session membership.
 
-`PatchEquipment` uses Redis WATCH/MULTI. A stale equipment map returns ABORTED. A changed
-version with unchanged equipment returns the latest entity without writing so the
-orchestrator can strictly reproject; a successful transaction changes only the two
-allowed fields and returns the actual patched entity. Miniredis tests cover concurrent
-combat-state preservation and stale equipment refusal. #1047 adds populated round trips,
-CRUD/player-index lifecycle, read-side session-index cleanup, detached reads, successful
-patch preservation and failure contracts. See the [coverage inventory](../../quality/repository-contracts.md)
+#1047 adds populated round trips, CRUD/player-index lifecycle, read-side session-index
+cleanup, detached reads and failure contracts. See the [coverage inventory](../../quality/repository-contracts.md)
 for remaining limits, including real concurrent WATCH retry coverage.
 
 Used by: character, lobby, and session orchestration plus owner/public projections.

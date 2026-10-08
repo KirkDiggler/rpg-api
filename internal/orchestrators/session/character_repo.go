@@ -43,6 +43,13 @@ func (r *characterRepository) GetCharacter(ctx context.Context, id string) (*tkc
 }
 
 // SaveCharacter implements sdk.CharacterRepository.
+//
+// A WHOLE-RECORD WRITE, and safe as one because the SDK's sheet store is its
+// only in-game caller and every SDK verb holds the guard the character's seat
+// decides (rpg-project#542, "One sheet store per verb"). rpg-api has no other
+// gameplay write of a character record: the equipment patch, its version check
+// and its retry loop are gone. Creation (FinalizeDraft) and the sandbox seeder
+// write outside any run.
 func (r *characterRepository) SaveCharacter(ctx context.Context, data *tkcharacter.Data) error {
 	if data == nil {
 		return errors.New("session: SaveCharacter data is required")

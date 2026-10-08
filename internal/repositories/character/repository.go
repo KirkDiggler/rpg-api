@@ -5,10 +5,8 @@ package character
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/KirkDiggler/rpg-api/internal/entities"
-	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 )
 
 // Repository defines the interface for character persistence
@@ -30,12 +28,6 @@ type Repository interface {
 	// Returns apierr.NotFound if character doesn't exist
 	// Returns apierr.Internal for storage failures
 	Update(ctx context.Context, input UpdateInput) (*UpdateOutput, error)
-
-	// PatchEquipment atomically changes only equipment slots and cached armor
-	// class on the latest record. A stale equipment expectation is aborted;
-	// an unrelated revision is returned without a write so the caller can
-	// strictly reproject it before retrying.
-	PatchEquipment(ctx context.Context, input PatchEquipmentInput) (*PatchEquipmentOutput, error)
 
 	// Delete deletes a character by ID
 	// Returns apierr.InvalidArgument for empty/invalid IDs
@@ -83,29 +75,6 @@ type UpdateInput struct {
 // UpdateOutput defines the output for updating a character
 type UpdateOutput struct {
 	Character *entities.Character
-}
-
-// PatchEquipmentInput contains the optimistic revision/equipment expectation
-// and the equipment state the repository is permitted to change. It carries no
-// armour class: that is a projection folded through the resolution door at
-// read time, and this repository stores none (rpg-project#538 R1, R7).
-type PatchEquipmentInput struct {
-	CharacterID            string
-	ExpectedVersion        string
-	ExpectedEquipmentSlots tkcharacter.EquipmentSlots
-	EquipmentSlots         tkcharacter.EquipmentSlots
-	// Conditions is the toolkit's post-equipment state. Nil preserves conditions;
-	// a present empty slice clears them. The expected version protects concurrent
-	// combat changes before this replacement is accepted.
-	Conditions *[]json.RawMessage
-}
-
-// PatchEquipmentOutput contains the actual latest persisted entity. Applied is
-// false only when a non-equipment revision requires caller reprojection.
-type PatchEquipmentOutput struct {
-	Character *entities.Character
-	Version   string
-	Applied   bool
 }
 
 // DeleteInput defines the input for deleting a character

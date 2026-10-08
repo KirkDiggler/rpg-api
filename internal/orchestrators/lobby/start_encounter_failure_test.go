@@ -6,7 +6,6 @@ import (
 
 	"go.uber.org/mock/gomock"
 
-	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
@@ -147,9 +146,8 @@ func (s *StartContractSuite) failingLaunchFixture() (
 
 // launchSuccessCalls returns the ordered expectations for the successful prefix
 // of a contract launch: the registry lookup for key and the first n SDK verbs,
-// in the order the launch promises them — StartSession, Spawn guard-a, Spawn
-// guard-b, Join char-b, Join char-a, and (for the reference tomb) PlaceNPC the
-// demo vendor. Every armed verb returns a concrete EMPTY success output, so a
+// in the order the launch promises them — Launch, then (for the reference
+// tomb) PlaceNPC the demo vendor. Every armed verb returns a concrete EMPTY success output, so a
 // case can append ONE failing expectation and run gomock.InOrder over the whole
 // sequence: the failure is ordered after every success the launch must make
 // first, and any verb past it is unarmed and fails the controller-isolated mock.
@@ -165,24 +163,8 @@ func (s *StartContractSuite) launchSuccessCalls(
 	// suite would carry expectations for verbs the launch is supposed to skip.
 	verbs := []func() *gomock.Call{
 		func() *gomock.Call {
-			return s.manager.EXPECT().StartSession(s.ctx, gomock.Any()).
-				Return(&sdk.StartSessionOutput{}, nil)
-		},
-		func() *gomock.Call {
-			return s.manager.EXPECT().Spawn(s.ctx, gomock.Any()).
-				Return(&sdk.SpawnOutput{}, nil)
-		},
-		func() *gomock.Call {
-			return s.manager.EXPECT().Spawn(s.ctx, gomock.Any()).
-				Return(&sdk.SpawnOutput{}, nil)
-		},
-		func() *gomock.Call {
-			return s.manager.EXPECT().Join(s.ctx, gomock.Any()).
-				Return(&sdk.JoinOutput{}, nil)
-		},
-		func() *gomock.Call {
-			return s.manager.EXPECT().Join(s.ctx, gomock.Any()).
-				Return(&sdk.JoinOutput{}, nil)
+			return s.manager.EXPECT().Launch(s.ctx, gomock.Any()).
+				Return(&sdk.LaunchOutput{}, nil)
 		},
 	}
 	if withVendor {
@@ -304,80 +286,14 @@ func (s *StartContractSuite) TestStartEncounter_LobbyRepoGetFailure_IsWrappedAnd
 	s.assertNoEvent(sub)
 }
 
-// TestStartEncounter_InsufficientSeats_Refused pins the entrance gate: a party
-// larger than the dungeon seats is refused BEFORE anything is written, rather
-// than being half-seated.
-func (s *StartContractSuite) TestStartEncounter_InsufficientSeats_Refused() {
-	const key = "tiny-dungeon"
-	entry := contractEntry(key)
-	entry.Dungeon.PartySeats = entry.Dungeon.PartySeats[:1] // one seat, two members
-	s.registry.EXPECT().Get(s.ctx, key).Return(entry, nil)
-
-	err := s.refusedLaunch(contractLobbyID, readyContractLobby(), &lobbyorch.StartEncounterInput{
-		PlayerID: "alice", LobbyID: contractLobbyID, DungeonKey: lobbyorch.DungeonKey(key),
-	})
-	s.Require().ErrorContains(err, "seats 1")
-	s.Require().NotErrorIs(err, lobbyorch.ErrDungeonNotFound)
-}
-
-// TestStartEncounter_DuplicatePartyIDs_Refused pins the one-id-one-member check
-// against the party itself: two members claiming one character id are refused
-// before anything is written.
-func (s *StartContractSuite) TestStartEncounter_DuplicatePartyIDs_Refused() {
-	const key = "custom-dungeon"
-	s.registry.EXPECT().Get(s.ctx, key).Return(contractEntry(key), nil)
-
-	duplicated := readyContractLobby()
-	duplicated.Members["bob"].CharacterID = "char-a"
-
-	err := s.refusedLaunch(contractLobbyID, duplicated, &lobbyorch.StartEncounterInput{
-		PlayerID: "alice", LobbyID: contractLobbyID, DungeonKey: lobbyorch.DungeonKey(key),
-	})
-	s.Require().ErrorContains(err, "claimed twice")
-	s.Require().ErrorContains(err, "char-a")
-}
-
-// TestStartEncounter_PartyMonsterIDCollision_Refused pins the same check
-// crossing the party/monster seam: a character whose id equals an authored
-// monster member id is refused, naming both claimants.
-func (s *StartContractSuite) TestStartEncounter_PartyMonsterIDCollision_Refused() {
-	const key = "custom-dungeon"
-	s.registry.EXPECT().Get(s.ctx, key).Return(contractEntry(key), nil)
-
-	colliding := readyContractLobby()
-	colliding.Members["alice"].CharacterID = "guard-a"
-
-	err := s.refusedLaunch(contractLobbyID, colliding, &lobbyorch.StartEncounterInput{
-		PlayerID: "alice", LobbyID: contractLobbyID, DungeonKey: lobbyorch.DungeonKey(key),
-	})
-	s.Require().ErrorContains(err, "claimed twice")
-	s.Require().ErrorContains(err, "guard-a")
-}
-
-// TestStartEncounter_PartyDemoVendorIDCollision_Refused pins the third claimant
-// the launch knows about: on the reference tomb the temporary demo vendor's id
-// is reserved, so a character claiming it is refused before any write.
-func (s *StartContractSuite) TestStartEncounter_PartyDemoVendorIDCollision_Refused() {
-	s.registry.EXPECT().Get(s.ctx, dungeons.DefaultKey).
-		Return(contractEntry(dungeons.DefaultKey), nil)
-
-	colliding := readyContractLobby()
-	colliding.Members["alice"].CharacterID = contractVendorMemberID
-
-	err := s.refusedLaunch(contractLobbyID, colliding, &lobbyorch.StartEncounterInput{
-		PlayerID: "alice", LobbyID: contractLobbyID,
-	})
-	s.Require().ErrorContains(err, "claimed twice")
-	s.Require().ErrorContains(err, contractVendorMemberID)
-}
-
 // --- Partial-launch failures: stop calling, write nothing, announce nothing -
 
-// TestStartEncounter_StartSessionFailure_StopsAndWraps is the first SDK failure:
-// only the registry lookup and StartSession are expected. Spawn, Join, PlaceNPC
-// and Save are all unarmed, so the failure proves the launch stops rather than
-// continuing into a session nobody agreed to.
-func (s *StartContractSuite) TestStartEncounter_StartSessionFailure_StopsAndWraps() {
+// TestStartEncounter_LaunchFailure_StopsAndWraps: only the registry lookup and
+// Launch are expected. PlaceNPC and Save are unarmed, so the failure proves the
+// lobby stops rather than recording a run the SDK refused. Launch's own
+// refusals (too few seats, an id claimed twice, an unresolvable monster) are
+// all this path.
+func (s *StartContractSuite) TestStartEncounter_LaunchFailure_StopsAndWraps() {
 	boom := errors.New("provider unavailable")
 	const key = "custom-dungeon"
 	entry := contractEntry(key)
@@ -386,7 +302,7 @@ func (s *StartContractSuite) TestStartEncounter_StartSessionFailure_StopsAndWrap
 	defer func() { _ = sub.Close() }()
 
 	calls := s.launchSuccessCalls(entry, key, false, 0)
-	calls = append(calls, s.manager.EXPECT().StartSession(s.ctx, gomock.Any()).Return(nil, boom))
+	calls = append(calls, s.manager.EXPECT().Launch(s.ctx, gomock.Any()).Return(nil, boom))
 	gomock.InOrder(calls...)
 
 	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
@@ -399,109 +315,9 @@ func (s *StartContractSuite) TestStartEncounter_StartSessionFailure_StopsAndWrap
 	s.assertNoEvent(sub)
 }
 
-// TestStartEncounter_FirstSpawnFailure_StopsAndWraps: StartSession succeeded, the
-// first Spawn failed. The second Spawn is unarmed — the launch must not place
-// the rest of the garrison, join anyone, or write.
-func (s *StartContractSuite) TestStartEncounter_FirstSpawnFailure_StopsAndWraps() {
-	boom := errors.New("spawn refused")
-	const key = "custom-dungeon"
-	entry := contractEntry(key)
-
-	observed, orch, before, sub := s.failingLaunchFixture()
-	defer func() { _ = sub.Close() }()
-
-	calls := s.launchSuccessCalls(entry, key, false, 1)
-	calls = append(calls, s.manager.EXPECT().Spawn(s.ctx, gomock.Any()).Return(nil, boom))
-	gomock.InOrder(calls...)
-
-	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
-		PlayerID: "alice", LobbyID: contractLobbyID, DungeonKey: lobbyorch.DungeonKey(key),
-	})
-	s.Nil(out)
-	s.Require().ErrorIs(err, boom)
-	s.Zero(observed.saveCalls)
-	s.Equal(before, s.snapshotLobby(contractLobbyID))
-	s.assertNoEvent(sub)
-}
-
-// TestStartEncounter_SecondSpawnFailure_StopsAndWraps: the FIRST monster placed
-// successfully; the second Spawn failed. The joins are unarmed — the party never
-// arrives, nothing is written, nothing is announced.
-func (s *StartContractSuite) TestStartEncounter_SecondSpawnFailure_StopsAndWraps() {
-	boom := errors.New("spawn refused")
-	const key = "custom-dungeon"
-	entry := contractEntry(key)
-
-	observed, orch, before, sub := s.failingLaunchFixture()
-	defer func() { _ = sub.Close() }()
-
-	calls := s.launchSuccessCalls(entry, key, false, 2)
-	calls = append(calls, s.manager.EXPECT().Spawn(s.ctx, gomock.Any()).Return(nil, boom))
-	gomock.InOrder(calls...)
-
-	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
-		PlayerID: "alice", LobbyID: contractLobbyID, DungeonKey: lobbyorch.DungeonKey(key),
-	})
-	s.Nil(out)
-	s.Require().ErrorIs(err, boom)
-	s.Zero(observed.saveCalls)
-	s.Equal(before, s.snapshotLobby(contractLobbyID))
-	s.assertNoEvent(sub)
-}
-
-// TestStartEncounter_FirstJoinFailure_StopsAndWraps: both monsters placed, the
-// first party member's Join failed. The second Join is unarmed — the party stops
-// arriving, nothing is written, nothing is announced.
-func (s *StartContractSuite) TestStartEncounter_FirstJoinFailure_StopsAndWraps() {
-	boom := errors.New("join refused")
-	const key = "custom-dungeon"
-	entry := contractEntry(key)
-
-	observed, orch, before, sub := s.failingLaunchFixture()
-	defer func() { _ = sub.Close() }()
-
-	calls := s.launchSuccessCalls(entry, key, false, 3)
-	calls = append(calls, s.manager.EXPECT().Join(s.ctx, gomock.Any()).Return(nil, boom))
-	gomock.InOrder(calls...)
-
-	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
-		PlayerID: "alice", LobbyID: contractLobbyID, DungeonKey: lobbyorch.DungeonKey(key),
-	})
-	s.Nil(out)
-	s.Require().ErrorIs(err, boom)
-	s.Zero(observed.saveCalls)
-	s.Equal(before, s.snapshotLobby(contractLobbyID))
-	s.assertNoEvent(sub)
-}
-
-// TestStartEncounter_SecondJoinFailure_StopsAndWraps: the first member joined,
-// the second Join failed. No PlaceNPC expectation is armed (this key places no
-// vendor), so nothing is left but the write the launch must not reach.
-func (s *StartContractSuite) TestStartEncounter_SecondJoinFailure_StopsAndWraps() {
-	boom := errors.New("join refused")
-	const key = "custom-dungeon"
-	entry := contractEntry(key)
-
-	observed, orch, before, sub := s.failingLaunchFixture()
-	defer func() { _ = sub.Close() }()
-
-	calls := s.launchSuccessCalls(entry, key, false, 4)
-	calls = append(calls, s.manager.EXPECT().Join(s.ctx, gomock.Any()).Return(nil, boom))
-	gomock.InOrder(calls...)
-
-	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
-		PlayerID: "alice", LobbyID: contractLobbyID, DungeonKey: lobbyorch.DungeonKey(key),
-	})
-	s.Nil(out)
-	s.Require().ErrorIs(err, boom)
-	s.Zero(observed.saveCalls)
-	s.Equal(before, s.snapshotLobby(contractLobbyID))
-	s.assertNoEvent(sub)
-}
-
 // TestStartEncounter_PlaceNPCFailure_StopsAndWraps uses the reference tomb so
-// the failing verb is the LAST SDK call before the write: both guards placed,
-// both members joined, then PlaceNPC fails. The write is still unarmed.
+// the failing verb is the LAST SDK call before the write: the launch
+// succeeded, then PlaceNPC fails. The write is still unarmed.
 func (s *StartContractSuite) TestStartEncounter_PlaceNPCFailure_StopsAndWraps() {
 	boom := errors.New("vendor placement refused")
 	entry := contractEntry(dungeons.DefaultKey)
@@ -509,7 +325,7 @@ func (s *StartContractSuite) TestStartEncounter_PlaceNPCFailure_StopsAndWraps() 
 	observed, orch, before, sub := s.failingLaunchFixture()
 	defer func() { _ = sub.Close() }()
 
-	calls := s.launchSuccessCalls(entry, dungeons.DefaultKey, true, 5)
+	calls := s.launchSuccessCalls(entry, dungeons.DefaultKey, true, 1)
 	calls = append(calls, s.manager.EXPECT().PlaceNPC(s.ctx, gomock.Any()).Return(nil, boom))
 	gomock.InOrder(calls...)
 
@@ -537,7 +353,7 @@ func (s *StartContractSuite) TestStartEncounter_FinalSaveFailure_WritesNothingAn
 	defer func() { _ = sub.Close() }()
 	observed.saveErr = boom
 
-	gomock.InOrder(s.launchSuccessCalls(entry, key, false, 5)...)
+	gomock.InOrder(s.launchSuccessCalls(entry, key, false, 1)...)
 
 	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
 		PlayerID: "alice", LobbyID: contractLobbyID, DungeonKey: lobbyorch.DungeonKey(key),
@@ -547,32 +363,5 @@ func (s *StartContractSuite) TestStartEncounter_FinalSaveFailure_WritesNothingAn
 	s.Equal(1, observed.saveCalls, "the launch attempts the lobby write exactly once")
 	s.Equal(before, s.snapshotLobby(contractLobbyID),
 		"a failed write leaves the backing store exactly as it was")
-	s.assertNoEvent(sub)
-}
-
-// TestStartEncounter_UnsupportedArrival_StopsBeforeTheSecondSpawn pins the one
-// failure that is NOT an SDK error: the second monster's arrival predicate is a
-// form this launch cannot translate, so it refuses by type after placing the
-// first monster — before that monster's Spawn, before any Join, before the write.
-// Only the lookup, StartSession and the first Spawn are expected; everything
-// past them is unarmed.
-func (s *StartContractSuite) TestStartEncounter_UnsupportedArrival_StopsBeforeTheSecondSpawn() {
-	const key = "bad-arrival"
-	entry := contractEntry(key)
-	entry.Dungeon.Monsters[1].Arrives = tkencounter.TriggerExternal{}
-
-	observed, orch, before, sub := s.failingLaunchFixture()
-	defer func() { _ = sub.Close() }()
-
-	gomock.InOrder(s.launchSuccessCalls(entry, key, false, 2)...)
-
-	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
-		PlayerID: "alice", LobbyID: contractLobbyID, DungeonKey: lobbyorch.DungeonKey(key),
-	})
-	s.Nil(out)
-	s.Require().ErrorContains(err, "TriggerExternal",
-		"the unsupported predicate is named by type, not swallowed")
-	s.Zero(observed.saveCalls)
-	s.Equal(before, s.snapshotLobby(contractLobbyID))
 	s.assertNoEvent(sub)
 }

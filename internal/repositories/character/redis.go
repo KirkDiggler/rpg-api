@@ -5,9 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"log/slog"
-	"maps"
 
 	redis "github.com/redis/go-redis/v9"
 
@@ -23,15 +21,11 @@ const (
 	sessionIndexPrefix = "character:session:"
 
 	// Error messages
-	errCharacterNil         = "character cannot be nil"
-	errCharacterDataNil     = "character data cannot be nil"
-	errCharacterIDEmpty     = "character ID cannot be empty"
-	errPlayerIDEmpty        = "player ID cannot be empty"
-	errSessionIDEmpty       = "session ID cannot be empty"
-	errExpectedVersionEmpty = "expected character version cannot be empty"
-	errEquipmentConflict    = "character equipment changed concurrently"
-
-	maxEquipmentPatchWatchAttempts = 8
+	errCharacterNil     = "character cannot be nil"
+	errCharacterDataNil = "character data cannot be nil"
+	errCharacterIDEmpty = "character ID cannot be empty"
+	errPlayerIDEmpty    = "player ID cannot be empty"
+	errSessionIDEmpty   = "session ID cannot be empty"
 )
 
 type redisRepository struct {
@@ -200,92 +194,6 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 	}
 
 	return &UpdateOutput{Character: input.Character}, nil
-}
-
-func (r *redisRepository) PatchEquipment(
-	ctx context.Context,
-	input PatchEquipmentInput,
-) (*PatchEquipmentOutput, error) {
-	if input.CharacterID == "" {
-		return nil, apierr.InvalidArgument(errCharacterIDEmpty)
-	}
-	if input.ExpectedVersion == "" {
-		return nil, apierr.InvalidArgument(errExpectedVersionEmpty)
-	}
-
-	key := characterKeyPrefix + input.CharacterID
-	for range maxEquipmentPatchWatchAttempts {
-		var output *PatchEquipmentOutput
-		err := r.client.Watch(ctx, func(tx *redis.Tx) error {
-			stored, getErr := tx.Get(ctx, key).Bytes()
-			if getErr != nil {
-				if errors.Is(getErr, redis.Nil) {
-					return apierr.NotFoundf("character with ID %s not found", input.CharacterID)
-				}
-				return apierr.Wrapf(getErr, "failed to get character for equipment patch")
-			}
-
-			var current entities.Character
-			if unmarshalErr := json.Unmarshal(stored, &current); unmarshalErr != nil {
-				return apierr.Wrapf(unmarshalErr, "failed to unmarshal character for equipment patch")
-			}
-			if current.Data == nil {
-				return apierr.Internal(errCharacterDataNil)
-			}
-
-			if !maps.Equal(current.Data.EquipmentSlots, input.ExpectedEquipmentSlots) {
-				return apierr.Aborted(errEquipmentConflict)
-			}
-
-			version := characterVersion(stored)
-			if version != input.ExpectedVersion {
-				output = &PatchEquipmentOutput{
-					Character: &current,
-					Version:   version,
-					Applied:   false,
-				}
-				return nil
-			}
-
-			current.Data.EquipmentSlots = maps.Clone(input.EquipmentSlots)
-			if input.Conditions != nil {
-				current.Data.Conditions = make([]json.RawMessage, len(*input.Conditions))
-				for i, condition := range *input.Conditions {
-					current.Data.Conditions[i] = append(json.RawMessage(nil), condition...)
-				}
-			}
-			patched, marshalErr := json.Marshal(&current)
-			if marshalErr != nil {
-				return apierr.Wrapf(marshalErr, "failed to marshal character equipment patch")
-			}
-
-			if _, txErr := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-				pipe.Set(ctx, key, patched, 0)
-				return nil
-			}); txErr != nil {
-				return txErr
-			}
-
-			output = &PatchEquipmentOutput{
-				Character: &current,
-				Version:   characterVersion(patched),
-				Applied:   true,
-			}
-			return nil
-		}, key)
-		if errors.Is(err, redis.TxFailedErr) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		if output == nil {
-			return nil, apierr.Internal("equipment patch returned no result")
-		}
-		return output, nil
-	}
-
-	return nil, apierr.Aborted(errEquipmentConflict)
 }
 
 func characterVersion(data []byte) string {

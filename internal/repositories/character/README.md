@@ -14,12 +14,12 @@ The Redis adapter stores `entities.Character`, a wrapper around canonical toolki
 - `ListByPlayerID` and `ListBySessionID` resolve members from their respective Redis sets.
   Missing record IDs are lazily removed; malformed records return an error. List order
   is not promised.
-- `PatchEquipment` changes only the supplied EquipmentSlots and, when supplied (non-nil),
-  Conditions; an empty slice clears them. No armour class is stored: an old record
-  carrying `armor_class` loads with the key ignored and drops it on this write
-  (rpg-project#538 R13). WATCH guards the transaction. Stale equipment returns ABORTED; a changed version with the
-  same equipment returns the latest record with Applied=false so the caller can
-  reproject; success returns the patched record/version. No AC calculation occurs here.
+- No armour class is stored: an old record carrying `armor_class` loads with the key
+  ignored and drops it on the next write (rpg-project#538 R13).
+- Equipment has no write of its own. The session SDK's Equip/Unequip verbs change a sheet
+  and save it through `Update` (via the session orchestrator's `CharacterRepository`
+  adapter) under the guard the character's seat decides (rpg-project#542), so the former
+  `PatchEquipment` compare-and-swap, its version check and its retry loop are gone.
 
 ## Redis keys
 
@@ -36,20 +36,10 @@ when exercising its existing list/cleanup path, rather than inventing a writer.
 
 ## Evidence
 
-`redis_equipment_test.go` retains the non-equipment-revision/reprojection and
-stale-equipment refusal regressions. `redis_contract_test.go` adds populated persistence,
-player-index lifecycle, detached reads, successful equipment-patch preservation,
-validation, malformed data, and bounded storage failures using miniredis.
+`redis_contract_test.go` covers populated persistence, player-index lifecycle, detached
+reads, validation, malformed data, and bounded storage failures using miniredis.
 
 See [the method inventory](../../../docs/quality/repository-contracts.md) for exact
 coverage, known limits, and #141 reconciliation. In particular, these tests do not
 establish atomic create-if-absent under concurrent writers, arbitrary transaction
 rollback, or real concurrent WATCH retry/exhaustion behavior.
-
-### Equipment-bound conditions
-
-`PatchEquipmentInput.Conditions` optionally carries the toolkit's post-equipment
-condition blobs. The same full-record expected version guards slots, derived AC
-and conditions together. A stale version must be reprojected; a nil conditions
-pointer preserves them, while a present empty slice explicitly clears them.
-No HP, resource or action-economy field is written by this patch.

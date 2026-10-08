@@ -85,6 +85,9 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// A malformed reach (a negative range) is the caller's defect, not a
 		// reach that fell short -- ErrOutOfRange keeps FAILED_PRECONDITION.
 		{"ErrBadReach", sdk.ErrBadReach, codes.InvalidArgument},
+		{"ErrBadEquip", sdk.ErrBadEquip, codes.InvalidArgument},
+		{"ErrBadRest", sdk.ErrBadRest, codes.InvalidArgument},
+		{"ErrDuplicateMember", sdk.ErrDuplicateMember, codes.InvalidArgument},
 
 		// A retired verb cannot become available by changing the game state.
 		{"ErrSearchRetired", sdk.ErrSearchRetired, codes.Unimplemented},
@@ -233,6 +236,8 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// landing, changes the answer.
 		{"ErrCannotAdvance", sdk.ErrCannotAdvance, codes.FailedPrecondition},
 		{"ErrLevelNotOffered", sdk.ErrLevelNotOffered, codes.FailedPrecondition},
+		{"ErrArmorInFight", sdk.ErrArmorInFight, codes.FailedPrecondition},
+		{"ErrSeatedElsewhere", sdk.ErrSeatedElsewhere, codes.FailedPrecondition},
 		// Already in the pinned SDK before this feature (v0.21.4) and unmapped
 		// until this audit: this package's OWN adapter vocabulary going stale
 		// against itself, not a caller mistake.

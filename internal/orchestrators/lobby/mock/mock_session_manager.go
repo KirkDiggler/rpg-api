@@ -56,19 +56,19 @@ func (mr *MockSessionManagerMockRecorder) End(arg0, arg1 any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "End", reflect.TypeOf((*MockSessionManager)(nil).End), arg0, arg1)
 }
 
-// Join mocks base method.
-func (m *MockSessionManager) Join(arg0 context.Context, arg1 *session.JoinInput) (*session.JoinOutput, error) {
+// Launch mocks base method.
+func (m *MockSessionManager) Launch(arg0 context.Context, arg1 *session.LaunchInput) (*session.LaunchOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Join", arg0, arg1)
-	ret0, _ := ret[0].(*session.JoinOutput)
+	ret := m.ctrl.Call(m, "Launch", arg0, arg1)
+	ret0, _ := ret[0].(*session.LaunchOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// Join indicates an expected call of Join.
-func (mr *MockSessionManagerMockRecorder) Join(arg0, arg1 any) *gomock.Call {
+// Launch indicates an expected call of Launch.
+func (mr *MockSessionManagerMockRecorder) Launch(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Join", reflect.TypeOf((*MockSessionManager)(nil).Join), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Launch", reflect.TypeOf((*MockSessionManager)(nil).Launch), arg0, arg1)
 }
 
 // PlaceNPC mocks base method.
@@ -84,36 +84,6 @@ func (m *MockSessionManager) PlaceNPC(arg0 context.Context, arg1 *session.PlaceN
 func (mr *MockSessionManagerMockRecorder) PlaceNPC(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PlaceNPC", reflect.TypeOf((*MockSessionManager)(nil).PlaceNPC), arg0, arg1)
-}
-
-// Spawn mocks base method.
-func (m *MockSessionManager) Spawn(arg0 context.Context, arg1 *session.SpawnInput) (*session.SpawnOutput, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Spawn", arg0, arg1)
-	ret0, _ := ret[0].(*session.SpawnOutput)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Spawn indicates an expected call of Spawn.
-func (mr *MockSessionManagerMockRecorder) Spawn(arg0, arg1 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Spawn", reflect.TypeOf((*MockSessionManager)(nil).Spawn), arg0, arg1)
-}
-
-// StartSession mocks base method.
-func (m *MockSessionManager) StartSession(arg0 context.Context, arg1 *session.StartSessionInput) (*session.StartSessionOutput, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "StartSession", arg0, arg1)
-	ret0, _ := ret[0].(*session.StartSessionOutput)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// StartSession indicates an expected call of StartSession.
-func (mr *MockSessionManagerMockRecorder) StartSession(arg0, arg1 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartSession", reflect.TypeOf((*MockSessionManager)(nil).StartSession), arg0, arg1)
 }
 
 // Status mocks base method.

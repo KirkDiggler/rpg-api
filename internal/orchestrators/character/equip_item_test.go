@@ -3,11 +3,8 @@ package character
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"maps"
-	"reflect"
+	"fmt"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
@@ -16,40 +13,36 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	dicemock "github.com/KirkDiggler/rpg-api/internal/orchestrators/dice/mock"
 	idgenmock "github.com/KirkDiggler/rpg-api/internal/pkg/idgen/mock"
-	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
-	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
+	characterrepomock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	draftmock "github.com/KirkDiggler/rpg-api/internal/repositories/character_draft/mock"
-	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/backgrounds"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 )
 
-// EquipItemTestSuite proves the rules-correct equip/unequip path (rpg-api#680):
-// the orchestrator must route through the toolkit's rules engine — occupancy,
-// slot-compatibility, swap-on-occupied — rather than writing EquipmentSlots
-// directly. Kept as its own suite (not folded into OrchestratorTestSuite) so
-// the fixtures stay equipment-focused and don't drag in draft/class/race
-// setup this slice doesn't need.
-const (
-	testCharacterRepositoryVersion = "version-1"
-	expectedMissingVersionMessage  = "character repository contract violation: missing character version"
-)
+// testCharacterRepositoryVersion is an opaque stored version for fixtures that
+// read through the character repository.
+const testCharacterRepositoryVersion = "version-1"
 
+// EquipItemTestSuite proves the equip path is transport (rpg-project#542): the
+// orchestrator hands the request to the session SDK's verb, passes its refusal
+// through unchanged, and projects armour class from the record the verb saved.
+//
+// The equip tests set NO character repository expectation. gomock fails any
+// call, so each is also the proof that the orchestrator neither reads nor
+// writes a sheet around the verb. (The read tests in armor_class_test.go ride
+// this suite's fixtures and set their own.)
 type EquipItemTestSuite struct {
 	suite.Suite
 	ctrl              *gomock.Controller
-	mockCharacterRepo *charactermock.MockRepository
+	mockCharacterRepo *characterrepomock.MockRepository
+	equipment         *scriptedEquipment
 	orchestrator      *Orchestrator
 	ctx               context.Context
-
-	testCharacterID string
-	notified        *recordingNotifier
+	testCharacterID   string
 }
 
 func TestEquipItemSuite(t *testing.T) {
@@ -58,761 +51,114 @@ func TestEquipItemSuite(t *testing.T) {
 
 func (s *EquipItemTestSuite) SetupTest() {
 	s.ctrl = gomock.NewController(s.T())
-	s.notified = &recordingNotifier{}
-	s.mockCharacterRepo = charactermock.NewMockRepository(s.ctrl)
+	s.equipment = &scriptedEquipment{t: s.T()}
+	s.mockCharacterRepo = characterrepomock.NewMockRepository(s.ctrl)
 	s.ctx = context.Background()
 	s.testCharacterID = "char-fighter-1"
 
 	var err error
-	s.notified = &recordingNotifier{}
 	s.orchestrator, err = New(&Config{
-		DraftRepo:          draftmock.NewMockRepository(s.ctrl),
-		CharacterRepo:      s.mockCharacterRepo,
-		DiceService:        dicemock.NewMockService(s.ctrl),
-		IDGenerator:        idgenmock.NewMockGenerator(s.ctrl),
-		DraftIDGenerator:   idgenmock.NewMockGenerator(s.ctrl),
-		AppearanceNotifier: s.notified,
+		DraftRepo:        draftmock.NewMockRepository(s.ctrl),
+		CharacterRepo:    s.mockCharacterRepo,
+		DiceService:      dicemock.NewMockService(s.ctrl),
+		IDGenerator:      idgenmock.NewMockGenerator(s.ctrl),
+		DraftIDGenerator: idgenmock.NewMockGenerator(s.ctrl),
+		Equipment:        s.equipment,
 	})
 	s.Require().NoError(err)
 }
 
 func (s *EquipItemTestSuite) TearDownTest() {
 	s.ctrl.Finish()
+	s.Empty(s.equipment.equips, "every scripted equip answer was asked for")
+	s.Empty(s.equipment.unequips, "every scripted unequip answer was asked for")
 }
 
-// fighterWithLongswordAndShield is unarmed (nothing equipped) but carries a
-// longsword and a shield — enough to exercise a plain equip and a
-// slot-swap without needing the full class/race/background setup the draft
-// tests build.
-func (s *EquipItemTestSuite) fighterWithLongswordAndShield() *entities.Character {
-	return &entities.Character{
-		Data: &character.Data{
-			ID:               s.testCharacterID,
-			PlayerID:         "player-1",
-			Name:             "Test Fighter",
-			Level:            1,
-			RaceID:           "human",
-			ClassID:          "fighter",
-			ProficiencyBonus: 2,
-			HitPoints:        12,
-			MaxHitPoints:     12,
-			AbilityScores: shared.AbilityScores{
-				abilities.STR: 16,
-				abilities.DEX: 12,
-				abilities.CON: 14,
-				abilities.INT: 10,
-				abilities.WIS: 10,
-				abilities.CHA: 10,
-			},
-			Inventory: []character.InventoryItemData{
-				{Type: "weapon", ID: "longsword", Quantity: 1},
-				{Type: "armor", ID: "shield", Quantity: 1},
-				{Type: "weapon", ID: "greatsword", Quantity: 1},
-			},
-			EquipmentSlots: character.EquipmentSlots{},
+// scriptedEquipment stands in for the SDK's equip verbs. Each call takes the
+// next scripted answer and records the input it was handed; a call with no
+// answer scripted fails the test, which is how a test says "the verb is never
+// reached". (A generated mock would sit in a package that imports this one.)
+type scriptedEquipment struct {
+	t        *testing.T
+	equips   []scriptedEquip
+	unequips []scriptedEquip
+	gotEquip []*sdk.EquipInput
+	gotUneq  []*sdk.UnequipInput
+}
+
+type scriptedEquip struct {
+	out *sdk.EquipOutput
+	err error
+}
+
+func (f *scriptedEquipment) Equip(_ context.Context, in *sdk.EquipInput) (*sdk.EquipOutput, error) {
+	f.gotEquip = append(f.gotEquip, in)
+	if len(f.equips) == 0 {
+		f.t.Fatalf("Equip called with no answer scripted: %+v", in)
+	}
+	next := f.equips[0]
+	f.equips = f.equips[1:]
+	return next.out, next.err
+}
+
+func (f *scriptedEquipment) Unequip(_ context.Context, in *sdk.UnequipInput) (*sdk.UnequipOutput, error) {
+	f.gotUneq = append(f.gotUneq, in)
+	if len(f.unequips) == 0 {
+		f.t.Fatalf("Unequip called with no answer scripted: %+v", in)
+	}
+	next := f.unequips[0]
+	f.unequips = f.unequips[1:]
+	return next.out, next.err
+}
+
+func (f *scriptedEquipment) answerEquip(out *sdk.EquipOutput, err error) {
+	f.equips = append(f.equips, scriptedEquip{out: out, err: err})
+}
+
+func (f *scriptedEquipment) answerUnequip(out *sdk.UnequipOutput, err error) {
+	f.unequips = append(f.unequips, scriptedEquip{out: out, err: err})
+}
+
+// fighter carries a longsword, a shield, a greatsword and chain mail with
+// nothing equipped; tests set the slots the verb's saved record would hold.
+func (s *EquipItemTestSuite) fighter() *character.Data {
+	return &character.Data{
+		ID:               s.testCharacterID,
+		PlayerID:         "player-1",
+		Name:             "Test Fighter",
+		Level:            1,
+		RaceID:           "human",
+		ClassID:          "fighter",
+		ProficiencyBonus: 2,
+		HitPoints:        12,
+		MaxHitPoints:     12,
+		AbilityScores: shared.AbilityScores{
+			abilities.STR: 16,
+			abilities.DEX: 12,
+			abilities.CON: 14,
+			abilities.INT: 10,
+			abilities.WIS: 10,
+			abilities.CHA: 10,
 		},
-	}
-}
-
-func (s *EquipItemTestSuite) appliedPatch(
-	entity *entities.Character,
-	input characterrepo.PatchEquipmentInput,
-) *characterrepo.PatchEquipmentOutput {
-	patchedData := *entity.Data
-	patchedData.EquipmentSlots = maps.Clone(input.EquipmentSlots)
-	if input.Conditions != nil {
-		patchedData.Conditions = *input.Conditions
-	}
-	return &characterrepo.PatchEquipmentOutput{
-		Character: &entities.Character{Data: &patchedData},
-		Version:   "patched-version",
-		Applied:   true,
-	}
-}
-
-func (s *EquipItemTestSuite) TestEquipItem_MissingRepositoryVersionFailsBeforeMutation() {
-	entity := s.fighterWithLongswordAndShield()
-	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotOffHand: "shield"}
-	originalData := *entity.Data
-	originalData.EquipmentSlots = maps.Clone(entity.Data.EquipmentSlots)
-	originalSlotsIdentity := reflect.ValueOf(entity.Data.EquipmentSlots).Pointer()
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity}, nil)
-	// Deliberately no PatchEquipment expectation.
-
-	projectCalls := 0
-	s.orchestrator.projectLoaded = func(ctx context.Context, input *ProjectLoadedCharacterInput) (*ProjectLoadedCharacterOutput, error) {
-		projectCalls++
-		return projectLoadedCharacter(ctx, input)
-	}
-
-	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "longsword",
-		Slot:        character.SlotMainHand,
-	})
-	s.Require().Error(err)
-	s.Nil(out)
-	s.True(apierr.IsInternal(err), "expected Internal, got %v", err)
-	var coded *apierr.Error
-	s.Require().True(errors.As(err, &coded))
-	s.Equal(expectedMissingVersionMessage, coded.Message)
-	s.Zero(projectCalls, "missing version must fail before strict projection")
-	s.Equal(originalData, *entity.Data)
-	s.Equal(originalSlotsIdentity, reflect.ValueOf(entity.Data.EquipmentSlots).Pointer())
-}
-
-func (s *EquipItemTestSuite) TestUnequipItem_MissingRepositoryVersionFailsBeforeMutation() {
-	entity := s.fighterWithLongswordAndShield()
-	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotMainHand: "longsword"}
-	originalData := *entity.Data
-	originalData.EquipmentSlots = maps.Clone(entity.Data.EquipmentSlots)
-	originalSlotsIdentity := reflect.ValueOf(entity.Data.EquipmentSlots).Pointer()
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity}, nil)
-	// Deliberately no PatchEquipment expectation.
-
-	projectCalls := 0
-	s.orchestrator.projectLoaded = func(ctx context.Context, input *ProjectLoadedCharacterInput) (*ProjectLoadedCharacterOutput, error) {
-		projectCalls++
-		return projectLoadedCharacter(ctx, input)
-	}
-
-	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
-		CharacterID: s.testCharacterID,
-		Slot:        character.SlotMainHand,
-	})
-	s.Require().Error(err)
-	s.Nil(out)
-	s.True(apierr.IsInternal(err), "expected Internal, got %v", err)
-	var coded *apierr.Error
-	s.Require().True(errors.As(err, &coded))
-	s.Equal(expectedMissingVersionMessage, coded.Message)
-	s.Zero(projectCalls, "missing version must fail before strict projection")
-	s.Equal(originalData, *entity.Data)
-	s.Equal(originalSlotsIdentity, reflect.ValueOf(entity.Data.EquipmentSlots).Pointer())
-}
-
-func (s *EquipItemTestSuite) TestEquipItem_Success_NoPreviousOccupant() {
-	charEntity := s.fighterWithLongswordAndShield()
-
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
-
-	s.mockCharacterRepo.EXPECT().
-		PatchEquipment(s.ctx, gomock.Any()).
-		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
-			s.Assert().Equal("longsword", input.EquipmentSlots.Get(character.SlotMainHand))
-			return s.appliedPatch(charEntity, input), nil
-		})
-
-	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "longsword",
-		Slot:        character.SlotMainHand,
-	})
-	s.Require().NoError(err)
-	s.Assert().Empty(out.PreviousItemID)
-}
-
-// TestEquipItem_TwoHanded_ClearsOffHand proves the toolkit's occupancy rule
-// (rpg-toolkit#812) actually runs through this orchestrator method, not just
-// in the toolkit's own tests: equipping a two-handed weapon into main_hand
-// must clear off_hand as a side effect of the SAME EquipItem call.
-func (s *EquipItemTestSuite) TestEquipItem_TwoHanded_ClearsOffHand() {
-	charEntity := s.fighterWithLongswordAndShield()
-	charEntity.Data.EquipmentSlots = character.EquipmentSlots{
-		character.SlotOffHand: "shield",
-	}
-
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
-
-	s.mockCharacterRepo.EXPECT().
-		PatchEquipment(s.ctx, gomock.Any()).
-		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
-			s.Assert().Equal("greatsword", input.EquipmentSlots.Get(character.SlotMainHand))
-			s.Assert().Empty(input.EquipmentSlots.Get(character.SlotOffHand),
-				"equipping a two-handed weapon must clear off_hand")
-			return s.appliedPatch(charEntity, input), nil
-		})
-
-	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "greatsword",
-		Slot:        character.SlotMainHand,
-	})
-	s.Require().NoError(err)
-	s.Assert().Empty(out.PreviousItemID, "main_hand had nothing equipped before this call")
-}
-
-func (s *EquipItemTestSuite) TestEquipItem_Swap_ReturnsPreviousOccupant() {
-	charEntity := s.fighterWithLongswordAndShield()
-	charEntity.Data.Inventory = append(charEntity.Data.Inventory,
-		character.InventoryItemData{Type: "weapon", ID: "handaxe", Quantity: 1})
-	charEntity.Data.EquipmentSlots = character.EquipmentSlots{
-		character.SlotMainHand: "handaxe",
-	}
-
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
-
-	s.mockCharacterRepo.EXPECT().
-		PatchEquipment(s.ctx, gomock.Any()).
-		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
-			return s.appliedPatch(charEntity, input), nil
-		})
-
-	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "longsword",
-		Slot:        character.SlotMainHand,
-	})
-	s.Require().NoError(err)
-	s.Assert().Equal("handaxe", out.PreviousItemID)
-}
-
-func (s *EquipItemTestSuite) TestEquipItem_ItemNotInInventory_ReturnsNotFound() {
-	charEntity := s.fighterWithLongswordAndShield()
-
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
-
-	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "not-owned-item",
-		Slot:        character.SlotMainHand,
-	})
-	s.Require().Error(err)
-	s.Assert().True(apierr.IsNotFound(err), "expected NotFound, got %v", err)
-}
-
-// TestEquipItem_IncompatibleSlot_ReturnsInvalidArgument proves the toolkit's
-// new slot-compatibility validation (rpg-toolkit#812 — equipping into an
-// incompatible slot used to silently succeed) surfaces as an
-// InvalidArgument, not a silent no-op or an opaque Internal error.
-func (s *EquipItemTestSuite) TestEquipItem_IncompatibleSlot_ReturnsInvalidArgument() {
-	charEntity := s.fighterWithLongswordAndShield()
-
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
-
-	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "shield",
-		Slot:        character.SlotMainHand,
-	})
-	s.Require().Error(err)
-	s.Assert().True(apierr.IsInvalidArgument(err), "expected InvalidArgument, got %v", err)
-}
-
-func (s *EquipItemTestSuite) TestUnequipItem_Success() {
-	charEntity := s.fighterWithLongswordAndShield()
-	charEntity.Data.EquipmentSlots = character.EquipmentSlots{
-		character.SlotMainHand: "longsword",
-	}
-
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
-
-	s.mockCharacterRepo.EXPECT().
-		PatchEquipment(s.ctx, gomock.Any()).
-		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
-			s.Assert().Empty(input.EquipmentSlots.Get(character.SlotMainHand))
-			return s.appliedPatch(charEntity, input), nil
-		})
-
-	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
-		CharacterID: s.testCharacterID,
-		Slot:        character.SlotMainHand,
-	})
-	s.Require().NoError(err)
-	s.Assert().Equal("longsword", out.UnequippedItemID)
-	s.Require().NotNil(out.Character)
-	projected, projectErr := ProjectView(s.ctx, &ProjectViewInput{Data: out.Character.Data})
-	s.Require().NoError(projectErr)
-	s.Equal(projected.View, out.View, "unequip persisted entity and detached View must be the same post-state")
-}
-
-// TestEquipItem_PreservesNonEquipmentFields is the gate-finding-2 regression:
-// persistence must merge only the equipment fields instead of writing the
-// toolkit sheet's lossy ToData result. Strict loading now rejects unknown
-// inventory entries rather than preserving a blob it cannot project, but all
-// valid non-equipment data and API-owned appearance still remain byte-for-byte
-// unchanged.
-func (s *EquipItemTestSuite) TestEquipItem_PreservesNonEquipmentFields() {
-	charEntity := s.fighterWithLongswordAndShield()
-	fixedCreatedAt := time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)
-	charEntity.Data.BackgroundID = backgrounds.Soldier
-	charEntity.Data.CreatedAt = fixedCreatedAt
-	if charEntity.Data.Resources == nil {
-		charEntity.Data.Resources = make(map[coreResources.ResourceKey]character.RecoverableResourceData)
-	}
-	charEntity.Data.Resources[resources.HitDice] = character.RecoverableResourceData{
-		Current: 1, Maximum: 2, ResetType: coreResources.ResetLongRest,
-	}
-	charEntity.Data.ClassResources = map[shared.ClassResourceType]character.ResourceData{
-		shared.ClassResourceType(99): {Name: "legacy", Current: 1, Max: 2},
-	}
-	color := uint32(0x123456)
-	roughness := float32(0.33)
-	charEntity.Data.Appearance = &customization.Appearance{Hair: &customization.HairCustomization{
-		Scalp:      &customization.StyleSelection{Kind: customization.StyleSelectionStyle, StyleRef: "modular-fantasy-hero:hair:38"},
-		FacialHair: &customization.StyleSelection{Kind: customization.StyleSelectionNone},
-		ColorSRGB:  &color,
-		Roughness:  &roughness,
-	}}
-
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
-
-	var persisted *entities.Character
-	s.mockCharacterRepo.EXPECT().
-		PatchEquipment(s.ctx, gomock.Any()).
-		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
-			output := s.appliedPatch(charEntity, input)
-			persisted = output.Character
-			return output, nil
-		})
-
-	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "longsword",
-		Slot:        character.SlotMainHand,
-	})
-	s.Require().NoError(err)
-	s.Require().NotNil(persisted)
-
-	s.Assert().Equal(backgrounds.Soldier, persisted.Data.BackgroundID, "BackgroundID must survive an equip call")
-	s.Assert().True(fixedCreatedAt.Equal(persisted.Data.CreatedAt), "CreatedAt must survive an equip call")
-	s.Assert().Equal(charEntity.Data.Inventory, persisted.Data.Inventory)
-	s.Assert().Equal(charEntity.Data.Resources, persisted.Data.Resources)
-	s.Assert().Equal(charEntity.Data.ClassResources, persisted.Data.ClassResources)
-	s.Assert().Equal(charEntity.Data.Appearance, persisted.Data.Appearance)
-
-	// The actual equip must still have applied — this isn't a no-op merge.
-	s.Assert().Equal("longsword", persisted.Data.EquipmentSlots.Get(character.SlotMainHand))
-}
-
-// TestEquipItem_RejectsUnprojectableDataWithoutWriting proves every strict
-// private-state failure happens before repository PatchEquipment.
-func (s *EquipItemTestSuite) TestEquipItem_RejectsUnprojectableDataWithoutWriting() {
-	tests := []struct {
-		name   string
-		mutate func(*entities.Character)
-	}{
-		{
-			name: "missing player identity",
-			mutate: func(entity *entities.Character) {
-				entity.Data.PlayerID = ""
-			},
+		Inventory: []character.InventoryItemData{
+			{Type: "weapon", ID: "longsword", Quantity: 1},
+			{Type: "armor", ID: "shield", Quantity: 1},
+			{Type: "weapon", ID: "greatsword", Quantity: 1},
+			{Type: "armor", ID: "chain-mail", Quantity: 1},
 		},
-		{
-			name: "missing class identity",
-			mutate: func(entity *entities.Character) {
-				entity.Data.ClassID = ""
-			},
-		},
-		{
-			name: "missing race identity",
-			mutate: func(entity *entities.Character) {
-				entity.Data.RaceID = ""
-			},
-		},
-		{
-			name: "malformed condition",
-			mutate: func(entity *entities.Character) {
-				entity.Data.Conditions = []json.RawMessage{json.RawMessage(`{"ref":{"module":"dnd5e","type":"conditions","id":"unknown"}}`)}
-			},
-		},
-		{
-			name: "malformed feature",
-			mutate: func(entity *entities.Character) {
-				entity.Data.Features = []json.RawMessage{json.RawMessage(`{"ref":`)}
-			},
-		},
-		{
-			name: "unknown item",
-			mutate: func(entity *entities.Character) {
-				entity.Data.Inventory = append(entity.Data.Inventory,
-					character.InventoryItemData{Type: "item", ID: "vorpal-spork", Quantity: 1})
-			},
-		},
-		{
-			name: "malformed resource",
-			mutate: func(entity *entities.Character) {
-				entity.Data.Resources = map[coreResources.ResourceKey]character.RecoverableResourceData{
-					resources.HitDice: {Current: 2, Maximum: 1},
-				}
-			},
-		},
-		{
-			name: "unknown status descriptor",
-			mutate: func(entity *entities.Character) {
-				entity.Data.Conditions = []json.RawMessage{mustJSON(s.T(), conditions.ShieldSpellConditionData{
-					Ref: refs.Spells.Shield(), MemberID: entity.Data.ID,
-				})}
-			},
-		},
-	}
-
-	for _, tc := range tests {
-		s.Run(tc.name, func() {
-			entity := s.fighterWithLongswordAndShield()
-			tc.mutate(entity)
-			s.mockCharacterRepo.EXPECT().
-				Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-				Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
-			// Deliberately no PatchEquipment expectation: gomock fails if malformed
-			// private state reaches persistence.
-
-			out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-				CharacterID: s.testCharacterID,
-				ItemID:      "longsword",
-				Slot:        character.SlotMainHand,
-			})
-			s.Require().Error(err)
-			s.Nil(out)
-		})
+		EquipmentSlots: character.EquipmentSlots{},
 	}
 }
 
-func (s *EquipItemTestSuite) TestUnequipItem_MissingOwnerIdentityWritesNothing() {
-	entity := s.fighterWithLongswordAndShield()
-	entity.Data.PlayerID = ""
-	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotMainHand: "longsword"}
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
-	// Deliberately no PatchEquipment expectation.
-
-	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
-		CharacterID: s.testCharacterID,
-		Slot:        character.SlotMainHand,
-	})
-	s.Require().Error(err)
-	s.Nil(out)
-}
-
-func (s *EquipItemTestSuite) TestUnequipItem_MalformedConditionWritesNothing() {
-	entity := s.fighterWithLongswordAndShield()
-	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotMainHand: "longsword"}
-	entity.Data.Conditions = []json.RawMessage{json.RawMessage(`{"ref":{"module":"dnd5e","type":"conditions","id":"unknown"}}`)}
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
-	// Deliberately no PatchEquipment expectation.
-
-	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
-		CharacterID: s.testCharacterID,
-		Slot:        character.SlotMainHand,
-	})
-	s.Require().Error(err)
-	s.Nil(out)
-}
-
-func (s *EquipItemTestSuite) TestEquipItem_PostProjectionFailureLeavesRepositoryEntityUnchanged() {
-	entity := s.fighterWithLongswordAndShield()
-	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotOffHand: "shield"}
-	originalSlots := entity.Data.EquipmentSlots
-	originalSlotsIdentity := reflect.ValueOf(originalSlots).Pointer()
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
-
-	calls := 0
-	var workingSlots character.EquipmentSlots
-	s.orchestrator.projectLoaded = func(ctx context.Context, input *ProjectLoadedCharacterInput) (*ProjectLoadedCharacterOutput, error) {
-		calls++
-		if calls == 2 {
-			working, err := input.Character.ToData()
-			s.Require().NoError(err)
-			workingSlots = working.EquipmentSlots
-			return nil, errors.New("post-state descriptor failed")
-		}
-		return projectLoadedCharacter(ctx, input)
-	}
-	// Deliberately no PatchEquipment expectation: the complete post-view is required
-	// before persistence.
-
-	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "longsword",
-		Slot:        character.SlotMainHand,
-	})
-	s.Require().Error(err)
-	s.Nil(out)
-	s.Equal(2, calls)
-	s.Equal(character.EquipmentSlots{character.SlotOffHand: "shield"}, entity.Data.EquipmentSlots)
-	s.Equal(originalSlotsIdentity, reflect.ValueOf(entity.Data.EquipmentSlots).Pointer(),
-		"repository-returned entity must retain its original map")
-	s.NotEqual(originalSlotsIdentity, reflect.ValueOf(workingSlots).Pointer(),
-		"the mutated working map must be isolated from repository-returned data")
-}
-
-func (s *EquipItemTestSuite) TestUnequipItem_PostProjectionFailureLeavesRepositoryEntityUnchanged() {
-	entity := s.fighterWithLongswordAndShield()
-	entity.Data.EquipmentSlots = character.EquipmentSlots{
-		character.SlotMainHand: "longsword",
-		character.SlotOffHand:  "shield",
-	}
-	originalSlots := entity.Data.EquipmentSlots
-	originalSlotsIdentity := reflect.ValueOf(originalSlots).Pointer()
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
-
-	calls := 0
-	var workingSlots character.EquipmentSlots
-	s.orchestrator.projectLoaded = func(ctx context.Context, input *ProjectLoadedCharacterInput) (*ProjectLoadedCharacterOutput, error) {
-		calls++
-		if calls == 2 {
-			working, err := input.Character.ToData()
-			s.Require().NoError(err)
-			workingSlots = working.EquipmentSlots
-			return nil, errors.New("post-state descriptor failed")
-		}
-		return projectLoadedCharacter(ctx, input)
-	}
-	// Deliberately no PatchEquipment expectation.
-
-	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
-		CharacterID: s.testCharacterID,
-		Slot:        character.SlotMainHand,
-	})
-	s.Require().Error(err)
-	s.Nil(out)
-	s.Equal(2, calls)
-	s.Equal(character.EquipmentSlots{
-		character.SlotMainHand: "longsword",
-		character.SlotOffHand:  "shield",
-	}, entity.Data.EquipmentSlots)
-	s.Equal(originalSlotsIdentity, reflect.ValueOf(entity.Data.EquipmentSlots).Pointer(),
-		"repository-returned entity must retain its original map")
-	s.NotEqual(originalSlotsIdentity, reflect.ValueOf(workingSlots).Pointer(),
-		"the mutated working map must be isolated from repository-returned data")
-}
-
-func (s *EquipItemTestSuite) TestEquipItem_PatchFailureLeavesRepositoryEntityUnchanged() {
-	entity := s.fighterWithLongswordAndShield()
-	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotOffHand: "shield"}
-	originalSlots := entity.Data.EquipmentSlots
-	originalSlotsIdentity := reflect.ValueOf(originalSlots).Pointer()
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
-	s.mockCharacterRepo.EXPECT().
-		PatchEquipment(s.ctx, gomock.Any()).
-		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
-			s.Equal(character.EquipmentSlots{
-				character.SlotMainHand: "longsword",
-				character.SlotOffHand:  "shield",
-			}, input.EquipmentSlots)
-			s.Equal(character.EquipmentSlots{character.SlotOffHand: "shield"}, input.ExpectedEquipmentSlots)
-			s.Equal(character.EquipmentSlots{character.SlotOffHand: "shield"}, entity.Data.EquipmentSlots)
-			s.NotEqual(originalSlotsIdentity, reflect.ValueOf(input.EquipmentSlots).Pointer(),
-				"PatchEquipment must receive the isolated working map")
-			return nil, errors.New("patch failed")
-		})
-
-	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "longsword",
-		Slot:        character.SlotMainHand,
-	})
-	s.Require().Error(err)
-	s.Nil(out)
-	s.Equal(character.EquipmentSlots{character.SlotOffHand: "shield"}, entity.Data.EquipmentSlots)
-	s.Equal(originalSlotsIdentity, reflect.ValueOf(entity.Data.EquipmentSlots).Pointer())
-}
-
-func (s *EquipItemTestSuite) TestUnequipItem_PatchFailureLeavesRepositoryEntityUnchanged() {
-	entity := s.fighterWithLongswordAndShield()
-	entity.Data.EquipmentSlots = character.EquipmentSlots{
-		character.SlotMainHand: "longsword",
-		character.SlotOffHand:  "shield",
-	}
-	originalSlots := entity.Data.EquipmentSlots
-	originalSlotsIdentity := reflect.ValueOf(originalSlots).Pointer()
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
-	s.mockCharacterRepo.EXPECT().
-		PatchEquipment(s.ctx, gomock.Any()).
-		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
-			s.Equal(character.EquipmentSlots{character.SlotOffHand: "shield"}, input.EquipmentSlots)
-			s.Equal(character.EquipmentSlots{
-				character.SlotMainHand: "longsword",
-				character.SlotOffHand:  "shield",
-			}, input.ExpectedEquipmentSlots)
-			s.Equal(character.EquipmentSlots{
-				character.SlotMainHand: "longsword",
-				character.SlotOffHand:  "shield",
-			}, entity.Data.EquipmentSlots)
-			s.NotEqual(originalSlotsIdentity, reflect.ValueOf(input.EquipmentSlots).Pointer(),
-				"PatchEquipment must receive the isolated working map")
-			return nil, errors.New("patch failed")
-		})
-
-	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
-		CharacterID: s.testCharacterID,
-		Slot:        character.SlotMainHand,
-	})
-	s.Require().Error(err)
-	s.Nil(out)
-	s.Equal(character.EquipmentSlots{
-		character.SlotMainHand: "longsword",
-		character.SlotOffHand:  "shield",
-	}, entity.Data.EquipmentSlots)
-	s.Equal(originalSlotsIdentity, reflect.ValueOf(entity.Data.EquipmentSlots).Pointer())
-}
-
-func (s *EquipItemTestSuite) TestEquipItem_RetriesConcurrentNonEquipmentRevisionAndReturnsOnePostState() {
-	entity := s.fighterWithLongswordAndShield()
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity, Version: "version-before-combat"}, nil)
-
-	latestData := *entity.Data
-	latestData.HitPoints = 7
-	latestData.EquipmentSlots = maps.Clone(entity.Data.EquipmentSlots)
-	latest := &entities.Character{Data: &latestData}
-
-	gomock.InOrder(
-		s.mockCharacterRepo.EXPECT().
-			PatchEquipment(s.ctx, gomock.Any()).
-			DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
-				s.Equal("version-before-combat", input.ExpectedVersion)
-				s.Equal(entity.Data.EquipmentSlots, input.ExpectedEquipmentSlots)
-				s.Equal("longsword", input.EquipmentSlots.Get(character.SlotMainHand))
-				return &characterrepo.PatchEquipmentOutput{
-					Character: latest,
-					Version:   "version-after-combat",
-					Applied:   false,
-				}, nil
-			}),
-		s.mockCharacterRepo.EXPECT().
-			PatchEquipment(s.ctx, gomock.Any()).
-			DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
-				s.Equal("version-after-combat", input.ExpectedVersion)
-				s.Equal(latest.Data.EquipmentSlots, input.ExpectedEquipmentSlots)
-				s.Equal("longsword", input.EquipmentSlots.Get(character.SlotMainHand))
-
-				patchedData := *latest.Data
-				patchedData.EquipmentSlots = maps.Clone(input.EquipmentSlots)
-				return &characterrepo.PatchEquipmentOutput{
-					Character: &entities.Character{Data: &patchedData},
-					Version:   "version-patched",
-					Applied:   true,
-				}, nil
-			}),
-	)
-
-	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "longsword",
-		Slot:        character.SlotMainHand,
-	})
-	s.Require().NoError(err)
-	s.Require().NotNil(out.Character)
-	s.Equal(7, out.Character.Data.HitPoints, "the concurrent combat state is the response post-state")
-	s.Equal(7, out.View.Status.HitPoints.Current, "the detached View and returned persisted entity must agree")
-	s.Equal(out.Character.Data.PlayerID, out.View.Identity.PlayerID)
-	s.Equal(out.Character.Data.ClassID, out.View.Identity.ClassID)
-	s.Equal(out.Character.Data.RaceID, out.View.Identity.RaceID)
-}
-
-func (s *EquipItemTestSuite) TestEquipItem_OutputViewEqualsCapturedPersistedPostState() {
-	entity := s.fighterWithLongswordAndShield()
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
-
-	var persisted *character.Data
-	s.mockCharacterRepo.EXPECT().
-		PatchEquipment(s.ctx, gomock.Any()).
-		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
-			output := s.appliedPatch(entity, input)
-			persisted = output.Character.Data
-			return output, nil
-		})
-
-	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "longsword",
-		Slot:        character.SlotMainHand,
-	})
-	s.Require().NoError(err)
-	s.Require().NotNil(out.View)
-	s.Require().NotNil(persisted)
-
-	projected, err := ProjectView(s.ctx, &ProjectViewInput{Data: persisted})
-	s.Require().NoError(err)
-	s.Equal(projected.View, out.View)
-}
-
-// TestEquipItem_ReturnsTheFoldedArmorClassAndWritesNone: the response's
-// armour class is the toolkit's fold of the post-equip sheet, and the write
-// carries no armour class at all (rpg-project#538 R1, R7).
-func (s *EquipItemTestSuite) TestEquipItem_ReturnsTheFoldedArmorClassAndWritesNone() {
-	charEntity := s.fighterWithLongswordAndShield()
-	charEntity.Data.Inventory = append(charEntity.Data.Inventory,
-		character.InventoryItemData{Type: "armor", ID: "chain-mail", Quantity: 1})
-
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: charEntity, Version: testCharacterRepositoryVersion}, nil)
-
-	var persisted *character.Data
-	s.mockCharacterRepo.EXPECT().
-		PatchEquipment(s.ctx, gomock.Any()).
-		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
-			output := s.appliedPatch(charEntity, input)
-			persisted = output.Character.Data
-			return output, nil
-		})
-
-	// chain-mail is a fixed-AC-16 heavy armor (no DEX bonus) — a
-	// hand-computable, non-tautological expectation.
-	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "chain-mail",
-		Slot:        character.SlotArmor,
-	})
-	s.Require().NoError(err)
-	s.Require().NotNil(out.ArmorClass)
-	s.Equal(16, out.ArmorClass.Total, "the response carries the post-equip fold")
-	s.Require().NotNil(persisted)
-	s.writesNoArmorClass(persisted)
-}
-
-// writesNoArmorClass asserts a sheet handed to the repository serializes with
-// no armour class key: rpg-api stores none.
-func (s *EquipItemTestSuite) writesNoArmorClass(persisted *character.Data) {
-	s.T().Helper()
-	written, err := json.Marshal(persisted)
-	s.Require().NoError(err)
-	s.NotContains(string(written), "armor_class")
-}
-
-// unarmouredMonk carries Unarmored Defense (monk) with DEX 16 and WIS 14, so
-// its folded AC is 15 = 10 + DEX 3 + WIS 2. Unarmored Defense reads WIS through the cast resolution installs; a
-// fold on a host-attached sheet refuses (gamectx.ErrNotInCast) and, before
-// that refusal existed, silently answered 13 (rpg-toolkit#1276, #1965).
-func (s *EquipItemTestSuite) unarmouredMonk() *entities.Character {
-	entity := s.fighterWithLongswordAndShield()
-	entity.Data.Name = "Test Monk"
-	entity.Data.ClassID = "monk"
-	entity.Data.AbilityScores = shared.AbilityScores{
+// monkSheet carries Unarmored Defense (monk) with DEX 16 and WIS 14, so
+// its folded AC is 15 = 10 + DEX 3 + WIS 2. Unarmored Defense reads WIS through
+// the cast resolution installs; a fold on a host-attached sheet answered 13
+// before that door existed (rpg-toolkit#1276, #1965).
+func (s *EquipItemTestSuite) monkSheet() *character.Data {
+	data := s.fighter()
+	data.Name = "Test Monk"
+	data.ClassID = "monk"
+	data.AbilityScores = shared.AbilityScores{
 		abilities.STR: 10,
 		abilities.DEX: 16,
 		abilities.CON: 12,
@@ -820,36 +166,101 @@ func (s *EquipItemTestSuite) unarmouredMonk() *entities.Character {
 		abilities.WIS: 14,
 		abilities.CHA: 8,
 	}
-	entity.Data.Inventory = []character.InventoryItemData{
-		{Type: "weapon", ID: "quarterstaff", Quantity: 1},
-	}
+	data.Inventory = []character.InventoryItemData{{Type: "weapon", ID: "quarterstaff", Quantity: 1}}
 	unarmoredDefense, err := (&conditions.UnarmoredDefenseCondition{
 		MemberID: s.testCharacterID,
 		Type:     conditions.UnarmoredDefenseMonk,
 	}).ToJSON()
 	s.Require().NoError(err)
-	entity.Data.Conditions = []json.RawMessage{unarmoredDefense}
-	return entity
+	data.Conditions = []json.RawMessage{unarmoredDefense}
+	return data
+}
+
+// fighterWithLongswordAndShield and unarmouredMonk are the stored-entity
+// forms the read tests in armor_class_test.go ride.
+func (s *EquipItemTestSuite) fighterWithLongswordAndShield() *entities.Character {
+	return &entities.Character{Data: s.fighter()}
+}
+
+func (s *EquipItemTestSuite) unarmouredMonk() *entities.Character {
+	return &entities.Character{Data: s.monkSheet()}
+}
+
+func (s *EquipItemTestSuite) TestEquipItem_HandsTheVerbTheRequestAndProjectsItsSavedRecord() {
+	saved := s.fighter()
+	saved.EquipmentSlots = character.EquipmentSlots{character.SlotArmor: "chain-mail"}
+
+	s.equipment.answerEquip(&sdk.EquipOutput{
+		Character: saved,
+		Drawn:     []sdk.EquipmentMove{{Slot: "armor", Item: "dnd5e:armor:chain-mail"}},
+	}, nil)
+
+	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
+		CharacterID: s.testCharacterID,
+		ItemID:      "chain-mail",
+		Slot:        character.SlotArmor,
+	})
+	s.Require().NoError(err)
+	s.Equal([]*sdk.EquipInput{{Character: s.testCharacterID, Slot: "armor", Item: "chain-mail"}}, s.equipment.gotEquip)
+	s.Same(saved, out.Character.Data, "the response carries the record the verb saved, not a re-read")
+	s.Require().NotNil(out.ArmorClass)
+	// chain mail is fixed AC 16 with no DEX bonus: hand-computable.
+	s.Equal(16, out.ArmorClass.Total, "armour class is folded from the saved record")
+	s.Require().NotNil(out.View)
+	s.Require().NotNil(out.View.Equipment)
+	s.Equal(16, out.View.Equipment.ACTotal, "the view agrees with the response's fold")
+	s.Empty(out.PreviousItemID, "nothing was put away")
+}
+
+func (s *EquipItemTestSuite) TestEquipItem_PreviousItemIsTheFirstItemTheVerbPutAway() {
+	saved := s.fighter()
+	saved.EquipmentSlots = character.EquipmentSlots{character.SlotMainHand: "greatsword"}
+
+	s.equipment.answerEquip(&sdk.EquipOutput{
+		Character: saved,
+		Stowed: []sdk.EquipmentMove{
+			{Slot: "main_hand", Item: "dnd5e:weapons:longsword"},
+			{Slot: "main_hand", Item: "dnd5e:armor:shield"},
+		},
+		Drawn: []sdk.EquipmentMove{{Slot: "main_hand", Item: "dnd5e:weapons:greatsword"}},
+	}, nil)
+
+	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
+		CharacterID: s.testCharacterID,
+		ItemID:      "greatsword",
+		Slot:        character.SlotMainHand,
+	})
+	s.Require().NoError(err)
+	s.Equal("longsword", out.PreviousItemID, "the bare id of the first stow, as the v1alpha1 wire keys inventory")
+}
+
+func (s *EquipItemTestSuite) TestUnequipItem_HandsTheVerbTheSlotAndProjectsItsSavedRecord() {
+	saved := s.fighter()
+
+	s.equipment.answerUnequip(&sdk.UnequipOutput{
+		Character: saved,
+		Stowed:    []sdk.EquipmentMove{{Slot: "armor", Item: "dnd5e:armor:chain-mail"}},
+	}, nil)
+
+	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
+		CharacterID: s.testCharacterID,
+		Slot:        character.SlotArmor,
+	})
+	s.Require().NoError(err)
+	s.Equal([]*sdk.UnequipInput{{Character: s.testCharacterID, Slot: "armor"}}, s.equipment.gotUneq)
+	s.Same(saved, out.Character.Data)
+	s.Require().NotNil(out.ArmorClass)
+	s.Equal(11, out.ArmorClass.Total, "unarmoured: 10 + DEX 1")
+	s.Equal("chain-mail", out.UnequippedItemID)
 }
 
 // TestEquipItem_AMonkReturnsTheWisdomInclusiveAC is the rpg-toolkit#1965
-// tier-1 #2 regression, now with nothing stored: a monk's equip answers
-// 10 + DEX + WIS, the number the toolkit's resolution door folds, the returned
-// view carries the same one, and the write carries none.
+// tier-1 #2 regression on the new path: the fold over the verb's saved record
+// answers 10 + DEX + WIS.
 func (s *EquipItemTestSuite) TestEquipItem_AMonkReturnsTheWisdomInclusiveAC() {
-	entity := s.unarmouredMonk()
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
-
-	var persisted *character.Data
-	s.mockCharacterRepo.EXPECT().
-		PatchEquipment(s.ctx, gomock.Any()).
-		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
-			output := s.appliedPatch(entity, input)
-			persisted = output.Character.Data
-			return output, nil
-		})
+	saved := s.monkSheet()
+	saved.EquipmentSlots = character.EquipmentSlots{character.SlotMainHand: "quarterstaff"}
+	s.equipment.answerEquip(&sdk.EquipOutput{Character: saved}, nil)
 
 	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
 		CharacterID: s.testCharacterID,
@@ -859,68 +270,10 @@ func (s *EquipItemTestSuite) TestEquipItem_AMonkReturnsTheWisdomInclusiveAC() {
 	s.Require().NoError(err)
 	s.Require().NotNil(out.ArmorClass)
 	s.Equal(15, out.ArmorClass.Total, "10 base + 3 DEX + 2 WIS")
-	s.Require().NotNil(persisted)
-	s.writesNoArmorClass(persisted)
-	s.Require().NotNil(out.View)
-	s.Require().NotNil(out.View.Equipment)
-	s.Equal(15, out.View.Equipment.ACTotal, "the view's AC agrees with the response's fold")
 }
 
-// TestEquipItem_AConditionThatFailsToApplyRefusesAndWritesNothing: an Inspired
-// die with no granting bard parses but will not Apply. The refusal comes BEFORE
-// the equip: the pre-state projection (resolution.ProjectCharacter, strict since
-// rpg-toolkit#1968) refuses the stored sheet, so the verb never runs and no
-// post-state fold happens. Before, the fold dropped the condition and the
-// degraded AC was written back (rpg-api#1078 gate).
-//
-// The no-write proof is the absent PatchEquipment expectation: gomock fails the
-// test on any write. The before/after marshal proves something narrower and is
-// kept for it: the repository-returned entity is not mutated in memory.
-func (s *EquipItemTestSuite) TestEquipItem_AConditionThatFailsToApplyRefusesAndWritesNothing() {
-	entity := s.unarmouredMonk()
-	inspired, err := (&conditions.InspiredCondition{MemberID: s.testCharacterID}).ToJSON()
-	s.Require().NoError(err)
-	entity.Data.Conditions = append(entity.Data.Conditions, inspired)
-	before, err := json.Marshal(entity.Data)
-	s.Require().NoError(err)
-
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
-	// Deliberately no PatchEquipment expectation: this is the no-write proof.
-	// gomock fails the test if any equipment or AC write is attempted.
-
-	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID,
-		ItemID:      "quarterstaff",
-		Slot:        character.SlotMainHand,
-	})
-	s.Require().Error(err)
-	s.Nil(out)
-	s.Contains(err.Error(), refs.Conditions.Inspired().String())
-	after, err := json.Marshal(entity.Data)
-	s.Require().NoError(err)
-	s.JSONEq(string(before), string(after), "the repository-returned entity is not mutated in memory")
-	s.Empty(s.notified.calls, "nothing was written, so nobody is told")
-}
-
-// TestUnequipItem_AMonkReturnsTheWisdomInclusiveAC is the unequip twin: both
-// verbs write through one path, so both answer the folded AC and store none.
 func (s *EquipItemTestSuite) TestUnequipItem_AMonkReturnsTheWisdomInclusiveAC() {
-	entity := s.unarmouredMonk()
-	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotMainHand: "quarterstaff"}
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
-
-	var persisted *character.Data
-	s.mockCharacterRepo.EXPECT().
-		PatchEquipment(s.ctx, gomock.Any()).
-		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
-			output := s.appliedPatch(entity, input)
-			persisted = output.Character.Data
-			return output, nil
-		})
+	s.equipment.answerUnequip(&sdk.UnequipOutput{Character: s.monkSheet()}, nil)
 
 	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
 		CharacterID: s.testCharacterID,
@@ -929,186 +282,96 @@ func (s *EquipItemTestSuite) TestUnequipItem_AMonkReturnsTheWisdomInclusiveAC() 
 	s.Require().NoError(err)
 	s.Require().NotNil(out.ArmorClass)
 	s.Equal(15, out.ArmorClass.Total, "10 base + 3 DEX + 2 WIS")
-	s.Require().NotNil(persisted)
-	s.writesNoArmorClass(persisted)
-	s.Require().NotNil(out.View)
-	s.Require().NotNil(out.View.Equipment)
-	s.Equal(15, out.View.Equipment.ACTotal, "the view's AC agrees with the response's fold")
 }
 
-// recordingNotifier stands in for the thing that finds a player's live
-// encounter, so these tests can ask whether the doorbell rang and what it
-// carried — while this package still knows nothing about encounters.
-type recordingNotifier struct {
-	calls []AppearanceChangedInput
-	err   error
-}
+// TestTheVerbsRefusalPassesThroughUnchanged: the SDK's sentinel survives the
+// orchestrator so the handler's one translation table (sdkerr) can name it.
+// Each refusal is one the verb owns — the orchestrator decides none of them.
+func (s *EquipItemTestSuite) TestTheVerbsRefusalPassesThroughUnchanged() {
+	for _, refusal := range []error{
+		sdk.ErrNotYourTurn, sdk.ErrDowned, sdk.ErrCannotAfford, sdk.ErrArmorInFight,
+		sdk.ErrBadEquip, sdk.ErrNoCharacter, sdk.ErrSaveFailed,
+	} {
+		s.Run(refusal.Error(), func() {
+			s.equipment.answerEquip(nil, fmt.Errorf("equip: %w", refusal))
+			out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
+				CharacterID: s.testCharacterID, ItemID: "longsword", Slot: character.SlotMainHand,
+			})
+			s.Nil(out)
+			s.ErrorIs(err, refusal)
 
-func (r *recordingNotifier) AppearanceChanged(_ context.Context, in *AppearanceChangedInput) error {
-	r.calls = append(r.calls, *in)
-	return r.err
-}
-
-// THE DOORBELL RINGS, AND CARRIES BOTH IDS. The notifier needs the owning
-// player to find a live encounter and the character to name the member inside
-// it, and this orchestrator has just loaded the record holding both — so it
-// passes them rather than making the notifier read the store back.
-func (s *EquipItemTestSuite) TestEquipItem_TellsWatchersTheAppearanceChanged() {
-	entity := s.fighterWithLongswordAndShield()
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
-	s.mockCharacterRepo.EXPECT().
-		PatchEquipment(s.ctx, gomock.Any()).
-		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
-			return s.appliedPatch(entity, input), nil
+			s.equipment.answerUnequip(nil, fmt.Errorf("unequip: %w", refusal))
+			unequipped, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
+				CharacterID: s.testCharacterID, Slot: character.SlotMainHand,
+			})
+			s.Nil(unequipped)
+			s.ErrorIs(err, refusal)
 		})
-
-	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID, ItemID: "longsword", Slot: character.SlotMainHand,
-	})
-	s.Require().NoError(err)
-
-	s.Require().Len(s.notified.calls, 1, "one equip, one telling")
-	s.Equal(s.testCharacterID, s.notified.calls[0].CharacterID)
-	s.Equal(entity.Data.PlayerID, s.notified.calls[0].PlayerID,
-		"the owner is how a live encounter gets found")
+	}
 }
 
-// A REFUSED EQUIP TELLS NOBODY. Nothing was written, so there is nothing for
-// a watcher to re-read — and a nudge here would send every client to refetch
-// a view that did not change.
-func (s *EquipItemTestSuite) TestEquipItem_ARefusalTellsNobody() {
-	entity := s.fighterWithLongswordAndShield()
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
-	// Deliberately no PatchEquipment expectation: the item is not held.
+// TestAnUnprojectableSavedRecordIsCharacterDataUnavailable: an Inspired die
+// with no granting bard parses but will not Apply, so the strict fold refuses
+// the saved record. The change is already durable — the verb saved it — and
+// the call answers the projection failure rather than a guessed armour class.
+func (s *EquipItemTestSuite) TestAnUnprojectableSavedRecordIsCharacterDataUnavailable() {
+	saved := s.monkSheet()
+	inspired, err := (&conditions.InspiredCondition{MemberID: s.testCharacterID}).ToJSON()
+	s.Require().NoError(err)
+	saved.Conditions = append(saved.Conditions, inspired)
+	s.equipment.answerEquip(&sdk.EquipOutput{Character: saved}, nil)
 
-	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID, ItemID: "a-sword-she-does-not-have",
-		Slot: character.SlotMainHand,
+	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
+		CharacterID: s.testCharacterID, ItemID: "quarterstaff", Slot: character.SlotMainHand,
 	})
 	s.Require().Error(err)
-	s.Empty(s.notified.calls, "nothing was written, so nobody is owed a second look")
+	s.Nil(out)
+	s.True(apierr.IsInternal(err), "%v", err)
+	s.Contains(err.Error(), refs.Conditions.Inspired().String())
 }
 
-// A FAILED NOTIFICATION DOES NOT FAIL THE EQUIP. The sheet is already written
-// and durable; returning an error now would tell the client its equip failed
-// and invite a retry that writes again. What it costs instead is that watchers
-// keep the picture they had until the next sight refresh — which is where this
-// started, so the degradation is to yesterday rather than to broken.
-func (s *EquipItemTestSuite) TestEquipItem_ANotifierFailureDoesNotFailTheEquip() {
-	s.notified.err = errors.New("the session is gone")
-	entity := s.fighterWithLongswordAndShield()
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
-	s.mockCharacterRepo.EXPECT().
-		PatchEquipment(s.ctx, gomock.Any()).
-		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
-			return s.appliedPatch(entity, input), nil
-		})
-
+func (s *EquipItemTestSuite) TestAVerbThatSavedNoRecordIsRefused() {
+	s.equipment.answerEquip(&sdk.EquipOutput{}, nil)
 	out, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
 		CharacterID: s.testCharacterID, ItemID: "longsword", Slot: character.SlotMainHand,
 	})
-	s.Require().NoError(err, "the write succeeded, so the call succeeded")
-	s.Require().NotNil(out)
-	s.Len(s.notified.calls, 1, "and it was attempted")
+	s.Nil(out)
+	s.True(apierr.IsInternal(err), "%v", err)
 }
 
-// TestUnequipItem_TellsWatchersTheAppearanceChanged is the regression for the
-// half that was missing.
-//
-// Equipping told watchers and unequipping did not, so drawing a weapon
-// appeared instantly to a peer while putting one away stayed invisible until
-// somebody took a step — found on the first walk. Both verbs now write through
-// one path, so this and its equip twin are asserting the same line.
-func (s *EquipItemTestSuite) TestUnequipItem_TellsWatchersTheAppearanceChanged() {
-	entity := s.fighterWithLongswordAndShield()
-	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotMainHand: "longsword"}
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
-	s.mockCharacterRepo.EXPECT().
-		PatchEquipment(s.ctx, gomock.Any()).
-		DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
-			return s.appliedPatch(entity, input), nil
+// TestARequestMissingAFieldNeverReachesTheVerb: no answer is scripted, so the
+// fake fails the test if the verb is called.
+func (s *EquipItemTestSuite) TestARequestMissingAFieldNeverReachesTheVerb() {
+	for name, in := range map[string]*EquipItemInput{
+		"nil":          nil,
+		"no character": {ItemID: "longsword", Slot: character.SlotMainHand},
+		"no item":      {CharacterID: s.testCharacterID, Slot: character.SlotMainHand},
+		"no slot":      {CharacterID: s.testCharacterID, ItemID: "longsword"},
+	} {
+		s.Run(name, func() {
+			_, err := s.orchestrator.EquipItem(s.ctx, in)
+			s.True(apierr.IsInvalidArgument(err), "%v", err)
 		})
-
-	_, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{
-		CharacterID: s.testCharacterID, Slot: character.SlotMainHand,
-	})
-	s.Require().NoError(err)
-
-	s.Require().Len(s.notified.calls, 1, "putting a weapon away is a change watchers can see")
-	s.Equal(s.testCharacterID, s.notified.calls[0].CharacterID)
-	s.Equal(entity.Data.PlayerID, s.notified.calls[0].PlayerID)
+	}
+	for name, in := range map[string]*UnequipItemInput{
+		"nil":          nil,
+		"no character": {Slot: character.SlotMainHand},
+		"no slot":      {CharacterID: s.testCharacterID},
+	} {
+		s.Run("unequip "+name, func() {
+			_, err := s.orchestrator.UnequipItem(s.ctx, in)
+			s.True(apierr.IsInvalidArgument(err), "%v", err)
+		})
+	}
 }
 
-// A LOSING VERSION RACE TELLS NOBODY, AND THE WINNING RETRY TELLS ONCE.
-//
-// This is the guard the single write path actually implements: the first
-// attempt is rejected on its version, nothing is written, and watchers hear
-// nothing about it. The retry lands and they hear once. Notifying on the
-// rejected attempt would send every watcher to re-read a change that never
-// happened; notifying twice would do it again for one that happened once.
-func (s *EquipItemTestSuite) TestEquipItem_AVersionRaceTellsNobodyUntilTheWriteLands() {
-	entity := s.fighterWithLongswordAndShield()
-	s.mockCharacterRepo.EXPECT().
-		Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
-		Return(&characterrepo.GetOutput{Character: entity, Version: "version-before-combat"}, nil)
-
-	latestData := *entity.Data
-	latestData.HitPoints = 7
-	latestData.EquipmentSlots = maps.Clone(entity.Data.EquipmentSlots)
-	latest := &entities.Character{Data: &latestData}
-
-	gomock.InOrder(
-		s.mockCharacterRepo.EXPECT().
-			PatchEquipment(s.ctx, gomock.Any()).
-			DoAndReturn(func(_ context.Context, _ characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
-				return &characterrepo.PatchEquipmentOutput{
-					Character: latest, Version: "version-after-combat", Applied: false,
-				}, nil
-			}),
-		s.mockCharacterRepo.EXPECT().
-			PatchEquipment(s.ctx, gomock.Any()).
-			DoAndReturn(func(_ context.Context, input characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
-				return s.appliedPatch(latest, input), nil
-			}),
-	)
-
-	_, err := s.orchestrator.EquipItem(s.ctx, &EquipItemInput{
-		CharacterID: s.testCharacterID, ItemID: "longsword", Slot: character.SlotMainHand,
+func (s *EquipItemTestSuite) TestNewRefusesAConfigWithoutEquipment() {
+	_, err := New(&Config{
+		DraftRepo:        draftmock.NewMockRepository(s.ctrl),
+		CharacterRepo:    characterrepomock.NewMockRepository(s.ctrl),
+		DiceService:      dicemock.NewMockService(s.ctrl),
+		IDGenerator:      idgenmock.NewMockGenerator(s.ctrl),
+		DraftIDGenerator: idgenmock.NewMockGenerator(s.ctrl),
 	})
-	s.Require().NoError(err)
-
-	s.Len(s.notified.calls, 1,
-		"the rejected attempt wrote nothing and said nothing; the retry wrote once and said once")
-}
-
-func (s *EquipItemTestSuite) TestUnequipPersistsToolkitRemovalOfWeaponEnchantment() {
-	entity := s.fighterWithLongswordAndShield()
-	entity.Data.Inventory = append(entity.Data.Inventory, character.InventoryItemData{Type: "weapon", ID: "club", Quantity: 1})
-	entity.Data.EquipmentSlots = character.EquipmentSlots{character.SlotMainHand: "club"}
-	effect, err := conditions.NewShillelaghCondition(s.testCharacterID, conditions.ShillelaghConfig{Weapons: []conditions.HeldWeapon{{Slot: string(character.SlotMainHand), ItemID: "club"}}, WeaponSlot: string(character.SlotMainHand), Ability: abilities.WIS})
-	s.Require().NoError(err)
-	raw, err := effect.ToJSON()
-	s.Require().NoError(err)
-	entity.Data.Conditions = []json.RawMessage{raw}
-	s.mockCharacterRepo.EXPECT().Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).Return(&characterrepo.GetOutput{Character: entity, Version: testCharacterRepositoryVersion}, nil)
-	s.mockCharacterRepo.EXPECT().PatchEquipment(s.ctx, gomock.Any()).DoAndReturn(func(_ context.Context, in characterrepo.PatchEquipmentInput) (*characterrepo.PatchEquipmentOutput, error) {
-		s.Require().NotNil(in.Conditions)
-		for _, c := range *in.Conditions {
-			s.NotContains(string(c), "shillelagh", "toolkit removal must be included in the same atomic equipment write")
-		}
-		s.Empty(in.EquipmentSlots)
-		return s.appliedPatch(entity, in), nil
-	})
-	out, err := s.orchestrator.UnequipItem(s.ctx, &UnequipItemInput{CharacterID: s.testCharacterID, Slot: character.SlotMainHand})
-	s.Require().NoError(err)
-	s.Require().NotNil(out)
-	s.Len(entity.Data.Conditions, 1, "the repository's read snapshot must not be mutated")
+	s.True(apierr.IsInvalidArgument(err), "%v", err)
 }

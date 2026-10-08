@@ -19,6 +19,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	customizationconverter "github.com/KirkDiggler/rpg-api/internal/converters/customization"
+	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sdkerr"
 	"github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 )
 
@@ -1069,7 +1070,7 @@ func (h *Handler) EquipItem(
 		Slot:        slot,
 	})
 	if err != nil {
-		return nil, equipmentRPCError(err)
+		return nil, equipVerbError(err)
 	}
 	if equipResult == nil || equipResult.Character == nil || equipResult.Character.Data == nil {
 		return nil, equipmentRPCError(errors.New("equip item returned no persisted character"))
@@ -1125,7 +1126,7 @@ func (h *Handler) UnequipItem(
 		Slot:        slot,
 	})
 	if err != nil {
-		return nil, equipmentRPCError(err)
+		return nil, equipVerbError(err)
 	}
 	if unequipResult == nil || unequipResult.Character == nil || unequipResult.Character.Data == nil {
 		return nil, equipmentRPCError(errors.New("unequip item returned no persisted character"))
@@ -1153,6 +1154,26 @@ func listCharactersRPCError(err error) error {
 		return apierr.ToGRPCError(err)
 	}
 	return apierr.ToGRPCError(apierr.WrapWithCode(err, apierr.CodeInternal, character.CharacterDataUnavailableMessage))
+}
+
+// equipVerbError translates what the equip path answered. A coded error is
+// this service's own (a request field, a projection failure) and keeps
+// equipmentRPCError's treatment; anything else came from the session SDK's
+// Equip/Unequip verb and goes to the SDK's one translation table, so a
+// refusal such as ErrNotYourTurn reaches the client as FAILED_PRECONDITION
+// rather than INTERNAL (rpg-project#542).
+func equipVerbError(err error) error {
+	var coded *apierr.Error
+	if errors.As(err, &coded) {
+		return equipmentRPCError(err)
+	}
+	translated := sdkerr.StatusError(err)
+	if status.Code(translated) == codes.Internal {
+		// Not a refusal the caller can act on: keep the sanitized answer,
+		// never the cause's text on the wire.
+		return equipmentRPCError(err)
+	}
+	return translated
 }
 
 func equipmentRPCError(err error) error {

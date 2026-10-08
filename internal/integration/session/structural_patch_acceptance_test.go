@@ -136,6 +136,11 @@ func (s *StructuralPatchAcceptanceSuite) TestCompiledDoorDiscoveryReplacesOpenin
 
 	s.Run("new playthrough resets discovery without resetting the first encounter", func() {
 		// Same authored key and character, with no profile deletion/workaround.
+		// A character holds one seat, so the first run is left before the next;
+		// the old run is no longer readable by that member, so only the new
+		// run's own discovery is asserted.
+		_, exitErr := h.handler.Exit(ctx, &sessionpb.ExitRequest{Session: "structural-patch-run", Member: "alice"})
+		s.Require().NoError(exitErr)
 		_, startErr := h.manager.Manager.StartSession(ctx, &sdk.StartSessionInput{
 			Session: "structural-second-run", Encounter: "structural-second-world", World: dungeon.World,
 		})
@@ -153,8 +158,5 @@ func (s *StructuralPatchAcceptanceSuite) TestCompiledDoorDiscoveryReplacesOpenin
 		freshAfter, afterErr := h.handler.GetKnowledge(ctx, freshRequest)
 		s.Require().NoError(afterErr)
 		s.Require().Len(freshAfter.Atlas.StructuralDoors, 1, "the new encounter has its own discovery attempt")
-		firstStillKnown, firstErr := h.handler.GetKnowledge(ctx, request)
-		s.Require().NoError(firstErr)
-		s.True(proto.Equal(after.Atlas, firstStillKnown.Atlas), "starting a new run does not reset the old encounter")
 	})
 }

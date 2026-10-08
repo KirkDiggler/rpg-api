@@ -62,10 +62,7 @@ func newAcceptanceCharacterService(t *testing.T, h *acceptanceHarness) character
 	characters, err := characterorch.New(&characterorch.Config{
 		DraftRepo: drafts, CharacterRepo: h.charRepo, DiceService: diceService,
 		IDGenerator: idgen.NewSequential("character"), DraftIDGenerator: idgen.NewSequential("draft"),
-		// This playthrough is about a spell, not about who was told a
-		// weapon moved — said out loud, because the capability is required
-		// so that "nobody is told" is a choice rather than a nil.
-		AppearanceNotifier: characterorch.NoAppearanceNotifier{},
+		Equipment: h.manager.Manager,
 	})
 	require.NoError(t, err)
 	return characters

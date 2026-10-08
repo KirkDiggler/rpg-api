@@ -261,8 +261,8 @@ func (s *SessionStackSuite) TestStartEncounter_SingleRoomInsufficientSeatsWrites
 		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: lobbyorch.DungeonKey(dungeonstest.WorkshopOneSeatKey),
 	})
 	s.Require().Error(err)
-	s.Contains(err.Error(), "has 2 members and the dungeon seats 1",
-		"the existing seat-capacity guard is the refusal")
+	s.ErrorIs(err, sdk.ErrInvalidWorld, "Launch refuses a party bigger than the seats before any write")
+	s.Contains(err.Error(), "a party of 2 and a dungeon that seats 1")
 
 	// NOTHING WAS WRITTEN. No session or encounter record exists, the lobby
 	// is where it was, the characters' stored bytes are untouched, and no

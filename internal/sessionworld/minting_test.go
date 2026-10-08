@@ -20,7 +20,7 @@ import (
 func TestAnAuthoredIdIsTheMemberId(t *testing.T) {
 	camp, _ := compileRaiderCamp(t)
 	ids := map[string]string{}
-	for _, m := range camp.Monsters {
+	for _, m := range monstersOf(camp) {
 		ids[m.PlacementID] = m.MemberID
 	}
 	require.Equal(t, "chief", ids["chief"])
@@ -30,7 +30,7 @@ func TestAnAuthoredIdIsTheMemberId(t *testing.T) {
 	require.NoError(t, err)
 	heirloom, err := Compile(raw)
 	require.NoError(t, err)
-	for _, m := range heirloom.Monsters {
+	for _, m := range monstersOf(heirloom) {
 		if m.PlacementID == "captain" {
 			require.Equal(t, "captain", m.MemberID, "the author named him, so that is his id")
 		} else {
@@ -63,9 +63,9 @@ func TestTheMindIsTheMemberIdTheRunKnows(t *testing.T) {
 	camp, _ := compileRaiderCamp(t)
 
 	var chief *Monster
-	for i := range camp.Monsters {
-		if camp.Monsters[i].PlacementID == "chief" {
-			chief = &camp.Monsters[i]
+	for i := range monstersOf(camp) {
+		if monstersOf(camp)[i].PlacementID == "chief" {
+			chief = &monstersOf(camp)[i]
 		}
 	}
 	require.NotNil(t, chief)
@@ -182,8 +182,8 @@ func TestNamingOneMonsterDoesNotRenumberItsSiblings(t *testing.T) {
 	d, err := Compile([]byte(twoSkeletons("scout", "")))
 	require.NoError(t, err)
 
-	ids := make([]string, len(d.Monsters))
-	for i, m := range d.Monsters {
+	ids := make([]string, len(monstersOf(d)))
+	for i, m := range monstersOf(d) {
 		ids[i] = m.MemberID
 	}
 	require.Equal(t, []string{"skeleton-1", "scout", "skeleton-3"}, ids)

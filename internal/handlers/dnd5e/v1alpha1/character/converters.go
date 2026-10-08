@@ -1377,12 +1377,6 @@ func ConvertCharacterDataToProto(in *CharacterProtoInput) (*dnd5ev1alpha1.Charac
 
 	// TODO: Convert spell slots when the proto supports them
 
-	// Convert class resources
-	for _, resource := range data.ClassResources {
-		// TODO: Convert to proto ClassResource when available
-		_ = resource // Avoid unused variable warning
-	}
-
 	// Convert features
 	// Note: ref is stored as string "module:type:id", not an object
 	if len(data.Features) > 0 {

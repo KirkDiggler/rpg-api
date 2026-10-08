@@ -111,7 +111,8 @@ type Orchestrator struct {
 }
 
 // New constructs an Orchestrator, wiring every session.Config capability
-// explicitly: Redis-backed SessionRepository and EncounterRepository, the
+// explicitly: Redis-backed SessionRepository, EncounterRepository and
+// SeatRepository, the
 // CharacterRepository adapter, this package's Broker as the EventStream, and
 // a crypto-secure dice.CryptoRoller as the SDK's Roller -- the host supplies
 // entropy only, never turn order (session.Roller doc).
@@ -171,6 +172,7 @@ func New(cfg Config) (*Orchestrator, error) {
 		Sessions:          NewSessionRepository(cfg.Redis, cfg.TTL),
 		Encounters:        NewEncounterRepository(cfg.Redis, cfg.TTL),
 		Characters:        NewCharacterRepository(cfg.Characters),
+		Seats:             NewSeatRepository(cfg.Redis),
 		Events:            broker,
 		Dice:              roller,
 		TurnDriver:        driverForSDK,

@@ -71,8 +71,8 @@ func (s *WorkshopSuite) TestThePartyAndTheGarrisonStandWhereTheyWereAuthored() {
 	s.Len(s.dungeon.PartySeats, 6,
 		"eight authored hexes minus the two monster cells, nearest first")
 
-	byID := make(map[string]Monster, len(s.dungeon.Monsters))
-	for _, m := range s.dungeon.Monsters {
+	byID := make(map[string]Monster, len(monstersOf(s.dungeon)))
+	for _, m := range monstersOf(s.dungeon) {
 		byID[m.MemberID] = m
 	}
 	s.Require().Len(byID, 2, "each authored placement keeps its own stable id")

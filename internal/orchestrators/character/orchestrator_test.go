@@ -86,7 +86,7 @@ func (s *OrchestratorTestSuite) SetupTest() {
 		// Not what these cases are about, and said out loud rather than
 		// left nil — the capability is required precisely so that "nobody
 		// is told" is a choice somebody wrote down.
-		AppearanceNotifier: NoAppearanceNotifier{},
+		Equipment: &scriptedEquipment{t: s.T()},
 	}
 
 	var err error

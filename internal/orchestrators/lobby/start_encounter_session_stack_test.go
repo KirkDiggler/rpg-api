@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +17,6 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/testsupport/levelfixture"
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
-	"github.com/KirkDiggler/rpg-toolkit/dice"
 	"github.com/KirkDiggler/rpg-toolkit/npc"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/ammunition"
@@ -816,57 +814,6 @@ func (s *SessionStackSuite) TestStartEncounter_FirstAdmissionPersistsCompleteLon
 	s.Equal(barbarianAppearance, barbarianRecord.Character.Data.Appearance)
 }
 
-// TestStartEncounter_StartSessionFailureLeavesCharacterUntouched proves the
-// launch ordering itself. StartSession is forced to fail through a real
-// Manager's repository seam. The character bytes, optimistic version, and
-// adapter save count must remain unchanged because Join has not begun. This is
-// discriminating against the retired API loop, which wrote the rested record
-// before it attempted StartSession.
-func (s *SessionStackSuite) TestStartEncounter_StartSessionFailureLeavesCharacterUntouched() {
-	fighter, _ := s.spentFighter("char-p1", "p1")
-	_, err := s.charRepo.Create(s.ctx, characterrepo.CreateInput{Character: fighter})
-	s.Require().NoError(err)
-	s.seedReadyLobby("lobby-order", "p1")
-
-	beforeRecord, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-p1"})
-	s.Require().NoError(err)
-	beforeBytes, err := s.redisClient.Get(s.ctx, "character:char-p1").Bytes()
-	s.Require().NoError(err)
-
-	countedCharacters := &countingCharacterRepository{Repository: s.charRepo}
-	failedStores := &failingStartRepositories{
-		SessionRepository:   sessionorch.NewSessionRepository(s.redisClient, 24*time.Hour),
-		EncounterRepository: sessionorch.NewEncounterRepository(s.redisClient, 24*time.Hour),
-	}
-	manager, err := sdk.NewManager(&sdk.Config{
-		PresentationIDs: idgen.NewSequential("presentation"),
-		Sessions:        failedStores, Encounters: failedStores,
-		Characters: sessionorch.NewCharacterRepository(countedCharacters),
-		Events:     sdk.DiscardEvents{}, Dice: &dice.CryptoRoller{}, TurnDriver: sdk.Driver(),
-	})
-	s.Require().NoError(err)
-	orch, err := lobbyorch.New(&lobbyorch.Config{
-		LobbyRepo: s.lobbyRepo, LobbyBroker: s.broker, CharacterRepo: countedCharacters,
-		LobbyIDGenerator: idgen.NewSequential("lobby"), JoinRefGenerator: idgen.NewSequential("ref"),
-		EncounterIDGenerator: idgen.NewSequential("enc"), SessionManager: manager,
-		Dungeons: dungeonstest.Shipped(s.T()),
-	})
-	s.Require().NoError(err)
-
-	_, err = orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
-		PlayerID: "p1", LobbyID: "lobby-order",
-	})
-	s.Require().ErrorIs(err, errStartRepository)
-
-	afterRecord, err := s.charRepo.Get(s.ctx, characterrepo.GetInput{ID: "char-p1"})
-	s.Require().NoError(err)
-	afterBytes, err := s.redisClient.Get(s.ctx, "character:char-p1").Bytes()
-	s.Require().NoError(err)
-	s.Equal(beforeBytes, afterBytes, "StartSession failed before Join, so stored bytes cannot change")
-	s.Equal(beforeRecord.Version, afterRecord.Version, "the repository version cannot advance")
-	s.Zero(countedCharacters.updates, "the character adapter cannot save before Join")
-}
-
 func (s *SessionStackSuite) spentFighter(id, playerID string) (*entities.Character, *customization.Appearance) {
 	secondWind, err := json.Marshal(features.SecondWindData{
 		Ref: refs.Features.SecondWind(), ID: id + "-second-wind", Name: "Second Wind",
@@ -978,33 +925,6 @@ func effectWithRefOrNil(blobs []json.RawMessage, want *core.Ref) json.RawMessage
 		}
 	}
 	return nil
-}
-
-var errStartRepository = errors.New("start repository unavailable")
-
-type failingStartRepositories struct {
-	sdk.SessionRepository
-	sdk.EncounterRepository
-}
-
-func (*failingStartRepositories) SaveSession(context.Context, *sdk.SessionData) error {
-	return errStartRepository
-}
-
-func (*failingStartRepositories) SaveEncounter(context.Context, string, *tkencounter.EncounterData) error {
-	return errStartRepository
-}
-
-type countingCharacterRepository struct {
-	characterrepo.Repository
-	updates int
-}
-
-func (r *countingCharacterRepository) Update(
-	ctx context.Context, input characterrepo.UpdateInput,
-) (*characterrepo.UpdateOutput, error) {
-	r.updates++
-	return r.Repository.Update(ctx, input)
 }
 
 // TestStartEncounter_ASpawnedMonsterCarriesTheRecordItWasGiven is the
@@ -1149,8 +1069,8 @@ func (s *SessionStackSuite) TestStartEncounter_ACharacterSharingAMonstersIdIsRef
 	})
 	s.Require().Error(err)
 	s.Contains(err.Error(), `"captain" is claimed twice`)
-	s.Contains(err.Error(), `character "captain" of player "cap"`, "one claimant, as the lobby knows it")
-	s.Contains(err.Error(), `monster "captain" (dnd5e:monsters:skeleton-captain)`, "the other, as the dungeon knows it")
+	s.ErrorIs(err, sdk.ErrDuplicateMember, "Launch's refusal, made before any write")
+	s.Contains(err.Error(), "dnd5e:monsters:skeleton-captain", "naming the monster claimant")
 
 	lobbyData, err := s.lobbyRepo.Get(s.ctx, "lobby-1")
 	s.Require().NoError(err)

@@ -63,3 +63,11 @@ func (l sharedStoreLocker) LockSession(ctx context.Context, in *sdk.LockSessionI
 	}
 	return l.inner.LockSession(ctx, &sdk.LockSessionInput{Session: "shared-sdk-store"})
 }
+
+// LockCharacter takes the character's own guard, per character id. It never
+// shares the store-wide session key: Launch, Join and Exit hold that key and
+// then take character guards, so routing a character onto it would deadlock
+// the verb on its own guard.
+func (l sharedStoreLocker) LockCharacter(ctx context.Context, in *sdk.LockCharacterInput) (*sdk.LockCharacterOutput, error) {
+	return l.inner.LockCharacter(ctx, in)
+}

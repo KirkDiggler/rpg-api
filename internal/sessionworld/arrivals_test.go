@@ -26,7 +26,7 @@ func TestArrivalsAreCarriedToTheSeam(t *testing.T) {
 	camp, spec := compileRaiderCamp(t)
 
 	byPlacement := map[string]Monster{}
-	for _, m := range camp.Monsters {
+	for _, m := range monstersOf(camp) {
 		byPlacement[m.PlacementID] = m
 	}
 	for _, id := range []string{"reinforcement-1", "reinforcement-2", "reinforcement-3"} {

@@ -33,7 +33,7 @@ func (s *ExplorationHostSuite) TestPreferenceIsDetachedAndDoesNotExpireWithARun(
 	got.PrivateDiscoveries = false
 	again, err := repo.GetExploration(ctx, "alice")
 	s.Require().NoError(err)
-	s.True(again.PrivateDiscoveries)
+	s.True(again.PrivateDiscoveries, "a read hands back a copy, not the stored profile")
 	_, err = repo.GetExploration(ctx, "bob")
 	s.ErrorIs(err, sdk.ErrNotFound)
 }
@@ -70,4 +70,26 @@ func (s *ExplorationHostSuite) TestSharedStoreGuardCoversProfilesAcrossSessionID
 	s.Require().NoError(err)
 	second.Release()
 	s.Empty(locker.inner.entries)
+}
+
+// TestTheStoreWideGuardLeavesCharacterGuardsPerCharacter is the Launch-path
+// deadlock check: holding the one store-wide session key, a verb takes each
+// party member's guard. Were characters routed onto that key, this would
+// block until the timeout.
+func (s *ExplorationHostSuite) TestTheStoreWideGuardLeavesCharacterGuardsPerCharacter() {
+	locker := sharedStoreLocker{inner: NewInProcessSessionLocker()}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	held, err := locker.LockSession(ctx, &sdk.LockSessionInput{Session: "run-1"})
+	s.Require().NoError(err)
+	guards := make([]func(), 0, 2)
+	for _, id := range []string{"alice", "bob"} {
+		guard, err := locker.LockCharacter(ctx, &sdk.LockCharacterInput{Character: id})
+		s.Require().NoError(err, "character %s under the held store-wide guard", id)
+		guards = append(guards, guard.Release)
+	}
+	for _, release := range guards {
+		release()
+	}
+	held.Release()
 }
