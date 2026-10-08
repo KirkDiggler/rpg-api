@@ -82,6 +82,9 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// it into FAILED_PRECONDITION passed the entire suite, integration
 		// included, because the sibling static test only proves a case exists.
 		{"ErrBadLevelRequest", sdk.ErrBadLevelRequest, codes.InvalidArgument},
+		// A malformed reach (a negative range) is the caller's defect, not a
+		// reach that fell short -- ErrOutOfRange keeps FAILED_PRECONDITION.
+		{"ErrBadReach", sdk.ErrBadReach, codes.InvalidArgument},
 
 		// A retired verb cannot become available by changing the game state.
 		{"ErrSearchRetired", sdk.ErrSearchRetired, codes.Unimplemented},

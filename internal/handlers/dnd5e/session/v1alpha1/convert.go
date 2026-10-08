@@ -2968,6 +2968,12 @@ func damageComponentsToProto(in []sdk.DamageComponent) ([]*sessionpb.DamageCompo
 	out := make([]*sessionpb.DamageComponent, len(in))
 	for i := range in {
 		component := &in[i]
+		// Multiplier is a stored-story read only (rpg-project#539): bodies
+		// written since then never set it -- a target's immunity, resistance
+		// or vulnerability arrives as its own modifier-only line labeled
+		// "immune", "resisted" or "vulnerable", which rides Roll below like
+		// any other line. Stories persisted before that still carry the
+		// factor, so the copy stays until the proto field is retired.
 		var multiplier *float64
 		if component.Multiplier != nil {
 			value := *component.Multiplier
