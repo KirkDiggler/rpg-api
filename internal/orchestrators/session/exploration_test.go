@@ -9,7 +9,6 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
 
@@ -24,16 +23,16 @@ func (s *ExplorationHostSuite) TestProfileIsDetachedAndDoesNotExpireWithARun() {
 	ctx := context.Background()
 	_, err := repo.GetExploration(ctx, "alice")
 	s.ErrorIs(err, sdk.ErrNotFound)
-	data := &sdk.ExplorationData{Character: "alice", PrivateDiscoveries: true, Checks: map[string]encounter.DiscoveryMemoryData{"site/secret": {Used: 1, Learned: true}}}
+	data := &sdk.ExplorationData{Character: "alice", PrivateDiscoveries: true}
 	s.Require().NoError(repo.SaveExploration(ctx, data))
 	server.FastForward(48 * time.Hour)
 	got, err := repo.GetExploration(ctx, "alice")
 	s.Require().NoError(err)
 	s.Equal(data, got)
-	delete(got.Checks, "site/secret")
+	got.PrivateDiscoveries = false
 	again, err := repo.GetExploration(ctx, "alice")
 	s.Require().NoError(err)
-	s.Len(again.Checks, 1)
+	s.True(again.PrivateDiscoveries, "a read hands back a copy, not the stored profile")
 	_, err = repo.GetExploration(ctx, "bob")
 	s.ErrorIs(err, sdk.ErrNotFound)
 }
