@@ -1064,6 +1064,7 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			Boundaries: atlas.Boundaries, Segments: atlas.Segments, Sealed: atlas.Sealed,
 			Doorways: atlas.Doorways, Placed: atlas.Placed, Exits: atlas.Exits,
 			StructuralWalls: atlas.StructuralWalls, StructuralDoors: atlas.StructuralDoors,
+			PropPresentations:                  propPresentationsToProto(b.PropPresentations),
 			StructuralWallOpeningsReplacements: structuralWallOpeningsReplacementsToProto(b.StructuralWallOpeningsReplacements)}}
 	case sdk.SightedBody:
 		// PASSED THROUGH, NAMES AND NOTHING ELSE -- and the nothing else is
@@ -1400,6 +1401,7 @@ func setWorldEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			Regions:                            atlasRegionsToProto(b.Regions),
 			StructuralWalls:                    atlasStructuralWallsToProto(b.StructuralWalls),
 			StructuralDoors:                    atlasStructuralDoorsToProto(b.StructuralDoors),
+			PropPresentations:                  propPresentationsToProto(b.PropPresentations),
 			StructuralWallOpeningsReplacements: structuralWallOpeningsReplacementsToProto(b.StructuralWallOpeningsReplacements),
 		}}
 	case sdk.WindowOpenedBody:
@@ -1830,9 +1832,10 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 		// about the run: whether the thing has arrived, whether somebody is
 		// already carrying it, or whether this member can see where it
 		// stands.
-		Placed:          atlasPlacedPropsToProto(a.Placed),
-		StructuralWalls: atlasStructuralWallsToProto(a.StructuralWalls),
-		StructuralDoors: atlasStructuralDoorsToProto(a.StructuralDoors),
+		Placed:            atlasPlacedPropsToProto(a.Placed),
+		StructuralWalls:   atlasStructuralWallsToProto(a.StructuralWalls),
+		StructuralDoors:   atlasStructuralDoorsToProto(a.StructuralDoors),
+		PropPresentations: propPresentationsToProto(a.PropPresentations),
 	}
 }
 

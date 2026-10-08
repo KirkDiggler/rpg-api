@@ -3,6 +3,7 @@ package session_test
 import (
 	"context"
 	_ "embed"
+	"math"
 
 	"google.golang.org/protobuf/proto"
 
@@ -39,6 +40,15 @@ func (s *StructuralPatchAcceptanceSuite) TestOrdinaryClosedDoorWithholdsFloorAnd
 	for _, prop := range before.Atlas.Placed {
 		s.NotEqual("books", prop.Id, "ordinary far-side props need no concealment")
 	}
+	s.Require().Len(before.Atlas.PropPresentations, 2, "unblocked decoration is still a renderable world object")
+	s.Equal("altar", before.Atlas.PropPresentations[0].Id)
+	vase := before.Atlas.PropPresentations[1]
+	s.Equal("vase", vase.Id)
+	s.Equal("dnd5e:props:vase", vase.Ref)
+	s.InDelta(0.2*5/math.Sqrt(3), vase.Origin.X, 1e-12)
+	s.InDelta(0.4*5/math.Sqrt(3), vase.Elevation, 1e-12)
+	s.InDelta(-0.3*180/math.Pi, vase.FacingDegrees, 1e-12)
+	s.Equal(1.2, vase.HeightScale)
 	s.Require().Len(before.Atlas.StructuralWalls, 1)
 	s.Require().Len(before.Atlas.StructuralDoors, 1)
 	beforeStory, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: "ordinary-run", Member: "alice"})
@@ -48,6 +58,9 @@ func (s *StructuralPatchAcceptanceSuite) TestOrdinaryClosedDoorWithholdsFloorAnd
 	after, err := h.handler.GetKnowledge(ctx, request)
 	s.Require().NoError(err)
 	s.Len(after.Atlas.Cells, 5)
+	s.Require().Len(after.Atlas.PropPresentations, 3)
+	s.Equal("books", after.Atlas.PropPresentations[1].Id)
+	s.Equal("dnd5e:props:books", after.Atlas.PropPresentations[1].Ref)
 	found := false
 	for _, prop := range after.Atlas.Placed {
 		if prop.Id == "books" {
@@ -68,6 +81,8 @@ func (s *StructuralPatchAcceptanceSuite) TestOrdinaryClosedDoorWithholdsFloorAnd
 	s.Require().NotNil(reveal, "normal opening delivers the existing region reveal")
 	s.Require().NotNil(reveal.Region)
 	s.Len(reveal.Region.Cells, 3)
+	s.Require().Len(reveal.PropPresentations, 1)
+	s.True(proto.Equal(after.Atlas.PropPresentations[1], reveal.PropPresentations[0]), "event-only appearance equals the fresh snapshot")
 	found = false
 	for _, prop := range reveal.Placed {
 		if prop.Id == "books" {
