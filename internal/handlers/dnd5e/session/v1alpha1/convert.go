@@ -1063,11 +1063,15 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 	case sdk.RoomRevealedBody:
 		atlas := AtlasToProto(&sdk.Atlas{Regions: []sdk.AtlasRegion{b.Region}, Cells: b.Scenery,
 			Props: b.Props, Boundaries: b.Boundaries, Segments: b.Segments, Sealed: b.Sealed,
-			Doorways: b.Doorways, Placed: b.Placed, Exits: b.Exits})
+			Doorways: b.Doorways, Placed: b.Placed, Exits: b.Exits,
+			StructuralWalls: b.StructuralWalls, StructuralDoors: b.StructuralDoors})
 		evt.Body = &sessionpb.Event_RoomRevealed{RoomRevealed: &sessionpb.RegionRevealed{
 			Region: atlas.Regions[0], Scenery: atlas.Cells, Props: atlas.Props,
 			Boundaries: atlas.Boundaries, Segments: atlas.Segments, Sealed: atlas.Sealed,
-			Doorways: atlas.Doorways, Placed: atlas.Placed, Exits: atlas.Exits}}
+			Doorways: atlas.Doorways, Placed: atlas.Placed, Exits: atlas.Exits,
+			StructuralWalls: atlas.StructuralWalls, StructuralDoors: atlas.StructuralDoors,
+			PropPresentations:                  propPresentationsToProto(b.PropPresentations),
+			StructuralWallOpeningsReplacements: structuralWallOpeningsReplacementsToProto(b.StructuralWallOpeningsReplacements)}}
 	case sdk.SightedBody:
 		// PASSED THROUGH, NAMES AND NOTHING ELSE -- and the nothing else is
 		// the design rather than an omission this seam should correct. What
@@ -1392,15 +1396,19 @@ func setWorldEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			sealed[i] = positionToProto(c)
 		}
 		evt.Body = &sessionpb.Event_ConcealmentRevealed{ConcealmentRevealed: &sessionpb.ConcealmentRevealed{
-			Concealment: b.Concealment,
-			Cells:       cells,
-			Props:       atlasPropsToProto(b.Props),
-			Doors:       doors,
-			Doorways:    atlasDoorwaysToProto(doorways),
-			Boundaries:  atlasBoundariesToProto(b.Boundaries),
-			Segments:    atlasSegmentsToProto(b.Segments),
-			Sealed:      sealed,
-			Regions:     atlasRegionsToProto(b.Regions),
+			Concealment:                        b.Concealment,
+			Cells:                              cells,
+			Props:                              atlasPropsToProto(b.Props),
+			Doors:                              doors,
+			Doorways:                           atlasDoorwaysToProto(doorways),
+			Boundaries:                         atlasBoundariesToProto(b.Boundaries),
+			Segments:                           atlasSegmentsToProto(b.Segments),
+			Sealed:                             sealed,
+			Regions:                            atlasRegionsToProto(b.Regions),
+			StructuralWalls:                    atlasStructuralWallsToProto(b.StructuralWalls),
+			StructuralDoors:                    atlasStructuralDoorsToProto(b.StructuralDoors),
+			PropPresentations:                  propPresentationsToProto(b.PropPresentations),
+			StructuralWallOpeningsReplacements: structuralWallOpeningsReplacementsToProto(b.StructuralWallOpeningsReplacements),
 		}}
 	case sdk.WindowOpenedBody:
 		// The fight stopped to ask somebody something (rpg-project#316 rung
@@ -1800,13 +1808,11 @@ func capacityGrantedBodyToProto(body *sdk.CapacityGrantedBody) *sessionpb.Capaci
 //
 // `dungeon_key` is the content key this world was compiled from, copied
 // across verbatim. `room_scene_json` is deprecated and DELIBERATELY LEFT
-// UNSET (rpg-project#479): what a room looks like is the World Builder's
-// content, and a client that wants it fetches the authored file by this key
-// through the ungated AuthoringService.GetDungeon and reads the scene with
-// the codec that owns one. The engine stopped carrying that document at
-// encounter v0.93.0, so there is no longer anything on the atlas to copy
-// into the old field -- and a field nothing can fill is left empty rather
-// than filled with something invented here.
+// UNSET (rpg-project#479). The key identifies source; it does not authorize a
+// gameplay client to fetch the complete authored document. Permitted fixed
+// structure and opaque content references now arrive on the SDK atlas and
+// existing reveal bodies. This converter copies those records, never derives
+// visibility or fetches source to fill missing data.
 //
 // An empty key is the honest absence, not a default: it means the session was
 // launched from a world its host assembled rather than from a registry entry,
@@ -1849,7 +1855,10 @@ func AtlasToProto(a *sdk.Atlas) *sessionpb.GetAtlasResponse {
 		// about the run: whether the thing has arrived, whether somebody is
 		// already carrying it, or whether this member can see where it
 		// stands.
-		Placed: atlasPlacedPropsToProto(a.Placed),
+		Placed:            atlasPlacedPropsToProto(a.Placed),
+		StructuralWalls:   atlasStructuralWallsToProto(a.StructuralWalls),
+		StructuralDoors:   atlasStructuralDoorsToProto(a.StructuralDoors),
+		PropPresentations: propPresentationsToProto(a.PropPresentations),
 	}
 }
 

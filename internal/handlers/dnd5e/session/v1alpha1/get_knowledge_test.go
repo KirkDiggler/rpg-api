@@ -47,6 +47,20 @@ func (s *KnowledgeHandlerSuite) TestSnapshotBindsIdentityAndCopiesTheProviderAns
 	s.Empty(out.View.Doors[0].CurrentVia)
 	s.Equal(sessionpb.DoorState_DOOR_STATE_OPEN, out.View.Doors[0].Door.State)
 }
+func (s *KnowledgeHandlerSuite) TestSnapshotCarriesStructuralRowsFromTheOwnedKnowledgeRead() {
+	atlas := structuralAtlasFixture()
+	s.manager.EXPECT().Knowledge(gomock.Any(), &sdk.KnowledgeInput{Session: "run", Member: "hero", Player: "alice"}).Return(&sdk.KnowledgeOutput{Atlas: atlas}, nil)
+	out, err := s.handler.GetKnowledge(s.ctx, &sessionpb.GetKnowledgeRequest{Session: "run", Member: "hero"})
+	s.Require().NoError(err)
+	s.Require().NotNil(out.Atlas)
+	s.Require().Len(out.Atlas.StructuralWalls, 1)
+	s.Require().Len(out.Atlas.StructuralDoors, 1)
+	s.Equal("wall-a", out.Atlas.StructuralWalls[0].Id)
+	s.Equal(13.25, out.Atlas.StructuralWalls[0].From.X)
+	s.Equal("keep/gate", out.Atlas.StructuralDoors[0].Id)
+	s.Empty(out.View.Doors, "fixed layout must not manufacture a mutable observation")
+}
+
 func (s *KnowledgeHandlerSuite) TestAnOwnedCharacterDoesNotGrantAnotherSessionSeat() {
 	s.manager.EXPECT().Knowledge(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNotSeated)
 	out, err := s.handler.GetKnowledge(s.ctx, &sessionpb.GetKnowledgeRequest{Session: "other-run", Member: "hero"})

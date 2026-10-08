@@ -46,7 +46,8 @@ func (r *redisExplorationRepository) SaveExploration(ctx context.Context, data *
 	return r.client.Set(ctx, explorationPrefix+data.Character, raw, 0).Err()
 }
 
-// Discovery operations share character profiles across session IDs. This host
+// Discovery operations share character preferences across session IDs, never
+// encounter knowledge or attempt history. This host
 // therefore uses one store-wide coordinator for SDK operations when that
 // capability is enabled. It trades parallelism for correct shared-record writes
 // without teaching the host how counters merge. It is still process-local;

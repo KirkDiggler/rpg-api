@@ -1,0 +1,57 @@
+version: 4
+key: ordinary-discovery
+play: {void: transparent, lighting: bright, standing: centre-covered}
+room:
+  version: 3
+  id: room
+  name: Ordinary rooms
+  coordinateFrame: {horizontalPlane: world-xz, verticalAxis: world-y-up, distanceUnit: world-scene-unit, hexRadius: 1, footprintFrame: owner-local-xz}
+  workspace: {hexRadius: 6, horizontalLimit: 12}
+  scene:
+    version: 1
+    id: scene
+    name: Ordinary rooms
+    items:
+      - id: books
+        kind: prop
+        assetRef: dnd5e:props:books
+        label: Books
+        transform: {x: 6.928203230275509, y: 0, z: 0, rotationY: 0}
+      - id: vase
+        kind: prop
+        assetRef: dnd5e:props:vase
+        label: Vase
+        transform: {x: 0.2, y: 0.4, z: 0.1, rotationY: 0.3}
+        heightScale: 1.2
+      - id: altar
+        kind: prop
+        assetRef: dnd5e:props:altar
+        label: Altar
+        transform: {x: 0, y: 0, z: 0, rotationY: 0}
+    groups: []
+  room:
+    implicitRegionId: region
+    walkableHexes: [{q: 0, r: 0}, {q: 1, r: 0}, {q: 2, r: 0}, {q: 3, r: 0}, {q: 4, r: 0}]
+    propDeclarations:
+      books:
+        blocksMovement: false
+        blocksLineOfSight: false
+        footprint: {width: 0.3, depth: 0.3, offsetX: 0, offsetZ: 0}
+    arrangementDeclarations: {}
+    monsterDeclarations: []
+    partyStart: {q: 0, r: 0}
+    walls:
+      - id: wall
+        label: Wall
+        line: {start: {x: 2.598076211353316, z: -3}, end: {x: 2.598076211353316, z: 3}}
+        appearance: {assetRef: 'dnd5e:env:dark-fortress:45_wall_01', height: 2, thickness: 0.25, elevation: 0}
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint: {width: 6, depth: 0.25, offsetX: 0, offsetZ: 0}
+        openings:
+          - id: gap
+            position: 3
+            width: 2
+            door: {id: gate, assetRef: 'dnd5e:env:dark-fortress:wall_door_double_01'}
+    doorBindings: {gate: {closed: true}}

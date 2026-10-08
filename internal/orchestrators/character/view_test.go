@@ -46,7 +46,7 @@ func TestProjectView_StrictLevel3Fighter(t *testing.T) {
 	require.Len(t, view.Status.Features, 2)
 	require.Equal(t, refs.Features.ActionSurge().String(), view.Status.Features[0].Ref.String())
 	require.Equal(t, refs.Features.SecondWind().String(), view.Status.Features[1].Ref.String())
-	var conditionRefs []string
+	conditionRefs := make([]string, 0, len(view.Status.Conditions))
 	for _, c := range view.Status.Conditions {
 		conditionRefs = append(conditionRefs, c.Ref.String())
 	}

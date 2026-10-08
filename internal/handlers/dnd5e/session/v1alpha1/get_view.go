@@ -31,6 +31,9 @@ func viewToProto(in *sdk.ViewOutput) *sessionpb.GetViewResponse {
 	out := &sessionpb.GetViewResponse{Sightings: sightingsToProto(in.Sightings), Areas: sightAreasToProto(in.Areas)}
 	for _, s := range in.Props {
 		p := &sessionpb.PropSighting{ObservedEmpty: s.ObservedEmpty, CurrentVia: append([]string(nil), s.CurrentVia...), Status: s.Status, At: s.At}
+		if s.Presentation != nil {
+			p.Presentation = propPresentationToProto(*s.Presentation)
+		}
 		if s.Prop != nil {
 			shape := atlasPropToProto(*s.Prop)
 			if s.ObservedEmpty {
