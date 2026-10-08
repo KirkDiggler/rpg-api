@@ -189,27 +189,30 @@ func TestTheRestBeatReachesTheWire(t *testing.T) {
 }
 
 // TestTheRestBeatCarriesWhatTheRestEnded: the rest's own beat is the one
-// account of what it ended — each concentration the rester held and each
-// condition taken off them — so a client renders one beat for one rest.
+// account of what it ended — each concentration the rester held and every
+// condition the rest took off anyone. A bard's Bless held on an ally ends with
+// the rest, and the ally's Blessed removal reaches `ended` with the ally as its
+// target, after the bard's own removals and exactly once.
 func TestTheRestBeatCarriesWhatTheRestEnded(t *testing.T) {
 	body := sdk.RestedBody{Member: "bard", Kind: string(sdk.RestShort)}
 	body.ConcentrationEnded = []sdk.RestConcentrationEnded{{
 		ConcentrationEndedBody: sdk.ConcentrationEndedBody{
-			Caster: "bard", Spell: sdk.SpellRef{Ref: "dnd5e:spells:bane", Name: "Bane"}, Reason: "rest",
+			Caster: "bard", Spell: sdk.SpellRef{Ref: "dnd5e:spells:bless", Name: "Bless"}, Reason: "rest",
 		},
-		Removed: []sdk.ConditionRemovedBody{{Target: "goblin-1", Ref: "dnd5e:conditions:baned", Reason: "rest"}},
+		Removed: []sdk.ConditionRemovedBody{
+			{Target: "fighter", Ref: "dnd5e:conditions:blessed", Name: "Blessed", Reason: "rest", SourceID: "bard"},
+		},
 	}}
 	body.Ended = []sdk.ConditionRemovedBody{
-		{Target: "bard", Ref: "dnd5e:conditions:prone", Name: "Prone", Reason: "rest", SourceID: "bard"},
-		{Target: "bard", Ref: "dnd5e:conditions:dodging", Name: "Dodging", Reason: "rest"},
+		{Target: "bard", Ref: "dnd5e:conditions:prone", Name: "Prone", Reason: "rest"},
 	}
 	evt, err := eventToProto(sdk.Event{Seq: 3, Kind: sdk.EventRested, Body: body})
 	require.NoError(t, err)
 	require.Equal(t, []*sessionpb.ConcentrationEnded{{
-		Caster: "bard", Spell: &sessionpb.SpellRef{Ref: "dnd5e:spells:bane", Name: "Bane"}, Reason: "rest",
+		Caster: "bard", Spell: &sessionpb.SpellRef{Ref: "dnd5e:spells:bless", Name: "Bless"}, Reason: "rest",
 	}}, evt.GetRested().GetConcentrationEnded())
 	require.Equal(t, []*sessionpb.ConditionRemoved{
-		{Target: "bard", Ref: "dnd5e:conditions:prone", Name: "Prone", Reason: "rest", SourceId: "bard"},
-		{Target: "bard", Ref: "dnd5e:conditions:dodging", Name: "Dodging", Reason: "rest"},
-	}, evt.GetRested().GetEnded(), "in the rulebook's order")
+		{Target: "bard", Ref: "dnd5e:conditions:prone", Name: "Prone", Reason: "rest"},
+		{Target: "fighter", Ref: "dnd5e:conditions:blessed", Name: "Blessed", Reason: "rest", SourceId: "bard"},
+	}, evt.GetRested().GetEnded(), "the rester's own removals, then the hold's, each once")
 }

@@ -147,9 +147,11 @@ func equipmentChangeToProto(change sdk.EquipmentChange) (sessionpb.EquipmentChan
 // restedToProto projects one rester's RESTED beat, including what the rest
 // ended: each concentration (caster, spell, reason) and each condition taken
 // off the rester. They ride the rest's own beat, never beats of their own, so
-// a client reads one account of one rest. A concentration's Removed list (the
-// conditions the hold kept on others) has no field on the wire's
-// ConcentrationEnded and is not sent.
+// a client reads one account of one rest. The wire's ConcentrationEnded has no
+// field for the conditions a hold kept (on the rester or an ally), so each
+// break's Removed is folded into `ended` after the rester's own Ended: the
+// session already leaves those out of Ended, so the union reports each
+// removal once.
 func restedToProto(b *sdk.RestedBody) (*sessionpb.Rested, error) {
 	kind, err := restKindToProto(b.Kind)
 	if err != nil {
@@ -170,7 +172,7 @@ func restedToProto(b *sdk.RestedBody) (*sessionpb.Rested, error) {
 		ResourcesRefilled:  b.ResourcesRefilled,
 		Calculation:        calculation,
 		ConcentrationEnded: restConcentrationEndedToProto(b.ConcentrationEnded),
-		Ended:              conditionsRemovedToProto(b.Ended),
+		Ended:              conditionsRemovedToProto(restEnded(b)),
 	}, nil
 }
 
@@ -187,6 +189,16 @@ func restConcentrationEndedToProto(ended []sdk.RestConcentrationEnded) []*sessio
 		}
 	}
 	return out
+}
+
+// restEnded is everything the rest took off anyone: the rester's own Ended,
+// then each broken concentration's Removed, in the order the session reports.
+func restEnded(b *sdk.RestedBody) []sdk.ConditionRemovedBody {
+	ended := append([]sdk.ConditionRemovedBody(nil), b.Ended...)
+	for _, broken := range b.ConcentrationEnded {
+		ended = append(ended, broken.Removed...)
+	}
+	return ended
 }
 
 func conditionsRemovedToProto(ended []sdk.ConditionRemovedBody) []*sessionpb.ConditionRemoved {
