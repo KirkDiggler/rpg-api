@@ -15,10 +15,10 @@ import (
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
+	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/proficiencies"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 
@@ -72,7 +72,7 @@ func dualWieldingFighter(
 }
 
 func adjacentOffHandFight(
-	t *testing.T, sheet *tkcharacter.Data,
+	t *testing.T, sheet *tkcharacter.Data, more ...tkdungeonspec.MonsterPlacement,
 ) (*acceptanceHarness, context.Context) {
 	t.Helper()
 	h := newAcceptanceHarnessWithDice(t, offHandAcceptanceDice{})
@@ -82,21 +82,12 @@ func adjacentOffHandFight(
 		Character: &entities.Character{Data: sheet},
 	})
 	require.NoError(t, err)
-	world := buildThreeRoomTomb(t)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: "off-hand-run", Encounter: "off-hand-encounter", World: world,
-	})
-	require.NoError(t, err)
-	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{
-		Session: "off-hand-run", Member: sheet.ID, Position: pbAt(18, 3),
-	})
-	require.NoError(t, err)
-	spawned, err := h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-		Session: "off-hand-run", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
-		Position: at(19, 3),
-	})
-	require.NoError(t, err)
-	require.NotNil(t, spawned.Formed, "adjacent visible skeleton must form a fight")
+	launched := h.launch(t, "off-hand-run",
+		withMonsters(buildThreeRoomTomb(t), append([]tkdungeonspec.MonsterPlacement{
+			monsterAt("skel-1", refs.Monsters.Skeleton().String(), 19, 3),
+		}, more...)...),
+		seatAt(sheet.ID, 18, 3))
+	require.NotEmpty(t, launched.Formed, "adjacent visible skeleton must form a fight")
 
 	return h, ctx
 }

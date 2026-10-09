@@ -21,7 +21,6 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/proficiencies"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 
@@ -167,21 +166,11 @@ func TestAcceptance_GreatWeaponFightingRollTraceCrossesLiveAndStory(t *testing.T
 		Character: &entities.Character{Data: greatWeaponFighter(t, "alice", "player-alice")},
 	})
 	require.NoError(t, err)
-	world := buildThreeRoomTomb(t)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: sessionID, Encounter: "gwf-encounter", World: world,
-	})
-	require.NoError(t, err)
-	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{
-		Session: sessionID, Member: "alice", Position: pbAt(18, 3),
-	})
-	require.NoError(t, err)
-	spawned, err := h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-		Session: sessionID, ID: "skel-1", Ref: refs.Monsters.Skeleton().String(), Position: at(19, 3),
-	})
-	require.NoError(t, err)
-	require.NotNil(t, spawned.Formed)
-	require.Equal(t, []string{"alice", "skel-1"}, spawned.Formed.Order)
+	launched := h.launch(t, sessionID,
+		withMonsters(buildThreeRoomTomb(t), monsterAt("skel-1", refs.Monsters.Skeleton().String(), 19, 3)),
+		seatAt("alice", 18, 3))
+	require.Len(t, launched.Formed, 1)
+	require.Equal(t, []string{"alice", "skel-1"}, launched.Formed[0].Order)
 
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()

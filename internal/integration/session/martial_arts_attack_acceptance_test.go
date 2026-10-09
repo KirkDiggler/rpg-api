@@ -17,7 +17,6 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/proficiencies"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 
@@ -71,12 +70,8 @@ func struckEventForAttack(
 func TestAcceptance_QuarterstaffAttackGrantsBonusUnarmedStrike(t *testing.T) {
 	h, ctx := adjacentOffHandFight(
 		t, quarterstaffMonkAcceptance(t, "alice", "player-alice"),
+		monsterAt("skel-captain", refs.Monsters.SkeletonCaptain().String(), 18, 4),
 	)
-	_, err := h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-		Session: "off-hand-run", ID: "skel-captain",
-		Ref: refs.Monsters.SkeletonCaptain().String(), Position: at(18, 4),
-	})
-	require.NoError(t, err)
 
 	before, err := h.handler.Afford(ctx, &sessionpb.AffordRequest{
 		Session: "off-hand-run", Member: "alice",

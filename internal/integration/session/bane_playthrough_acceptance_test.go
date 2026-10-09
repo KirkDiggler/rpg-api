@@ -9,7 +9,6 @@ import (
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	dnd5epb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
@@ -187,20 +186,13 @@ func TestAcceptance_BaneCreationCastPaymentAndAffectedRoll(t *testing.T) {
 		Character: &entities.Character{Data: armedFighter("fighter", "player-fighter")},
 	})
 	require.NoError(t, err)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: "bane-playthrough", Encounter: "room-encounter", World: buildOpenRoom(t, 12, 6),
-	})
-	require.NoError(t, err)
-	_, err = h.handler.Join(bardCtx, &sessionpb.JoinRequest{Session: "bane-playthrough", Member: bardID, Position: pbAt(2, 0)})
-	require.NoError(t, err)
-	_, err = h.handler.Join(fighterCtx, &sessionpb.JoinRequest{Session: "bane-playthrough", Member: "fighter", Position: pbAt(3, 0)})
-	require.NoError(t, err)
+	h.launch(t, "bane-playthrough",
+		withMonsters(buildOpenRoom(t, 12, 6), monsterAt("skel-1", refs.Monsters.Skeleton().String(), 4, 0)),
+		seatAt(bardID, 2, 0), seatAt("fighter", 3, 0))
+	// Reactions in hand, written after the launch: it long-rests the party and
+	// would overwrite a sheet written before it.
 	inCombat(t, h.charRepo, bardID, 1)
 	inCombat(t, h.charRepo, "fighter", 1)
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-		Session: "bane-playthrough", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(), Position: at(4, 0),
-	})
-	require.NoError(t, err)
 
 	turn, err := h.handler.Turn(bardCtx, &sessionpb.TurnRequest{Session: "bane-playthrough", Member: bardID})
 	require.NoError(t, err)

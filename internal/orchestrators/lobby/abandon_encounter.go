@@ -8,7 +8,6 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
-	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 )
 
 // AbandonEncounterInput carries the entity-typed AbandonEncounter request.
@@ -29,7 +28,7 @@ type AbandonEncounterOutput struct{}
 // with no other way to end.
 //
 // Ends the session through the toolkit's declared "withdrawn" ending
-// (sessionworld.EndingWithdrawn — the same ending the reference tomb's own
+// (sdk.EndingWithdrawn — the same ending the reference tomb's own
 // world declares, session.Manager.End's "declared external ending"
 // contract): the party administratively left, rather than being defeated or
 // completing the dungeon. Manager.End is load-act-save-return in one call,
@@ -79,7 +78,7 @@ func (o *Orchestrator) AbandonEncounter(ctx context.Context, in *AbandonEncounte
 	}
 
 	if _, err := o.sessionManager.End(ctx, &sdk.EndInput{
-		Session: data.EncounterID, Ending: sessionworld.EndingWithdrawn,
+		Session: data.EncounterID, Ending: sdk.EndingWithdrawn,
 	}); err != nil {
 		if errors.Is(err, sdk.ErrNoSession) || errors.Is(err, sdk.ErrNoEncounter) || errors.Is(err, sdk.ErrClosed) {
 			// Nothing left to abandon — same caller-visible outcome whether

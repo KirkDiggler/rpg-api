@@ -12,7 +12,6 @@ import (
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
@@ -137,27 +136,13 @@ func castSceneAtFighterTurn(
 		require.NoError(t, err)
 	}
 
-	_, err := h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: castSessionID, Encounter: "room-encounter", World: buildOpenRoom(t, 12, 6),
-	})
-	require.NoError(t, err)
-
-	_, err = h.handler.Join(bardCtx, &sessionpb.JoinRequest{
-		Session: castSessionID, Member: "bella", Position: pbAt(2, 0),
-	})
-	require.NoError(t, err)
-	_, err = h.handler.Join(fighterCtx, &sessionpb.JoinRequest{
-		Session: castSessionID, Member: "alice", Position: pbAt(3, 0),
-	})
-	require.NoError(t, err)
+	h.launch(t, castSessionID,
+		withMonsters(buildOpenRoom(t, 12, 6), monsterAt("skel-1", refs.Monsters.Skeleton().String(), 4, 0)),
+		seatAt("bella", 2, 0), seatAt("alice", 3, 0))
+	// Reactions in hand, written after the launch: it long-rests the party and
+	// would overwrite a sheet written before it.
 	inCombat(t, h.charRepo, "bella", 1)
 	inCombat(t, h.charRepo, "alice", 1)
-
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-		Session: castSessionID, ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
-		Position: at(4, 0),
-	})
-	require.NoError(t, err)
 
 	turn, err := h.handler.Turn(fighterCtx, &sessionpb.TurnRequest{
 		Session: castSessionID, Member: "alice",

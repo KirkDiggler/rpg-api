@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
@@ -72,21 +71,12 @@ func TestAcceptance_TwoSessionsEachDriveTheirOwnMonsters(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-				Session: run.session, Encounter: run.session + "-encounter", World: buildOpenRoom(t, 12, 6),
-			})
-			require.NoError(t, err)
-
-			_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{
-				Session: run.session, Member: run.fighter, Position: pbAt(3, 0),
-			})
-			require.NoError(t, err)
+			h.launch(t, run.session,
+				withMonsters(buildOpenRoom(t, 12, 6), monsterAt("skel-1", refs.Monsters.Skeleton().String(), 4, 0)),
+				seatAt(run.fighter, 3, 0))
+			// Reactions in hand, written after the launch: it long-rests the
+			// party and would overwrite a sheet written before it.
 			inCombat(t, h.charRepo, run.fighter, 1)
-
-			_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-				Session: run.session, ID: "skel-1", Ref: refs.Monsters.Skeleton().String(), Position: at(4, 0),
-			})
-			require.NoError(t, err)
 
 			turn, err := h.handler.Turn(ctx, &sessionpb.TurnRequest{Session: run.session, Member: run.fighter})
 			require.NoError(t, err)

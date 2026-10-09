@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/mock/gomock"
 
-	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
@@ -19,7 +18,7 @@ import (
 )
 
 // StartContractSuite pins StartEncounter's exact launch contract: the compiled
-// world and resolved key it hands StartSession, the ordered SDK verbs it calls,
+// dungeon and resolved key it hands Launch, the ordered SDK verbs it calls,
 // the exact input each verb receives, and the save-then-publish ordering of the
 // lobby record and the EncounterStarted event.
 //
@@ -75,7 +74,6 @@ func contractEntry(key string) *dungeons.Entry {
 		Dungeon: &sessionworld.Dungeon{
 			Key:        key,
 			Name:       "Contract Hall",
-			World:      &tkencounter.EncounterData{},
 			PartySeats: []spatial.Position{{X: 7, Y: -3}, {X: -2, Y: 5}},
 			Spec:       &tkdungeonspec.Compiled{Key: key},
 		},

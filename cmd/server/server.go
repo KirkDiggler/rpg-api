@@ -30,7 +30,7 @@ import (
 	grpc_logging "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 
-	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	apiv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/api/v1alpha1"
@@ -377,9 +377,8 @@ func runServer(_ *cobra.Command, _ []string) error {
 				strings.Join(seeded, ", "), contentDir)
 		}
 	}
-	// sessionOrch.Manager is the AtlasProjector: Manager.AtlasOf loads the
-	// world the way StartSession would and projects it the way GetAtlas
-	// does, so PutDungeon's atlas and the game's are one producer.
+	// sessionOrch.Manager is the AtlasProjector: Manager.AtlasOf projects the
+	// compiled dungeon the way GetAtlas does, so PutDungeon's atlas and the game's are one producer.
 	registry, err := dungeons.NewFileRegistry(contentDir, authoringEnabled, registryProjector{sessionOrch.Manager})
 	if err != nil {
 		return fmt.Errorf("content registry: %w", err)
@@ -578,7 +577,7 @@ func mustRedisClient() redis.Client {
 type registryProjector struct{ m *sdk.Manager }
 
 func (p registryProjector) AtlasOf(
-	ctx context.Context, key string, world *tkencounter.EncounterData,
+	ctx context.Context, key string, dungeon *tkdungeonspec.Compiled,
 ) (*sdk.Atlas, error) {
-	return p.m.AtlasOf(ctx, &sdk.AtlasOfInput{World: world, Dungeon: key})
+	return p.m.AtlasOf(ctx, &sdk.AtlasOfInput{Dungeon: dungeon, DungeonKey: key})
 }

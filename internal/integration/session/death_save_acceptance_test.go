@@ -15,6 +15,7 @@ import (
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/saves"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
@@ -75,7 +76,9 @@ type deathSaveScene struct {
 	ally    string
 }
 
-func newDeathSaveScene(t *testing.T) *deathSaveScene {
+// newDeathSaveScene launches alice and bob beside skel-1, with any further
+// monsters on the board from the start.
+func newDeathSaveScene(t *testing.T, more ...tkdungeonspec.MonsterPlacement) *deathSaveScene {
 	t.Helper()
 	dice := &scriptedDeathSaveDice{}
 	h := newAcceptanceHarnessWithDice(t, dice)
@@ -87,23 +90,11 @@ func newDeathSaveScene(t *testing.T) *deathSaveScene {
 		})
 		require.NoError(t, err)
 	}
-	_, err := h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: sessionID, Encounter: "death-save-encounter", World: buildThreeRoomTomb(t),
-	})
-	require.NoError(t, err)
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-		Session: sessionID, ID: "skel-1", Ref: refs.Monsters.Skeleton().String(), Position: at(19, 3),
-	})
-	require.NoError(t, err)
-	for _, row := range []struct {
-		id, player string
-		col        int
-	}{{"alice", "player-alice", 18}, {"bob", "player-bob", 17}} {
-		_, err = h.handler.Join(auth.WithPlayerID(context.Background(), row.player), &sessionpb.JoinRequest{
-			Session: sessionID, Member: row.id, Position: pbAt(row.col, 3),
-		})
-		require.NoError(t, err)
-	}
+	h.launch(t, sessionID,
+		withMonsters(buildThreeRoomTomb(t), append([]tkdungeonspec.MonsterPlacement{
+			monsterAt("skel-1", refs.Monsters.Skeleton().String(), 19, 3),
+		}, more...)...),
+		seatAt("alice", 18, 3), seatAt("bob", 17, 3))
 
 	turn, err := h.manager.Manager.Turn(context.Background(), &sdk.TurnInput{Session: sessionID, Member: "alice"})
 	require.NoError(t, err)
@@ -278,7 +269,7 @@ func assertOrdinarySuccessResponse(t *testing.T, s *deathSaveScene, response *se
 	require.Positive(t, response.GetSeq())
 	require.NotEqual(t, strconv.FormatUint(response.GetSeq(), 10), response.GetPresentationId(),
 		"opaque token remains separate from numeric authority")
-	require.Equal(t, []string{"character:" + s.actor, "encounter:death-save-encounter", "session:" + s.session}, response.GetSaved().GetWritten())
+	require.Equal(t, []string{"character:" + s.actor, "encounter:" + s.session, "session:" + s.session}, response.GetSaved().GetWritten())
 	require.Empty(t, response.GetSaved().GetFailed())
 	require.Equal(t, int32(8), response.GetDelivery().GetEvents(), "Death Save and Down reach the roster; two witnesses also receive refreshed sight testimony")
 	require.False(t, response.GetDelivery().GetFailed())
@@ -513,17 +504,13 @@ func TestAcceptance_DeathSaveAttackTransitionsAndTargetability(t *testing.T) {
 	})
 
 	t.Run("defeated monster is excluded while another hostile keeps the fight active", func(t *testing.T) {
-		s := newDeathSaveScene(t)
-		_, err := s.h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-			Session: s.session, ID: "skel-2", Ref: refs.Monsters.Skeleton().String(), Position: at(20, 3),
-		})
-		require.NoError(t, err)
+		s := newDeathSaveScene(t, monsterAt("skel-2", refs.Monsters.Skeleton().String(), 20, 3))
 		attack := attackDeclaration(t, s)
 		require.True(t, attackCandidateAvailable(attack, "skel-1"))
 		require.True(t, attackCandidatePresent(attack, "skel-2"))
 
 		s.dice.reset(20, 8, 8)
-		_, err = s.h.handler.Attack(s.ctx, &sessionpb.AttackRequest{
+		_, err := s.h.handler.Attack(s.ctx, &sessionpb.AttackRequest{
 			Session: s.session, Attacker: s.actor, Target: "skel-1", DeclarationId: attack.GetId(),
 		})
 		require.NoError(t, err)

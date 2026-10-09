@@ -19,14 +19,14 @@ and project armour class from the saved record (the equipment patch, version
 check, retry loop and appearance notifier are deleted, `PatchEquipment` with
 them); the lobby start is one `Launch` handed the compiled `dungeonspec.Compiled`
 and the party (the re-projection, member-id minting, id-collision checks and
-StartSession/Spawn/Join sequence are deleted; the demo vendor stays one
+start-session/spawn/join sequence are deleted; the demo vendor stays one
 `PlaceNPC`); `SessionService.Rest` maps resters onto `Manager.Rest`; the
 `EquipmentChanged` and `Rested` beats reach the wire. A Redis seat repository
 (`session-seat:v1alpha1:<character>`, no TTL, a seat naming an expired run reads
 as unseated) and per-character guards (a key space separate from session
-guards) back the seat. One compile-only constructor remains:
-`sessionworld.buildWorld` builds the world the registry's atlas preview needs,
-until the SDK projects an atlas from a compiled spec.
+guards) back the seat. The registry's atlas preview is
+now `session.Manager.AtlasOf` over the compiled dungeon; `sessionworld.buildWorld`
+is deleted and `Launch` is the only builder of a run's world.
 
 **Automatic discovery release adoption (rpg-project#523)** — Adopts generated
 protos v0.1.220, released encounter v0.112.0 and session v0.114.1 from

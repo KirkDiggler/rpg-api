@@ -71,7 +71,7 @@ func TestTheMindIsTheMemberIdTheRunKnows(t *testing.T) {
 	require.NotNil(t, chief)
 
 	minds := map[tkencounter.FactionID]tkencounter.MemberID{}
-	for _, fa := range camp.World.Field.Factions {
+	for _, fa := range camp.Spec.Field.Factions {
 		minds[fa.ID] = fa.Mind
 	}
 	require.Equal(t, tkencounter.MemberID(chief.MemberID), minds[chief.Faction],
@@ -96,22 +96,18 @@ func TestTheMindIsTheMemberIdTheRunKnows(t *testing.T) {
 	require.Contains(t, err.Error(), chief.MemberID)
 }
 
-// loadWorld rebuilds a live encounter from the world this package produced,
-// with the same construction-time capabilities, so a scene can ask the
-// composition a question the way session.StartSession would.
+// loadWorld builds a live encounter over the compiled field under refusing
+// capabilities, so a scene can ask the composition a question.
 func loadWorld(t *testing.T, d *Dungeon) *tkencounter.Encounter {
 	t.Helper()
 
-	enc, err := tkencounter.LoadEncounter(&tkencounter.LoadEncounterInput{
-		Data: *d.World,
-		// Standing is the test's own: scenes here join members, which the
-		// compile-only Standing refuses to assess.
-		Initiative: compileOnly.Initiative, Standing: everyoneStanding{}, Sight: compileOnly.Sight, Equipment: compileOnly.Equipment,
-		Sheets:     standStillSheets{},
-		TurnDriver: compileOnly.TurnDriver, Striker: compileOnly.Striker, Mover: compileOnly.Mover,
-		Announcer: compileOnly.Announcer,
-	})
-	require.NoError(t, err, "the world this package produced must be one the composition accepts back")
+	// Standing is the test's own: scenes here join members, which the
+	// refusing Standing is not asked to assess.
+	caps := tkencounter.RefusingCapabilities()
+	caps.Standing = everyoneStanding{}
+	caps.Sheets = standStillSheets{}
+
+	enc := encounterOf(t, d, caps)
 
 	return enc
 }

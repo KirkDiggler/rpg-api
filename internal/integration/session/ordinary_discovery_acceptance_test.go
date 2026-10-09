@@ -12,7 +12,6 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
 
 // The floor and books carry no concealment declarations.
@@ -27,10 +26,7 @@ func (s *StructuralPatchAcceptanceSuite) TestOrdinaryClosedDoorWithholdsFloorAnd
 	s.Require().NoError(err)
 	dungeon, err := sessionworld.Compile([]byte(ordinaryDiscoverySource))
 	s.Require().NoError(err)
-	_, err = h.manager.Manager.StartSession(ctx, &sdk.StartSessionInput{Session: "ordinary-run", Encounter: "ordinary-world", World: dungeon.World})
-	s.Require().NoError(err)
-	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{Session: "ordinary-run", Member: "alice", Position: pbAt(1, 0)})
-	s.Require().NoError(err)
+	h.launch(s.T(), "ordinary-run", dungeon.Spec, seatAt("alice", 1, 0))
 	request := &sessionpb.GetKnowledgeRequest{Session: "ordinary-run", Member: "alice"}
 	before, err := h.handler.GetKnowledge(ctx, request)
 	s.Require().NoError(err)

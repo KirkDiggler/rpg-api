@@ -11,7 +11,6 @@ import (
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
-	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
@@ -174,36 +173,18 @@ func TestTwoStreamEventsSubscribers(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	world := buildThreeRoomTomb(t)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: session, Encounter: "tomb-encounter", World: world,
-	})
-	require.NoError(t, err)
-
-	// Both players join first, on the tomb's clear sight row (matching
-	// buildThreeRoomTomb's own pillar-gap geometry), before anything hostile
-	// exists to see -- exactly the toolkit's own two_players_test.go order
-	// (join, join, THEN spawn), so the fight forms on Spawn with a turn
-	// order this test can predict rather than one shaped by which player
-	// happened to join within an already-live bubble.
-	_, err = h.handler.Join(ctxAlice, &sessionpb.JoinRequest{
-		Session: session, Member: "alice", Position: &sessionpb.Position{X: 15, Y: 3},
-	})
-	require.NoError(t, err)
-	_, err = h.handler.Join(ctxBob, &sessionpb.JoinRequest{
-		Session: session, Member: "bob", Position: &sessionpb.Position{X: 17, Y: 3},
-	})
-	require.NoError(t, err)
-
-	spawnResp, err := h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-		Session: session, ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
-		Position: spatial.Position{X: 19, Y: 3},
-	})
-	require.NoError(t, err)
-	require.NotNil(t, spawnResp.Formed, "both players are in sight of skel-1's spawn point along the gap row")
+	// Both players seat on the tomb's clear sight row (matching
+	// buildThreeRoomTomb's own pillar-gap geometry) and the fight forms at
+	// launch, one formation holding all three. The cells are the authored
+	// columns of the axial cells (15,3), (17,3) and (19,3) this test used to
+	// join and spawn at.
+	launched := h.launch(t, session,
+		withMonsters(buildThreeRoomTomb(t), monsterAt("skel-1", refs.Monsters.Skeleton().String(), 20, 3)),
+		seatAt("alice", 16, 3), seatAt("bob", 18, 3))
+	require.Len(t, launched.Formed, 1, "both players are in sight of skel-1 along the gap row")
 	// testDice{}'s flat rolls tie every initiative roll, so the order falls
 	// to the ID tie-break (alphabetical): "alice" < "bob" < "skel-1".
-	require.Equal(t, []string{"alice", "bob", "skel-1"}, spawnResp.Formed.Order)
+	require.Equal(t, []string{"alice", "bob", "skel-1"}, launched.Formed[0].Order)
 
 	// -- both subscribe for real, through the actual handler --
 	aliceCtx, cancelAlice := context.WithCancel(ctxAlice)

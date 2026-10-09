@@ -81,16 +81,12 @@ func (s *SessionSerializationSuite) proveSerialization(locker sdk.SessionLocker)
 		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
 	})
 	s.Require().NoError(err)
-	const run, world = "serialized-run", "serialized-world"
-	_, err = h.manager.Manager.StartSession(ctx, &sdk.StartSessionInput{
-		Session: run, Encounter: world, World: buildThreeRoomTomb(s.T()),
-	})
-	s.Require().NoError(err)
-	_, err = h.manager.Manager.Join(ctx, &sdk.JoinInput{Session: run, Member: "alice", Position: at(1, 1)})
-	s.Require().NoError(err)
+	// A launch stores the run's world under the run's own id.
+	const run = "serialized-run"
+	h.launch(s.T(), run, buildThreeRoomTomb(s.T()), seatAt("alice", 1, 1))
 
 	hook := &pausedEncounterSave{
-		key: "session-enc:v1alpha1:" + world, entered: make(chan struct{}), resume: make(chan struct{}),
+		key: "session-enc:v1alpha1:" + run, entered: make(chan struct{}), resume: make(chan struct{}),
 	}
 	var resumeOnce sync.Once
 	resume := func() { resumeOnce.Do(func() { close(hook.resume) }) }

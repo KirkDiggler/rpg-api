@@ -10,6 +10,7 @@ import (
 
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
@@ -60,20 +61,10 @@ func (hittingDice) Roll(_ context.Context, size int) (int, error) {
 // props. The tomb fixture exists to prove sight and crossings; this scene is
 // about who stands next to whom on one row, so every feature that could stop
 // a step or a sightline is deliberately absent.
-func buildOpenRoom(t *testing.T, width, height int) *tkencounter.EncounterData {
+func buildOpenRoom(t *testing.T, width, height int) *tkdungeonspec.Compiled {
 	t.Helper()
 
-	enc, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
-		Initiative: orderAsGiven{},
-		Retention:  tkencounter.RetentionUnbounded,
-		Standing:   allStanding{},
-		Sight:      allSeeing{},
-		Equipment:  tkencounter.UnobservedEquipment{},
-		Sheets:     standStillSheets{},
-		TurnDriver: tkencounter.PassDriver{},
-		Striker:    tkencounter.RefusingStriker{},
-		Mover:      tkencounter.RefusingMover{},
-		Announcer:  tkencounter.RefusingAnnouncer{},
+	return &tkdungeonspec.Compiled{
 		Field: tkencounter.FieldInput{
 			Canvas: tkencounter.CanvasInput{
 				Void: tkencounter.VoidIsOpaque(), Orientation: pointy,
@@ -84,11 +75,7 @@ func buildOpenRoom(t *testing.T, width, height int) *tkencounter.EncounterData {
 				Cells:    rect(0, 0, width, height),
 			}},
 		},
-		Endings: []tkencounter.EndingInput{{Key: "unused", Trigger: tkencounter.TriggerExternal{}}},
-	})
-	require.NoError(t, err, "building the open room")
-	data := enc.ToData()
-	return &data
+	}
 }
 
 // inCombat gives a stored sheet the economy of somebody in a fight, with
@@ -188,28 +175,16 @@ func TestAcceptance_ReactionWindowCrossesTheWire(t *testing.T) {
 	require.NoError(t, err)
 
 	// The lobby's job, in-process (design rule 5: creation is the lobby's).
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: sessionID, Encounter: "room-encounter", World: buildOpenRoom(t, 12, 6),
-	})
-	require.NoError(t, err)
-
-	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{
-		Session: sessionID, Member: "alice", Position: pbAt(3, 0),
-	})
-	require.NoError(t, err)
-	inCombat(t, h.charRepo, "alice", 1)
-
-	// Spawned in a fixed order, because initiative ties break by arrival and
+	// Placed in a fixed order, because initiative ties break by arrival and
 	// the whole scene's arithmetic below reads off the resulting order.
-	for _, spawn := range []struct {
-		id string
-		at spatial.Position
-	}{{"skel-1", at(4, 0)}, {"skel-2", at(2, 0)}} {
-		_, serr := h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-			Session: sessionID, ID: spawn.id, Ref: refs.Monsters.Skeleton().String(), Position: spawn.at,
-		})
-		require.NoError(t, serr)
-	}
+	h.launch(t, sessionID,
+		withMonsters(buildOpenRoom(t, 12, 6),
+			monsterAt("skel-1", refs.Monsters.Skeleton().String(), 4, 0),
+			monsterAt("skel-2", refs.Monsters.Skeleton().String(), 2, 0)),
+		seatAt("alice", 3, 0))
+	// Reactions in hand, written after the launch: it long-rests the party and
+	// would overwrite a sheet written before it.
+	inCombat(t, h.charRepo, "alice", 1)
 
 	turn, err := h.handler.Turn(ctx, &sessionpb.TurnRequest{Session: sessionID, Member: "alice"})
 	require.NoError(t, err)

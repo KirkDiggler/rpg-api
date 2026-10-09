@@ -14,7 +14,7 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	goredis "github.com/redis/go-redis/v9"
 
-	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
@@ -55,9 +55,9 @@ func ProjectorFor(m *sdk.Manager) dungeons.AtlasProjector { return managerProjec
 type managerProjector struct{ m *sdk.Manager }
 
 func (p managerProjector) AtlasOf(
-	ctx context.Context, key string, world *tkencounter.EncounterData,
+	ctx context.Context, key string, dungeon *tkdungeonspec.Compiled,
 ) (*sdk.Atlas, error) {
-	return p.m.AtlasOf(ctx, &sdk.AtlasOfInput{World: world, Dungeon: key})
+	return p.m.AtlasOf(ctx, &sdk.AtlasOfInput{Dungeon: dungeon, DungeonKey: key})
 }
 
 // ContentDir locates the repo's content/ directory by walking up from the

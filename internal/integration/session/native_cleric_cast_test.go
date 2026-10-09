@@ -31,19 +31,27 @@ func nativeClericCombatSceneAt(t *testing.T, targetX, targetY int, preferred ...
 	allyCtx := auth.WithPlayerID(context.Background(), "player-alice")
 	_, err := h.charRepo.Create(ctx, characterrepo.CreateInput{Character: &entities.Character{Data: armedFighter("alice", "player-alice")}})
 	require.NoError(t, err)
-	_, err = h.manager.Manager.StartSession(ctx, &sdk.StartSessionInput{Session: castSessionID, Encounter: "room-encounter", World: buildOpenRoom(t, 12, 6)})
-	require.NoError(t, err)
-	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{Session: castSessionID, Member: id, Position: pbAt(2, 0)})
-	require.NoError(t, err)
-	_, err = h.handler.Join(allyCtx, &sessionpb.JoinRequest{Session: castSessionID, Member: "alice", Position: pbAt(3, 0)})
-	require.NoError(t, err)
-	worldOffers, err := h.handler.Afford(ctx, &sessionpb.AffordRequest{Session: castSessionID, Member: id})
+	party := []partySeat{seatAt(id, 2, 0), seatAt("alice", 3, 0)}
+
+	// The world clock first, on a run with nobody hostile in it: a launch puts
+	// the monster on the board at once, so the exploration check that used to
+	// come before the spawn gets a run of its own, and the party leaves it
+	// before the real one (a character holds one seat).
+	const exploration = castSessionID + "-exploration"
+	h.launch(t, exploration, buildOpenRoom(t, 12, 6), party...)
+	worldOffers, err := h.handler.Afford(ctx, &sessionpb.AffordRequest{Session: exploration, Member: id})
 	require.NoError(t, err)
 	for _, offer := range worldOffers.GetDeclarations() {
 		require.False(t, offer.GetVerb() == sessionpb.Verb_VERB_CAST && offer.GetAvailable(), "world-clock exploration does not imply a missing cast mapping")
 	}
-	_, err = h.manager.Manager.Spawn(ctx, &sdk.SpawnInput{Session: castSessionID, ID: "skel-1", Ref: refs.Monsters.Skeleton().String(), Position: at(targetX, targetY)})
+	_, err = h.handler.Exit(ctx, &sessionpb.ExitRequest{Session: exploration, Member: id})
 	require.NoError(t, err)
+	_, err = h.handler.Exit(allyCtx, &sessionpb.ExitRequest{Session: exploration, Member: "alice"})
+	require.NoError(t, err)
+
+	h.launch(t, castSessionID,
+		withMonsters(buildOpenRoom(t, 12, 6), monsterAt("skel-1", refs.Monsters.Skeleton().String(), targetX, targetY)),
+		party...)
 	turn, err := h.handler.Turn(ctx, &sessionpb.TurnRequest{Session: castSessionID, Member: id})
 	require.NoError(t, err)
 	if turn.GetActive() == "alice" {

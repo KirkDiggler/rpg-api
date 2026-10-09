@@ -16,7 +16,7 @@ import (
 // plus the vault, the heirloom, and a record the captain holds.
 var heirloomPath = filepath.Join("..", "..", "content", "reference-tomb-heirloom.yaml")
 
-// TestTheIntelTableIsConstructionTruth is the fact buildWorld's doc leans on
+// TestTheIntelTableIsConstructionTruth is the fact compiled field carries
 // and nothing else would notice going wrong (rpg-project#372).
 //
 // A dungeon's authored records are STRUCTURE, like its doors and its exits:
@@ -35,11 +35,11 @@ func TestTheIntelTableIsConstructionTruth(t *testing.T) {
 	dungeon, err := Compile(raw)
 	require.NoError(t, err, "the shipped heirloom fixture must compile")
 
-	table := map[tkencounter.IntelID]tkencounter.IntelData{}
-	for _, rec := range dungeon.World.Field.Intel {
+	table := map[tkencounter.IntelID]tkencounter.IntelRecord{}
+	for _, rec := range dungeon.Spec.Field.Intel {
 		table[rec.ID] = rec
 	}
-	require.Len(t, table, len(dungeon.World.Field.Intel), "no two records share an id")
+	require.Len(t, table, len(dungeon.Spec.Field.Intel), "no two records share an id")
 	require.NotEmpty(t, table, "the world carries the records the file declares")
 
 	// COMPILED IDS, all of them. Each record's own id and the CONCEALMENT it
@@ -67,7 +67,7 @@ func TestTheIntelTableIsConstructionTruth(t *testing.T) {
 	} {
 		rec, declared := table[id]
 		require.True(t, declared, "the file declares %s", id)
-		require.Equal(t, vault, rec.Concealment, "%s reveals the vault's secret", id)
+		require.Equal(t, vault, rec.Reveals.Concealment, "%s reveals the vault's secret", id)
 	}
 }
 
@@ -132,7 +132,7 @@ func TestKnowsIsRefusedByName(t *testing.T) {
 // difference that is easy to get backwards.
 //
 // A MONSTER needs forwarding. The world this package builds is empty of
-// members on purpose (see [Dungeon.World]): a construction-time monster has
+// members on purpose (a launch spawns them): a construction-time monster has
 // no sheet, so it arrives later through session.Spawn, and every fact about
 // it — its cell, its targeting, what it holds — has to be carried across
 // that seam by hand. That is why [Monster] exists at all.
@@ -155,8 +155,8 @@ func TestPropsRideTheFieldRatherThanBeingForwarded(t *testing.T) {
 	dungeon, err := Compile(raw)
 	require.NoError(t, err)
 
-	byID := map[tkencounter.PropID]tkencounter.PropData{}
-	for _, p := range dungeon.World.Field.Props {
+	byID := map[tkencounter.PropID]tkencounter.PropInput{}
+	for _, p := range dungeon.Spec.Field.Props {
 		if p.ID != "" {
 			byID[p.ID] = p
 		}
@@ -172,7 +172,7 @@ func TestPropsRideTheFieldRatherThanBeingForwarded(t *testing.T) {
 
 	// And the world's prop list is the compiler's, entry for entry — not a
 	// subset this package chose to carry.
-	require.Len(t, dungeon.World.Field.Props, len(compiledProps(t, raw)),
+	require.Len(t, dungeon.Spec.Field.Props, len(compiledProps(t, raw)),
 		"every prop the compiler produced reached the world")
 }
 

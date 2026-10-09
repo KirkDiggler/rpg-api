@@ -6,7 +6,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
@@ -64,10 +63,7 @@ func startPlacedTableRun(t *testing.T) *placedRun {
 	require.NoError(t, err, "the placed-table room must compile")
 	require.NotEmpty(t, dungeon.PartySeats)
 
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: placedTableSession, Encounter: "placed-table-encounter", World: dungeon.World,
-	})
-	require.NoError(t, err)
+	h.launchAtStart(t, placedTableSession, dungeon.Spec, "alice")
 
 	run := &placedRun{
 		h:     h,
@@ -75,11 +71,6 @@ func startPlacedTableRun(t *testing.T) *placedRun {
 		bob:   auth.WithPlayerID(context.Background(), "player-bob"),
 		start: dungeon.PartySeats[0],
 	}
-	_, err = h.handler.Join(run.alice, &sessionpb.JoinRequest{
-		Session: placedTableSession, Member: "alice",
-		Position: &sessionpb.Position{X: run.start.X, Y: run.start.Y},
-	})
-	require.NoError(t, err)
 
 	return run
 }
