@@ -68,4 +68,12 @@ var (
 	// picked a map and got a different one would have no way to notice.
 	// Handler maps to codes.NotFound.
 	ErrDungeonNotFound = errors.New("dungeon not found")
+
+	// ErrCharacterSeatedElsewhere means StartEncounter's launch was refused
+	// because a party character is already seated in another run (the SDK's
+	// session.ErrSeatedElsewhere, rpg-project#548). The wrapped error names
+	// the character and the session that holds it. The same request becomes
+	// legal once that run ends or the character leaves it. Handler maps to
+	// codes.FailedPrecondition.
+	ErrCharacterSeatedElsewhere = errors.New("a party character is seated in another run")
 )

@@ -21,7 +21,7 @@ import (
 //   - ErrCharacterNotFound → NotFound
 //   - ErrDungeonNotFound → NotFound
 //   - ErrLobbyAlreadyStarted / ErrLobbyFull / ErrNotAllReady / ErrLobbyNotStarted /
-//     ErrEncounterAlreadyEnded → FailedPrecondition
+//     ErrEncounterAlreadyEnded / ErrCharacterSeatedElsewhere → FailedPrecondition
 //   - unclassified → Internal
 func lobbyStatusError(err error) error {
 	switch {
@@ -47,6 +47,10 @@ func lobbyStatusError(err error) error {
 		return status.Error(codes.FailedPrecondition, "lobby has not started an encounter")
 	case errors.Is(err, lobbyorch.ErrEncounterAlreadyEnded):
 		return status.Error(codes.FailedPrecondition, "encounter has already ended")
+	case errors.Is(err, lobbyorch.ErrCharacterSeatedElsewhere):
+		// The wrapped text carries the character and the session that holds
+		// it; that sentence is the whole of what the host needs.
+		return status.Error(codes.FailedPrecondition, err.Error())
 	}
 	return status.Errorf(codes.Internal, "lobby: %v", err)
 }
