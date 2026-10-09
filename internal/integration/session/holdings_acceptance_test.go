@@ -107,8 +107,8 @@ func startHeirloomRunWith(t *testing.T, captainHolds bool) *heirloomRun {
 	// reported UP -- Loot would refuse with ErrNotDown. Zeroed through the
 	// repository the orchestrator itself runs on rather than by reaching into
 	// Redis keys, AFTER the launch: a launch forms every fight on its one
-	// look, so a garrison that is down only afterwards leaves a fight on the
-	// board that the downed monsters then dissolve.
+	// look, so a garrison that is down only afterwards leaves that fight on the
+	// board; the explicit Dissolve below ends it (zeroed sheets do not).
 	//
 	// This is fixture state standing in for a fight the scenes are not
 	// about. The fight itself is proven in acceptance_test.go.
@@ -830,9 +830,9 @@ func TestAcceptance_HoldingAScrollTeachesItsHolderAlone(t *testing.T) {
 		"though the scroll is gone from his map too, as every held prop is")
 
 	// AND NO FIGHT WAS NEEDED. This is R6's whole point: the run reached a
-	// reveal without a single attack.
-	require.NotContains(t, run.kinds(t, "alice"), sessionpb.EventKind_EVENT_KIND_FIGHT_STARTED,
-		"the tool works with the fight taken out")
+	// reveal without a single attack. This run has no monsters at all, so an
+	// assertion that no fight started could not fail here and is not made;
+	// the reveal above, with nobody hostile on the board, is the claim.
 }
 
 // TestAcceptance_TheScrollsWayInOpensTheSameVault closes R6's path the way

@@ -76,14 +76,12 @@ func TestAnArrivalsCellIsNobodysSeat(t *testing.T) {
 	require.Len(t, camp.PartySeats, 20, "the gate's floor, less the cells that are spoken for")
 }
 
-// TestAnEndingAuthoredInTheFileIsTheScenariosOwn is R10 at this seam: the
-// scenario binding is SUGAR. `scenarios: { hold-out: { convince: raiders } }`
-// and `endings: [{ id: hold-out, when: { stance: { between: [raiders,
-// party], is: neutral } } }]` compile to the same world, ending for ending
-// -- dungeonspec compiles the spelled-out form to the Trigger the scenario
-// package constructs, and this package declares both lists the same way.
-// A scenario package with nothing left to do is the north star's own test.
-func TestAnEndingAuthoredInTheFileIsTheScenariosOwn(t *testing.T) {
+// TestAFileAuthoredEndingCompilesAndKeepsItsOwnName pins what this package
+// still owns of R10: a spelled-out `endings:` entry compiles, and an ending
+// with an author's own id reaches Compiled.Endings under that name with a
+// stance trigger. That the scenario sugar and the spelled-out form are the
+// same ending is pinned in the toolkit's dungeonspec, not here.
+func TestAFileAuthoredEndingCompilesAndKeepsItsOwnName(t *testing.T) {
 	raw, err := os.ReadFile(raiderCampPath)
 	require.NoError(t, err)
 	const sugar = "scenarios:\n  hold-out: { convince: raiders }\n"

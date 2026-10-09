@@ -60,8 +60,8 @@ file's `key:` line disagrees with its filename, when two files claim one key,
 or when `reference-tomb` is absent. A dungeon that silently vanished from the
 picker would be a worse failure than a server that refuses to boot and says
 why. Each entry's `Atlas` comes from the `AtlasProjector` — production wires
-`session.Manager.AtlasOf` (the same validation-load path as `StartSession`
-and the same projection `Manager.Atlas` uses), so `PutDungeon`'s atlas and
+`session.Manager.AtlasOf` (`AtlasOf` over the compiled `dungeonspec.Compiled`,
+the same projection `Manager.Atlas` uses), so `PutDungeon`'s atlas and
 the started game's `GetAtlas` have one producer. The registry hands the
 projector the ENTRY's own key, which is echoed onto `Atlas.DungeonKey`, so a
 builder previewing a draft and a player in a session identify the same source.

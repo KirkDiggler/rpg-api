@@ -407,8 +407,10 @@ func (r *FileRegistry) compileEntry(ctx context.Context, raw []byte) (*Entry, []
 	// the caller asked for.
 	atlas, err := r.projector.AtlasOf(ctx, d.Key, d.Spec)
 	if err != nil {
-		// A world that compiled but will not load is not the author's file
-		// being wrong; it is the stack disagreeing with itself.
+		// Mostly the stack disagreeing with itself: a dungeon that compiled but
+		// will not project. Not always: a file whose own endings collide with
+		// the ones a launch declares (a duplicate ending key) is an authoring
+		// error that surfaces here as a status until it becomes a field error.
 		return nil, nil, fmt.Errorf("project atlas: %w", err)
 	}
 

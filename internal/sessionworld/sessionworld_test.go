@@ -55,7 +55,10 @@ func (s *ReferenceTombSuite) load() *tkencounter.Encounter {
 }
 
 // encounterOf constructs the compiled field of d under caps, declaring only
-// withdrawal beside the file's own endings.
+// withdrawal beside the file's own endings. It is deliberately NOT the world a
+// launch builds (the SDK's launchWorld is unexported and adds scenario and
+// boss endings): these tests ask geometry questions of the compiled field,
+// so the field under refusing capabilities is the subject.
 func encounterOf(t testing.TB, d *Dungeon, caps tkencounter.Capabilities) *tkencounter.Encounter {
 	t.Helper()
 
@@ -265,7 +268,7 @@ func (s *ReferenceTombSuite) TestAPartyCanAllStandSomewhereDistinct() {
 // standStillSheets is the Sheets a test needs once it places members: every
 // member asked about stands still, carries no attack and follows no strategy
 // -- exactly the facts these members had when encounter stored them, and the
-// compile-only Sheets refuses to answer for any member at all
+// refusing Sheets refuses to answer for any member at all
 // (ErrRefusingSheets).
 type standStillSheets struct{}
 
@@ -279,7 +282,7 @@ func (standStillSheets) Sheets(members []tkencounter.MemberID) (map[tkencounter.
 
 // everyoneStanding is the Standing a test needs once it places members:
 // nobody is down, and every member is up, conscious, in contact and waiting.
-// Encounter's compile-only Standing refuses to assess members
+// Encounter's refusing Standing refuses to assess members
 // (ErrRefusingParticipation) -- a compiled world has none -- so a test that
 // joins or seats somebody supplies this choice itself. Contact is a claim,
 // made because false would dissolve every fight the moment it formed.
@@ -401,7 +404,7 @@ func TestVersionOneIsRefusedByName(t *testing.T) {
 // will accept (a concealed region needs every way in to be a concealed
 // door, or it is not a secret). doorState is spliced in verbatim so the
 // same fixture can author the door shut (the ordinary "hidden room" shape)
-// or left open (the "hidden passage nobody shut" shape the compile-only
+// or left open (the "hidden passage nobody shut" shape the refusing
 // Witness exists for) without duplicating the rest of the file.
 func concealedDungeon(key, doorState string) string {
 	return `
@@ -455,7 +458,7 @@ func TestAConcealedDungeonCompiles(t *testing.T) {
 }
 
 // TestAnOpenConcealedDoorCompilesToo pins the one deliberate asymmetry
-// between the two compile-only concealment stand-ins
+// between the two refusing concealment stand-ins
 // ([tkencounter.RefusingCapabilities]). A door authored both concealed and open
 // is legal content (a hidden passage nobody shut), and NewEncounter's first
 // light asks Witness about it UNCONDITIONALLY, even in this package's

@@ -16,7 +16,7 @@ import (
 //
 // The fixtures under testdata/atlas were captured from rpg-api origin/dev at
 // 541f91bd, BEFORE the atlas moved off the hand-built world, by Putting each
-// shipped content file validate-only and marshalling the answer's atlas. A
+// shipped content file validate-only and marshaling the answer's atlas. A
 // shipped dungeon with no fixture fails here: add one by capturing it from a
 // build whose atlas you trust, never from the build under test.
 func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBeforeTheWave() {
