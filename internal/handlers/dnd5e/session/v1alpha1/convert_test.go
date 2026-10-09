@@ -3127,3 +3127,94 @@ func TestAtlasToProto_PlacedIsNotFoldedIntoProps(t *testing.T) {
 	require.Len(t, got.GetPlaced(), 1, "and the rectangle is alone on its own")
 	require.Equal(t, "bookcase", got.GetPlaced()[0].GetId())
 }
+
+func TestDeclarationToProto_CarriesActionInformationFieldForField(t *testing.T) {
+	base := func() sdk.Declaration {
+		return sdk.Declaration{
+			Verb: sdk.VerbCast, Slot: sdk.SlotAction, Available: true, ID: "decl-info-1",
+			TargetKind: sdk.TargetMember,
+			Effects: []sdk.EffectRow{{
+				ID: "row-1", Ref: "ref-1", Name: "name 1", Description: "effect description",
+				State: sdk.EffectApplies, Participation: sdk.ContributesNow,
+			}},
+		}
+	}
+	info := &sdk.ActionInformation{
+		Description: "Owner prose, verbatim.",
+		Details: []sdk.ActionInformationDetail{
+			{Label: "Range", Value: "60 ft"},
+			{Label: "Base damage", Value: "1d8 + STR modifier (+3) · Bludgeoning"},
+			{Label: "Components", Value: "V, S"},
+		},
+	}
+	wantInfo := &sessionpb.ActionInformation{
+		Description: "Owner prose, verbatim.",
+		Details: []*sessionpb.ActionInformationDetail{
+			{Label: "Range", Value: "60 ft"},
+			{Label: "Base damage", Value: "1d8 + STR modifier (+3) · Bludgeoning"},
+			{Label: "Components", Value: "V, S"},
+		},
+	}
+
+	t.Run("available offer", func(t *testing.T) {
+		d := base()
+		d.Information = info
+		d.Options = []sdk.CastOption{
+			{ID: "approach", Label: "Approach", Description: "Walk toward the caster."},
+			{ID: "flee", Label: "Flee"},
+		}
+		out := declarationToProto(d)
+		require.Equal(t, wantInfo.GetDescription(), out.GetInformation().GetDescription())
+		require.Equal(t, wantInfo.GetDetails(), out.GetInformation().GetDetails(), "details cross in the renderer's order")
+		require.Equal(t, []*sessionpb.CastOption{
+			{Id: "approach", Label: "Approach", Description: "Walk toward the caster."},
+			{Id: "flee", Label: "Flee", Description: ""},
+		}, out.GetOptions(), "nested choice text crosses; an empty description is not fabricated")
+		require.Len(t, out.GetEffects(), 1, "effect rows are untouched")
+		require.Equal(t, "effect description", out.GetEffects()[0].GetDescription())
+	})
+
+	t.Run("unavailable offer carries the same information", func(t *testing.T) {
+		d := base()
+		d.Available = false
+		d.Why = &sdk.Shortfall{}
+		d.Information = info
+		out := declarationToProto(d)
+		require.False(t, out.GetAvailable())
+		require.Equal(t, wantInfo.GetDescription(), out.GetInformation().GetDescription())
+		require.Equal(t, wantInfo.GetDetails(), out.GetInformation().GetDetails())
+	})
+
+	t.Run("nil information stays absent", func(t *testing.T) {
+		out := declarationToProto(base())
+		require.Nil(t, out.Information)
+	})
+
+	t.Run("description only has no fabricated details", func(t *testing.T) {
+		d := base()
+		d.Information = &sdk.ActionInformation{Description: "Only prose."}
+		out := declarationToProto(d)
+		require.Equal(t, "Only prose.", out.GetInformation().GetDescription())
+		require.Empty(t, out.GetInformation().GetDetails())
+	})
+
+	t.Run("details only has an empty description", func(t *testing.T) {
+		d := base()
+		d.Information = &sdk.ActionInformation{Details: []sdk.ActionInformationDetail{{Label: "Range", Value: "5 ft"}}}
+		out := declarationToProto(d)
+		require.Empty(t, out.GetInformation().GetDescription())
+		require.Equal(t, []*sessionpb.ActionInformationDetail{{Label: "Range", Value: "5 ft"}}, out.GetInformation().GetDetails())
+	})
+
+	t.Run("refusal and selector are identical with and without information", func(t *testing.T) {
+		with := base()
+		with.Available = false
+		with.Why = &sdk.Shortfall{}
+		with.Information = info
+		without := with
+		without.Information = nil
+		a, b := declarationToProto(with), declarationToProto(without)
+		a.Information = nil
+		require.True(t, proto.Equal(a, b), "information changes nothing else on the row")
+	})
+}

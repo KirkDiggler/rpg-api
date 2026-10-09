@@ -207,6 +207,8 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// the catalog -- a content-authoring defect, ErrBadNPC's shape one
 		// content type over.
 		{"ErrBadPackContents", sdk.ErrBadPackContents, codes.Internal},
+		// ErrBadInformation (Afford): a rulebook content defect, never a caller fault.
+		{"ErrBadInformation", sdk.ErrBadInformation, codes.Internal},
 		{"ErrInvalidSession", sdk.ErrInvalidSession, codes.Internal},
 		{"ErrNilConfig", sdk.ErrNilConfig, codes.Internal},
 		{"ErrIncompleteConfig", sdk.ErrIncompleteConfig, codes.Internal},
