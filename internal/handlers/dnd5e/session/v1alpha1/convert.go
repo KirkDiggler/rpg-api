@@ -2578,7 +2578,7 @@ func costComponentsToProto(cost []sdk.CostComponent) []*sessionpb.CostComponent 
 func castOptionsToProto(options []sdk.CastOption) []*sessionpb.CastOption {
 	out := make([]*sessionpb.CastOption, len(options))
 	for i, option := range options {
-		out[i] = &sessionpb.CastOption{Id: option.ID, Label: option.Label}
+		out[i] = &sessionpb.CastOption{Id: option.ID, Label: option.Label, Description: option.Description}
 	}
 	return out
 }
@@ -2663,6 +2663,7 @@ func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
 		// or refuse the declaration; Available and Why above stay the only gate.
 		Effects: effectRowsToProto(d.Effects),
 	}
+	out.Information = actionInformationToProto(d.Information)
 	if d.Remaining != nil {
 		remaining := int32(*d.Remaining)
 		out.Remaining = &remaining
@@ -3290,4 +3291,23 @@ func passageToProto(p sdk.Passage) sessionpb.Passage {
 	default:
 		return sessionpb.Passage_PASSAGE_UNSPECIFIED
 	}
+}
+
+// actionInformationToProto copies one declaration's information field for
+// field: the owner's description verbatim and the rendered detail rows in the
+// order the toolkit gave them. Nil stays nil, so an action with no
+// information is absent on the wire, and nothing here is looked up,
+// formatted, or computed.
+func actionInformationToProto(info *sdk.ActionInformation) *sessionpb.ActionInformation {
+	if info == nil {
+		return nil
+	}
+	out := &sessionpb.ActionInformation{Description: info.Description}
+	if len(info.Details) > 0 {
+		out.Details = make([]*sessionpb.ActionInformationDetail, len(info.Details))
+		for i, d := range info.Details {
+			out.Details[i] = &sessionpb.ActionInformationDetail{Label: d.Label, Value: d.Value}
+		}
+	}
+	return out
 }

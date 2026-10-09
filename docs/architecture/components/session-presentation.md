@@ -49,6 +49,22 @@ The test harness exposes `SessionClient`, `SessionPresentationClient`, and
 `HealthClient`; integration tests prove the real wire and Session SDK state rather
 than bypassing the gate.
 
+## Action information (rpg-project#543)
+
+The session SDK answers what each offered action is, and the converter copies
+it onto the wire field for field. This layer never looks up, formats, or
+computes any of it, and a client does not either.
+
+| SDK field | Wire field | Rule |
+|-----------|------------|------|
+| `Declaration.Information` | `Declaration.information` | nil stays absent |
+| `Information.Description` | `information.description` | the owner's prose verbatim; empty is not fabricated |
+| `Information.Details[]` | `information.details[{label, value}]` | rendered rows, order preserved |
+| `CastOption.Description` | `CastOption.description` | display only; the option id remains the selector |
+
+Information never changes `available`, `why`, or the selector, so a refused row
+and an available row carry it identically.
+
 ## Auth and access
 
 Both RPCs require the normal gRPC auth interceptors. The handler calls
