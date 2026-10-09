@@ -143,6 +143,12 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		Dungeon:    dungeon.Spec,
 		Party:      party,
 	}); err != nil {
+		if errors.Is(err, sdk.ErrSeatedElsewhere) {
+			// A precondition, not a fault: surface it as its own sentinel
+			// and keep the SDK's sentence, which names the character and
+			// the session that holds it (rpg-project#548).
+			return nil, fmt.Errorf("%w: launch session %q: %w", ErrCharacterSeatedElsewhere, encID, err)
+		}
 		return nil, fmt.Errorf("launch session %q: %w", encID, err)
 	}
 

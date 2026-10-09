@@ -3,6 +3,7 @@ package lobby_test
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"go.uber.org/mock/gomock"
 
@@ -310,8 +311,37 @@ func (s *StartContractSuite) TestStartEncounter_LaunchFailure_StopsAndWraps() {
 	})
 	s.Nil(out)
 	s.Require().ErrorIs(err, boom, "the provider failure stays matchable through the wrapping")
+	s.Require().NotErrorIs(err, lobbyorch.ErrCharacterSeatedElsewhere, "an outage is not a seat refusal")
 	s.Zero(observed.saveCalls, "a launch stopped at the first verb writes the lobby zero times")
 	s.Equal(before, s.snapshotLobby(contractLobbyID), "and leaves the stored lobby exactly as it was")
+	s.assertNoEvent(sub)
+}
+
+// TestStartEncounter_LaunchSeatedElsewhere_IsAPrecondition: a party character
+// another run holds is the SDK's refusal, and the lobby reports it as its own
+// sentinel (rpg-project#548) while the SDK's sentinel stays matchable and the
+// lobby writes nothing.
+func (s *StartContractSuite) TestStartEncounter_LaunchSeatedElsewhere_IsAPrecondition() {
+	seated := fmt.Errorf("launch: character %q is seated in session %q: %w",
+		"char-1", "enc-other", sdk.ErrSeatedElsewhere)
+	const key = "custom-dungeon"
+	entry := contractEntry(key)
+
+	observed, orch, before, sub := s.failingLaunchFixture()
+	defer func() { _ = sub.Close() }()
+
+	calls := s.launchSuccessCalls(entry, key, false, 0)
+	calls = append(calls, s.manager.EXPECT().Launch(s.ctx, gomock.Any()).Return(nil, seated))
+	gomock.InOrder(calls...)
+
+	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		PlayerID: "alice", LobbyID: contractLobbyID, DungeonKey: lobbyorch.DungeonKey(key),
+	})
+	s.Nil(out)
+	s.Require().ErrorIs(err, lobbyorch.ErrCharacterSeatedElsewhere)
+	s.Require().ErrorIs(err, sdk.ErrSeatedElsewhere, "the SDK's sentinel stays matchable")
+	s.Zero(observed.saveCalls)
+	s.Equal(before, s.snapshotLobby(contractLobbyID))
 	s.assertNoEvent(sub)
 }
 

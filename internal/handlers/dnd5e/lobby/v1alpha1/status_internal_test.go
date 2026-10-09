@@ -5,6 +5,7 @@ package lobby
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -36,6 +37,13 @@ func TestLobbyStatusError_Table(t *testing.T) {
 		{name: "not all ready", err: lobbyorch.ErrNotAllReady, wantCode: codes.FailedPrecondition, wantMessage: "not all members are ready"},
 		{name: "lobby not started", err: lobbyorch.ErrLobbyNotStarted, wantCode: codes.FailedPrecondition, wantMessage: "lobby has not started an encounter"},
 		{name: "encounter already ended", err: lobbyorch.ErrEncounterAlreadyEnded, wantCode: codes.FailedPrecondition, wantMessage: "encounter has already ended"},
+		{
+			name:        "character seated elsewhere names the holding session",
+			err:         fmt.Errorf("%w: launch session %q: %w", lobbyorch.ErrCharacterSeatedElsewhere, "enc-new", fmt.Errorf("character %q is seated in session %q: %w", "char-1", "enc-other", errors.New("character is seated in another session"))),
+			wantCode:    codes.FailedPrecondition,
+			msgContains: "enc-other",
+		},
+		{name: "a launch error that is not a seat refusal stays Internal", err: fmt.Errorf("launch session %q: %w", "enc-new", errors.New("provider unavailable")), wantCode: codes.Internal, msgContains: "provider unavailable"},
 		{name: "unclassified error falls through to Internal", err: errors.New("boom"), wantCode: codes.Internal, msgContains: "boom"},
 	}
 
