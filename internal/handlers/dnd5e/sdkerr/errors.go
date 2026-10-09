@@ -517,6 +517,12 @@ func StatusError(err error) error {
 		// catalog (the SDK's own doc says every shipped pack is verified
 		// clean), mapped for the day a broken one ships.
 		errors.Is(err, sdk.ErrBadPackContents),
+		// ErrBadInformation (Afford, rpg-project#543) is a content defect in
+		// the rulebook: it refused to describe a compiled action, or a fact
+		// carries a value the information seam has no word for. Afford fails
+		// closed rather than ship a guessed or missing row, so no caller
+		// input causes it and none can fix it. Internal is the honest code.
+		errors.Is(err, sdk.ErrBadInformation),
 		errors.Is(err, sdk.ErrInvalidSession),
 		errors.Is(err, sdk.ErrNilConfig),
 		errors.Is(err, sdk.ErrIncompleteConfig),
