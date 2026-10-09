@@ -87,6 +87,10 @@ func memberTakingVerbs(member string) map[string]func(ctx context.Context, h *Ha
 			_, err := h.Exit(ctx, &sessionpb.ExitRequest{Session: "sess-1", Member: member})
 			return err
 		},
+		"GetSeat": func(ctx context.Context, h *Handler) error {
+			_, err := h.GetSeat(ctx, &sessionpb.GetSeatRequest{Character: member})
+			return err
+		},
 		"OpenDoor": func(ctx context.Context, h *Handler) error {
 			_, err := h.OpenDoor(ctx, &sessionpb.OpenDoorRequest{Session: "sess-1", Member: member, Door: "gate"})
 			return err

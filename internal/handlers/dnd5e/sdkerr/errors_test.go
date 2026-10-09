@@ -40,6 +40,7 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrNoProp", sdk.ErrNoProp, codes.NotFound},
 		{"ErrNoCharacter", sdk.ErrNoCharacter, codes.NotFound},
 		{"ErrNoMember", sdk.ErrNoMember, codes.NotFound},
+		{"ErrNoSeat", sdk.ErrNoSeat, codes.NotFound},
 		{"ErrNoEnding", sdk.ErrNoEnding, codes.NotFound},
 		{"ErrUnknownContent", sdk.ErrUnknownContent, codes.NotFound},
 		{"ErrNoLoader", sdk.ErrNoLoader, codes.NotFound},

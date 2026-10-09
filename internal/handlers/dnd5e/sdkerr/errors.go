@@ -58,6 +58,8 @@ func StatusError(err error) error {
 		errors.Is(err, sdk.ErrNoEncounter),
 		errors.Is(err, sdk.ErrNoCharacter),
 		errors.Is(err, sdk.ErrNoMember),
+		// ErrNoSeat: the character holds no live seat (rpg-project#548).
+		errors.Is(err, sdk.ErrNoSeat),
 		errors.Is(err, sdk.ErrNoEnding),
 		errors.Is(err, sdk.ErrUnknownContent),
 		errors.Is(err, sdk.ErrNoLoader),
