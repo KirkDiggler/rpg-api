@@ -10,11 +10,11 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
+	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
 
@@ -63,28 +63,15 @@ func TestGetStoryMatchesLiveEvents(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	world := buildThreeRoomTomb(t)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: session, Encounter: "tomb-encounter", World: world,
-	})
-	require.NoError(t, err)
-	// Spawned before Join, on the tomb's pillar-gap sight row (the same
-	// geometry TestSkeletonsDrivenTurnMovesAndStrikes uses), so the fight
-	// forms the moment alice joins in sight and range of it -- a turn order
-	// this test can predict rather than one shaped by join-then-spawn timing.
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-		Session: session, ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
-		Position: at(19, 3),
-	})
-	require.NoError(t, err)
-
-	joinResp, err := h.handler.Join(ctx, &sessionpb.JoinRequest{
-		Session: session, Member: "alice",
-		Position: pbAt(16, 3), // inside the tomb, on the pillar gap row, three cells out
-	})
-	require.NoError(t, err)
-	require.NotNil(t, joinResp.GetFormed(), "in sight and in range at first light: the fight forms on Join")
-	require.Equal(t, []string{"alice", "skel-1"}, joinResp.GetFormed().GetOrder(),
+	// The skeleton stands on the tomb's pillar-gap sight row (the same
+	// geometry TestSkeletonsDrivenTurnMovesAndStrikes uses) and alice seats
+	// inside the tomb on that row, three cells out, so the fight forms at
+	// launch with a turn order this test can predict.
+	launched := h.launch(t, session,
+		withMonsters(buildThreeRoomTomb(t), monsterAt("skel-1", refs.Monsters.Skeleton().String(), 19, 3)),
+		seatAt("alice", 16, 3))
+	require.Len(t, launched.Formed, 1, "in sight and in range at first light: the fight forms at launch")
+	require.Equal(t, []string{"alice", "skel-1"}, launched.Formed[0].Order,
 		"the tied roll breaks to alice -- it must be her turn first, not the skeleton's")
 
 	// Subscribe live, for real, through the actual handler and broker --
@@ -167,17 +154,15 @@ func TestGetStoryAgedOutReturnsOutOfRange(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	world := buildThreeRoomTomb(t)
-	world.Retention = 2 // small on purpose: this test wants trimming, not the whole story
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: session, Encounter: "tomb-encounter", World: world,
-	})
+	h.launch(t, session, buildThreeRoomTomb(t), seatAt("alice", 1, 2))
+	// Retention is small on purpose: this test wants trimming, not the whole
+	// story. A launch always keeps everything, so the stored run is narrowed
+	// after it.
+	repo := sessionorch.NewEncounterRepository(h.redis, 0)
+	stored, err := repo.GetEncounter(ctx, session)
 	require.NoError(t, err)
-
-	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{
-		Session: session, Member: "alice", Position: pbAt(1, 2),
-	})
-	require.NoError(t, err)
+	stored.Retention = 2
+	require.NoError(t, repo.SaveEncounter(ctx, session, stored))
 
 	// Outside a fight, world-clock movement is unpriced (session's own
 	// priceWalk returns a free cost for anything but the turn clock), so

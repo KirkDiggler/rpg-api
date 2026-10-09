@@ -33,7 +33,6 @@ import (
 	"strings"
 	"sync"
 
-	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
@@ -97,7 +96,7 @@ type FieldError struct {
 // Get hands out a COPY (struct and YAML slice), and Put copies the caller's
 // YAML before keeping it, so no caller holds a reference into the registry's
 // own state. Dungeon is shared: it is the compiled world, read by
-// StartSession and never written by anyone after compile.
+// Launch and never written by anyone after compile.
 type Entry struct {
 	Key  string
 	Name string
@@ -119,8 +118,7 @@ type Entry struct {
 }
 
 // AtlasProjector turns a compiled world into the atlas a session on it would
-// serve: session.Manager.AtlasOf (the same validation-load path as
-// StartSession and the same projection Manager.Atlas uses), behind a
+// serve: session.Manager.AtlasOf (the same projection Manager.Atlas uses), behind a
 // one-method adapter because the SDK's method takes its own input struct.
 //
 // The key rides along because a projected atlas names its dungeon
@@ -130,7 +128,7 @@ type Entry struct {
 // game's map have to name their dungeon the same way for one client code
 // path to draw both.
 type AtlasProjector interface {
-	AtlasOf(ctx context.Context, key string, world *tkencounter.EncounterData) (*sdk.Atlas, error)
+	AtlasOf(ctx context.Context, key string, dungeon *tkdungeonspec.Compiled) (*sdk.Atlas, error)
 }
 
 // PutInput is one PutDungeon call.
@@ -407,7 +405,7 @@ func (r *FileRegistry) compileEntry(ctx context.Context, raw []byte) (*Entry, []
 	// (ErrKeyMismatch, on both the Put path and the load-from-disk path), so
 	// an atlas built here can only ever reach a caller naming the same string
 	// the caller asked for.
-	atlas, err := r.projector.AtlasOf(ctx, d.Key, d.World)
+	atlas, err := r.projector.AtlasOf(ctx, d.Key, d.Spec)
 	if err != nil {
 		// A world that compiled but will not load is not the author's file
 		// being wrong; it is the stack disagreeing with itself.

@@ -127,17 +127,9 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 	dungeon, err := sessionworld.Compile([]byte(dungeonstest.ConcealedVaultYAML))
 	require.NoError(t, err, "the concealed-vault fixture must compile")
 
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: "reveal-run", Encounter: "vault-encounter", World: dungeon.World,
-	})
-	require.NoError(t, err)
-
 	// Alice stands in the hall, on the cell the door's crossing touches.
 	hallSide := dungeonstest.ConcealedVaultDoorCrossing[0]
-	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{
-		Session: "reveal-run", Member: "alice", Position: pbAt(hallSide[0], hallSide[1]),
-	})
-	require.NoError(t, err)
+	h.launch(t, "reveal-run", dungeon.Spec, seatAt("alice", hallSide[0], hallSide[1]))
 
 	before, err := h.handler.GetAtlas(ctx, &sessionpb.GetAtlasRequest{
 		Session: "reveal-run", Member: "alice",

@@ -6,8 +6,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
-
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
@@ -47,15 +45,7 @@ func TestAcceptance_AnExactRefPropReachesTheWireWhole(t *testing.T) {
 	dungeon, err := sessionworld.Compile([]byte(dungeonstest.ExactRefPropsYAML))
 	require.NoError(t, err, "a dungeon placing a four-part props ref must compile")
 
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: "exact-ref-run", Encounter: "toy-room", World: dungeon.World,
-	})
-	require.NoError(t, err, "and the run must start on it")
-
-	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{
-		Session: "exact-ref-run", Member: "alice", Position: pbAt(0, 1),
-	})
-	require.NoError(t, err)
+	h.launchAtStart(t, "exact-ref-run", dungeon.Spec, "alice")
 
 	atlas, err := h.handler.GetAtlas(ctx, &sessionpb.GetAtlasRequest{
 		Session: "exact-ref-run", Member: "alice",

@@ -1,7 +1,6 @@
 package sessionworld
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -46,21 +45,28 @@ func (s *ReferenceTombSuite) TestTheFileNamesItself() {
 	s.NotEmpty(s.tomb.Name)
 }
 
-// load rebuilds a live encounter from the world this package produced, which is
-// exactly what session.StartSession does with it. Doing it here is how the
-// tests ask questions in absolute space -- which region owns a cell, what state
-// a door is in -- without this package having to expose either.
+// load builds a live encounter over the tomb's compiled field, which is how
+// the tests ask questions in absolute space -- which region owns a cell, what
+// state a door is in -- without this package having to expose either. The
+// session package builds the world a run plays in (Launch); this is only the
+// compiled field under refusing capabilities.
 func (s *ReferenceTombSuite) load() *tkencounter.Encounter {
-	enc, err := tkencounter.LoadEncounter(&tkencounter.LoadEncounterInput{
-		Data:       *s.tomb.World,
-		Initiative: compileOnly.Initiative, Standing: compileOnly.Standing, Sight: compileOnly.Sight, Equipment: compileOnly.Equipment,
-		Sheets:     compileOnly.Sheets,
-		TurnDriver: compileOnly.TurnDriver, Striker: compileOnly.Striker, Mover: compileOnly.Mover,
-		// Nobody is in this world, so no clock can advance in it — the same
-		// argument the refusing Striker beside it is making.
-		Announcer: compileOnly.Announcer,
+	return encounterOf(s.T(), s.tomb, tkencounter.RefusingCapabilities())
+}
+
+// encounterOf constructs the compiled field of d under caps, declaring only
+// withdrawal beside the file's own endings.
+func encounterOf(t testing.TB, d *Dungeon, caps tkencounter.Capabilities) *tkencounter.Encounter {
+	t.Helper()
+
+	endings := append(
+		[]tkencounter.EndingInput{{Key: "withdrawn", Trigger: tkencounter.TriggerExternal{}}},
+		d.Spec.Endings...,
+	)
+	enc, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
+		Field: d.Spec.Field, Endings: endings, Capabilities: caps, Retention: tkencounter.RetentionUnbounded,
 	})
-	s.Require().NoError(err, "and the world it produced must be one the composition accepts back")
+	require.NoError(t, err, "the compiled field must be one the composition accepts")
 
 	return enc
 }
@@ -70,20 +76,6 @@ func (s *ReferenceTombSuite) regionOf(cell spatial.Position) string {
 	s.Require().Truef(ok, "cell %v should be floor in some chamber", cell)
 
 	return region
-}
-
-// TestTheWorldArrivesEmptyOfMembers pins the decision in Dungeon.World's doc:
-// the world is authored content, and everybody who stands in it arrives through
-// a session verb.
-//
-// It is not a stylistic preference. encounter.Join refuses a member already in
-// the encounter, so a party baked in here could never be joined -- and Join is
-// the only thing that loads a character's sheet. A change that "helpfully"
-// seeded the roster at construction would leave every player sheetless and
-// every session unjoinable, and this is the test that says so first.
-func (s *ReferenceTombSuite) TestTheWorldArrivesEmptyOfMembers() {
-	s.Empty(s.tomb.World.Members, "the world is content, not a live encounter")
-	s.Empty(s.tomb.World.EverMembers, "and nobody has ever been in it")
 }
 
 // TestThePartyComesInWhereTheDungeonSaysItDoes checks the authored start
@@ -189,25 +181,6 @@ func (s *ReferenceTombSuite) TestEveryMonsterIsNamedAfterWhatItIs() {
 	s.True(byID["skeleton-captain-1"].Boss)
 }
 
-// TestTheBossFlagBecomesTheDeclaredDoom pins what Compile does with the
-// authored flag (rpg-project#268): the world is born declaring BOTH its
-// endings — withdrawal (external) and the captain's fall (member_down over
-// the member ID the launch will spawn him under). The member does not exist
-// yet in this empty world, and that is the contract: an ending may name a
-// member that joins later, exactly as TriggerReachedPosition's filter may.
-func (s *ReferenceTombSuite) TestTheBossFlagBecomesTheDeclaredDoom() {
-	endings := s.tomb.World.Endings
-	s.Require().Len(endings, 2, "withdrawal and the doom, nothing silent")
-
-	s.Equal("withdrawn", endings[0].Key)
-	s.Equal("external", endings[0].Kind)
-
-	s.Equal(EndingBossDown, endings[1].Key)
-	s.Equal("member_down", endings[1].Kind)
-	s.Equal("skeleton-captain-1", string(endings[1].Member),
-		"the doom names the captain by the member ID the launch spawns him under")
-}
-
 // TestTwoAuthoredBossesAreRefusedAtCompile: dungeonspec bounds bosses per
 // REGION, so a two-region file can still author two — and "whose death ends
 // things" cannot be plural while the doom names one member. Refused loudly
@@ -289,25 +262,6 @@ func (s *ReferenceTombSuite) TestAPartyCanAllStandSomewhereDistinct() {
 	}
 }
 
-// monsterFirst is an InitiativeRoller rigged for exactly one purpose: hand
-// the skeleton the very first turn regardless of contact-detection order, so
-// TestAFightsUnplayedTurnPassesWithoutTouchingTheStriker can force the one
-// moment this package's own construction-time TurnDriver/Striker pair can
-// ever run -- "first light" (encounter.SetupInput's TurnDriver doc: "a
-// fight can form at first light with an unplayed member first in
-// initiative"). Not general purpose, and does not need to be: the test that
-// uses it only ever has these two members.
-type monsterFirst struct{}
-
-func (monsterFirst) RollInitiative(_ []tkencounter.MemberID) ([]tkencounter.MemberID, error) {
-	return []tkencounter.MemberID{"skel-1", "fighter"}, nil
-}
-
-// compileOnly lends tests encounter's compile-only capabilities -- the same
-// stand-ins buildWorld uses (rpg-toolkit#1956) -- without this package
-// hand-writing its own.
-var compileOnly = tkencounter.CompileOnlySetup(tkencounter.FieldInput{}, nil)
-
 // standStillSheets is the Sheets a test needs once it places members: every
 // member asked about stands still, carries no attack and follows no strategy
 // -- exactly the facts these members had when encounter stored them, and the
@@ -345,93 +299,6 @@ func (everyoneStanding) Assess(members []tkencounter.MemberID) (*tkencounter.Par
 		})
 	}
 	return out, nil
-}
-
-// allSeeing gives every member a sight range large enough that two adjacent
-// members always see each other. the compile-only sight range of zero --
-// this package's construction-time stand-in everywhere else, correct for a
-// throwaway placement probe and an empty real world -- would never let a
-// fight form at all here, which is exactly wrong for what this test needs
-// to prove.
-type allSeeing struct{}
-
-func (allSeeing) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberID]int, error) {
-	out := make(map[tkencounter.MemberID]int, len(members))
-	for _, id := range members {
-		out[id] = 1_000_000
-	}
-	return out, nil
-}
-
-// TestAFightsUnplayedTurnPassesWithoutTouchingTheStriker is the acceptance
-// proof rpg-project#254 asks this package for: tkencounter.PassDriver{} and
-// tkencounter.RefusingStriker{} are not merely types that satisfy
-// SetupInput's now-required TurnDriver/Striker fields, they are the RIGHT
-// pair together at the one moment this package's own construction-only
-// encounters can ever reach a driven monster turn.
-//
-// A monster and a player start adjacent and in sight of each other, with
-// initiative rigged to hand the monster the first turn. That forms the
-// fight AND drives the monster's unplayed turn synchronously inside
-// NewEncounter -- see [Encounter.form]'s call to driveMonsterTurns --
-// before this test's own code runs a single line past construction. If
-// PassDriver ever tried to swing, RefusingStriker would refuse with
-// ErrRefusingStriker and NewEncounter would return that error instead of an
-// encounter, so a bare successful construction already is most of the
-// proof; the clock assertion below is the rest of it, confirming the
-// skeleton's turn did not just fail to error but actually passed.
-func TestAFightsUnplayedTurnPassesWithoutTouchingTheStriker(t *testing.T) {
-	enc, err := tkencounter.NewEncounter(&tkencounter.SetupInput{
-		Initiative: monsterFirst{},
-		Standing:   everyoneStanding{},
-		Sight:      allSeeing{},
-		Equipment:  tkencounter.UnobservedEquipment{},
-		Sheets:     standStillSheets{},
-		TurnDriver: tkencounter.PassDriver{},
-		Striker:    tkencounter.RefusingStriker{},
-		Mover:      tkencounter.RefusingMover{},
-		// NOT refusing, unlike every other fixture here: this test exists to
-		// pass a turn, and passing a turn crosses a boundary. What the
-		// boundary MEANS is the rulebook's business and not this package's,
-		// so it is heard and dropped.
-		Announcer: quietAnnouncer{},
-		Retention: tkencounter.RetentionUnbounded,
-		Field: tkencounter.FieldInput{
-			// Transparent void: a sightline hugging the edge of a sheared
-			// rectangle crosses void, and this test is about the turn, not
-			// the void.
-			Canvas: tkencounter.CanvasInput{Void: tkencounter.VoidIsTransparent(), Orientation: tkencounter.HexesArePointyTop()},
-			Regions: []tkencounter.RegionInput{{
-				ID: "room", Name: "Room", Archetype: "test", Lighting: &tkencounter.Lighting{Intensity: 1},
-				Cells: rectangle(4, 4),
-			}},
-		},
-		Members: []tkencounter.MemberInput{
-			{ID: "fighter", Kind: tkencounter.KindPlayer, Position: spatial.Position{X: 0, Y: 0}},
-			{ID: "skel-1", Kind: tkencounter.KindMonster, Position: spatial.Position{X: 1, Y: 0}},
-		},
-		Endings: []tkencounter.EndingInput{{Key: "withdrawn", Trigger: tkencounter.TriggerExternal{}}},
-	})
-	require.NoError(t, err,
-		"constructing the world must still succeed -- if RefusingStriker had been reached this is exactly where it would have failed")
-
-	clock, err := enc.ClockOf(&tkencounter.ClockOfInput{Member: "fighter"})
-	require.NoError(t, err)
-	require.Equal(t, tkencounter.ClockTurn, clock.Kind, "adjacent and in sight, a fight must have formed at first light")
-	require.Equal(t, tkencounter.MemberID("fighter"), clock.Active,
-		"the skeleton went first and PassDriver passed its turn immediately -- the turn already belongs to the player nobody has acted for yet")
-}
-
-// rectangle paints a width x height block of absolute offset cells starting
-// at [0,0] -- the smallest honest region for a test.
-func rectangle(width, height int) []spatial.Position {
-	out := make([]spatial.Position, 0, width*height)
-	for row := 0; row < height; row++ {
-		for col := 0; col < width; col++ {
-			out = append(out, spatial.Position{X: float64(col), Y: float64(row)})
-		}
-	}
-	return out
 }
 
 // twoRegions is a version-2 dungeon with a six-wide entrance and hall, the
@@ -528,15 +395,6 @@ func TestVersionOneIsRefusedByName(t *testing.T) {
 	require.ErrorIs(t, err, tkdungeonspec.ErrBadSpec)
 }
 
-// quietAnnouncer hears a boundary and does nothing with it. This package builds
-// worlds; what a turn boundary means to a condition belongs to whoever plays
-// one.
-type quietAnnouncer struct{}
-
-func (quietAnnouncer) Announce(context.Context, *tkencounter.Encounter, []tkencounter.Boundary) error {
-	return nil
-}
-
 // concealedDungeon is a two-cell dungeon: a visible entrance and a concealed
 // vault one edge away, the vault reachable only through the one door on
 // that edge -- the minimal coherent secret dungeonspec's own validate.go
@@ -589,7 +447,7 @@ doors:
 // the concealed door in front of it, closed the way a hidden room is
 // ordinarily authored, and used to fail here with "no check resolver
 // capability" before construction-time CheckResolver and Witness stand-ins
-// existed (now encounter's own, [tkencounter.CompileOnlySetup]).
+// existed (now encounter's own refusing capabilities).
 func TestAConcealedDungeonCompiles(t *testing.T) {
 	d, err := Compile([]byte(concealedDungeon("concealed-seam", "closed: true")))
 	require.NoError(t, err, "a dungeon that declares concealment must still compile")
@@ -598,7 +456,7 @@ func TestAConcealedDungeonCompiles(t *testing.T) {
 
 // TestAnOpenConcealedDoorCompilesToo pins the one deliberate asymmetry
 // between the two compile-only concealment stand-ins
-// ([tkencounter.CompileOnlySetup]). A door authored both concealed and open
+// ([tkencounter.RefusingCapabilities]). A door authored both concealed and open
 // is legal content (a hidden passage nobody shut), and NewEncounter's first
 // light asks Witness about it UNCONDITIONALLY, even in this package's
 // zero-member world. If that Witness were ever "simplified" to refuse,

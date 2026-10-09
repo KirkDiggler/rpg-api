@@ -104,9 +104,9 @@ func (s *WorkshopSuite) TestThePartyAndTheGarrisonStandWhereTheyWereAuthored() {
 func (s *WorkshopSuite) TestTheThreeNumbersPerPropReachTheField() {
 	const k = tkencounter.FeetPerCell / sqrt3
 
-	s.Require().Len(s.dungeon.World.Field.Placed, 1,
+	s.Require().Len(s.dungeon.Spec.Field.Placed, 1,
 		"one DECLARED prop: the undeclared candles are dressing, never inferred blocking")
-	placed := s.dungeon.World.Field.Placed[0]
+	placed := s.dungeon.Spec.Field.Placed[0]
 	s.Equal(tkencounter.PropID("table"), placed.ID)
 
 	// The three numbers, from `transform: {x: -2.25, z: 1.3, rotationY: 0.37}`.
@@ -116,8 +116,9 @@ func (s *WorkshopSuite) TestTheThreeNumbersPerPropReachTheField() {
 		"a source yaw arrives as the opposite plane angle")
 
 	// The footprint, from the GAMEPLAY block's own declaration.
-	s.InDelta(1.2*k, placed.Placement.Footprint.D, 1e-9, "the declared width lies along the facing")
-	s.InDelta(0.5*k, placed.Placement.Footprint.W, 1e-9, "and the declared depth across it")
+	s.Require().NotNil(placed.Placement.Footprint.Box, "a box footprint")
+	s.InDelta(1.2*k, placed.Placement.Footprint.Box.D, 1e-9, "the declared width lies along the facing")
+	s.InDelta(0.5*k, placed.Placement.Footprint.Box.W, 1e-9, "and the declared depth across it")
 	s.InDelta(0.1*k, placed.Placement.LocalOffset.X, 1e-9)
 	s.InDelta(-0.2*k, placed.Placement.LocalOffset.Y, 1e-9)
 
@@ -129,13 +130,12 @@ func (s *WorkshopSuite) TestTheThreeNumbersPerPropReachTheField() {
 // facts the atlas serves: one implicit region under the authored id, crypt
 // archetype, bright lighting.
 func (s *WorkshopSuite) TestTheImplicitRegionIsOneBrightCryptRoom() {
-	s.Require().Len(s.dungeon.World.Field.Regions, 1)
-	region := s.dungeon.World.Field.Regions[0]
+	s.Require().Len(s.dungeon.Spec.Field.Regions, 1)
+	region := s.dungeon.Spec.Field.Regions[0]
 	s.Equal("room-1-region", region.ID)
 	s.Equal("crypt", region.Archetype)
 	s.Require().NotNil(region.Lighting)
-	s.Require().NotNil(region.Lighting.Intensity)
-	s.InDelta(1.0, *region.Lighting.Intensity, 1e-9, "bright is intensity 1")
+	s.InDelta(1.0, region.Lighting.Intensity, 1e-9, "bright is intensity 1")
 }
 
 // TestALegacyV2DungeonPlacesNoProps pins compatibility the other way: the
@@ -148,7 +148,7 @@ func TestALegacyV2DungeonPlacesNoProps(t *testing.T) {
 	require.NoError(t, err, "the shipped tomb must exist")
 	dungeon, err := Compile(raw)
 	require.NoError(t, err, "the shipped tomb must still compile")
-	require.Empty(t, dungeon.World.Field.Placed, "a v2 dungeon declares no placed contributors")
+	require.Empty(t, dungeon.Spec.Field.Placed, "a v2 dungeon declares no placed contributors")
 }
 
 // TestAnUnspellableStandingIsRefusedByName pins the strict decode: a play

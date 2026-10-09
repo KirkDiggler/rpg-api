@@ -18,7 +18,6 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
 
 // The wall crosses between axial cells (1,0) and (2,0). Only the door is
@@ -55,12 +54,7 @@ func (s *StructuralPatchAcceptanceSuite) TestCompiledDoorDiscoveryReplacesOpenin
 	s.Require().NoError(err)
 	dungeon, err := sessionworld.Compile([]byte(structuralPatchSource))
 	s.Require().NoError(err)
-	_, err = h.manager.Manager.StartSession(ctx, &sdk.StartSessionInput{
-		Session: "structural-patch-run", Encounter: "structural-world", World: dungeon.World,
-	})
-	s.Require().NoError(err)
-	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{Session: "structural-patch-run", Member: "alice", Position: pbAt(4, 0)})
-	s.Require().NoError(err)
+	h.launch(s.T(), "structural-patch-run", dungeon.Spec, seatAt("alice", 4, 0))
 	request := &sessionpb.GetKnowledgeRequest{Session: "structural-patch-run", Member: "alice"}
 	before, err := h.handler.GetKnowledge(ctx, request)
 	s.Require().NoError(err)
@@ -141,12 +135,7 @@ func (s *StructuralPatchAcceptanceSuite) TestCompiledDoorDiscoveryReplacesOpenin
 		// run's own discovery is asserted.
 		_, exitErr := h.handler.Exit(ctx, &sessionpb.ExitRequest{Session: "structural-patch-run", Member: "alice"})
 		s.Require().NoError(exitErr)
-		_, startErr := h.manager.Manager.StartSession(ctx, &sdk.StartSessionInput{
-			Session: "structural-second-run", Encounter: "structural-second-world", World: dungeon.World,
-		})
-		s.Require().NoError(startErr)
-		_, joinErr := h.handler.Join(ctx, &sessionpb.JoinRequest{Session: "structural-second-run", Member: "alice", Position: pbAt(4, 0)})
-		s.Require().NoError(joinErr)
+		h.launch(s.T(), "structural-second-run", dungeon.Spec, seatAt("alice", 4, 0))
 		freshRequest := &sessionpb.GetKnowledgeRequest{Session: "structural-second-run", Member: "alice"}
 		fresh, readErr := h.handler.GetKnowledge(ctx, freshRequest)
 		s.Require().NoError(readErr)

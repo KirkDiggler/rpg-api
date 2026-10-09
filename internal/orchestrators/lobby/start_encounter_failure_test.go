@@ -153,7 +153,7 @@ func (s *StartContractSuite) failingLaunchFixture() (
 // first, and any verb past it is unarmed and fails the controller-isolated mock.
 //
 // n counts SDK verbs and does not include the registry lookup, so n == 0 arms
-// the lookup alone, leaving StartSession as the failing call.
+// the lookup alone, leaving Launch as the failing call.
 func (s *StartContractSuite) launchSuccessCalls(
 	entry *dungeons.Entry, key string, withVendor bool, n int,
 ) []any {

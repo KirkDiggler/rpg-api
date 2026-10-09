@@ -10,7 +10,6 @@ import (
 
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
-	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 )
 
 // seedStartedLobby builds a STARTED lobby whose EncounterID names a session
@@ -46,7 +45,7 @@ func (s *LobbySuite) TestAbandonEncounter_Success_EndsEncounter() {
 	before := s.snapshotLobby("lobby-a1")
 
 	s.manager.EXPECT().
-		End(s.ctx, &sdk.EndInput{Session: "enc-a1", Ending: sessionworld.EndingWithdrawn}).
+		End(s.ctx, &sdk.EndInput{Session: "enc-a1", Ending: sdk.EndingWithdrawn}).
 		Return(&sdk.EndOutput{}, nil)
 
 	_, err := s.orch.AbandonEncounter(s.ctx, &lobbyorch.AbandonEncounterInput{
@@ -116,7 +115,7 @@ func (s *LobbySuite) TestAbandonEncounter_AlreadyEnded_ErrEncounterAlreadyEnded(
 	before := s.snapshotLobby("lobby-a5")
 
 	s.manager.EXPECT().
-		End(s.ctx, &sdk.EndInput{Session: "enc-a5", Ending: sessionworld.EndingWithdrawn}).
+		End(s.ctx, &sdk.EndInput{Session: "enc-a5", Ending: sdk.EndingWithdrawn}).
 		Return(&sdk.EndOutput{}, nil)
 	_, err := s.orch.AbandonEncounter(s.ctx, &lobbyorch.AbandonEncounterInput{
 		PlayerID: "alice", LobbyID: "lobby-a5",
@@ -124,7 +123,7 @@ func (s *LobbySuite) TestAbandonEncounter_AlreadyEnded_ErrEncounterAlreadyEnded(
 	s.Require().NoError(err)
 
 	s.manager.EXPECT().
-		End(s.ctx, &sdk.EndInput{Session: "enc-a5", Ending: sessionworld.EndingWithdrawn}).
+		End(s.ctx, &sdk.EndInput{Session: "enc-a5", Ending: sdk.EndingWithdrawn}).
 		Return(nil, fmt.Errorf("provider: %w", sdk.ErrClosed))
 
 	_, err = s.orch.AbandonEncounter(s.ctx, &lobbyorch.AbandonEncounterInput{
@@ -144,7 +143,7 @@ func (s *LobbySuite) TestAbandonEncounter_SessionGone_ErrEncounterAlreadyEnded()
 	before := s.snapshotLobby("lobby-a7")
 
 	s.manager.EXPECT().
-		End(s.ctx, &sdk.EndInput{Session: "enc-a7", Ending: sessionworld.EndingWithdrawn}).
+		End(s.ctx, &sdk.EndInput{Session: "enc-a7", Ending: sdk.EndingWithdrawn}).
 		Return(nil, fmt.Errorf("provider: %w", sdk.ErrNoSession))
 
 	_, err := s.orch.AbandonEncounter(s.ctx, &lobbyorch.AbandonEncounterInput{
@@ -162,7 +161,7 @@ func (s *LobbySuite) TestAbandonEncounter_EncounterGone_ErrEncounterAlreadyEnded
 	before := s.snapshotLobby("lobby-a8")
 
 	s.manager.EXPECT().
-		End(s.ctx, &sdk.EndInput{Session: "enc-a8", Ending: sessionworld.EndingWithdrawn}).
+		End(s.ctx, &sdk.EndInput{Session: "enc-a8", Ending: sdk.EndingWithdrawn}).
 		Return(nil, fmt.Errorf("provider: %w", sdk.ErrNoEncounter))
 
 	_, err := s.orch.AbandonEncounter(s.ctx, &lobbyorch.AbandonEncounterInput{
@@ -183,7 +182,7 @@ func (s *LobbySuite) TestAbandonEncounter_EndFails_ReturnsWrappedError() {
 	before := s.snapshotLobby("lobby-a9")
 
 	s.manager.EXPECT().
-		End(s.ctx, &sdk.EndInput{Session: "enc-a9", Ending: sessionworld.EndingWithdrawn}).
+		End(s.ctx, &sdk.EndInput{Session: "enc-a9", Ending: sdk.EndingWithdrawn}).
 		Return(nil, boom)
 
 	_, err := s.orch.AbandonEncounter(s.ctx, &lobbyorch.AbandonEncounterInput{
@@ -217,7 +216,7 @@ func (s *LobbySuite) TestAbandonEncounter_ThenGetMyActiveLobby_ReturnsEmpty() {
 
 	gomock.InOrder(
 		s.manager.EXPECT().
-			End(s.ctx, &sdk.EndInput{Session: "enc-a6", Ending: sessionworld.EndingWithdrawn}).
+			End(s.ctx, &sdk.EndInput{Session: "enc-a6", Ending: sdk.EndingWithdrawn}).
 			Return(&sdk.EndOutput{}, nil),
 		s.manager.EXPECT().
 			Status(s.ctx, &sdk.StatusInput{Session: "enc-a6"}).

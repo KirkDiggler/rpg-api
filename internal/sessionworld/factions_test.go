@@ -53,7 +53,7 @@ func compileRaiderCamp(t *testing.T) (*Dungeon, tkdungeonspec.Compiled) {
 // and the hold-out could never end -- in a run that otherwise worked.
 func TestFactionsRideTheFieldRatherThanBeingForwarded(t *testing.T) {
 	dungeon, spec := compileRaiderCamp(t)
-	field := dungeon.World.Field
+	field := dungeon.Spec.Field
 
 	// The factions, entry for entry, with their minds.
 	require.Len(t, field.Factions, len(spec.Field.Factions), "every faction the compiler produced reached the world")
@@ -77,12 +77,13 @@ func TestFactionsRideTheFieldRatherThanBeingForwarded(t *testing.T) {
 	want := spec.Field.Dispositions[0]
 	require.ElementsMatch(t, want.Between[:], got.Between)
 	require.ElementsMatch(t, []tkencounter.FactionID{"raiders", tkencounter.FactionParty}, got.Between)
-	require.Equal(t, string(tkencounter.StanceHostile), got.Stance)
+	require.Equal(t, tkencounter.StanceHostile, got.Stance)
 	require.NotNil(t, got.Until, "hostile UNTIL something, and the something arrived")
 	until, isFact := want.Until.(tkencounter.TriggerFact)
 	require.True(t, isFact, "this slice turns a pair on a fact and nothing else (design §2)")
-	require.Equal(t, "fact", got.Until.Kind)
-	require.Equal(t, until.Fact, got.Until.Fact, "the fact the compiler named is the fact the world waits for")
+	gotUntil, isFact := got.Until.(tkencounter.TriggerFact)
+	require.True(t, isFact, "and the compiled dungeon waits on a fact too")
+	require.Equal(t, until.Fact, gotUntil.Fact, "the fact the compiler named is the fact the world waits for")
 
 	// And the record that can teach it: the disposition's fact IS a fact
 	// some placed record reveals, spelled identically at both ends, which is
@@ -91,12 +92,12 @@ func TestFactionsRideTheFieldRatherThanBeingForwarded(t *testing.T) {
 	// halves of the agreement, not one.
 	revealed := map[tkencounter.FactID]bool{}
 	for _, rec := range field.Intel {
-		if rec.Fact != "" {
-			revealed[rec.Fact] = true
+		if rec.Reveals.Fact != "" {
+			revealed[rec.Reveals.Fact] = true
 		}
 	}
-	require.True(t, revealed[got.Until.Fact],
-		"the world carries a record revealing %q, the fact its one disposition turns on", got.Until.Fact)
+	require.True(t, revealed[gotUntil.Fact],
+		"the world carries a record revealing %q, the fact its one disposition turns on", gotUntil.Fact)
 }
 
 // TestAMonstersFactionIsCarriedToTheSeam is the other half, and the half
@@ -138,8 +139,8 @@ func TestADungeonAuthoredBeforeFactionsSpawnsAsItDid(t *testing.T) {
 	tomb, err := Compile(raw)
 	require.NoError(t, err)
 
-	require.Empty(t, tomb.World.Field.Factions, "the tomb declares no faction")
-	require.Empty(t, tomb.World.Field.Dispositions, "and no disposition: the defaults are the whole story")
+	require.Empty(t, tomb.Spec.Field.Factions, "the tomb declares no faction")
+	require.Empty(t, tomb.Spec.Field.Dispositions, "and no disposition: the defaults are the whole story")
 	require.NotEmpty(t, monstersOf(tomb))
 	for _, m := range monstersOf(tomb) {
 		require.Empty(t, m.Faction, "%s names no faction, so the composition puts it where it always was", m.MemberID)

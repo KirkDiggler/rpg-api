@@ -65,7 +65,7 @@ func TestAcceptance_BlessHostPolicyAndPersistedMixedOutcomes(t *testing.T) {
 
 			// Store stale remembered testimony, not the target's current position.
 			repo := sessionorch.NewEncounterRepository(h.redis, 0)
-			world, err := repo.GetEncounter(ctx, "room-encounter")
+			world, err := repo.GetEncounter(ctx, castSessionID)
 			require.NoError(t, err)
 			holding, found := world.Perception.Intel.Holdings[core.EntityID("member|"+id)]["member|skel-1"]
 			require.True(t, found, "seed an existing sight holding, not a fabricated map entry")
@@ -73,7 +73,7 @@ func TestAcceptance_BlessHostPolicyAndPersistedMixedOutcomes(t *testing.T) {
 			holding.Payload, err = encounter.EncodeSightTestimony(encounter.SightTestimony{State: encounter.LocationKnown, Position: at(3, 2)})
 			require.NoError(t, err)
 			world.Perception.Intel.Holdings[core.EntityID("member|"+id)]["member|skel-1"] = holding
-			require.NoError(t, repo.SaveEncounter(ctx, "room-encounter", world))
+			require.NoError(t, repo.SaveEncounter(ctx, castSessionID, world))
 
 			row = castRowFor(ctx, t, h, id, spells.Bless)
 			var candidate *sessionpb.TargetCandidate

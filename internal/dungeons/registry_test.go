@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
@@ -127,15 +127,15 @@ type countingProjector struct {
 }
 
 func (p *countingProjector) AtlasOf(
-	_ context.Context, key string, world *tkencounter.EncounterData,
+	_ context.Context, key string, dungeon *tkdungeonspec.Compiled,
 ) (*sdk.Atlas, error) {
 	p.calls++
 	p.keys = append(p.keys, key)
 	if p.fail != nil {
 		return nil, p.fail
 	}
-	if world == nil {
-		return nil, errors.New("nil world")
+	if dungeon == nil {
+		return nil, errors.New("nil dungeon")
 	}
 	return &sdk.Atlas{Grid: sdk.GridHex, Cells: []spatial.Position{{X: 1, Y: 2}}, DungeonKey: key}, nil
 }

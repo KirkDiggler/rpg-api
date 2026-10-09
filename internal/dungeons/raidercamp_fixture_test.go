@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
-	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 )
 
 // raiderCampKey is the dungeon the hold-out scenario is authored against
@@ -64,13 +63,13 @@ func (s *RegistrySuite) TestRaiderCampFixture_CompilesAndDeclaresItsScenarioEndi
 	entry, err := r.Get(s.ctx, raiderCampKey)
 	s.Require().NoError(err, "the shipped raider camp fixture must compile")
 
-	keys := make([]string, 0, len(entry.Dungeon.World.Endings))
-	for _, e := range entry.Dungeon.World.Endings {
-		keys = append(keys, e.Key)
+	spec := entry.Dungeon.Spec
+	s.Require().NotNil(spec)
+	s.Contains(spec.Scenarios, "hold-out",
+		"the file binds the scenario whose ending Launch declares beside withdrawal")
+	for _, m := range spec.Monsters {
+		s.False(m.Boss, "no boss flag, so no boss-down ending: "+"the camp authors no flag: the chief's fall is not how this one ends")
 	}
-	s.ElementsMatch([]string{sessionworld.EndingWithdrawn, "hold-out"}, keys,
-		"withdrawal always, plus the scenario's own ending — and NO boss-down, "+
-			"because the camp authors no flag: the chief's fall is not how this one ends")
 	s.Len(entry.Atlas.Regions, 3, "the gate, the yard and the hut")
 }
 
@@ -104,6 +103,12 @@ func (s *RegistrySuite) TestPut_AHoldOutNobodyCanWinIsAFormFillerAnswer() {
 		to:       "until: { fact: spared-the-scout }",
 		wantPath: "scenarios.hold-out",
 		wants:    "a hold-out nobody can win",
+	}, {
+		name:     "a scenario this build does not offer",
+		from:     "hold-out: { convince: raiders }",
+		to:       "no-such-scenario: { convince: raiders }",
+		wantPath: "scenarios.no-such-scenario",
+		wants:    "no scenario named",
 	}} {
 		s.Run(tc.name, func() {
 			broken := bytes.Replace(raw, []byte(tc.from), []byte(tc.to), 1)

@@ -6,8 +6,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
-
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
@@ -28,15 +26,7 @@ func TestAcceptance_WorldAssetSceneryRefsReachStartedSession(t *testing.T) {
 	dungeon, err := sessionworld.Compile([]byte(dungeonstest.WorldAssetSceneryYAML))
 	require.NoError(t, err, "a dungeon placing all four scenery namespaces must compile")
 
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: "world-asset-scenery-run", Encounter: "world-asset-scenery", World: dungeon.World,
-	})
-	require.NoError(t, err)
-
-	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{
-		Session: "world-asset-scenery-run", Member: "alice", Position: pbAt(0, 0),
-	})
-	require.NoError(t, err)
+	h.launch(t, "world-asset-scenery-run", dungeon.Spec, seatAt("alice", 0, 0))
 
 	atlas, err := h.handler.GetAtlas(ctx, &sessionpb.GetAtlasRequest{
 		Session: "world-asset-scenery-run", Member: "alice",

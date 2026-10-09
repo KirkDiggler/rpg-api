@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
@@ -90,34 +89,26 @@ func startHeirloomRunWith(t *testing.T, captainHolds bool) *heirloomRun {
 	dungeon, err := sessionworld.Compile([]byte(dungeonstest.HeirloomVaultYAML))
 	require.NoError(t, err, "the heirloom fixture must compile")
 
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: heirloomSession, Encounter: "heirloom-encounter", World: dungeon.World,
-	})
-	require.NoError(t, err)
-
-	// THE GARRISON ARRIVES THE WAY THE LOBBY BRINGS IT: one Spawn per
-	// authored monster, carrying the intel records the author placed in it.
-	// That forwarding is the whole of rpg-api's part in path 2, and this is
-	// the call that exercises it -- the same three-plus-one fields
-	// StartEncounter builds, with the COMPILED record ids Compiled carries.
-	for _, m := range dungeon.Spec.Monsters {
-		holds := m.Holds
-		if !captainHolds {
-			holds = nil
+	// THE GARRISON ARRIVES THE WAY THE LOBBY BRINGS IT: on the board at
+	// launch, carrying the intel records the author placed in it. The one thing
+	// this scene varies is whether the captain still holds his record.
+	compiled := *dungeon.Spec
+	compiled.Monsters = append([]tkdungeonspec.MonsterPlacement{}, dungeon.Spec.Monsters...)
+	if !captainHolds {
+		for i := range compiled.Monsters {
+			compiled.Monsters[i].Holds = nil
 		}
-		_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-			Session: heirloomSession, ID: m.MemberID, Ref: m.Ref, Position: cellOfPlacement(dungeon, m), Holds: holds,
-		})
-		require.NoError(t, err, "spawning %s", m.MemberID)
 	}
+	h.launch(t, heirloomSession, &compiled,
+		seatAt("alice", aliceSeatCol, aliceSeatRow), seatAt("bob", bobSeatCol, bobSeatRow))
 
 	// THE BODY IS A BODY BECAUSE ITS SHEET SAYS SO. The session's standing
-	// seam reads the record Spawn just wrote, so a captain at full hit
-	// points is reported UP -- Loot would refuse with ErrNotDown, and every
-	// other scene here would run inside a fight with the verbs on the turn
-	// clock. Zeroed through the repository the orchestrator itself runs on
-	// rather than by reaching into Redis keys, and BEFORE anybody joins, so
-	// no bubble ever forms.
+	// seam reads the record Launch wrote, so a captain at full hit points is
+	// reported UP -- Loot would refuse with ErrNotDown. Zeroed through the
+	// repository the orchestrator itself runs on rather than by reaching into
+	// Redis keys, AFTER the launch: a launch forms every fight on its one
+	// look, so a garrison that is down only afterwards leaves a fight on the
+	// board that the downed monsters then dissolve.
 	//
 	// This is fixture state standing in for a fight the scenes are not
 	// about. The fight itself is proven in acceptance_test.go.
@@ -128,12 +119,12 @@ func startHeirloomRunWith(t *testing.T, captainHolds bool) *heirloomRun {
 		alice: auth.WithPlayerID(context.Background(), "player-alice"),
 		bob:   auth.WithPlayerID(context.Background(), "player-bob"),
 	}
-	_, err = h.handler.Join(run.alice, &sessionpb.JoinRequest{
-		Session: heirloomSession, Member: "alice", Position: pbAt(aliceSeatCol, aliceSeatRow),
-	})
-	require.NoError(t, err)
-	_, err = h.handler.Join(run.bob, &sessionpb.JoinRequest{
-		Session: heirloomSession, Member: "bob", Position: pbAt(bobSeatCol, bobSeatRow),
+	// The party seats beside the captain, so the launch formed a fight before
+	// his sheet could be zeroed; it is ended the one way a caller can honestly
+	// end a fight nobody won, and the run is back on the world clock the
+	// scenes below assume.
+	_, err = h.handler.Dissolve(run.alice, &sessionpb.DissolveRequest{
+		Session: heirloomSession, Member: "alice", Cause: sessionpb.DissolveKind_DISSOLVE_KIND_BY_DECISION,
 	})
 	require.NoError(t, err)
 
@@ -735,11 +726,23 @@ func TestAcceptance_ForwardingTheAuthorsRawRecordIDIsRefusedByName(t *testing.T)
 	dungeon, err := sessionworld.Compile([]byte(dungeonstest.HeirloomVaultYAML))
 	require.NoError(t, err)
 
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: heirloomSession, Encounter: "heirloom-encounter", World: dungeon.World,
+	_, err = h.charRepo.Create(context.Background(), characterrepo.CreateInput{
+		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
 	})
 	require.NoError(t, err)
 
+	// withHolds is the dungeon with the captain's placement carrying these
+	// records, the rest untouched.
+	withHolds := func(holds []string) *tkdungeonspec.Compiled {
+		compiled := *dungeon.Spec
+		compiled.Monsters = append([]tkdungeonspec.MonsterPlacement{}, dungeon.Spec.Monsters...)
+		for i := range compiled.Monsters {
+			if compiled.Monsters[i].ID == dungeonstest.HeirloomCaptainPlacementID {
+				compiled.Monsters[i].Holds = holds
+			}
+		}
+		return &compiled
+	}
 	var captain tkdungeonspec.MonsterPlacement
 	for _, m := range dungeon.Spec.Monsters {
 		if m.ID == dungeonstest.HeirloomCaptainPlacementID {
@@ -748,23 +751,18 @@ func TestAcceptance_ForwardingTheAuthorsRawRecordIDIsRefusedByName(t *testing.T)
 	}
 	require.Equal(t, []string{dungeonstest.HeirloomIntelRecordID}, captain.Holds,
 		"the compiled id is what the launch forwards")
+	alice := seatAt("alice", aliceSeatCol, aliceSeatRow)
 
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-		Session: heirloomSession, ID: captain.MemberID, Ref: captain.Ref, Position: cellOfPlacement(dungeon, captain),
-		// The AUTHOR's spelling — what a host reaching for the file's own
-		// word instead of the compiler's would send.
-		Holds: []string{dungeonstest.HeirloomIntelAuthoredID},
-	})
-	require.Error(t, err, "a record this dungeon does not declare is refused at the spawn")
+	// The AUTHOR's spelling — what a host reaching for the file's own word
+	// instead of the compiler's would send.
+	_, err = h.launchErr(t, heirloomSession, withHolds([]string{dungeonstest.HeirloomIntelAuthoredID}), alice)
+	require.Error(t, err, "a record this dungeon does not declare is refused at the launch")
 	require.ErrorIs(t, err, sdk.ErrNoIntel,
 		"and by a sentinel about intel, not about doorways")
 
 	// The compiled id, on the same call, is accepted — so the refusal above
-	// is about the ID and not about anything else in this spawn.
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-		Session: heirloomSession, ID: captain.MemberID, Ref: captain.Ref, Position: cellOfPlacement(dungeon, captain),
-		Holds: captain.Holds,
-	})
+	// is about the ID and not about anything else in this launch.
+	_, err = h.launchErr(t, heirloomSession, withHolds(captain.Holds), alice)
 	require.NoError(t, err)
 }
 
@@ -789,7 +787,9 @@ func TestAcceptance_ForwardingTheAuthorsRawRecordIDIsRefusedByName(t *testing.T)
 // vault" and "the vault was already hers"; nothing but the `holds:` list can
 // account for the difference that follows.
 func TestAcceptance_HoldingAScrollTeachesItsHolderAlone(t *testing.T) {
-	run := startHeirloomRun(t)
+	// No garrison: a launch puts the captain on the board beside the party and
+	// forms the fight this test is about NOT needing.
+	run := startRunOn(t, dungeonstest.HeirloomVaultYAML)
 
 	require.Empty(t, run.atlas(t, "alice").GetDoorways(), "nobody has searched or picked anything up")
 	require.Empty(t, run.atlas(t, "bob").GetDoorways())
@@ -990,11 +990,11 @@ func TestAcceptance_TheAtlasSaysWhereTheDungeonBeginsAndWhichWay(t *testing.T) {
 		require.NotNil(t, run.atlas(t, "alice").GetStart(), "it has one to begin with")
 
 		encounters := sessionorch.NewEncounterRepository(run.h.redis, time.Hour)
-		stored, err := encounters.GetEncounter(context.Background(), "heirloom-encounter")
+		stored, err := encounters.GetEncounter(context.Background(), heirloomSession)
 		require.NoError(t, err)
 		require.NotNil(t, stored.Field.Start, "the blob carries one before we age it")
 		stored.Field.Start = nil
-		require.NoError(t, encounters.SaveEncounter(context.Background(), "heirloom-encounter", stored))
+		require.NoError(t, encounters.SaveEncounter(context.Background(), heirloomSession, stored))
 
 		require.Nil(t, run.atlas(t, "alice").GetStart(),
 			"absence is spelled as an absent message, never as a zero-valued one")
@@ -1020,30 +1020,15 @@ func startRunOn(t *testing.T, authored string) *heirloomRun {
 	dungeon, err := sessionworld.Compile([]byte(authored))
 	require.NoError(t, err, "the authored fixture must compile")
 
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: heirloomSession, Encounter: "heirloom-encounter", World: dungeon.World,
-	})
-	require.NoError(t, err)
+	// This run has never had a garrison: only the party stands on the board.
+	compiled := *dungeon.Spec
+	compiled.Monsters = nil
+	h.launch(t, heirloomSession, &compiled,
+		seatAt("alice", aliceSeatCol, aliceSeatRow), seatAt("bob", bobSeatCol, bobSeatRow))
 
-	run := &heirloomRun{
+	return &heirloomRun{
 		h:     h,
 		alice: auth.WithPlayerID(context.Background(), "player-alice"),
 		bob:   auth.WithPlayerID(context.Background(), "player-bob"),
 	}
-	_, err = h.handler.Join(run.alice, &sessionpb.JoinRequest{
-		Session: heirloomSession, Member: "alice", Position: pbAt(aliceSeatCol, aliceSeatRow),
-	})
-	require.NoError(t, err)
-	_, err = h.handler.Join(run.bob, &sessionpb.JoinRequest{
-		Session: heirloomSession, Member: "bob", Position: pbAt(bobSeatCol, bobSeatRow),
-	})
-	require.NoError(t, err)
-
-	return run
-}
-
-// cellOfPlacement is the axial cell the session speaks for a compiled
-// placement's authored offset cell, asked of the toolkit.
-func cellOfPlacement(d *sessionworld.Dungeon, m tkdungeonspec.MonsterPlacement) spatial.Position {
-	return tkencounter.HexCellAt(d.Spec.Field.Canvas.Orientation, int(m.At.X), int(m.At.Y))
 }

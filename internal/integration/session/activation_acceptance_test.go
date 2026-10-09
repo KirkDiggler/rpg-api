@@ -80,44 +80,18 @@ func inAFightWithDice(
 	})
 	require.NoError(t, err)
 
-	world := buildThreeRoomTomb(t)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: "acceptance-run", Encounter: "tomb-encounter", World: world,
-	})
-	require.NoError(t, err)
-
-	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{
-		Session: "acceptance-run", Member: sheet.ID, Position: pbAt(1, 1),
-	})
-	require.NoError(t, err)
-	_, err = h.handler.Move(ctx, &sessionpb.MoveRequest{
-		Session: "acceptance-run", Member: sheet.ID, Path: tombRoute(),
-	})
-	require.NoError(t, err)
-
-	// THE SKELETON ARRIVES AFTER THE WALK, and the order is the whole of this
-	// change (rpg-project#465). Time passes because the party acts: the
-	// nineteen steps above are nineteen rounds of the world clock, and every
-	// creature standing in the run is given time on each of them and ROLLS ITS
-	// OWN TABLE through this session's dice. Spawned first, the skeleton threw
-	// nineteen dice nobody scripted, which the one caller that scripts them
-	// cannot name and must not be asked to.
-	//
-	// IT IS NOT THE HARNESS THAT GIVES. `acceptanceSequenceDice` refuses an
-	// unexpected die by size on purpose — every die is seen, and a pick's die
-	// goes through the same shared path as any other — so the honest fix is to
-	// keep the monster out of the walk rather than to let the script shrug.
-	//
-	// THE FIGHT STILL FORMS HERE, on Spawn's own first-light check, which is
-	// what leaves the caller on a turn clock. It is the shape
-	// TestAcceptance_GreatWeaponFightingRollTraceCrossesLiveAndStory already
-	// proves, and the two scripted d20s are this formation's initiative.
-	spawned, err := h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-		Session: "acceptance-run", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
-		Position: at(19, 3),
-	})
-	require.NoError(t, err)
-	require.NotNil(t, spawned.Formed, "activations exist only on a turn clock, so the fight must form here")
+	// The party seats where the old nineteen-step walk used to leave them,
+	// beside the skeleton's cell, and the fight forms at launch on the board's
+	// one look (rpg-project#542). The walk is gone because the skeleton is no
+	// longer a thing added after it: a launched skeleton would roll its table on
+	// every one of those rounds through this session's dice, and
+	// `acceptanceSequenceDice` refuses an unexpected die by size on purpose.
+	// The two scripted d20s are this formation's initiative, as they were at
+	// the spawn that used to form it.
+	launched := h.launch(t, "acceptance-run",
+		withMonsters(buildThreeRoomTomb(t), monsterAt("skel-1", refs.Monsters.Skeleton().String(), 19, 3)),
+		seatAt(sheet.ID, 18, 3))
+	require.NotEmpty(t, launched.Formed, "activations exist only on a turn clock, so the fight must form here")
 
 	return h, ctx
 }

@@ -9,7 +9,6 @@ import (
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
-	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 )
 
 // heirloomKey is the dungeon the recover-the-artifact scenario is authored
@@ -65,13 +64,13 @@ func (s *RegistrySuite) TestHeirloomFixture_CompilesAndDeclaresItsScenarioEnding
 	entry, err := r.Get(s.ctx, heirloomKey)
 	s.Require().NoError(err, "the shipped heirloom fixture must compile")
 
-	keys := make([]string, 0, len(entry.Dungeon.World.Endings))
-	for _, e := range entry.Dungeon.World.Endings {
-		keys = append(keys, e.Key)
+	spec := entry.Dungeon.Spec
+	s.Require().NotNil(spec)
+	s.Contains(spec.Scenarios, "recover-the-artifact",
+		"the file binds the scenario whose ending Launch declares beside withdrawal")
+	for _, m := range spec.Monsters {
+		s.False(m.Boss, "no boss flag, so no boss-down ending: "+"this fixture authors no flag (design R8)")
 	}
-	s.ElementsMatch([]string{sessionworld.EndingWithdrawn, "recover-the-artifact"}, keys,
-		"withdrawal always, plus the scenario's own ending — and NO boss-down, "+
-			"because this fixture authors no flag (design R8)")
 }
 
 // TestSeed_AnEmptyMountGetsEveryShippedDungeon is the walk's runbook made

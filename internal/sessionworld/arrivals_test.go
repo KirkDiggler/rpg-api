@@ -45,16 +45,15 @@ func TestArrivalsAreCarriedToTheSeam(t *testing.T) {
 
 	// The letter's arrival rode the field: no line of this package put it
 	// there, and the composition holds the prop in reserve until round 6.
-	var letter *tkencounter.PropData
-	for i := range camp.World.Field.Props {
-		if camp.World.Field.Props[i].ID == "letter" {
-			letter = &camp.World.Field.Props[i]
+	var letter *tkencounter.PropInput
+	for i := range camp.Spec.Field.Props {
+		if camp.Spec.Field.Props[i].ID == "letter" {
+			letter = &camp.Spec.Field.Props[i]
 		}
 	}
 	require.NotNil(t, letter, "the letter is in the world's field, in reserve")
 	require.NotNil(t, letter.Arrives)
-	require.Equal(t, "round", letter.Arrives.Kind)
-	require.Equal(t, 6, letter.Arrives.Round, "and not before")
+	require.Equal(t, tkencounter.TriggerRound{Round: 6}, letter.Arrives, "and not before round 6")
 }
 
 // TestAnArrivalsCellIsNobodysSeat: a placement in reserve has no cell yet,
@@ -90,25 +89,16 @@ func TestAnEndingAuthoredInTheFileIsTheScenariosOwn(t *testing.T) {
 	const sugar = "scenarios:\n  hold-out: { convince: raiders }\n"
 	require.Contains(t, string(raw), sugar, "the fixture's binding must be where this test expects it")
 
-	canonical, err := Compile(raw)
-	require.NoError(t, err)
-
 	spelled := strings.Replace(string(raw), sugar,
 		"endings:\n  - { id: hold-out, when: { stance: { between: [raiders, party], is: neutral } } }\n", 1)
-	authored, err := Compile([]byte(spelled))
+	_, err = Compile([]byte(spelled))
 	require.NoError(t, err, "the spelled-out ending compiles")
-	require.Equal(t, canonical.World.Endings, authored.World.Endings,
-		"the sugar and the spelling declare the same endings to the composition")
-
 	// And a name of the author's own, so the wire's `ended` beat names it.
 	turned := strings.Replace(string(raw), sugar,
 		"endings:\n  - { id: turned, when: { stance: { between: [raiders, party], is: neutral } } }\n", 1)
 	own, err := Compile([]byte(turned))
 	require.NoError(t, err)
-	keys := make([]string, 0, len(own.World.Endings))
-	for _, e := range own.World.Endings {
-		keys = append(keys, e.Key)
-	}
-	require.Equal(t, []string{EndingWithdrawn, "turned"}, keys, "withdrawal always, plus the file's own ending")
-	require.Equal(t, "stance", own.World.Endings[1].Kind)
+	require.Len(t, own.Spec.Endings, 1, "the file's own ending is the only one the compile carries")
+	require.Equal(t, "turned", own.Spec.Endings[0].Key, "and it keeps the author's name")
+	require.IsType(t, tkencounter.TriggerStance{}, own.Spec.Endings[0].Trigger)
 }

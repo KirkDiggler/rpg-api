@@ -26,6 +26,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/proficiencies"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
@@ -52,26 +53,9 @@ func requireGRPCCode(t *testing.T, err error, want codes.Code) {
 	require.Equal(t, want, st.Code(), "unexpected code for: %v", err)
 }
 
-// orderAsGiven is the trivial InitiativeRoller every fixture in this test
-// needs (encounter.SetupInput requires one): the members already arrive in
-// the order the composition detected them, so there is nothing to decide.
-type orderAsGiven struct{}
-
-func (orderAsGiven) RollInitiative(members []tkencounter.MemberID) ([]tkencounter.MemberID, error) {
-	return members, nil
-}
-
-// allStanding and allSeeing are the Standing and Sight capabilities
-// encounter.SetupInput has required since rpg-toolkit#1033: supplied, never
-// defaulted, and refused at construction (ErrNoStanding / ErrNoSight) rather
-// than given a default, because "everybody can see" is a decision about a world
-// and not a fact the composition may assume.
-//
-// Trivial on purpose. These are used only to VALIDATE construction here; they
-// are not persisted in the EncounterData this function returns, and the session
-// package supplies its own when it loads the world (including the sight RANGE
-// that decides who is in contact). A fixture that made these clever would be
-// testing the fixture.
+// allStanding is the Standing capability a test's reading of a stored world
+// needs: nobody is down. Trivial on purpose; a fixture that made it clever
+// would be testing the fixture.
 type allStanding struct{}
 
 // Standing returns who is DOWN, not who is up -- the interface's own parameter
@@ -85,7 +69,7 @@ func (allStanding) Standing(_ []tkencounter.MemberID) ([]tkencounter.MemberID, e
 // of a Standing capability (toolkit#1453): nobody is down, so everybody is up,
 // conscious, in contact, and waiting. Contact is what makes a member count as
 // a side of a fight, so the false zero value would dissolve every fight this
-// suite forms -- see encounter.CompileOnlySetup's Standing, which is the same stand-in
+// suite forms -- see encounter.RefusingCapabilities, whose Standing is the same stand-in
 // for the same reason.
 func (allStanding) Assess(members []tkencounter.MemberID) (*tkencounter.ParticipationAssessment, error) {
 	out := &tkencounter.ParticipationAssessment{
@@ -113,17 +97,6 @@ func (standStillSheets) Sheets(members []tkencounter.MemberID) (map[tkencounter.
 	for _, id := range members {
 		out[id] = tkencounter.SheetFacts{}
 	}
-	return out, nil
-}
-
-type allSeeing struct{}
-
-func (allSeeing) Sight(members []tkencounter.MemberID) (map[tkencounter.MemberID]int, error) {
-	out := make(map[tkencounter.MemberID]int, len(members))
-	for _, id := range members {
-		out[id] = 1_000_000
-	}
-
 	return out, nil
 }
 
@@ -231,14 +204,14 @@ func tombRoute() []*sessionpb.Position {
 // a fight" geometry, transplanted into a region reached by crossing two
 // doorways. Only the SESSION-FACING verbs this test drives against (Join,
 // Move, Attack, ...) speak axial cells, and every one of those is at(col,row).
-func buildThreeRoomTomb(t *testing.T) *tkencounter.EncounterData {
+func buildThreeRoomTomb(t *testing.T) *tkdungeonspec.Compiled {
 	return buildTomb(t, nil)
 }
 
 // buildTomb is buildThreeRoomTomb with a mutation hook: the run-ending suite
 // locks the second door and declares the doom, everything else identical, so
 // the two scenarios cannot drift apart in geometry.
-func buildTomb(t *testing.T, mutate func(*tkencounter.SetupInput)) *tkencounter.EncounterData {
+func buildTomb(t *testing.T, mutate func(*tkdungeonspec.Compiled)) *tkdungeonspec.Compiled {
 	t.Helper()
 
 	// The tomb's column: a solid line of pillars at absolute col 17 with a
@@ -261,26 +234,7 @@ func buildTomb(t *testing.T, mutate func(*tkencounter.SetupInput)) *tkencounter.
 	}
 	lit := &tkencounter.Lighting{Intensity: 1}
 
-	in := &tkencounter.SetupInput{
-		Initiative: orderAsGiven{},
-		Retention:  tkencounter.RetentionUnbounded,
-		Standing:   allStanding{},
-		Sight:      allSeeing{},
-		Equipment:  tkencounter.UnobservedEquipment{},
-		Sheets:     standStillSheets{},
-		// tkencounter.PassDriver{}/RefusingStriker{} are the toolkit's own
-		// trivial, exported stand-ins (rpg-toolkit#1167 closed) --
-		// construction-time only, same as allStanding/allSeeing above: this
-		// fixture builds the seed EncounterData via NewEncounter and the real,
-		// played session supplies its own TurnDriver (sdk.Behavior() today)
-		// and Striker when it loads and plays this world, so what a monster's
-		// turn does here never matters.
-		TurnDriver: tkencounter.PassDriver{},
-		Striker:    tkencounter.RefusingStriker{},
-		Mover:      tkencounter.RefusingMover{},
-		// This builds the scene; the session Manager loads it and supplies the
-		// real announcer when the fight actually runs.
-		Announcer: tkencounter.RefusingAnnouncer{},
+	in := &tkdungeonspec.Compiled{
 		Field: tkencounter.FieldInput{
 			Canvas: tkencounter.CanvasInput{
 				// A tomb is cut from stone: you cannot see across the space
@@ -306,23 +260,14 @@ func buildTomb(t *testing.T, mutate func(*tkencounter.SetupInput)) *tkencounter.
 			},
 			Props: pillars,
 		},
-		// Members is deliberately empty: alice enters through Join (the
-		// verb this suite is proving), not pre-authored into the world --
-		// authoring her here too would have Join placing an ID the
-		// composition already holds, which is not what "a player joins" means.
-		// SetupInput requires at least one declared ending; this suite never
-		// fires it (the acceptance loop dissolves the fight by decision, not
-		// via an ending), so a never-triggered external declaration satisfies
-		// the requirement without shaping the scenario.
-		Endings: []tkencounter.EndingInput{{Key: "unused", Trigger: tkencounter.TriggerExternal{}}},
+		// Nobody is placed here: the party and the monsters are the launch's
+		// (h.launch seats the party where the test says), and Launch declares
+		// withdrawal itself.
 	}
 	if mutate != nil {
 		mutate(in)
 	}
-	enc, err := tkencounter.NewEncounter(in)
-	require.NoError(t, err, "building the three-room tomb")
-	data := enc.ToData()
-	return &data
+	return in
 }
 
 // armedFighter is a sheet that can actually swing (mirrors the toolkit's own
@@ -442,34 +387,18 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// The lobby's job, in-process: build the world, start the session.
-	// (StartSession/Spawn are deliberately absent from SessionService --
-	// design rule 5, "creation is the lobby's" -- so this test plays that
-	// role directly against the manager, exactly as StartEncounter's
-	// re-point will.)
-	world := buildThreeRoomTomb(t)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: "acceptance-run", Encounter: "tomb-encounter", World: world,
-	})
-	require.NoError(t, err)
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-		Session: "acceptance-run", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
-		// tomb's Origin is (14,0); local (5,3) (matching the toolkit's own
-		// proven ambush geometry) is absolute (19,3). Spawn speaks absolute
-		// positions only -- there is no Room field any more (session
-		// v0.12.0/rpg-toolkit#1048, one map complete).
-		Position: at(19, 3),
-	})
-	require.NoError(t, err)
-
-	// -- join, at the entrance's absolute position (its Origin is (0,0), so
-	// local and absolute coincide here) --
-	joinResp, err := h.handler.Join(ctx, &sessionpb.JoinRequest{
-		Session: "acceptance-run", Member: "alice",
-		Position: pbAt(1, 1),
-	})
-	require.NoError(t, err)
-	require.Equal(t, "alice", joinResp.GetMember().GetId())
+	// The lobby's job, in-process: launch the dungeon with the party seated.
+	// (Launch is deliberately absent from SessionService -- design rule 5,
+	// "creation is the lobby's" -- so this test plays that role directly
+	// against the manager, as StartEncounter does.)
+	//
+	// The skeleton stands at absolute (19,3): the tomb's Origin is (14,0) and
+	// local (5,3) matches the toolkit's own proven ambush geometry. Alice
+	// stands at the entrance's absolute (1,1).
+	launched := h.launch(t, "acceptance-run",
+		withMonsters(buildThreeRoomTomb(t), monsterAt("skel-1", refs.Monsters.Skeleton().String(), 19, 3)),
+		seatAt("alice", 1, 1))
+	require.Contains(t, memberIDs(launched), "alice", "alice stands on the board the launch placed")
 
 	// -- walk the whole route in ONE Move call: entrance -> hall -> tomb,
 	// crossing both doorways as ordinary steps (design §0's destination
@@ -673,19 +602,9 @@ func TestGetRoster_UsesSessionRoster(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	world := buildThreeRoomTomb(t)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: "roster-run", Encounter: "tomb-encounter", World: world,
-	})
-	require.NoError(t, err)
-	_, err = h.manager.Manager.Join(context.Background(), &sdk.JoinInput{
-		Session: "roster-run", Member: "alice", Position: at(1, 1),
-	})
-	require.NoError(t, err)
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-		Session: "roster-run", ID: "skeleton-1", Ref: refs.Monsters.Skeleton().String(), Position: at(2, 1),
-	})
-	require.NoError(t, err)
+	h.launch(t, "roster-run",
+		withMonsters(buildThreeRoomTomb(t), monsterAt("skeleton-1", refs.Monsters.Skeleton().String(), 2, 1)),
+		seatAt("alice", 1, 1))
 
 	resp, err := h.handler.GetRoster(ctx, &sessionpb.GetRosterRequest{Session: "roster-run", Member: "alice"})
 	require.NoError(t, err)
@@ -742,22 +661,9 @@ func TestFightEndsByDecisionWhenThePartyWalksAway(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	world := buildThreeRoomTomb(t)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: "decision-run", Encounter: "tomb-encounter", World: world,
-	})
-	require.NoError(t, err)
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-		Session: "decision-run", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
-		Position: at(19, 3),
-	})
-	require.NoError(t, err)
-
-	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{
-		Session: "decision-run", Member: "alice",
-		Position: pbAt(1, 1),
-	})
-	require.NoError(t, err)
+	h.launch(t, "decision-run",
+		withMonsters(buildThreeRoomTomb(t), monsterAt("skel-1", refs.Monsters.Skeleton().String(), 19, 3)),
+		seatAt("alice", 1, 1))
 
 	moveResp, err := h.handler.Move(ctx, &sessionpb.MoveRequest{
 		Session: "decision-run", Member: "alice", Path: tombRoute(),
@@ -808,16 +714,7 @@ func TestAWalkCannotCrossAWallWhereThereIsNoDoorway(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	world := buildThreeRoomTomb(t)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: "wall-run", Encounter: "tomb-encounter", World: world,
-	})
-	require.NoError(t, err)
-
-	_, err = h.handler.Join(ctx, &sessionpb.JoinRequest{
-		Session: "wall-run", Member: "alice", Position: pbAt(1, 2),
-	})
-	require.NoError(t, err)
+	h.launch(t, "wall-run", buildThreeRoomTomb(t), seatAt("alice", 1, 2))
 
 	// Walk the entrance freely along row 2, then try to keep going into the
 	// hall where there is no door.
@@ -899,24 +796,12 @@ func TestSkeletonsDrivenTurnStrikesFromRange(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	world := buildThreeRoomTomb(t)
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: "monster-turn-run", Encounter: "tomb-encounter", World: world,
-	})
-	require.NoError(t, err)
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-		Session: "monster-turn-run", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
-		Position: at(19, 3),
-	})
-	require.NoError(t, err)
-
-	joinResp, err := h.handler.Join(ctx, &sessionpb.JoinRequest{
-		Session: "monster-turn-run", Member: "alice",
-		Position: pbAt(16, 3), // inside the tomb, on the pillar gap row, three cells out
-	})
-	require.NoError(t, err)
-	require.NotNil(t, joinResp.GetFormed(), "in sight and in range at first light: the fight forms on Join")
-	require.Equal(t, []string{"alice", "skel-1"}, joinResp.GetFormed().GetOrder(),
+	// Alice seats inside the tomb, on the pillar gap row, three cells out.
+	launched := h.launch(t, "monster-turn-run",
+		withMonsters(buildThreeRoomTomb(t), monsterAt("skel-1", refs.Monsters.Skeleton().String(), 19, 3)),
+		seatAt("alice", 16, 3))
+	require.Len(t, launched.Formed, 1, "in sight and in range at first light: the fight forms at launch")
+	require.Equal(t, []string{"alice", "skel-1"}, launched.Formed[0].Order,
 		"the tied roll breaks to alice -- it must be her turn first, not the skeleton's")
 
 	before := len(storyBeats(ctx, t, h.handler, "monster-turn-run", "alice"))
@@ -986,30 +871,18 @@ func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
 	// The same tomb, with the second door locked at the reference tomb's DC
 	// and the doom declared over the monster the launch is about to spawn —
 	// an ending may name a member that joins later.
-	world := buildTomb(t, func(in *tkencounter.SetupInput) {
+	world := buildTomb(t, func(in *tkdungeonspec.Compiled) {
 		in.Field.Doors[1].State = tkencounter.DoorIsLocked(tkencounter.Lock{Approaches: []tkencounter.CheckApproach{{Ability: "dex", DC: 12}}})
-		in.Endings = []tkencounter.EndingInput{
-			{Key: "withdrawn", Trigger: tkencounter.TriggerExternal{}},
-			{Key: "boss-down", Trigger: tkencounter.TriggerMemberDown{Member: "skel-1"}},
-		}
 	})
-	_, err = h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: "doom-run", Encounter: "tomb-encounter", World: world,
-	})
-	require.NoError(t, err)
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-		Session: "doom-run", ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
-		Position: at(19, 3),
-	})
-	require.NoError(t, err)
+	// The skeleton is the boss: a launch declares boss-down over the one
+	// placement that carries the flag, the way a compiled dungeon says it.
+	skeleton := monsterAt("skel-1", refs.Monsters.Skeleton().String(), 19, 3)
+	skeleton.Boss = true
 
-	// Join in the hall, on the locked door's row, with the door shut between
+	// Seat in the hall, on the locked door's row, with the door shut between
 	// alice and the skeleton: no fight forms — the lock blocks sight.
-	joinResp, err := h.handler.Join(ctx, &sessionpb.JoinRequest{
-		Session: "doom-run", Member: "alice", Position: pbAt(12, 3),
-	})
-	require.NoError(t, err)
-	require.Nil(t, joinResp.GetFormed(), "the locked door is dark: nothing on the far side is in sight")
+	launched := h.launch(t, "doom-run", withMonsters(world, skeleton), seatAt("alice", 12, 3))
+	require.Empty(t, launched.Formed, "the locked door is dark: nothing on the far side is in sight")
 
 	// -- GetDoors: the live half of the atlas's doorways --
 	doorsResp, err := h.handler.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: "doom-run", Member: "alice"})

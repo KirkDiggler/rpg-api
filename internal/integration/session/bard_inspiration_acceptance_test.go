@@ -18,7 +18,6 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
@@ -101,32 +100,19 @@ func bardScene(t *testing.T) (*acceptanceHarness, context.Context, context.Conte
 	}
 
 	// The lobby's job, in-process (design rule 5: creation is the lobby's).
-	_, err := h.manager.Manager.StartSession(context.Background(), &sdk.StartSessionInput{
-		Session: bardSessionID, Encounter: "room-encounter", World: buildOpenRoom(t, 12, 6),
-	})
-	require.NoError(t, err)
 
 	// EVERYBODY TIES ON INITIATIVE HERE -- the roller gives every d20 the
 	// same face and all three carry the same DEX -- so the order falls to the
 	// seam's own tie-break, and the assertion below is what pins it. The
 	// fighter acts first, which is why she passes her turn before the bard
 	// grants: the die has to be in her hand BEFORE the swing that offers it.
-	_, err = h.handler.Join(bardCtx, &sessionpb.JoinRequest{
-		Session: bardSessionID, Member: "bella", Position: pbAt(2, 0),
-	})
-	require.NoError(t, err)
-	_, err = h.handler.Join(fighterCtx, &sessionpb.JoinRequest{
-		Session: bardSessionID, Member: "alice", Position: pbAt(3, 0),
-	})
-	require.NoError(t, err)
+	h.launch(t, bardSessionID,
+		withMonsters(buildOpenRoom(t, 12, 6), monsterAt("skel-1", refs.Monsters.Skeleton().String(), 4, 0)),
+		seatAt("bella", 2, 0), seatAt("alice", 3, 0))
+	// Reactions in hand, written after the launch: it long-rests the party and
+	// would overwrite a sheet written before it.
 	inCombat(t, h.charRepo, "bella", 1)
 	inCombat(t, h.charRepo, "alice", 1)
-
-	_, err = h.manager.Manager.Spawn(context.Background(), &sdk.SpawnInput{
-		Session: bardSessionID, ID: "skel-1", Ref: refs.Monsters.Skeleton().String(),
-		Position: at(4, 0),
-	})
-	require.NoError(t, err)
 
 	turn, err := h.handler.Turn(fighterCtx, &sessionpb.TurnRequest{
 		Session: bardSessionID, Member: "alice",
