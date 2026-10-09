@@ -27,6 +27,7 @@ import (
 type Manager interface {
 	Join(ctx context.Context, in *sdk.JoinInput) (*sdk.JoinOutput, error)
 	Exit(ctx context.Context, in *sdk.ExitInput) (*sdk.ExitOutput, error)
+	Seat(ctx context.Context, in *sdk.SeatInput) (*sdk.SeatOutput, error)
 	Move(ctx context.Context, in *sdk.MoveInput) (*sdk.MoveOutput, error)
 	Attack(ctx context.Context, in *sdk.AttackInput) (*sdk.AttackOutput, error)
 	DeathSave(ctx context.Context, in *sdk.DeathSaveInput) (*sdk.DeathSaveOutput, error)

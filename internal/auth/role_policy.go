@@ -52,7 +52,7 @@ func GameMethodPermission(method string) (Permissions, bool) {
 		case "Join", "Exit", "Move", "Attack", "DeathSave", "OpenDoor", "CloseDoor", "Unlock", "Search", "SetDiscoverySharing", "Interact",
 			"Trade", "Unpack", "Loot", "Hold", "Turn", "Rest",
 			"Afford", "Activate", "Cast", "React", "Intimidate", "Persuade", "EndTurn", "Dissolve", "End", "GetStatus", "GetStory", "GetView",
-			"GetWhere", "GetAtlas", "GetRoster", "GetDoors", "GetKnowledge", "StreamEvents":
+			"GetWhere", "GetAtlas", "GetRoster", "GetDoors", "GetKnowledge", "GetSeat", "StreamEvents":
 			return PermissionPlay, true
 		}
 	case "dnd5e.api.session.presentation.v1alpha1.SessionPresentationService":

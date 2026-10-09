@@ -416,6 +416,21 @@ func (mr *MockManagerMockRecorder) Roster(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Roster", reflect.TypeOf((*MockManager)(nil).Roster), ctx, in)
 }
 
+// Seat mocks base method.
+func (m *MockManager) Seat(ctx context.Context, in *session.SeatInput) (*session.SeatOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Seat", ctx, in)
+	ret0, _ := ret[0].(*session.SeatOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Seat indicates an expected call of Seat.
+func (mr *MockManagerMockRecorder) Seat(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Seat", reflect.TypeOf((*MockManager)(nil).Seat), ctx, in)
+}
+
 // SetDiscoverySharing mocks base method.
 func (m *MockManager) SetDiscoverySharing(ctx context.Context, in *session.SetDiscoverySharingInput) (*session.SetDiscoverySharingOutput, error) {
 	m.ctrl.T.Helper()
