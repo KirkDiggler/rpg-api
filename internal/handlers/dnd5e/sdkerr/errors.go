@@ -414,14 +414,20 @@ func StatusError(err error) error {
 		//   "that thing does not exist" would blame the client for a second
 		//   click on a button whose question somebody else already closed.
 		//
-		//   ErrNotOffered -- a choice this window does not offer. Reachable
-		//   only for a value React's own reactChoiceFromProto recognized,
-		//   which is strike or hold, and a window offers both; it is mapped
-		//   anyway for ErrBadCost's reason -- the day the two option sets
-		//   disagree, the failure needs a name that is not a lie.
+		//   ErrNotOffered -- an answer this window does not offer: an option
+		//   it never posed, or the zero Answer. Mapped for ErrBadCost's
+		//   reason -- the day the option sets disagree, the failure needs a
+		//   name that is not a lie.
+		//
+		//   ErrStalePause -- a stored pause this build did not write and will
+		//   not resume. It reaches the caller from React, from Afford and
+		//   from any verb that loads an encounter holding such a pause. The
+		//   request is well-formed; the stored question is what is stale, and
+		//   the fight must be asked again from a fresh state.
 		errors.Is(err, sdk.ErrWindowOpen),
 		errors.Is(err, sdk.ErrNoWindow),
 		errors.Is(err, sdk.ErrNotOffered),
+		errors.Is(err, sdk.ErrStalePause),
 		// The two advancement refusals about the character's SITUATION
 		// rather than the request (rpg-project#452). ErrCannotAdvance is the
 		// level it has not earned, or cannot take yet -- the engine's

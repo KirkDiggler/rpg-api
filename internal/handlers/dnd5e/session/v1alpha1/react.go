@@ -38,7 +38,7 @@ func (h *Handler) React(ctx context.Context, req *sessionpb.ReactRequest) (*sess
 		return nil, err
 	}
 
-	choice, err := reactChoiceFromProto(req.GetChoice())
+	answer, err := reactAnswerFromProto(req.GetChoice(), req.GetOption())
 	if err != nil {
 		return nil, err
 	}
@@ -47,8 +47,7 @@ func (h *Handler) React(ctx context.Context, req *sessionpb.ReactRequest) (*sess
 		Session:       req.GetSession(),
 		Member:        req.GetMember(),
 		DeclarationID: req.GetDeclarationId(),
-		Choice:        choice,
-		Option:        req.GetOption(),
+		Answer:        answer,
 	})
 	if err != nil {
 		return nil, sdkerr.StatusError(err)
@@ -60,26 +59,29 @@ func (h *Handler) React(ctx context.Context, req *sessionpb.ReactRequest) (*sess
 	}, nil
 }
 
-// reactChoiceFromProto builds the SDK's ReactChoice from the wire enum.
+// reactAnswerFromProto builds the SDK's Answer from the wire's choice and
+// option: STRIKE takes the offer (the option may be empty for an option-less
+// offer), HOLD declines.
+//
+// HOLD WITH AN OPTION IS INVALID_ARGUMENT. The wire doc says declining leaves
+// the option empty, and an option on a decline names a choice nobody can
+// refuse, so the request is malformed rather than the window stale.
 //
 // REACT_CHOICE_UNSPECIFIED IS INVALID_ARGUMENT, not a quiet default, and the
 // wire's own ReactRequest doc states it: "the client forgot to say" and "the
 // player chose to hold" must not be the same bytes, because one of them
-// declines a swing on the player's behalf. Refused here rather than at the
-// SDK, which sees an empty ReactChoice and answers ErrNotOffered -- true, but
-// FAILED_PRECONDITION, which blames the window for a request that never named
-// a choice at all. This is stream_events.go's shape: a wire-only refusal the
-// SDK has no counterpart for, stated by the handler that owns the field.
-//
-// A future value this build does not recognize lands here too, and the same
-// answer is right: a client sent an option nothing posed.
-func reactChoiceFromProto(c sessionpb.ReactChoice) (sdk.ReactChoice, error) {
+// declines a swing on the player's behalf. A future value this build does not
+// recognize lands here too.
+func reactAnswerFromProto(c sessionpb.ReactChoice, option string) (sdk.Answer, error) {
 	switch c {
 	case sessionpb.ReactChoice_REACT_CHOICE_STRIKE:
-		return sdk.ReactStrike, nil
+		return sdk.Take(option), nil
 	case sessionpb.ReactChoice_REACT_CHOICE_HOLD:
-		return sdk.ReactHold, nil
+		if option != "" {
+			return sdk.Answer{}, status.Error(codes.InvalidArgument, "react: declining names no option")
+		}
+		return sdk.Decline(), nil
 	default:
-		return "", status.Errorf(codes.InvalidArgument, "react: unrecognized choice %v", c)
+		return sdk.Answer{}, status.Errorf(codes.InvalidArgument, "react: unrecognized choice %v", c)
 	}
 }

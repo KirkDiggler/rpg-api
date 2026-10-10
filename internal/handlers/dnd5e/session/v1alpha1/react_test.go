@@ -23,25 +23,15 @@ func TestReact_Unauthenticated_Errors(t *testing.T) {
 	requireCode(t, err, codes.Unauthenticated)
 }
 
-// Both answers reach the SDK as themselves. HOLD is the one that would be
-// silently produced by a defaulted converter, so it is tested as loudly as
-// STRIKE: holding is a choice a player made, not the absence of one.
-func TestReact_BothChoicesTravelVerbatim(t *testing.T) {
-	cases := []struct {
-		name string
-		in   sessionpb.ReactChoice
-		want sdk.ReactChoice
-	}{
-		{"strike", sessionpb.ReactChoice_REACT_CHOICE_STRIKE, sdk.ReactStrike},
-		{"hold", sessionpb.ReactChoice_REACT_CHOICE_HOLD, sdk.ReactHold},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+// STRIKE reaches the SDK as Take(option) and the option travels verbatim,
+// including the empty option of an option-less offer.
+func TestReactMapsStrikeToTake(t *testing.T) {
+	for _, option := range []string{"option-1", ""} {
+		t.Run("option="+option, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 			mgr.EXPECT().React(gomock.Any(), &sdk.ReactInput{
-				Session: "sess-1", Member: "char-1", DeclarationID: "decl-react-1", Choice: tc.want, Option: "option-1",
+				Session: "sess-1", Member: "char-1", DeclarationID: "decl-react-1", Answer: sdk.Take(option),
 			}).Return(&sdk.ReactOutput{
 				Saved: sdk.SaveReport{Written: []string{"session:sess-1"}},
 			}, nil)
@@ -49,13 +39,70 @@ func TestReact_BothChoicesTravelVerbatim(t *testing.T) {
 			h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
 			ctx := auth.WithPlayerID(context.Background(), "alice")
 			resp, err := h.React(ctx, &sessionpb.ReactRequest{
-				Session: "sess-1", Member: "char-1", DeclarationId: "decl-react-1", Choice: tc.in, Option: "option-1",
+				Session: "sess-1", Member: "char-1", DeclarationId: "decl-react-1",
+				Choice: sessionpb.ReactChoice_REACT_CHOICE_STRIKE, Option: option,
 			})
 
 			require.NoError(t, err)
 			require.Equal(t, []string{"session:sess-1"}, resp.GetSaved().GetWritten())
 		})
 	}
+}
+
+// HOLD is a choice a player made, not the absence of one: it reaches the SDK
+// as Decline, never as the zero Answer.
+func TestReactMapsHoldToDecline(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().React(gomock.Any(), &sdk.ReactInput{
+		Session: "sess-1", Member: "char-1", DeclarationID: "decl-react-1", Answer: sdk.Decline(),
+	}).Return(&sdk.ReactOutput{}, nil)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	_, err := h.React(ctx, &sessionpb.ReactRequest{
+		Session: "sess-1", Member: "char-1", DeclarationId: "decl-react-1",
+		Choice: sessionpb.ReactChoice_REACT_CHOICE_HOLD,
+	})
+
+	require.NoError(t, err)
+}
+
+// A decline names no option. The manager mock with no expectations is the
+// assertion: the request is refused before the SDK is reached.
+func TestReactRefusesHoldWithAnOption(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	h := &Handler{
+		manager:    sessionv1alpha1mock.NewMockManager(ctrl),
+		characters: anyMemberOwnedBy(ctrl, "alice"),
+	}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	resp, err := h.React(ctx, &sessionpb.ReactRequest{
+		Session: "sess-1", Member: "char-1", DeclarationId: "decl-react-1",
+		Choice: sessionpb.ReactChoice_REACT_CHOICE_HOLD, Option: "use",
+	})
+
+	require.Nil(t, resp)
+	requireCode(t, err, codes.InvalidArgument)
+}
+
+// A stale stored window is a precondition failure, whether it comes from React
+// or from any other verb that loads the pause.
+func TestReactMapsAStaleWindowToFailedPrecondition(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().React(gomock.Any(), gomock.Any()).
+		Return(nil, fmt.Errorf("react: %w", sdk.ErrStalePause))
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	resp, err := h.React(ctx, &sessionpb.ReactRequest{
+		Session: "sess-1", Member: "char-1", DeclarationId: "decl-react-1",
+		Choice: sessionpb.ReactChoice_REACT_CHOICE_STRIKE,
+	})
+
+	require.Nil(t, resp)
+	requireCode(t, err, codes.FailedPrecondition)
 }
 
 // AN UNSET CHOICE IS INVALID_ARGUMENT AND NEVER REACHES THE SDK, and the
@@ -103,6 +150,8 @@ func TestReact_EveryRefusalIsAStatusCode(t *testing.T) {
 		// FailedPrecondition: this is a reach for what is not yours.
 		{"somebody else's window", sdk.ErrNotAudience, codes.PermissionDenied},
 		{"choice was never posed", sdk.ErrNotOffered, codes.FailedPrecondition},
+		{"stale stored window", sdk.ErrStalePause, codes.FailedPrecondition},
+		{"cannot afford the reaction", sdk.ErrCannotAfford, codes.FailedPrecondition},
 		// React is the one verb that reaches a frozen session, but the
 		// freeze can still refuse it -- and every OTHER verb sees this one
 		// while a window is open.
