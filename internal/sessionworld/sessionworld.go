@@ -64,6 +64,13 @@ type Dungeon struct {
 	// arriving the garrison is the SDK's, and this package re-projects none
 	// of it (rpg-project#542, "rpg-api keeps transport").
 	Spec *tkdungeonspec.Compiled
+
+	// Templates is one derived stat block per template the file declares,
+	// sorted by template id (rpg-project#555 R7): the numbers the rulebook
+	// derived, echoed to the builder so no client computes one. Nil when the
+	// file declares none. Read off the monster monster.FromTemplate
+	// assembles — the function session's launch calls — never computed here.
+	Templates []DerivedStatBlock
 }
 
 // A file that does not decode, validate or compile fails with an error that
@@ -93,16 +100,31 @@ func Compile(raw []byte) (*Dungeon, error) {
 
 	// Resolve every content reference before accepting the dungeon. This is
 	// deliberately a lookup only: the SDK owns construction and all rules.
+	//
+	// A monster ref resolves in exactly one place (rpg-project#555 R2): a
+	// rulebook constructor, or a template this file declares under the ref's
+	// id. Templates are resolved first — a shadowing id or a block the
+	// rulebook cannot assemble is refused at `templates.<id>` — and a
+	// placement naming a declared template is then known whatever its
+	// template's own fate, so one bad block is one defect, not one per
+	// placement of it. Every defect in this stage is reported together.
+	templates, ferrs := deriveTemplates(spec.Templates)
 	for _, m := range spec.Monsters {
+		if _, isTemplate := templateIDOf(spec.Templates, m.Ref); isTemplate {
+			continue
+		}
 		if _, known := monsters.ByRef(m.Ref); !known {
 			id := m.ID
 			if id == "" {
 				id = m.Ref
 			}
-			return nil, &tkdungeonspec.ValidationError{Errors: []tkdungeonspec.FieldError{{
+			ferrs = append(ferrs, tkdungeonspec.FieldError{
 				Message: fmt.Sprintf("monster %q references unknown monster %q", id, m.Ref),
-			}}}
+			})
 		}
+	}
+	if len(ferrs) > 0 {
+		return nil, &tkdungeonspec.ValidationError{Errors: ferrs}
 	}
 
 	// dungeonspec validates at most one boss PER REGION; across regions a
@@ -139,6 +161,7 @@ func Compile(raw []byte) (*Dungeon, error) {
 	return &Dungeon{
 		Key: spec.Key, Name: spec.Name,
 		PartySeats: seats, Spec: &spec,
+		Templates: templates,
 	}, nil
 }
 

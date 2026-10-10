@@ -18,6 +18,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
+	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 )
 
 // Config holds the dependencies for an Orchestrator.
@@ -61,6 +62,12 @@ type PutDungeonOutput struct {
 
 	// Atlas is the compiled map, the same shape GetAtlas serves.
 	Atlas *sdk.Atlas
+
+	// Templates is one derived stat block per template the file declares,
+	// sorted by template id (rpg-project#555 R7) — the rulebook's numbers,
+	// forwarded, never computed here. Empty whenever Errors is non-empty: a
+	// file that did not compile has no blocks to vouch for.
+	Templates []sessionworld.DerivedStatBlock
 }
 
 // PutDungeon compiles and, unless ValidateOnly, stores a dungeon. Registry
@@ -85,7 +92,12 @@ func (o *Orchestrator) PutDungeon(ctx context.Context, in *PutDungeonInput) (*Pu
 		return &PutDungeonOutput{Errors: res.Errors}, nil
 	}
 
-	return &PutDungeonOutput{Atlas: res.Entry.Atlas}, nil
+	out := &PutDungeonOutput{Atlas: res.Entry.Atlas}
+	if res.Entry.Dungeon != nil {
+		out.Templates = res.Entry.Dungeon.Templates
+	}
+
+	return out, nil
 }
 
 // GetDungeonInput names a stored dungeon.

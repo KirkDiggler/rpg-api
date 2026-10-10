@@ -1,0 +1,127 @@
+# The mad king's castle kitchen (rpg-project#555, "Stat blocks as content")
+# — the walk dungeon for authored stat blocks, and the first shipped dungeon
+# whose creatures' numbers are written IN THE FILE rather than looked up in
+# the rulebook.
+#
+# Started from rpg-toolkit's dungeonspec fixture
+# testdata/world-builder-v4-castle-kitchen.yaml; this copy adds the captain,
+# the second cook, the alarm and the watch's `until`.
+#
+# STORED IS AUTHORED (design R3). Each block under `templates:` says scores,
+# hit dice, armor, proficiency, skills and weapons — never hit points, armor
+# class or an attack bonus. The rulebook derives those once
+# (monster.FromTemplate), PutDungeon echoes them back, and nothing here
+# repeats a number the toolkit computes.
+#
+# BOTH SIDES START CIVIL. The watch and the kitchen are neutral to the party.
+#
+#   - Attack a cook and the kitchen turns. That is the aggression law every
+#     monster already lives under; this file does not write it, and it turns
+#     the kitchen only — the watch stays neutral.
+#   - Take the captain's orders off the kitchen table and the watch turns. They
+#     reveal `alarm-raised`; the captain is the watch's MIND, so the moment
+#     whoever holds them stands in his region he knows it (presence
+#     transfer), and the watch's `until: { fact: alarm-raised }` holds.
+#
+# WHY THE ORDERS ARE A PROP AND NOT ON THE CAPTAIN. A record a mind is
+# authored holding is one it carries without having learned (seedIntel does
+# not apply reveals), and presence transfer skips a mind that already holds
+# the record — so a captain holding his own alarm could never be taught it.
+# And Loot, the one verb that takes holdings off a member, needs the member
+# down, at which point a downed mind can no longer learn. A holdable prop left
+# on the kitchen table is the spelling the live dialect turns.
+version: 4
+key: castle-kitchen
+play: { void: transparent, lighting: bright, standing: centre-covered }
+
+templates:
+  guard:
+    base: dnd5e:monsters:human
+    name: Castle Guard
+    abilities: { str: 13, con: 12, wis: 11 }
+    hitDice: 2d8
+    armor: dnd5e:armor:chain-shirt
+    skills: [perception]
+    actions: [dnd5e:weapons:spear]
+  captain:
+    base: dnd5e:monsters:human
+    name: Captain of the Watch
+    abilities: { str: 15, dex: 14, con: 14, cha: 14 }
+    hitDice: 10d8
+    armor: dnd5e:armor:breastplate
+    proficiency: 3
+    actions: [dnd5e:weapons:longsword, dnd5e:weapons:javelin]
+  cook:
+    base: dnd5e:monsters:human
+    name: Castle Cook
+    actions: [dnd5e:weapons:dagger]
+
+factions:
+  - id: watch
+    mind: captain
+    temper: { soldier: 1 }
+  - id: kitchen
+    temper: { coward: 1 }
+
+dispositions:
+  - { between: [watch, party], stance: neutral, until: { fact: alarm-raised } }
+  - { between: [kitchen, party], stance: neutral }
+
+# The orders say so. A fact is a word this record and the disposition agree
+# on; nothing declares it.
+intel:
+  - { id: captains-orders, reveals: { fact: alarm-raised } }
+
+room:
+  version: 3
+  id: room-1
+  name: The Castle Kitchen
+  coordinateFrame: {horizontalPlane: world-xz, verticalAxis: world-y-up,
+    distanceUnit: world-scene-unit, hexRadius: 1,
+    footprintFrame: owner-local-xz}
+  workspace: { hexRadius: 6, horizontalLimit: 12 }
+  scene:
+    version: 1
+    id: scene-1
+    name: The Castle Kitchen
+    items:
+      - id: orders
+        kind: prop
+        assetRef: dnd5e:props:scroll
+        label: The Captain's Orders
+        transform: {x: -1.5, y: 0, z: 0.75, rotationY: 0}
+    groups: []
+  room:
+    implicitRegionId: room-1-region
+    walkableHexes: [{q: -2, r: 0}, {q: -2, r: 1}, {q: -2, r: 2},
+      {q: -1, r: -1}, {q: -1, r: 0}, {q: -1, r: 1}, {q: -1, r: 2},
+      {q: 0, r: -2}, {q: 0, r: -1}, {q: 0, r: 0}, {q: 0, r: 1}, {q: 0, r: 2},
+      {q: 1, r: -2}, {q: 1, r: -1}, {q: 1, r: 0}, {q: 1, r: 1},
+      {q: 2, r: -2}, {q: 2, r: -1}, {q: 2, r: 0}]
+    # A HOLDABLE PROP IS WALKED ONTO TO BE TAKEN, so it blocks nothing.
+    propDeclarations:
+      orders:
+        blocksMovement: false
+        blocksLineOfSight: false
+        footprint: {width: 0.3, depth: 0.3, offsetX: 0, offsetZ: 0}
+    arrangementDeclarations: {}
+    # The party comes in at the kitchen end, beside the cooks.
+    partyStart: {q: -2, r: 1}
+    monsterDeclarations:
+      # A TEMPLATE IS PLACED LIKE ANY MONSTER: the ref names it, and nothing
+      # on the placement says the numbers came from this file.
+      - {id: guard-1, ref: 'dnd5e:monsters:guard', startingCell: { location: { q: 1, r: -2 } }}
+      - {id: guard-2, ref: 'dnd5e:monsters:guard', startingCell: { location: { q: 2, r: -2 } }}
+      - {id: captain, ref: 'dnd5e:monsters:captain', startingCell: { location: { q: 2, r: -1 } }}
+      - {id: cook-1, ref: 'dnd5e:monsters:cook', startingCell: { location: { q: -1, r: 2 } }}
+      - {id: cook-2, ref: 'dnd5e:monsters:cook', startingCell: { location: { q: 0, r: 2 } }}
+    monsterBindings:
+      guard-1: {faction: watch}
+      guard-2: {faction: watch}
+      captain: {faction: watch}
+      cook-1: {faction: kitchen}
+      cook-2: {faction: kitchen}
+    propBindings:
+      orders:
+        holdable: true
+        holds: [captains-orders]

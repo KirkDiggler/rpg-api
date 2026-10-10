@@ -109,6 +109,12 @@ func StatusError(err error) error {
 		errors.Is(err, sdk.ErrNoSessionID),
 		errors.Is(err, sdk.ErrNoEncounterID),
 		errors.Is(err, sdk.ErrInvalidWorld),
+		// ErrShadowedRef (rpg-project#555 R2) is ErrInvalidWorld's family: a
+		// dungeon whose authored template takes a rulebook monster's id, so
+		// one ref names two stat blocks. Authoring refuses it first as a
+		// field error; launch refuses it again for a compiled dungeon that
+		// reached it another way, and the remedy is the author's.
+		errors.Is(err, sdk.ErrShadowedRef),
 		errors.Is(err, sdk.ErrNoCause),
 		errors.Is(err, sdk.ErrNoDeclarationID),
 		// ErrBadActivation joins at session/v0.34.0 (rpg-project#300), and it

@@ -43,5 +43,12 @@ func (h *Handler) PutDungeon(ctx context.Context, req *authoringpb.PutDungeonReq
 		resp.Atlas = sessionhandler.AtlasToProto(out.Atlas)
 	}
 
+	// TODO(rpg-api-protos#387): convert out.Templates onto resp.Templates
+	// (DerivedStatBlock: abilities keyed str..cha, damage as the notation
+	// string, attack_bonus the total to-hit), only when out.Errors is empty.
+	// The field has no generated binding until #387 merges and tags; the
+	// guard TestPutDungeon_ValidateOnlyEchoesTemplates fails the moment it
+	// does, so this cannot be forgotten.
+
 	return resp, nil
 }
