@@ -14,7 +14,7 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.208.1-0.20261010072515-233cf517edcd
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.121.1-0.20261010071323-662867b25330
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.69.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.127.1-0.20261010075149-76d460bf9de7
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.127.1-0.20261010081244-2ca7385ebb45
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.16.1
 	github.com/KirkDiggler/rpg-toolkit/world v0.4.1
 	github.com/alicebob/miniredis/v2 v2.35.0
