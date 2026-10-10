@@ -59,40 +59,14 @@ func (s *TemplatesSuite) pathsOf(ferrs []tkdungeonspec.FieldError) []string {
 	return out
 }
 
-// TestCompile_TemplatesDerive: the castle's three blocks come back derived by
-// the rulebook, sorted by id, with the guard at the design's numbers — HP 11
-// from 2d8 and CON 12, AC 13 from a chain shirt at DEX 10, one spear.
-func (s *TemplatesSuite) TestCompile_TemplatesDerive() {
+// TestCompile_TemplatesWithNoDefectsCompileClean: the castle's three
+// templates all assemble, so the castle compiles with no refusal. What they
+// derive is the rulebook's to pin, not the api's: the api keeps no block.
+func (s *TemplatesSuite) TestCompile_TemplatesWithNoDefectsCompileClean() {
 	d, err := Compile(s.castle)
 	s.Require().NoError(err)
-	s.Require().Len(d.Templates, 3)
-
-	ids := make([]string, len(d.Templates))
-	for i, b := range d.Templates {
-		ids[i] = b.ID
-	}
-	s.Equal([]string{"captain", "cook", "guard"}, ids, "sorted by template id")
-
-	guard := d.Templates[2]
-	s.Equal("dnd5e:monsters:guard", guard.Ref)
-	s.Equal("Castle Guard", guard.Name)
-	s.Equal(11, guard.HitPoints)
-	s.Equal(13, guard.ArmorClass)
-	s.Equal(12, guard.PassivePerception, "10 + WIS 0 + proficiency 2 for trained perception")
-	s.Equal(2, guard.ProficiencyBonus, "the base's")
-	s.Equal(13, guard.Abilities["str"], "stated")
-	s.Equal(10, guard.Abilities["dex"], "the base's")
-	s.Len(guard.Abilities, 6, "every score, merged")
-	s.Require().Len(guard.Attacks, 1)
-	s.Equal("dnd5e:weapons:spear", guard.Attacks[0].WeaponRef)
-	s.Equal(3, guard.Attacks[0].AttackBonus, "STR +1 and proficiency 2")
-	s.Equal("1d6+1", guard.Attacks[0].Damage)
-
-	captain := d.Templates[0]
-	s.Equal(3, captain.ProficiencyBonus, "stated")
-	s.Require().Len(captain.Attacks, 2, "authored order: longsword, javelin")
-	s.Equal("dnd5e:weapons:longsword", captain.Attacks[0].WeaponRef)
-	s.Equal("dnd5e:weapons:javelin", captain.Attacks[1].WeaponRef)
+	s.Require().NotNil(d)
+	s.Len(d.Spec.Templates, 3, "the castle declares captain, cook and guard")
 }
 
 // TestCompile_TemplateShadowRefused: a template named for a rulebook monster
@@ -176,7 +150,7 @@ func (s *TemplatesSuite) TestCompile_UnknownMonsterIsStillRefused() {
 }
 
 // TestCompile_ReferenceDungeonsDeclareNoTemplates: every other shipped
-// dungeon still compiles, with zero derived blocks.
+// dungeon still compiles, declaring no templates.
 func (s *TemplatesSuite) TestCompile_ReferenceDungeonsDeclareNoTemplates() {
 	paths, err := filepath.Glob(filepath.Join("..", "..", "content", "*.yaml"))
 	s.Require().NoError(err)
@@ -190,7 +164,7 @@ func (s *TemplatesSuite) TestCompile_ReferenceDungeonsDeclareNoTemplates() {
 		s.Require().NoError(err)
 		d, err := Compile(raw)
 		s.Require().NoErrorf(err, "%s must compile", path)
-		s.Emptyf(d.Templates, "%s declares no templates", path)
+		s.Emptyf(d.Spec.Templates, "%s declares no templates", path)
 	}
 }
 
@@ -204,11 +178,10 @@ func (s *TemplatesSuite) TestCompile_ReferenceDungeonsDeclareNoTemplates() {
 // rulebook monster or base), mapped here onto the template's block — the api
 // keeps no second copy of the rule.
 func TestDeriveTemplates_ATemplateNamedForABaseIsShadowing(t *testing.T) {
-	blocks, ferrs := deriveTemplates(map[string]tkdungeonspec.TemplateSpec{
+	ferrs := deriveTemplates(map[string]tkdungeonspec.TemplateSpec{
 		"human": {Base: "dnd5e:monsters:human", Actions: []string{"dnd5e:weapons:dagger"}},
 	})
 
-	require.Empty(t, blocks, "a shadowing template derives no block")
 	require.Len(t, ferrs, 1)
 	require.Equal(t, "templates.human", ferrs[0].Path)
 	require.Contains(t, ferrs[0].Message, "shadows rulebook monster")
@@ -217,11 +190,10 @@ func TestDeriveTemplates_ATemplateNamedForABaseIsShadowing(t *testing.T) {
 // TestDeriveTemplates_ATemplateNamedForAMonsterIsShadowing is the same
 // refusal for a rulebook constructor, through the same mapping.
 func TestDeriveTemplates_ATemplateNamedForAMonsterIsShadowing(t *testing.T) {
-	blocks, ferrs := deriveTemplates(map[string]tkdungeonspec.TemplateSpec{
+	ferrs := deriveTemplates(map[string]tkdungeonspec.TemplateSpec{
 		"goblin": {Base: "dnd5e:monsters:human", Actions: []string{"dnd5e:weapons:dagger"}},
 	})
 
-	require.Empty(t, blocks)
 	require.Len(t, ferrs, 1)
 	require.Equal(t, "templates.goblin", ferrs[0].Path)
 	require.Contains(t, ferrs[0].Message, "shadows rulebook monster")
@@ -233,7 +205,7 @@ func TestDeriveTemplates_ATemplateNamedForAMonsterIsShadowing(t *testing.T) {
 // author's first problem, and the ErrShadowedRef mapping is what keeps it
 // from being reported as a bad base.
 func TestDeriveTemplates_ShadowingIsTheBlocksDefectEvenWithABadBase(t *testing.T) {
-	_, ferrs := deriveTemplates(map[string]tkdungeonspec.TemplateSpec{
+	ferrs := deriveTemplates(map[string]tkdungeonspec.TemplateSpec{
 		"goblin": {Base: "dnd5e:monsters:elf", Actions: []string{"dnd5e:weapons:dagger"}},
 	})
 

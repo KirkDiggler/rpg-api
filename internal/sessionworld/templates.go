@@ -16,15 +16,15 @@ import (
 // (rpg-project#555 R2, R6, R7).
 //
 // A template is a monster ref: `templates.guard` is placed as
-// `dnd5e:monsters:guard`. This file asks the two questions the compiler
-// leaves to a layer that may import the rulebook — does the template's id
-// collide with a rulebook monster, and what does the rulebook derive from it
-// — and carries the answers back.
+// `dnd5e:monsters:guard`. This file asks the one question the compiler
+// leaves to a layer that may import the rulebook — will the rulebook
+// assemble this block — and turns every "no" into a field error.
 //
-// IT DERIVES NOTHING. Every number comes from session.DeriveTemplate, the
-// same assembly session's launch runs, so the block the builder is shown is
-// the creature the run gets (R6). The derived block is the SDK's own type,
-// carried untouched to the handler, which maps it onto the wire.
+// IT KEEPS NOTHING. Each template is put through session.DeriveTemplate, the
+// same assembly session's launch runs, purely so a block launch would refuse
+// is refused here first (R6). The derived block is discarded: a stat block
+// authors like a mind table, and its numbers are seen in play, not echoed
+// back to the builder (R7).
 
 // templatePath is the YAML path of one template's block.
 func templatePath(id string) string { return "templates." + id }
@@ -54,7 +54,8 @@ func templateIDOf(templates map[string]tkdungeonspec.TemplateSpec, ref string) (
 	return parsed.ID, true
 }
 
-// deriveTemplates resolves every template the file declares, sorted by id.
+// deriveTemplates refuses every template the file declares that the rulebook
+// will not assemble, in template-id order. It returns no blocks.
 //
 // THE RULES ARE session.DeriveTemplate'S. It refuses a template whose ref
 // names a rulebook monster or base (ErrShadowedRef: one ref, one source,
@@ -68,9 +69,9 @@ func templateIDOf(templates map[string]tkdungeonspec.TemplateSpec, ref string) (
 //     is never parsed for a field.
 //
 // Every defect is collected, not just the first: the builder shows the list.
-func deriveTemplates(templates map[string]tkdungeonspec.TemplateSpec) ([]sdk.DerivedBlock, []tkdungeonspec.FieldError) {
+func deriveTemplates(templates map[string]tkdungeonspec.TemplateSpec) []tkdungeonspec.FieldError {
 	if len(templates) == 0 {
-		return nil, nil
+		return nil
 	}
 
 	ids := make([]string, 0, len(templates))
@@ -79,18 +80,14 @@ func deriveTemplates(templates map[string]tkdungeonspec.TemplateSpec) ([]sdk.Der
 	}
 	sort.Strings(ids)
 
-	var (
-		blocks []sdk.DerivedBlock
-		ferrs  []tkdungeonspec.FieldError
-	)
+	var ferrs []tkdungeonspec.FieldError
 	for _, id := range ids {
 		ref := monsterRefOf(id)
 		spec := templates[id]
 
-		out, err := sdk.DeriveTemplate(&sdk.DeriveTemplateInput{Ref: ref, Spec: spec})
+		_, err := sdk.DeriveTemplate(&sdk.DeriveTemplateInput{Ref: ref, Spec: spec})
 		switch {
 		case err == nil:
-			blocks = append(blocks, out.Block)
 		case errors.Is(err, sdk.ErrShadowedRef):
 			ferrs = append(ferrs, tkdungeonspec.FieldError{
 				Path:    templatePath(id),
@@ -106,7 +103,7 @@ func deriveTemplates(templates map[string]tkdungeonspec.TemplateSpec) ([]sdk.Der
 		}
 	}
 
-	return blocks, ferrs
+	return ferrs
 }
 
 // isRulebookBase reports whether a ref names a base the rulebook ships.

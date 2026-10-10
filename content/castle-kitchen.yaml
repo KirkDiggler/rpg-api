@@ -9,10 +9,10 @@
 #
 # STORED IS AUTHORED (design R3). Each block under `templates:` says scores,
 # hit dice, armor, proficiency, skills and weapons — never hit points, armor
-# class or an attack bonus. The rulebook derives those once
-# (monster.FromTemplate, through session.DeriveTemplate), PutDungeon echoes
-# them back once rpg-api-protos#387 puts the field on the wire, and nothing
-# here repeats a number the toolkit computes.
+# class or an attack bonus. The rulebook derives those
+# (monster.FromTemplate, through session.DeriveTemplate); PutDungeon refuses a
+# block it cannot assemble, by field, and the numbers are seen in play.
+# Nothing here repeats a number the toolkit computes.
 #
 # BOTH SIDES START CIVIL. The watch and the kitchen are neutral to the party,
 # so the party walks in on the world clock, where no attack verb is offered.

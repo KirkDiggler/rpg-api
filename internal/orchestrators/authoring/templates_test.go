@@ -17,9 +17,10 @@ import (
 // (rpg-project#555).
 const castleKitchenKey = "castle-kitchen"
 
-// TemplatesSuite pins that PutDungeon forwards the derived stat blocks the
-// compile produced — over the real registry and the real dungeonspec, so the
-// numbers asserted are the rulebook's, not a mock's.
+// TemplatesSuite pins that PutDungeon carries a template's refusal to the
+// author as a field error, over the real registry and the real dungeonspec.
+// A template authors like a mind table: the api answers whether it compiles,
+// never what it derives (rpg-project#555 R7).
 type TemplatesSuite struct {
 	suite.Suite
 
@@ -56,20 +57,18 @@ func (s *TemplatesSuite) put(yaml []byte) *authoringorch.PutDungeonOutput {
 	return out
 }
 
-func (s *TemplatesSuite) TestPutDungeon_ValidateOnlyReturnsTheDerivedBlocks() {
+// TestPutDungeon_TemplatesWithNoDefectsGradeClean: the castle's templates
+// validate with no errors and an atlas.
+func (s *TemplatesSuite) TestPutDungeon_TemplatesWithNoDefectsGradeClean() {
 	out := s.put(s.yaml)
 
-	s.Require().Empty(out.Errors)
-	s.Require().Len(out.Templates, 3)
-	guard := out.Templates[2]
-	s.Equal("guard", guard.ID)
-	s.Equal(11, guard.HitPoints)
-	s.Equal(13, guard.ArmorClass)
+	s.Empty(out.Errors)
+	s.NotNil(out.Atlas)
 }
 
-// TestPutDungeon_NoBlocksBesideErrors: a file that did not compile vouches
-// for no block, even the ones that would have derived.
-func (s *TemplatesSuite) TestPutDungeon_NoBlocksBesideErrors() {
+// TestPutDungeon_TemplateRefusalIsAFieldError: a block the rulebook will not
+// assemble reaches the author at its template's path.
+func (s *TemplatesSuite) TestPutDungeon_TemplateRefusalIsAFieldError() {
 	broken := strings.Replace(string(s.yaml), "armor: dnd5e:armor:chain-shirt", "armor: dnd5e:armor:tinfoil-hat", 1)
 	s.Require().NotEqual(string(s.yaml), broken)
 
@@ -77,5 +76,4 @@ func (s *TemplatesSuite) TestPutDungeon_NoBlocksBesideErrors() {
 
 	s.Require().NotEmpty(out.Errors)
 	s.Equal("templates.guard", out.Errors[0].Path)
-	s.Empty(out.Templates)
 }

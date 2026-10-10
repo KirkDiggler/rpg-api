@@ -34,7 +34,6 @@ import (
 	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 	tkscenarios "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/scenarios"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster/monsters"
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
@@ -65,13 +64,6 @@ type Dungeon struct {
 	// arriving the garrison is the SDK's, and this package re-projects none
 	// of it (rpg-project#542, "rpg-api keeps transport").
 	Spec *tkdungeonspec.Compiled
-
-	// Templates is one derived stat block per template the file declares,
-	// sorted by template id (rpg-project#555 R7): the numbers the rulebook
-	// derived, echoed to the builder so no client computes one. Nil when the
-	// file declares none. The SDK's own block from session.DeriveTemplate —
-	// the assembly launch runs — never computed here.
-	Templates []sdk.DerivedBlock
 }
 
 // A file that does not decode, validate or compile fails with an error that
@@ -109,7 +101,7 @@ func Compile(raw []byte) (*Dungeon, error) {
 	// placement naming a declared template is then known whatever its
 	// template's own fate, so one bad block is one defect, not one per
 	// placement of it. Every defect in this stage is reported together.
-	templates, ferrs := deriveTemplates(spec.Templates)
+	ferrs := deriveTemplates(spec.Templates)
 	for _, m := range spec.Monsters {
 		if _, isTemplate := templateIDOf(spec.Templates, m.Ref); isTemplate {
 			continue
@@ -162,7 +154,6 @@ func Compile(raw []byte) (*Dungeon, error) {
 	return &Dungeon{
 		Key: spec.Key, Name: spec.Name,
 		PartySeats: seats, Spec: &spec,
-		Templates: templates,
 	}, nil
 }
 
