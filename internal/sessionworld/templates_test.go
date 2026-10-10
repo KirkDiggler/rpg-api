@@ -68,7 +68,7 @@ func (s *TemplatesSuite) TestCompile_TemplatesDerive() {
 
 	ids := make([]string, len(d.Templates))
 	for i, b := range d.Templates {
-		ids[i] = b.TemplateID
+		ids[i] = b.ID
 	}
 	s.Equal([]string{"captain", "cook", "guard"}, ids, "sorted by template id")
 
@@ -129,18 +129,20 @@ func (s *TemplatesSuite) TestCompile_TemplateUnknownBaseRefused() {
 	s.Contains(ferrs[0].Message, "dnd5e:monsters:elf")
 }
 
-// TestCompile_TemplateFieldRefusalNamesTheField: a conversion refusal lands
-// on the field it is about.
-func (s *TemplatesSuite) TestCompile_TemplateFieldRefusalNamesTheField() {
+// TestCompile_TemplateDerivationRefusalIsOnTheBlock: a refusal from the
+// SDK's derivation lands on the template's block carrying the SDK's own
+// sentence. The api does not parse it for a field.
+func (s *TemplatesSuite) TestCompile_TemplateDerivationRefusalIsOnTheBlock() {
 	raw := s.edited("armor: dnd5e:armor:chain-shirt", "armor: dnd5e:armor:tinfoil-hat")
 
 	ferrs := s.fieldErrors(raw)
-	s.Equal([]string{"templates.guard.armor"}, s.pathsOf(ferrs))
+	s.Equal([]string{"templates.guard"}, s.pathsOf(ferrs))
+	s.Contains(ferrs[0].Message, "tinfoil-hat", "the SDK's sentence names what it refused")
 }
 
 // TestCompile_TemplateAssemblyRefusalCarriesTheRulebooksReason: a refusal
-// from monster.FromTemplate itself is on the block, carrying the rulebook's
-// sentence — the api does not parse it for a field.
+// from the rulebook's assembly is on the block, carrying the rulebook's
+// sentence through the SDK.
 func (s *TemplatesSuite) TestCompile_TemplateAssemblyRefusalCarriesTheRulebooksReason() {
 	raw := s.edited("abilities: { str: 13, con: 12, wis: 11 }", "abilities: { str: 13, con: 1, wis: 11 }")
 
@@ -156,7 +158,7 @@ func (s *TemplatesSuite) TestCompile_EveryDefectIsReported() {
 		"actions: [dnd5e:weapons:dagger]", "actions: [dnd5e:weapons:frying-pan]"))
 
 	ferrs := s.fieldErrors(raw)
-	s.Equal([]string{"templates.cook.actions", "templates.guard.armor"}, s.pathsOf(ferrs))
+	s.Equal([]string{"templates.cook", "templates.guard"}, s.pathsOf(ferrs))
 }
 
 // TestCompile_UnknownMonsterIsStillRefused: a ref that names neither a

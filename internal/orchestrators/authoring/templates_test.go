@@ -62,7 +62,7 @@ func (s *TemplatesSuite) TestPutDungeon_ValidateOnlyReturnsTheDerivedBlocks() {
 	s.Require().Empty(out.Errors)
 	s.Require().Len(out.Templates, 3)
 	guard := out.Templates[2]
-	s.Equal("guard", guard.TemplateID)
+	s.Equal("guard", guard.ID)
 	s.Equal(11, guard.HitPoints)
 	s.Equal(13, guard.ArmorClass)
 }
@@ -76,6 +76,6 @@ func (s *TemplatesSuite) TestPutDungeon_NoBlocksBesideErrors() {
 	out := s.put([]byte(broken))
 
 	s.Require().NotEmpty(out.Errors)
-	s.Equal("templates.guard.armor", out.Errors[0].Path)
+	s.Equal("templates.guard", out.Errors[0].Path)
 	s.Empty(out.Templates)
 }

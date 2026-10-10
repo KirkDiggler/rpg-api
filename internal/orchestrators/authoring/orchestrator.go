@@ -18,7 +18,6 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
-	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 )
 
 // Config holds the dependencies for an Orchestrator.
@@ -67,7 +66,7 @@ type PutDungeonOutput struct {
 	// sorted by template id (rpg-project#555 R7) — the rulebook's numbers,
 	// forwarded, never computed here. Empty whenever Errors is non-empty: a
 	// file that did not compile has no blocks to vouch for.
-	Templates []sessionworld.DerivedStatBlock
+	Templates []sdk.DerivedBlock
 }
 
 // PutDungeon compiles and, unless ValidateOnly, stores a dungeon. Registry

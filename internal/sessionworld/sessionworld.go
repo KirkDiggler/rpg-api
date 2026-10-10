@@ -34,6 +34,7 @@ import (
 	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 	tkscenarios "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/scenarios"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/monster/monsters"
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
@@ -68,9 +69,9 @@ type Dungeon struct {
 	// Templates is one derived stat block per template the file declares,
 	// sorted by template id (rpg-project#555 R7): the numbers the rulebook
 	// derived, echoed to the builder so no client computes one. Nil when the
-	// file declares none. Read off the monster monster.FromTemplate
-	// assembles — the function session's launch calls — never computed here.
-	Templates []DerivedStatBlock
+	// file declares none. The SDK's own block from session.DeriveTemplate —
+	// the assembly launch runs — never computed here.
+	Templates []sdk.DerivedBlock
 }
 
 // A file that does not decode, validate or compile fails with an error that
