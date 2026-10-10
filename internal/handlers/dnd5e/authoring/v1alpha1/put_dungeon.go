@@ -43,5 +43,13 @@ func (h *Handler) PutDungeon(ctx context.Context, req *authoringpb.PutDungeonReq
 		resp.Atlas = sessionhandler.AtlasToProto(out.Atlas)
 	}
 
+	// TODO(rpg-api-protos#387): map each sdk.DerivedBlock in out.Templates
+	// field-for-field onto resp.Templates (DerivedStatBlock / DerivedAttack:
+	// ID -> template_id, Damage -> damage verbatim), only when out.Errors is
+	// empty. Nothing is computed here. The field has no generated binding
+	// until #387 merges and tags; the guard
+	// TestPutDungeon_ValidateOnlyEchoesTemplates fails the moment it does, so
+	// this cannot be forgotten.
+
 	return resp, nil
 }
