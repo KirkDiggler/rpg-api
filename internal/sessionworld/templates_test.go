@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
@@ -107,10 +108,12 @@ func (s *TemplatesSuite) TestCompile_TemplateShadowRefused() {
 
 // TestCompile_TemplateShadowsABaseRefused: a rulebook base is rulebook
 // content too — a template named `human` would shadow the block every other
-// template derives from. dungeonspec refuses it first, on shape: every
-// `base: dnd5e:monsters:human` now names a template in the same file, and a
-// template does not derive from a template. deriveTemplates' own base check
-// is the second fence, for a compiled dungeon that reaches it another way.
+// template derives from. THROUGH Compile, dungeonspec refuses it first, on
+// shape: every `base: dnd5e:monsters:human` now names a template in the same
+// file, and a template does not derive from a template — which is what this
+// test pins. The shadowing refusal itself is pinned below by
+// TestDeriveTemplates_ATemplateNamedForABaseIsShadowing, which calls
+// deriveTemplates with no dungeonspec in front of it.
 func (s *TemplatesSuite) TestCompile_TemplateShadowsABaseRefused() {
 	raw := s.edited("  cook:\n    base:", "  human:\n    base:")
 
@@ -189,4 +192,52 @@ func (s *TemplatesSuite) TestCompile_ReferenceDungeonsDeclareNoTemplates() {
 		s.Require().NoErrorf(err, "%s must compile", path)
 		s.Emptyf(d.Templates, "%s declares no templates", path)
 	}
+}
+
+// TestDeriveTemplates_ATemplateNamedForABaseIsShadowing is the reviewer's
+// probe on rpg-api#1090: a template named `human` takes the ref of the
+// rulebook base every other template derives from. Called directly, with no
+// dungeonspec in front of it, because through Compile the shape check
+// refuses this file first and the shadowing refusal is never reached.
+//
+// The refusal is session.DeriveTemplate's (ErrShadowedRef: the ref names a
+// rulebook monster or base), mapped here onto the template's block — the api
+// keeps no second copy of the rule.
+func TestDeriveTemplates_ATemplateNamedForABaseIsShadowing(t *testing.T) {
+	blocks, ferrs := deriveTemplates(map[string]tkdungeonspec.TemplateSpec{
+		"human": {Base: "dnd5e:monsters:human", Actions: []string{"dnd5e:weapons:dagger"}},
+	})
+
+	require.Empty(t, blocks, "a shadowing template derives no block")
+	require.Len(t, ferrs, 1)
+	require.Equal(t, "templates.human", ferrs[0].Path)
+	require.Contains(t, ferrs[0].Message, "shadows rulebook monster")
+}
+
+// TestDeriveTemplates_ATemplateNamedForAMonsterIsShadowing is the same
+// refusal for a rulebook constructor, through the same mapping.
+func TestDeriveTemplates_ATemplateNamedForAMonsterIsShadowing(t *testing.T) {
+	blocks, ferrs := deriveTemplates(map[string]tkdungeonspec.TemplateSpec{
+		"goblin": {Base: "dnd5e:monsters:human", Actions: []string{"dnd5e:weapons:dagger"}},
+	})
+
+	require.Empty(t, blocks)
+	require.Len(t, ferrs, 1)
+	require.Equal(t, "templates.goblin", ferrs[0].Path)
+	require.Contains(t, ferrs[0].Message, "shadows rulebook monster")
+}
+
+// TestDeriveTemplates_ShadowingIsTheBlocksDefectEvenWithABadBase: a template
+// that both shadows a rulebook monster AND names a base the rulebook does not
+// ship is one defect, on the block — the ref having two sources is the
+// author's first problem, and the ErrShadowedRef mapping is what keeps it
+// from being reported as a bad base.
+func TestDeriveTemplates_ShadowingIsTheBlocksDefectEvenWithABadBase(t *testing.T) {
+	_, ferrs := deriveTemplates(map[string]tkdungeonspec.TemplateSpec{
+		"goblin": {Base: "dnd5e:monsters:elf", Actions: []string{"dnd5e:weapons:dagger"}},
+	})
+
+	require.Len(t, ferrs, 1)
+	require.Equal(t, "templates.goblin", ferrs[0].Path)
+	require.Contains(t, ferrs[0].Message, "shadows rulebook monster")
 }

@@ -19,6 +19,14 @@ import (
 // shipped content file validate-only and marshaling the answer's atlas. A
 // shipped dungeon with no fixture fails here: add one by capturing it from a
 // build whose atlas you trust, never from the build under test.
+//
+// ONE EXCEPTION, said out loud: castle-kitchen.atlas.json was captured at
+// rpg-api#1090's own head, because no earlier build can compile a dungeon
+// that places templates (rpg-project#555). It proves nothing about
+// correctness — it is a change detector from that head on, vouched for by
+// the #555 walk rather than by an earlier build. It holds nothing derived
+// from a template: the atlas is cells, the orders prop, the region and the
+// party start.
 func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBeforeTheWave() {
 	files, err := filepath.Glob(filepath.Join(dungeonstest.ContentDir(s.T()), "*.yaml"))
 	s.Require().NoError(err)

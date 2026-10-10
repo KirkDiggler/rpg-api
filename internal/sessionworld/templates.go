@@ -1,6 +1,7 @@
 package sessionworld
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 
@@ -55,14 +56,16 @@ func templateIDOf(templates map[string]tkdungeonspec.TemplateSpec, ref string) (
 
 // deriveTemplates resolves every template the file declares, sorted by id.
 //
-//   - SHADOWING is the resolver's question and this is the authoring resolver
-//     (session.DeriveTemplate does not ask it): a template whose ref is also
-//     a rulebook constructor or base would make one ref name two stat blocks,
-//     and is refused at `templates.<id>`.
-//   - A BASE the rulebook does not ship is refused at `templates.<id>.base` —
-//     a lookup, asked here only so the defect lands on the field it is about.
-//   - Anything else DeriveTemplate refuses lands at `templates.<id>` carrying
-//     the SDK's own sentence, which is never parsed for a field.
+// THE RULES ARE session.DeriveTemplate'S. It refuses a template whose ref
+// names a rulebook monster or base (ErrShadowedRef: one ref, one source,
+// R2), and everything else the rulebook will not assemble. This file only
+// decides WHERE on the file each refusal lands:
+//
+//   - shadowing is the template's block as a whole: `templates.<id>`;
+//   - a base the rulebook does not ship is `templates.<id>.base` — a lookup
+//     (monsters.BaseByRef), asked here only to put the defect on its field;
+//   - anything else is `templates.<id>`, carrying the SDK's sentence, which
+//     is never parsed for a field.
 //
 // Every defect is collected, not just the first: the builder shows the list.
 func deriveTemplates(templates map[string]tkdungeonspec.TemplateSpec) ([]sdk.DerivedBlock, []tkdungeonspec.FieldError) {
@@ -82,32 +85,32 @@ func deriveTemplates(templates map[string]tkdungeonspec.TemplateSpec) ([]sdk.Der
 	)
 	for _, id := range ids {
 		ref := monsterRefOf(id)
-		_, constructed := monsters.ByRef(ref)
-		_, isBase := monsters.BaseByRef(ref)
-		if constructed || isBase {
+		spec := templates[id]
+
+		out, err := sdk.DeriveTemplate(&sdk.DeriveTemplateInput{Ref: ref, Spec: spec})
+		switch {
+		case err == nil:
+			blocks = append(blocks, out.Block)
+		case errors.Is(err, sdk.ErrShadowedRef):
 			ferrs = append(ferrs, tkdungeonspec.FieldError{
 				Path:    templatePath(id),
 				Message: fmt.Sprintf("template %q shadows rulebook monster %q; rename the template", id, ref),
 			})
-			continue
-		}
-
-		spec := templates[id]
-		if _, ok := monsters.BaseByRef(spec.Base); !ok {
+		case !isRulebookBase(spec.Base):
 			ferrs = append(ferrs, tkdungeonspec.FieldError{
 				Path:    templateBasePath(id),
 				Message: fmt.Sprintf("template %q: base %q is not a rulebook base", id, spec.Base),
 			})
-			continue
-		}
-
-		out, err := sdk.DeriveTemplate(&sdk.DeriveTemplateInput{ID: id, Ref: ref, Spec: spec})
-		if err != nil {
+		default:
 			ferrs = append(ferrs, tkdungeonspec.FieldError{Path: templatePath(id), Message: err.Error()})
-			continue
 		}
-		blocks = append(blocks, out.Block)
 	}
 
 	return blocks, ferrs
+}
+
+// isRulebookBase reports whether a ref names a base the rulebook ships.
+func isRulebookBase(ref string) bool {
+	_, ok := monsters.BaseByRef(ref)
+	return ok
 }

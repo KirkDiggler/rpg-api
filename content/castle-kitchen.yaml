@@ -10,18 +10,22 @@
 # STORED IS AUTHORED (design R3). Each block under `templates:` says scores,
 # hit dice, armor, proficiency, skills and weapons — never hit points, armor
 # class or an attack bonus. The rulebook derives those once
-# (monster.FromTemplate), PutDungeon echoes them back, and nothing here
-# repeats a number the toolkit computes.
+# (monster.FromTemplate, through session.DeriveTemplate), PutDungeon echoes
+# them back once rpg-api-protos#387 puts the field on the wire, and nothing
+# here repeats a number the toolkit computes.
 #
-# BOTH SIDES START CIVIL. The watch and the kitchen are neutral to the party.
+# BOTH SIDES START CIVIL. The watch and the kitchen are neutral to the party,
+# so the party walks in on the world clock, where no attack verb is offered.
 #
-#   - Attack a cook and the kitchen turns. That is the aggression law every
-#     monster already lives under; this file does not write it, and it turns
-#     the kitchen only — the watch stays neutral.
-#   - Take the captain's orders off the kitchen table and the watch turns. They
-#     reveal `alarm-raised`; the captain is the watch's MIND, so the moment
-#     whoever holds them stands in his region he knows it (presence
-#     transfer), and the watch's `until: { fact: alarm-raised }` holds.
+#   - THE ORDERS ARE THE TRIGGER. Take the captain's orders off the kitchen
+#     table and the watch turns. They reveal `alarm-raised`; the captain is
+#     the watch's MIND, so the moment whoever holds them stands in his region
+#     he knows it (presence transfer), and the watch's
+#     `until: { fact: alarm-raised }` holds. The fight that forms is the
+#     watch's alone; the kitchen stays out of it.
+#   - Once a fight is running, the aggression law every monster lives under
+#     applies: strike a cook and the kitchen turns too. This file does not
+#     write that law and cannot turn it off.
 #
 # WHY THE ORDERS ARE A PROP AND NOT ON THE CAPTAIN. A record a mind is
 # authored holding is one it carries without having learned (seedIntel does
