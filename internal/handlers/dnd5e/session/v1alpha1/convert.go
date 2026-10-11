@@ -1748,6 +1748,7 @@ func conditionAppliedBodyToProto(body *sdk.ConditionAppliedBody) *sessionpb.Cond
 	}
 	return &sessionpb.ConditionApplied{
 		Target: body.Target, Ref: body.Ref, Name: body.Name, SourceId: body.SourceID,
+		Detail: body.Detail,
 	}
 }
 
