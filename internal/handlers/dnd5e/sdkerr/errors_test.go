@@ -36,7 +36,7 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// Hold's probe-law collapse sentinel (rpg-project#368): the SAME
 		// sentinel answers "this dungeon has no prop by that id" and every
 		// refusal about a prop the member cannot see, so this is one row
-		// for one sentinel exactly as ErrElsewhere below is.
+		// for one sentinel exactly as ErrBadAttack below is.
 		{"ErrNoProp", sdk.ErrNoProp, codes.NotFound},
 		{"ErrNoCharacter", sdk.ErrNoCharacter, codes.NotFound},
 		{"ErrNoMember", sdk.ErrNoMember, codes.NotFound},
@@ -310,8 +310,8 @@ var errorsGoDefaultCaseSentinels = map[string]bool{
 // cache -- not a local checkout (which routinely sits on unmerged branches)
 // and not a hand-maintained count (which can go stale silently: a table and
 // a constant that both stay put pass a length check even when the SDK
-// gained a sentinel neither of them learned about -- exactly how ErrElsewhere
-// slipped past this file once). go list resolves the pinned module's
+// gained a sentinel neither of them learned about -- exactly how a sentinel like
+// ErrConflictingOffers could slip past this file). go list resolves the pinned module's
 // on-disk directory directly from go.mod, so this always reads the version
 // actually built.
 func sdkSentinelNames(t *testing.T) []string {

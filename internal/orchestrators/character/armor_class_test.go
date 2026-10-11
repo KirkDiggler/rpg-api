@@ -134,6 +134,8 @@ func (s *EquipItemTestSuite) TestProjectArmorClass_IsTheDoorsFold() {
 
 // clubMonk is a monk whose Shillelagh club sits in slot beside Martial Arts:
 // the club is a monk weapon, so two offers compete for that hand's swing.
+// The pairing is constructed: no multiclassing or feat grants a monk
+// Shillelagh today, so it exists only to reach the off-hand compile failure.
 func (s *EquipItemTestSuite) clubMonk(slot character.InventorySlot, withShillelagh bool) *entities.Character {
 	entity := s.unarmouredMonk()
 	data := entity.Data
