@@ -51,6 +51,7 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 
 		// INVALID_ARGUMENT -- the request itself is malformed.
 		{"ErrNilInput", sdk.ErrNilInput, codes.InvalidArgument},
+		{"ErrShadowedRef", sdk.ErrShadowedRef, codes.InvalidArgument},
 		// ErrBadActivation is INVALID_ARGUMENT rather than Internal (where its
 		// sibling ErrBadCost sits) because a CALLER can produce it: an
 		// activation naming a target for an ability that takes none. The SDK
