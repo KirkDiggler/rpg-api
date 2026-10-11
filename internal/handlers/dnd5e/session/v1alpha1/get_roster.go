@@ -63,6 +63,7 @@ func publicMemberToProto(member sdk.PublicMember) *sessionpb.PublicMemberInfo {
 		ClassRef:      member.ClassRef,
 		RaceRef:       member.RaceRef,
 		MonsterRef:    member.MonsterRef,
+		AppearanceRef: member.AppearanceRef,
 		Customization: customizationToProto(member.Customization),
 		// The side this member is on (rpg-project#375, design §6): the
 		// dungeon file's own faction id, or the reserved `party` /

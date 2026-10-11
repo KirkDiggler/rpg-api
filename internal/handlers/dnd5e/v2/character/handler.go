@@ -19,6 +19,9 @@ import (
 	"context"
 	"errors"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	characterpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
 	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
@@ -26,8 +29,6 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sdkerr"
 	orchcharacter "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // HandlerConfig configures a v1alpha2 character Handler.
