@@ -96,7 +96,6 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrNotInFight", sdk.ErrNotInFight, codes.FailedPrecondition},
 		{"ErrClosed", sdk.ErrClosed, codes.FailedPrecondition},
 		{"ErrNotACharacter", sdk.ErrNotACharacter, codes.FailedPrecondition},
-		{"ErrAlreadyMember", sdk.ErrAlreadyMember, codes.FailedPrecondition},
 		// Two competing attack offers: the player owes a pick (R5).
 		{"ErrConflictingOffers", sdk.ErrConflictingOffers, codes.FailedPrecondition},
 		{"ErrBadAttack", sdk.ErrBadAttack, codes.FailedPrecondition},

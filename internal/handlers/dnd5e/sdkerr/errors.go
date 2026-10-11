@@ -207,11 +207,6 @@ func StatusError(err error) error {
 	//   regenerated available offer. The request is shaped correctly, but the
 	//   world changed since Afford, so retry starts from a fresh declaration.
 	//
-	//   ErrAlreadyMember (rpg-toolkit#1965 R6) -- a verb places a member the
-	//   encounter already holds. The request is well-formed; the roster's
-	//   present state refuses it. Distinct from ErrDuplicateMember, which is
-	//   a Launch request claiming one id twice (the caller's defect).
-	//
 	//   ErrConflictingOffers (rpg-toolkit#1965 R5) -- two of the attacker's
 	//   conditions each offer a replacement for the same swing and none was
 	//   picked. The sheet is readable and the call well-formed; the player
@@ -227,7 +222,6 @@ func StatusError(err error) error {
 		errors.Is(err, sdk.ErrNotInFight),
 		errors.Is(err, sdk.ErrClosed),
 		errors.Is(err, sdk.ErrNotACharacter),
-		errors.Is(err, sdk.ErrAlreadyMember),
 		errors.Is(err, sdk.ErrConflictingOffers),
 		errors.Is(err, sdk.ErrBadAttack),
 		errors.Is(err, sdk.ErrDowned),
