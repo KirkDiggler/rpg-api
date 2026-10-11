@@ -3626,9 +3626,6 @@ func featureIDToEnum(id string) dnd5ev1alpha1.FeatureId {
 		return dnd5ev1alpha1.FeatureId_FEATURE_ID_SECOND_WIND
 	case refs.Features.ActionSurge().ID:
 		return dnd5ev1alpha1.FeatureId_FEATURE_ID_ACTION_SURGE
-	// Rogue features
-	case refs.Features.SneakAttack().ID:
-		return dnd5ev1alpha1.FeatureId_FEATURE_ID_SNEAK_ATTACK
 	// Paladin features
 	case refs.Features.DivineSmite().ID:
 		return dnd5ev1alpha1.FeatureId_FEATURE_ID_DIVINE_SMITE
@@ -3677,8 +3674,6 @@ func featureIDToDisplayName(id string) string {
 		return "Step of the Wind"
 	case refs.Features.DeflectMissiles().ID:
 		return "Deflect Missiles"
-	case refs.Features.SneakAttack().ID:
-		return "Sneak Attack"
 	case refs.Features.DivineSmite().ID:
 		return "Divine Smite"
 	case refs.Features.BrutalCritical().ID:

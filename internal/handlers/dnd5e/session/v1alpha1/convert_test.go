@@ -2826,7 +2826,7 @@ func TestConditionAppliedToProto_NamesWhoIsResponsible(t *testing.T) {
 			ConditionApplied: &sdk.ConditionAppliedBody{
 				Target:   "zombie-1",
 				Ref:      "dnd5e:conditions:commanded",
-				Name:     "the commanded condition",
+				Name:     "Commanded",
 				SourceID: "char_bard",
 			},
 		},
@@ -2838,7 +2838,7 @@ func TestConditionAppliedToProto_NamesWhoIsResponsible(t *testing.T) {
 		"the typed field must say what the raw payload already said")
 	require.Equal(t, "zombie-1", condition.GetTarget())
 	require.Equal(t, "dnd5e:conditions:commanded", condition.GetRef())
-	require.Equal(t, "the commanded condition", condition.GetName())
+	require.Equal(t, "Commanded", condition.GetName())
 }
 
 // The half that keeps the field honest: a body with no source leaves the wire
