@@ -10,11 +10,11 @@ concealments:
   investigation-find:
     checks: [{ability: investigation, dc: 5}]
     props: [investigation-scroll]
-    attempts: {max: 3, reset_hexes: 3, lifetime: run}
+    attempts: {max: 3, reset_hexes: 3}
   survival-retry:
     checks: [{ability: survival, dc: 99}]
     props: [survival-bones]
-    attempts: {max: 3, reset_hexes: 3, lifetime: run}
+    attempts: {max: 3, reset_hexes: 3}
   religion-find:
     checks: [{ability: religion, dc: 8}]
     props: [religion-relic]

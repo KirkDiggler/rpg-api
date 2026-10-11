@@ -6,7 +6,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
@@ -100,7 +99,7 @@ func offsetCells(pairs [][2]int) cellSet {
 // player drives it: a real session on an authored dungeon, a hall, a vault
 // nobody can see, one line between them with a hidden door standing in it.
 //
-// Alice searches the hall, finds the door, and opens it. The room arrives as a
+// Alice walks the hall, finds the door, and opens it. The room arrives as a
 // beat on her own stream, and her next GetAtlas agrees with what the beat
 // said. That agreement is the whole point: the event and the atlas are two
 // views of one projection, and a client that patches its cache from the beat
@@ -110,7 +109,7 @@ func offsetCells(pairs [][2]int) cellSet {
 // to whoever perceives one of its doors open, which is one of the causes it
 // recognizes (the others being standing inside its cells, walking through its
 // door, and intel that names it), and it is the one that fires first here.
-// Measured rather than assumed: with the open removed and only the search
+// Measured rather than assumed: with the open removed and only the walk
 // left, no reveal arrives at all.
 func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 	h := newAcceptanceHarness(t)
@@ -127,9 +126,10 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 	dungeon, err := sessionworld.Compile([]byte(dungeonstest.ConcealedVaultYAML))
 	require.NoError(t, err, "the concealed-vault fixture must compile")
 
-	// Alice stands in the hall, on the cell the door's crossing touches.
+	// Alice starts at the far end of the hall, three cells from the cell the
+	// door's crossing touches.
 	hallSide := dungeonstest.ConcealedVaultDoorCrossing[0]
-	h.launch(t, "reveal-run", dungeon.Spec, seatAt("alice", hallSide[0], hallSide[1]))
+	h.launch(t, "reveal-run", dungeon.Spec, seatAt("alice", 0, hallSide[1]))
 
 	before, err := h.handler.GetAtlas(ctx, &sessionpb.GetAtlasRequest{
 		Session: "reveal-run", Member: "alice",
@@ -144,10 +144,16 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 		require.Truef(t, beforeFloor[at(c[0], c[1])], "the hall cell %v is floor from the start", c)
 	}
 
-	// Search the hall. The roller this harness supplies answers the top face,
-	// so the perception check clears DC 15 every run rather than one in three.
-	_, err = h.manager.Manager.Search(ctx, &sdk.SearchInput{
-		Session: "reveal-run", Member: "alice", Region: "hall",
+	// Walk the hall to the cell beside the door. Discovery is automatic: the
+	// move itself carries her within one hex of the concealed door, and the
+	// roller this harness supplies answers the top face, so the perception
+	// check clears DC 15 every run rather than one in three.
+	var path []*sessionpb.Position
+	for col := 1; col <= hallSide[0]; col++ {
+		path = append(path, pbAt(col, hallSide[1]))
+	}
+	_, err = h.handler.Move(ctx, &sessionpb.MoveRequest{
+		Session: "reveal-run", Member: "alice", Path: path,
 	})
 	require.NoError(t, err)
 

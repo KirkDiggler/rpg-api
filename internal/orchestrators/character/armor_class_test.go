@@ -13,6 +13,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/shared"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 )
 
 // The armour class every read response carries is the resolution door's fold
@@ -128,5 +129,63 @@ func (s *EquipItemTestSuite) TestProjectArmorClass_IsTheDoorsFold() {
 		want, err := resolution.ProjectCharacter(s.ctx, &resolution.ProjectCharacterInput{Character: entity.Data})
 		s.Require().NoError(err)
 		s.Equal(want.ArmorClass.Total, got.ArmorClass.Total, fmt.Sprintf("%s: one door, one answer", entity.Data.ClassID))
+	}
+}
+
+// clubMonk is a monk whose Shillelagh club sits in slot beside Martial Arts:
+// the club is a monk weapon, so two offers compete for that hand's swing.
+func (s *EquipItemTestSuite) clubMonk(slot character.InventorySlot, withShillelagh bool) *entities.Character {
+	entity := s.unarmouredMonk()
+	data := entity.Data
+	data.Inventory = []character.InventoryItemData{{Type: "weapon", ID: weapons.Club, Quantity: 1}}
+	data.EquipmentSlots = character.EquipmentSlots{slot: weapons.Club}
+
+	martialArts, err := conditions.NewMartialArtsCondition(conditions.MartialArtsInput{MemberID: data.ID}).ToJSON()
+	s.Require().NoError(err)
+	data.Conditions = append(data.Conditions, martialArts)
+
+	if withShillelagh {
+		shillelagh, err := conditions.NewShillelaghCondition(data.ID, conditions.ShillelaghConfig{
+			Weapons:    []conditions.HeldWeapon{{Slot: string(slot), ItemID: weapons.Club}},
+			WeaponSlot: string(slot),
+			Ability:    abilities.WIS,
+		})
+		s.Require().NoError(err)
+		raw, err := shillelagh.ToJSON()
+		s.Require().NoError(err)
+		data.Conditions = append(data.Conditions, raw)
+	}
+
+	return entity
+}
+
+// TestGetCharacter_AnOffHandWeaponThatWillNotCompileFailsTheRead pins R3's
+// cost (rpg-toolkit#1965): ProjectCharacter compiles both hands, so a weapon
+// in the off hand that will not compile fails GetCharacter exactly as the same
+// weapon in the main hand does. Same status, same refusal, one door.
+func (s *EquipItemTestSuite) TestGetCharacter_AnOffHandWeaponThatWillNotCompileFailsTheRead() {
+	s.Run("control: one offer in the off hand reads", func() {
+		s.mockCharacterRepo.EXPECT().
+			Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+			Return(&characterrepo.GetOutput{Character: s.clubMonk(character.SlotOffHand, false), Version: testCharacterRepositoryVersion}, nil)
+
+		out, err := s.orchestrator.GetCharacter(s.ctx, &GetCharacterInput{CharacterID: s.testCharacterID})
+		s.Require().NoError(err)
+		s.NotNil(out.ArmorClass)
+	})
+
+	for _, slot := range []character.InventorySlot{character.SlotMainHand, character.SlotOffHand} {
+		s.Run("competing offers in the "+string(slot), func() {
+			s.mockCharacterRepo.EXPECT().
+				Get(s.ctx, characterrepo.GetInput{ID: s.testCharacterID}).
+				Return(&characterrepo.GetOutput{Character: s.clubMonk(slot, true), Version: testCharacterRepositoryVersion}, nil)
+
+			out, err := s.orchestrator.GetCharacter(s.ctx, &GetCharacterInput{CharacterID: s.testCharacterID})
+			s.Require().Error(err)
+			s.Nil(out)
+			s.True(apierr.IsInternal(err), "%v", err)
+			s.Contains(err.Error(), string(slot), "the refusal names the hand")
+			s.Contains(err.Error(), refs.Conditions.Shillelagh().String())
+		})
 	}
 }

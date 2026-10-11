@@ -91,19 +91,14 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrBadRest", sdk.ErrBadRest, codes.InvalidArgument},
 		{"ErrDuplicateMember", sdk.ErrDuplicateMember, codes.InvalidArgument},
 
-		// A retired verb cannot become available by changing the game state.
-		{"ErrSearchRetired", sdk.ErrSearchRetired, codes.Unimplemented},
-
 		// FAILED_PRECONDITION -- well-formed request, world state refuses it.
 		{"ErrInBubble", sdk.ErrInBubble, codes.FailedPrecondition},
 		{"ErrNotInFight", sdk.ErrNotInFight, codes.FailedPrecondition},
 		{"ErrClosed", sdk.ErrClosed, codes.FailedPrecondition},
 		{"ErrNotACharacter", sdk.ErrNotACharacter, codes.FailedPrecondition},
-		// Search's own refusal (rpg-project#350): the named region is not
-		// the one the searcher stands in, or does not exist -- the SDK
-		// returns the SAME sentinel for both on purpose (the probe law),
-		// so this is one row for one sentinel, not two.
-		{"ErrElsewhere", sdk.ErrElsewhere, codes.FailedPrecondition},
+		{"ErrAlreadyMember", sdk.ErrAlreadyMember, codes.FailedPrecondition},
+		// Two competing attack offers: the player owes a pick (R5).
+		{"ErrConflictingOffers", sdk.ErrConflictingOffers, codes.FailedPrecondition},
 		{"ErrBadAttack", sdk.ErrBadAttack, codes.FailedPrecondition},
 		// Arrived v0.15.0-v0.17.0. ErrDowned is emphatically NOT no-such-member
 		// (a downed member stays on the map, in the roster, and readable), and

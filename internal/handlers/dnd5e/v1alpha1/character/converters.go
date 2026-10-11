@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/core/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/ammunition"
@@ -16,6 +17,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character/choices"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
 	dnd5ecombat "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/combat"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
@@ -1444,7 +1446,18 @@ func ConvertCharacterDataToProto(in *CharacterProtoInput) (*dnd5ev1alpha1.Charac
 
 			// Map to enum and derive display name
 			conditionEnum := conditionIDToEnum(conditionID)
-			conditionName := conditionIDToDisplayName(conditionID)
+			// The registry names the condition. A ref it does not know is an
+			// error, not a title-cased guess: the sheet holds a condition no
+			// reader can describe.
+			conditionRef, refErr := core.ParseString(conditionData.Ref)
+			if refErr != nil {
+				return nil, fmt.Errorf("character %s: condition ref %q: %w", data.ID, conditionData.Ref, refErr)
+			}
+			display, known := conditions.DisplayFor(*conditionRef)
+			if !known {
+				return nil, fmt.Errorf("character %s: condition %q has no display name in the registry", data.ID, conditionData.Ref)
+			}
+			conditionName := display.Name
 			if fightingStyle := conditionIDToFightingStyle(conditionID); fightingStyle != dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_UNSPECIFIED {
 				char.FightingStyles = append(char.FightingStyles, fightingStyle)
 			}
@@ -3572,44 +3585,6 @@ func conditionIDToFightingStyle(id string) dnd5ev1alpha1.FightingStyle {
 		return dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_TWO_WEAPON_FIGHTING
 	default:
 		return dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_UNSPECIFIED
-	}
-}
-
-// conditionIDToDisplayName converts a condition ID to a human-readable display name
-// Uses toolkit refs for type-safe comparison - no magic strings
-func conditionIDToDisplayName(id string) string {
-	switch id {
-	case refs.Conditions.Raging().ID:
-		return "Raging"
-	case refs.Conditions.BrutalCritical().ID:
-		return "Brutal Critical"
-	case refs.Conditions.SneakAttack().ID:
-		return "Sneak Attack"
-	case refs.Features.DivineSmite().ID:
-		return "Divine Smite"
-	case refs.Conditions.FightingStyleDueling().ID:
-		return "Fighting Style: Dueling"
-	case refs.Conditions.FightingStyleTwoWeaponFighting().ID:
-		return "Fighting Style: Two-Weapon Fighting"
-	case refs.Conditions.FightingStyleGreatWeaponFighting().ID:
-		return "Fighting Style: Great Weapon Fighting"
-	case refs.Conditions.FightingStyleArchery().ID:
-		return "Fighting Style: Archery"
-	case refs.Conditions.FightingStyleDefense().ID:
-		return "Fighting Style: Defense"
-	case refs.Conditions.FightingStyleProtection().ID:
-		return "Fighting Style: Protection"
-	case refs.Conditions.UnarmoredDefense().ID:
-		return "Unarmored Defense"
-	case refs.Conditions.ImprovedCritical().ID:
-		return "Improved Critical"
-	case refs.Conditions.MartialArts().ID:
-		return "Martial Arts"
-	case refs.Conditions.UnarmoredMovement().ID:
-		return "Unarmored Movement"
-	default:
-		// Convert snake_case to Title Case as fallback
-		return toTitleCase(id)
 	}
 }
 

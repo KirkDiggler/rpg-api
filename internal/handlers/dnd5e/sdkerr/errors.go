@@ -49,10 +49,6 @@ func StatusError(err error) error {
 	}
 
 	switch {
-	// Retired host verbs are unsupported, not transient world-state refusals.
-	case errors.Is(err, sdk.ErrSearchRetired):
-		return status.Error(codes.Unimplemented, err.Error())
-
 	// NOT_FOUND -- the caller named something that does not exist.
 	case errors.Is(err, sdk.ErrNoSession),
 		errors.Is(err, sdk.ErrNoEncounter),
@@ -211,15 +207,15 @@ func StatusError(err error) error {
 	//   regenerated available offer. The request is shaped correctly, but the
 	//   world changed since Afford, so retry starts from a fresh declaration.
 	//
-	//   ErrElsewhere (rpg-project#350, Search) -- the named region is not the
-	//   one the searcher currently stands in. The request itself is
-	//   well-formed (a real region id, a real member); it is the world's
-	//   present state -- where this member happens to be standing -- that
-	//   refuses it, the same shape as ErrNotACharacter next to it. Not
-	//   NotFound: the SDK deliberately returns this SAME sentinel whether the
-	//   named region is real-but-elsewhere or does not exist at all, so a
-	//   distinct NotFound here would hand a client a way to probe for regions
-	//   it has never seen by the code alone (the probe law, rpg-project#350).
+	//   ErrAlreadyMember (rpg-toolkit#1965 R6) -- a verb places a member the
+	//   encounter already holds. The request is well-formed; the roster's
+	//   present state refuses it. Distinct from ErrDuplicateMember, which is
+	//   a Launch request claiming one id twice (the caller's defect).
+	//
+	//   ErrConflictingOffers (rpg-toolkit#1965 R5) -- two of the attacker's
+	//   conditions each offer a replacement for the same swing and none was
+	//   picked. The sheet is readable and the call well-formed; the player
+	//   owes a pick, so this is neither Internal nor ErrBadAttack.
 	//
 	//   ErrOutOfRange / ErrNotVisible (rpg-toolkit#1404, Interact) -- the
 	//   host-seam twins of encounter's ErrOutOfRange/ErrNotVisible: the named
@@ -231,7 +227,8 @@ func StatusError(err error) error {
 		errors.Is(err, sdk.ErrNotInFight),
 		errors.Is(err, sdk.ErrClosed),
 		errors.Is(err, sdk.ErrNotACharacter),
-		errors.Is(err, sdk.ErrElsewhere),
+		errors.Is(err, sdk.ErrAlreadyMember),
+		errors.Is(err, sdk.ErrConflictingOffers),
 		errors.Is(err, sdk.ErrBadAttack),
 		errors.Is(err, sdk.ErrDowned),
 		errors.Is(err, sdk.ErrLocked),

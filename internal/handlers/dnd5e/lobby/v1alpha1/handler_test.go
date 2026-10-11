@@ -23,6 +23,7 @@ import (
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 
 	lobbyv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
 )
@@ -127,6 +128,7 @@ func (s *HandlerSuite) expectCharacter(characterID, playerID, name string, hp, m
 					// record and has its single entry synthesized (R2.6), which
 					// is what this minimal fake wants.
 					Level:    1,
+					RaceID:   races.Human,
 					PlayerID: playerID, Name: name, HitPoints: hp, MaxHitPoints: maxHP,
 				},
 			},

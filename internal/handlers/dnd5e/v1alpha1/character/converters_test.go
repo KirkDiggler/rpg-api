@@ -992,7 +992,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_InvalidConditionJS
 		Conditions: []json.RawMessage{
 			json.RawMessage(`{invalid json`),
 			json.RawMessage(`{
-				"ref": "dnd5e:conditions:poisoned",
+				"ref": "dnd5e:conditions:prone",
 				"source": "trap",
 				"duration": 3
 			}`),
@@ -1005,23 +1005,37 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_InvalidConditionJS
 	// Verify only valid condition is included
 	require.NotNil(s.T(), result, "Result should not be nil")
 	assert.Len(s.T(), result.ActiveConditions, 1, "Should have 1 valid condition")
-	assert.Equal(s.T(), "Poisoned", result.ActiveConditions[0].Name)
+	assert.Equal(s.T(), "Prone", result.ActiveConditions[0].Name)
 }
 
-func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionNameFallback() {
-	// Create test data with conditions - name is derived from ref ID
+func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionNameComesFromTheRegistry() {
 	testData := &toolkitchar.Data{
 		ID:    "test-char",
-		Name:  "Rogue",
+		Name:  "Barbarian",
 		Level: 3,
 		Conditions: []json.RawMessage{
-			// Condition with known ref - name should be derived
 			json.RawMessage(`{
 				"ref": "dnd5e:conditions:raging",
 				"source": "rage",
 				"duration": 5
 			}`),
-			// Condition with unknown ref - should use toTitleCase fallback
+		},
+	}
+
+	result := s.convertWithArmorClass(testData)
+
+	require.Len(s.T(), result.ActiveConditions, 1)
+	assert.Equal(s.T(), "Raging", result.ActiveConditions[0].Name, "the registry's display name, not a local table")
+}
+
+// A condition the registry cannot name is an error, never a title-cased guess
+// or a silent skip (rpg-toolkit#2018).
+func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_UnknownConditionRefFails() {
+	testData := &toolkitchar.Data{
+		ID:    "test-char",
+		Name:  "Rogue",
+		Level: 3,
+		Conditions: []json.RawMessage{
 			json.RawMessage(`{
 				"ref": "dnd5e:conditions:custom_effect",
 				"source": "spell",
@@ -1030,18 +1044,13 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionNameFallb
 		},
 	}
 
-	// Convert to proto
-	result := s.convertWithArmorClass(testData)
+	_, err := ConvertCharacterDataToProto(&CharacterProtoInput{
+		Data:       testData,
+		ArmorClass: &dnd5ecombat.ACBreakdown{Total: 13},
+	})
 
-	// Verify name derivation from ref
-	require.NotNil(s.T(), result, "Result should not be nil")
-	require.Len(s.T(), result.ActiveConditions, 2, "Should have 2 conditions")
-
-	// First condition should use known display name
-	assert.Equal(s.T(), "Raging", result.ActiveConditions[0].Name, "Should derive display name from ref")
-
-	// Second condition should use title case fallback
-	assert.Equal(s.T(), "Custom Effect", result.ActiveConditions[1].Name, "Should use toTitleCase fallback")
+	s.Require().Error(err)
+	s.Contains(err.Error(), "custom_effect")
 }
 
 func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionWithNoRef() {
@@ -1058,7 +1067,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionWithNoRef
 			}`),
 			// Valid condition with ref - should be included
 			json.RawMessage(`{
-				"ref": "dnd5e:conditions:frightened",
+				"ref": "dnd5e:conditions:dodging",
 				"source": "fear_spell",
 				"duration": 10
 			}`),
@@ -1071,7 +1080,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionWithNoRef
 	// Verify condition with no ref is skipped
 	require.NotNil(s.T(), result, "Result should not be nil")
 	assert.Len(s.T(), result.ActiveConditions, 1, "Should skip condition with no ref")
-	assert.Equal(s.T(), "Frightened", result.ActiveConditions[0].Name)
+	assert.Equal(s.T(), "Dodging", result.ActiveConditions[0].Name)
 }
 
 func (s *ConvertersTestSuite) TestGetFeatureActionType() {
