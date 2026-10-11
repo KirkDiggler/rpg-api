@@ -45,7 +45,7 @@ func TestGetRoster_DelegatesOnceAndProjectsSDKOutput(t *testing.T) {
 			},
 		},
 		{ID: "char-2", Kind: sdk.KindPlayer, Name: "Bob", Customization: sdk.Customization{}, Faction: "party"},
-		{ID: "skeleton-1", Kind: sdk.KindMonster, Name: "Skeleton", MonsterRef: "dnd5e:monsters:skeleton", Customization: sdk.Customization{}, Faction: "raiders"},
+		{ID: "skeleton-1", Kind: sdk.KindMonster, Name: "Skeleton", MonsterRef: "dnd5e:monsters:skeleton", AppearanceRef: "dnd5e:npcs:kingdom:merchant-01", Customization: sdk.Customization{}, Faction: "raiders"},
 	}}, nil)
 	h := &Handler{manager: manager}
 
@@ -71,7 +71,7 @@ func TestGetRoster_DelegatesOnceAndProjectsSDKOutput(t *testing.T) {
 		// The side each member is on rides the row verbatim
 		// (rpg-project#375): the reserved `party`, or the file's own word.
 		{Id: "char-2", Kind: sessionpb.MemberKind_MEMBER_KIND_PLAYER, Name: "Bob", Customization: &sessionpb.Customization{}, Faction: "party"},
-		{Id: "skeleton-1", Kind: sessionpb.MemberKind_MEMBER_KIND_MONSTER, Name: "Skeleton", MonsterRef: "dnd5e:monsters:skeleton", Customization: &sessionpb.Customization{}, Faction: "raiders"},
+		{Id: "skeleton-1", Kind: sessionpb.MemberKind_MEMBER_KIND_MONSTER, Name: "Skeleton", MonsterRef: "dnd5e:monsters:skeleton", AppearanceRef: "dnd5e:npcs:kingdom:merchant-01", Customization: &sessionpb.Customization{}, Faction: "raiders"},
 	}}
 	require.True(t, proto.Equal(want, got), "got %s", got)
 }
