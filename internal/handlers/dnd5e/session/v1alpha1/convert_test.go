@@ -1376,7 +1376,7 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 			Body: sdk.ActivationResultBody{
 				Actor: "alice",
 				ConditionApplied: &sdk.ConditionAppliedBody{
-					Target: "bob", Ref: "dnd5e:conditions:raging", Name: "Raging",
+					Target: "bob", Ref: "dnd5e:conditions:commanded", Name: "Commanded",
 					Detail: "grovel",
 				},
 			},
@@ -1388,8 +1388,8 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 		condition := result.GetConditionApplied()
 		require.NotNil(t, condition)
 		require.Equal(t, "bob", condition.GetTarget())
-		require.Equal(t, "dnd5e:conditions:raging", condition.GetRef())
-		require.Equal(t, "Raging", condition.GetName())
+		require.Equal(t, "dnd5e:conditions:commanded", condition.GetRef())
+		require.Equal(t, "Commanded", condition.GetName())
 		require.Equal(t, "grovel", condition.GetDetail())
 		require.Nil(t, result.GetHealingApplied())
 		require.Nil(t, result.GetConditionRemoved())
