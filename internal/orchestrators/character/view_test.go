@@ -155,6 +155,24 @@ func TestProjectView_RejectsMissingOwnerIdentity(t *testing.T) {
 	}
 }
 
+// dnd5e:spells:shield is a retired ref: character load drops the blob under
+// every policy, so the projection succeeds and carries no condition for it.
+func TestProjectView_DropsARetiredConditionBlob(t *testing.T) {
+	data := level3FighterData(t, "fighter-retired-shield")
+	before, err := ProjectView(context.Background(), &ProjectViewInput{Data: data})
+	require.NoError(t, err)
+
+	data.Conditions = append(data.Conditions, mustJSON(t, map[string]any{
+		"ref": map[string]string{"module": "dnd5e", "type": "spells", "id": "shield"}, "member_id": data.ID,
+	}))
+	out, err := ProjectView(context.Background(), &ProjectViewInput{Data: data})
+	require.NoError(t, err)
+	require.Len(t, out.View.Status.Conditions, len(before.View.Status.Conditions))
+	for _, c := range out.View.Status.Conditions {
+		require.NotEqual(t, "dnd5e:spells:shield", c.Ref.String())
+	}
+}
+
 func TestProjectView_RejectsEveryUnprojectablePersistedShape(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -185,7 +203,7 @@ func TestProjectView_RejectsEveryUnprojectablePersistedShape(t *testing.T) {
 			},
 		},
 		{
-			name: "condition deleted from the registry",
+			name: "unregistered condition ref",
 			mutate: func(t *testing.T, data *tkcharacter.Data) {
 				data.Conditions = []json.RawMessage{mustJSON(t, map[string]any{
 					"ref": map[string]string{"module": "dnd5e", "type": "conditions", "id": "shield"}, "member_id": data.ID,

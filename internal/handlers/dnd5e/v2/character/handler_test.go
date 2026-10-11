@@ -571,6 +571,9 @@ func (s *HandlerTestSuite) TestBuildCharacterData_FourBuildStatusMapping() {
 			s.Require().Len(cd.GetConditions(), 1)
 			s.Require().Len(cd.GetResources(), 1)
 			s.Equal(tc.resource, cd.GetResources()[0].GetKey())
+			if tc.name == "rogue" {
+				s.Equal("dnd5e:conditions:sneak_attack", protoRefString(cd.GetConditions()[0].GetRef()))
+			}
 			if tc.name == "barbarian" {
 				s.Require().NotNil(cd.GetConditions()[0].SourceMember)
 				s.Equal(source, cd.GetConditions()[0].GetSourceMember())
