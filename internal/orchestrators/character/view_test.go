@@ -185,10 +185,10 @@ func TestProjectView_RejectsEveryUnprojectablePersistedShape(t *testing.T) {
 			},
 		},
 		{
-			name: "unknown status descriptor",
+			name: "condition deleted from the registry",
 			mutate: func(t *testing.T, data *tkcharacter.Data) {
-				data.Conditions = []json.RawMessage{mustJSON(t, conditions.ShieldSpellConditionData{
-					Ref: refs.Spells.Shield(), MemberID: data.ID,
+				data.Conditions = []json.RawMessage{mustJSON(t, map[string]any{
+					"ref": map[string]string{"module": "dnd5e", "type": "conditions", "id": "shield"}, "member_id": data.ID,
 				})}
 			},
 		},
