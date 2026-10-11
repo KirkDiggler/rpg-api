@@ -1376,7 +1376,8 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 			Body: sdk.ActivationResultBody{
 				Actor: "alice",
 				ConditionApplied: &sdk.ConditionAppliedBody{
-					Target: "bob", Ref: "dnd5e:conditions:raging", Name: "Raging",
+					Target: "bob", Ref: "dnd5e:conditions:commanded", Name: "Commanded",
+					Detail: "grovel",
 				},
 			},
 		})
@@ -1387,11 +1388,29 @@ func TestActivationEventBodiesToProto(t *testing.T) {
 		condition := result.GetConditionApplied()
 		require.NotNil(t, condition)
 		require.Equal(t, "bob", condition.GetTarget())
-		require.Equal(t, "dnd5e:conditions:raging", condition.GetRef())
-		require.Equal(t, "Raging", condition.GetName())
+		require.Equal(t, "dnd5e:conditions:commanded", condition.GetRef())
+		require.Equal(t, "Commanded", condition.GetName())
+		require.Equal(t, "grovel", condition.GetDetail())
 		require.Nil(t, result.GetHealingApplied())
 		require.Nil(t, result.GetConditionRemoved())
 		require.Nil(t, result.GetCapacityGranted())
+	})
+
+	t.Run("ConditionApplied without detail", func(t *testing.T) {
+		got := mustEventToProto(t, sdk.Event{
+			Kind: sdk.EventActivationResult,
+			Body: sdk.ActivationResultBody{
+				Actor: "alice",
+				ConditionApplied: &sdk.ConditionAppliedBody{
+					Target: "bob", Ref: "dnd5e:conditions:blessed", Name: "Blessed",
+				},
+			},
+		})
+
+		condition := got.GetActivationResult().GetConditionApplied()
+		require.NotNil(t, condition)
+		require.Equal(t, "Blessed", condition.GetName())
+		require.Equal(t, "", condition.GetDetail())
 	})
 
 	t.Run("ConditionRemoved", func(t *testing.T) {
@@ -2826,7 +2845,7 @@ func TestConditionAppliedToProto_NamesWhoIsResponsible(t *testing.T) {
 			ConditionApplied: &sdk.ConditionAppliedBody{
 				Target:   "zombie-1",
 				Ref:      "dnd5e:conditions:commanded",
-				Name:     "the commanded condition",
+				Name:     "Commanded",
 				SourceID: "char_bard",
 			},
 		},
@@ -2838,7 +2857,7 @@ func TestConditionAppliedToProto_NamesWhoIsResponsible(t *testing.T) {
 		"the typed field must say what the raw payload already said")
 	require.Equal(t, "zombie-1", condition.GetTarget())
 	require.Equal(t, "dnd5e:conditions:commanded", condition.GetRef())
-	require.Equal(t, "the commanded condition", condition.GetName())
+	require.Equal(t, "Commanded", condition.GetName())
 }
 
 // The half that keeps the field honest: a body with no source leaves the wire

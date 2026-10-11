@@ -546,12 +546,10 @@ func (s *HandlerTestSuite) TestBuildCharacterData_FourBuildStatusMapping() {
 			classID: classes.Rogue,
 			raceID:  races.Halfling,
 			status: &character.StatusView{
-				Features:   []character.FeatureView{{Ref: *refs.Features.SneakAttack(), Name: "Sneak Attack"}},
-				Conditions: []character.ConditionView{{Ref: *refs.Features.SneakAttack(), Name: "Sneak Attack"}},
+				Conditions: []character.ConditionView{{Ref: *refs.Conditions.SneakAttack(), Name: "Sneak Attack"}},
 				Resources:  []character.ResourceView{{Key: resources.HitDice, Name: "Hit Dice", Current: 2, Maximum: 3}},
 			},
-			featureRef: refs.Features.SneakAttack().String(),
-			resource:   string(resources.HitDice),
+			resource: string(resources.HitDice),
 		},
 	}
 
@@ -563,11 +561,19 @@ func (s *HandlerTestSuite) TestBuildCharacterData_FourBuildStatusMapping() {
 			})
 			s.Require().NoError(err)
 			s.assertOwnerIdentity(cd, tc.classID, tc.raceID)
-			s.Require().Len(cd.GetFeatures(), 1)
-			s.Equal(tc.featureRef, protoRefString(cd.GetFeatures()[0].GetRef()))
+			if tc.featureRef == "" {
+				// A rogue's Sneak Attack is a condition; no feature carries it.
+				s.Empty(cd.GetFeatures())
+			} else {
+				s.Require().Len(cd.GetFeatures(), 1)
+				s.Equal(tc.featureRef, protoRefString(cd.GetFeatures()[0].GetRef()))
+			}
 			s.Require().Len(cd.GetConditions(), 1)
 			s.Require().Len(cd.GetResources(), 1)
 			s.Equal(tc.resource, cd.GetResources()[0].GetKey())
+			if tc.name == "rogue" {
+				s.Equal("dnd5e:conditions:sneak_attack", protoRefString(cd.GetConditions()[0].GetRef()))
+			}
 			if tc.name == "barbarian" {
 				s.Require().NotNil(cd.GetConditions()[0].SourceMember)
 				s.Equal(source, cd.GetConditions()[0].GetSourceMember())

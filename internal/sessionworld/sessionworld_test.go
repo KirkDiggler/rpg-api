@@ -280,17 +280,13 @@ func (standStillSheets) Sheets(members []tkencounter.MemberID) (map[tkencounter.
 	return out, nil
 }
 
-// everyoneStanding is the Standing a test needs once it places members:
+// everyoneStanding is the Participation a test needs once it places members:
 // nobody is down, and every member is up, conscious, in contact and waiting.
-// Encounter's refusing Standing refuses to assess members
+// Encounter's refusing Participation refuses to assess members
 // (ErrRefusingParticipation) -- a compiled world has none -- so a test that
 // joins or seats somebody supplies this choice itself. Contact is a claim,
 // made because false would dissolve every fight the moment it formed.
 type everyoneStanding struct{}
-
-func (everyoneStanding) Standing([]tkencounter.MemberID) ([]tkencounter.MemberID, error) {
-	return []tkencounter.MemberID{}, nil
-}
 
 func (everyoneStanding) Assess(members []tkencounter.MemberID) (*tkencounter.ParticipationAssessment, error) {
 	out := &tkencounter.ParticipationAssessment{

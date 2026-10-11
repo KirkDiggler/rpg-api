@@ -35,11 +35,9 @@ func TestStructuralPatchAcceptanceSuite(t *testing.T) {
 
 func (s *StructuralPatchAcceptanceSuite) TestCompiledDoorDiscoveryReplacesOpeningsOnTheWire() {
 	h := newAcceptanceHarness(s.T())
-	// The shared older fixtures retain legacy Search. This case adopts the
-	// production automatic-discovery capability over the same real repositories.
 	automatic, err := sessionorch.New(sessionorch.Config{
 		Redis: h.redis, Characters: h.charRepo, TTL: time.Hour, Dice: testDice{},
-		PresentationIDs: idgen.NewSequential("patch-presentation"), AutomaticDiscovery: true,
+		PresentationIDs: idgen.NewSequential("patch-presentation"),
 	})
 	s.Require().NoError(err)
 	h.manager = automatic

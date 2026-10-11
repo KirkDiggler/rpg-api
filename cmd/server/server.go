@@ -256,11 +256,10 @@ func runServer(_ *cobra.Command, _ []string) error {
 	// verbs (rpg-project#542). The session orchestrator takes the character
 	// REPOSITORY, not the service, so there is no cycle, only an order.
 	sessionOrch, err := sessionorch.New(sessionorch.Config{
-		AutomaticDiscovery: true,
-		StaleTargetPolicy:  sdk.StaleTargetPolicy(os.Getenv(envStaleTargetPolicy)),
-		Redis:              redisClient,
-		Characters:         charRepo,
-		TTL:                24 * time.Hour,
+		StaleTargetPolicy: sdk.StaleTargetPolicy(os.Getenv(envStaleTargetPolicy)),
+		Redis:             redisClient,
+		Characters:        charRepo,
+		TTL:               24 * time.Hour,
 	})
 	if err != nil {
 		return fmt.Errorf("session orchestrator: %w", err)

@@ -10,6 +10,7 @@ package session_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
@@ -275,14 +277,26 @@ func buildTomb(t *testing.T, mutate func(*tkdungeonspec.Compiled)) *tkdungeonspe
 // the proficiency to use it. The shared "empty hand" fixture other suites use
 // is correct everywhere else and useless here.
 func armedFighter(id, playerID string) *tkcharacter.Data {
+	// A combatant holds its free reactions from creation: Finalize writes them
+	// into the stored conditions, and nothing merges them in at load any more.
+	held := make([]json.RawMessage, 0, 1)
+	for _, reaction := range conditions.FreeReactions(id) {
+		raw, err := reaction.ToJSON()
+		if err != nil {
+			panic(fmt.Sprintf("free reaction of %s does not serialize: %v", id, err))
+		}
+		held = append(held, raw)
+	}
+
 	return &tkcharacter.Data{
-		ID:       id,
-		PlayerID: playerID,
-		Name:     id,
-		Level:    3,
-		Levels:   levelfixture.Synthetic(classes.Fighter, 3),
-		ClassID:  classes.Fighter,
-		RaceID:   races.Human,
+		Conditions: held,
+		ID:         id,
+		PlayerID:   playerID,
+		Name:       id,
+		Level:      3,
+		Levels:     levelfixture.Synthetic(classes.Fighter, 3),
+		ClassID:    classes.Fighter,
+		RaceID:     races.Human,
 		AbilityScores: shared.AbilityScores{
 			abilities.STR: 16, abilities.DEX: 14, abilities.CON: 14,
 			abilities.INT: 10, abilities.WIS: 12, abilities.CHA: 8,

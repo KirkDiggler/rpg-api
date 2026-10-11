@@ -11,6 +11,7 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	tkcharacter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/classes"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 )
 
 // seedFakeStore is a per-id character store: the default fixture set now seeds
@@ -29,6 +30,7 @@ func newSeedFakeStore(ids ...string) *seedFakeStore {
 		store.byID[id] = &entities.Character{Data: &tkcharacter.Data{
 			ID:      id,
 			Level:   1,
+			RaceID:  races.Human,
 			ClassID: classes.Fighter,
 			Levels: []tkcharacter.LevelEntry{
 				{Level: 1, ClassID: classes.Fighter, HitPointMethod: tkcharacter.HitPointMethodMax},

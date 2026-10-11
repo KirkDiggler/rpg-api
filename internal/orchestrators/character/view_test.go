@@ -155,6 +155,21 @@ func TestProjectView_RejectsMissingOwnerIdentity(t *testing.T) {
 	}
 }
 
+// dnd5e:spells:shield was a retired ref the load used to drop under every
+// policy. The retired set is gone (rpg-toolkit#1965 row 62), so the blob is an
+// unregistered ref like any other and the projection refuses it, naming it.
+func TestProjectView_RefusesAFormerlyRetiredConditionBlob(t *testing.T) {
+	data := level3FighterData(t, "fighter-retired-shield")
+	data.Conditions = append(data.Conditions, mustJSON(t, map[string]any{
+		"ref": map[string]string{"module": "dnd5e", "type": "spells", "id": "shield"}, "member_id": data.ID,
+	}))
+
+	out, err := ProjectView(context.Background(), &ProjectViewInput{Data: data})
+	require.Error(t, err)
+	require.Nil(t, out)
+	require.Contains(t, err.Error(), "dnd5e:spells:shield")
+}
+
 func TestProjectView_RejectsEveryUnprojectablePersistedShape(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -185,10 +200,10 @@ func TestProjectView_RejectsEveryUnprojectablePersistedShape(t *testing.T) {
 			},
 		},
 		{
-			name: "unknown status descriptor",
+			name: "unregistered condition ref",
 			mutate: func(t *testing.T, data *tkcharacter.Data) {
-				data.Conditions = []json.RawMessage{mustJSON(t, conditions.ShieldSpellConditionData{
-					Ref: refs.Spells.Shield(), MemberID: data.ID,
+				data.Conditions = []json.RawMessage{mustJSON(t, map[string]any{
+					"ref": map[string]string{"module": "dnd5e", "type": "conditions", "id": "shield"}, "member_id": data.ID,
 				})}
 			},
 		},
