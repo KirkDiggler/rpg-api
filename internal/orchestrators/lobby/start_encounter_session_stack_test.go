@@ -111,7 +111,7 @@ func TestSessionStackSuite(t *testing.T) {
 func (s *SessionStackSuite) seedCharacter(id, playerID, name string) {
 	_, err := s.charRepo.Create(s.ctx, characterrepo.CreateInput{
 		Character: &entities.Character{Data: &tkcharacter.Data{
-			ID: id, PlayerID: playerID, Name: name, Level: 1,
+			ID: id, PlayerID: playerID, Name: name, Level: 1, RaceID: races.Human,
 			HitPoints: 10, MaxHitPoints: 10,
 		}},
 	})
@@ -125,7 +125,7 @@ func (s *SessionStackSuite) seedCharacter(id, playerID, name string) {
 func (s *SessionStackSuite) seedCharacterWithWallet(id, playerID, name string, wallet currency.Money) {
 	_, err := s.charRepo.Create(s.ctx, characterrepo.CreateInput{
 		Character: &entities.Character{Data: &tkcharacter.Data{
-			ID: id, PlayerID: playerID, Name: name, Level: 1,
+			ID: id, PlayerID: playerID, Name: name, Level: 1, RaceID: races.Human,
 			HitPoints: 10, MaxHitPoints: 10,
 			Wallet: wallet,
 		}},
@@ -143,7 +143,7 @@ func (s *SessionStackSuite) seedCharacterWithInventory(
 ) {
 	_, err := s.charRepo.Create(s.ctx, characterrepo.CreateInput{
 		Character: &entities.Character{Data: &tkcharacter.Data{
-			ID: id, PlayerID: playerID, Name: name, Level: 1,
+			ID: id, PlayerID: playerID, Name: name, Level: 1, RaceID: races.Human,
 			HitPoints: 10, MaxHitPoints: 10,
 			Inventory: items,
 		}},

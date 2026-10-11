@@ -272,13 +272,9 @@ func exitIDs(atlas *sessionpb.GetAtlasResponse) []string {
 // from anywhere in the hall; working its latch still costs her the steps.
 func (r *heirloomRun) findTheVault(t *testing.T, member string) {
 	t.Helper()
-	_, err := r.h.manager.Manager.Search(r.ctxOf(member), &sdk.SearchInput{
-		Session: heirloomSession, Member: member, Region: "hall",
-	})
-	require.NoError(t, err)
 	hallSide := dungeonstest.HeirloomVaultDoorCrossing[0]
 	r.walkWithin(t, member, dungeonstest.HeirloomHallCells, hallSide[0], hallSide[1])
-	_, err = r.h.handler.OpenDoor(r.ctxOf(member), &sessionpb.OpenDoorRequest{
+	_, err := r.h.handler.OpenDoor(r.ctxOf(member), &sessionpb.OpenDoorRequest{
 		Session: heirloomSession, Member: member, Door: dungeonstest.HeirloomVaultDoorID,
 	})
 	require.NoError(t, err)

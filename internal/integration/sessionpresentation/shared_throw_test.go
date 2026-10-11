@@ -17,6 +17,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
 
 	lobbypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
 	presentationpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/presentation/v1alpha1"
@@ -124,6 +125,7 @@ func seedCharacter(ctx context.Context, t *testing.T, repo characterrepo.Reposit
 		PlayerID:     playerID,
 		Name:         name,
 		Level:        1,
+		RaceID:       races.Human,
 		HitPoints:    10,
 		MaxHitPoints: 10,
 	}}})

@@ -36,7 +36,7 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// Hold's probe-law collapse sentinel (rpg-project#368): the SAME
 		// sentinel answers "this dungeon has no prop by that id" and every
 		// refusal about a prop the member cannot see, so this is one row
-		// for one sentinel exactly as ErrElsewhere below is.
+		// for one sentinel exactly as ErrBadAttack below is.
 		{"ErrNoProp", sdk.ErrNoProp, codes.NotFound},
 		{"ErrNoCharacter", sdk.ErrNoCharacter, codes.NotFound},
 		{"ErrNoMember", sdk.ErrNoMember, codes.NotFound},
@@ -91,19 +91,13 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrBadRest", sdk.ErrBadRest, codes.InvalidArgument},
 		{"ErrDuplicateMember", sdk.ErrDuplicateMember, codes.InvalidArgument},
 
-		// A retired verb cannot become available by changing the game state.
-		{"ErrSearchRetired", sdk.ErrSearchRetired, codes.Unimplemented},
-
 		// FAILED_PRECONDITION -- well-formed request, world state refuses it.
 		{"ErrInBubble", sdk.ErrInBubble, codes.FailedPrecondition},
 		{"ErrNotInFight", sdk.ErrNotInFight, codes.FailedPrecondition},
 		{"ErrClosed", sdk.ErrClosed, codes.FailedPrecondition},
 		{"ErrNotACharacter", sdk.ErrNotACharacter, codes.FailedPrecondition},
-		// Search's own refusal (rpg-project#350): the named region is not
-		// the one the searcher stands in, or does not exist -- the SDK
-		// returns the SAME sentinel for both on purpose (the probe law),
-		// so this is one row for one sentinel, not two.
-		{"ErrElsewhere", sdk.ErrElsewhere, codes.FailedPrecondition},
+		// Two competing attack offers: the player owes a pick (R5).
+		{"ErrConflictingOffers", sdk.ErrConflictingOffers, codes.FailedPrecondition},
 		{"ErrBadAttack", sdk.ErrBadAttack, codes.FailedPrecondition},
 		// Arrived v0.15.0-v0.17.0. ErrDowned is emphatically NOT no-such-member
 		// (a downed member stays on the map, in the roster, and readable), and
@@ -316,8 +310,8 @@ var errorsGoDefaultCaseSentinels = map[string]bool{
 // cache -- not a local checkout (which routinely sits on unmerged branches)
 // and not a hand-maintained count (which can go stale silently: a table and
 // a constant that both stay put pass a length check even when the SDK
-// gained a sentinel neither of them learned about -- exactly how ErrElsewhere
-// slipped past this file once). go list resolves the pinned module's
+// gained a sentinel neither of them learned about -- exactly how a sentinel like
+// ErrConflictingOffers could slip past this file). go list resolves the pinned module's
 // on-disk directory directly from go.mod, so this always reads the version
 // actually built.
 func sdkSentinelNames(t *testing.T) []string {

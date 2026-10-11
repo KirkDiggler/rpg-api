@@ -155,22 +155,19 @@ func TestProjectView_RejectsMissingOwnerIdentity(t *testing.T) {
 	}
 }
 
-// dnd5e:spells:shield is a retired ref: character load drops the blob under
-// every policy, so the projection succeeds and carries no condition for it.
-func TestProjectView_DropsARetiredConditionBlob(t *testing.T) {
+// dnd5e:spells:shield was a retired ref the load used to drop under every
+// policy. The retired set is gone (rpg-toolkit#1965 row 62), so the blob is an
+// unregistered ref like any other and the projection refuses it, naming it.
+func TestProjectView_RefusesAFormerlyRetiredConditionBlob(t *testing.T) {
 	data := level3FighterData(t, "fighter-retired-shield")
-	before, err := ProjectView(context.Background(), &ProjectViewInput{Data: data})
-	require.NoError(t, err)
-
 	data.Conditions = append(data.Conditions, mustJSON(t, map[string]any{
 		"ref": map[string]string{"module": "dnd5e", "type": "spells", "id": "shield"}, "member_id": data.ID,
 	}))
+
 	out, err := ProjectView(context.Background(), &ProjectViewInput{Data: data})
-	require.NoError(t, err)
-	require.Len(t, out.View.Status.Conditions, len(before.View.Status.Conditions))
-	for _, c := range out.View.Status.Conditions {
-		require.NotEqual(t, "dnd5e:spells:shield", c.Ref.String())
-	}
+	require.Error(t, err)
+	require.Nil(t, out)
+	require.Contains(t, err.Error(), "dnd5e:spells:shield")
 }
 
 func TestProjectView_RejectsEveryUnprojectablePersistedShape(t *testing.T) {

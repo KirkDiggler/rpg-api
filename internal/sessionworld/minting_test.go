@@ -101,10 +101,10 @@ func TestTheMindIsTheMemberIdTheRunKnows(t *testing.T) {
 func loadWorld(t *testing.T, d *Dungeon) *tkencounter.Encounter {
 	t.Helper()
 
-	// Standing is the test's own: scenes here join members, which the
-	// refusing Standing is not asked to assess.
+	// Participation is the test's own: scenes here join members, which the
+	// refusing Participation is not asked to assess.
 	caps := tkencounter.RefusingCapabilities()
-	caps.Standing = everyoneStanding{}
+	caps.Participation = everyoneStanding{}
 	caps.Sheets = standStillSheets{}
 
 	enc := encounterOf(t, d, caps)
