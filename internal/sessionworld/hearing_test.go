@@ -62,21 +62,28 @@ func (s *HearingSuite) TestTheDoorBetweenStartsClosed() {
 func (s *HearingSuite) TestTheGuardWalksASquareAndListensForAClang() {
 	guard := s.placement("guard")
 	s.Equal("watch", guard.Faction)
+	// The hop arithmetic is measured against this ref's passive Perception.
+	s.Equal("dnd5e:monsters:bandit", guard.Ref)
+	s.Equal(cellOf(s.hearing.Spec.Field.Canvas.Orientation, spatial.Position{X: 2, Y: 1}), guard.At,
+		"on the square's first corner")
 	rows := guard.Table[tkencounter.AnswerTime]
 	s.Require().Len(rows, 4, "the use case's gate-patrol, row for row")
 
 	var patrol, listen, shout, strike *tkencounter.Answer
 	for i := range rows {
 		row := &rows[i]
-		s.Require().Lenf(row.When, 1, "row %d names one condition", i)
-		switch {
-		case row.When[0].Heard != nil:
+		s.Require().NotEmptyf(row.When, "row %d names a condition", i)
+		if row.When[0].Heard != nil {
 			listen = row
-		case row.When[0].Enemy == tkencounter.EnemyNone:
+			continue
+		}
+		s.Require().Lenf(row.When, 1, "row %d names one condition", i)
+		switch row.When[0].Enemy {
+		case tkencounter.EnemyNone:
 			patrol = row
-		case row.When[0].Enemy == tkencounter.EnemySeen:
+		case tkencounter.EnemySeen:
 			shout = row
-		case row.When[0].Enemy == tkencounter.EnemyReach:
+		case tkencounter.EnemyReach:
 			strike = row
 		}
 	}
@@ -94,7 +101,10 @@ func (s *HearingSuite) TestTheGuardWalksASquareAndListensForAClang() {
 
 	s.Require().NotNil(listen, "a clang heard: walk toward it")
 	s.Equal(4, listen.Weight, "a heard clang wins the roll against the square four times in five")
+	s.Require().Len(listen.When, 2, "a clang heard AND nobody in sight: both must hold")
 	s.Equal(&tkencounter.HeardWhen{Kind: tkencounter.SoundClang, Within: 2}, listen.When[0].Heard)
+	s.Equal(tkencounter.EnemyNone, listen.When[1].Enemy,
+		"the sound row leaves the roll once an enemy is in sight, so it never out-rolls the shout or the strike")
 	s.Require().NotNil(listen.Toward)
 	s.Equal(tkencounter.SelectorSound, listen.Toward.Word, "toward where the sound was made, not toward a member")
 
@@ -111,6 +121,7 @@ func (s *HearingSuite) TestTheGuardWalksASquareAndListensForAClang() {
 func (s *HearingSuite) TestTheReserveWaitsForTheAlarmAndWalksToTheGuardroom() {
 	reserve := s.placement("reserve")
 	s.Equal("thugs", reserve.Faction)
+	s.Equal("dnd5e:monsters:thug", reserve.Ref)
 	s.Equal(tkencounter.TriggerFact{Fact: "alarm-raised"}, reserve.Arrives)
 
 	var walk *tkencounter.Answer
@@ -131,6 +142,7 @@ func (s *HearingSuite) TestTheReserveWaitsForTheAlarmAndWalksToTheGuardroom() {
 	s.Equal("guardroom", s.regionOf(*walk.Toward.At), "the cell it walks to is in the guardroom")
 
 	thug := s.placement("thug")
+	s.Equal("dnd5e:monsters:thug", thug.Ref)
 	s.Nil(thug.Arrives, "the thug behind the door stands there from the first frame")
 	s.Equal(cellOf(s.hearing.Spec.Field.Canvas.Orientation, spatial.Position{X: 10, Y: 0}), thug.At,
 		"in the north corner, off the doorway's line")
@@ -151,7 +163,7 @@ func (s *HearingSuite) TestTheSecondGuardMakesForTheDoorOnTheAlarm() {
 	var hold, alarm, strike *tkencounter.Answer
 	for i := range rows {
 		row := &rows[i]
-		s.Require().Lenf(row.When, 1, "row %d names one condition", i)
+		s.Require().NotEmptyf(row.When, "row %d names a condition", i)
 		switch {
 		case row.When[0].Fact == "alarm-raised":
 			alarm = row
@@ -163,6 +175,11 @@ func (s *HearingSuite) TestTheSecondGuardMakesForTheDoorOnTheAlarm() {
 	}
 	s.Require().NotNil(hold, "nobody in sight: stand")
 	s.NotNil(hold.Hold)
+	s.Require().Len(hold.When, 2, "nobody in sight AND no alarm held: both must hold")
+	s.Require().NotNil(hold.When[1].Not, "the second entry is a negation")
+	s.Equal("alarm-raised", hold.When[1].Not.Fact,
+		"once the alarm is held the hold leaves the roll, so it never ties with the walk")
+	s.Require().Len(alarm.When, 1)
 	s.Require().NotNil(alarm, "holding the alarm: make for the door")
 	s.Require().NotNil(alarm.Toward)
 	s.Require().NotNil(alarm.Toward.At)

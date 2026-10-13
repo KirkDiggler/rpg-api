@@ -137,10 +137,13 @@ place:
   #   - an enemy in sight: shout, and the shout teaches `alarm-raised` (R6);
   #   - an enemy in reach: attack it.
   #
-  # The rows are rolled, not ordered (R8). A guard that heard a clang and
-  # sees nobody is eligible for both the square and the sound, so the sound
-  # row is weighted 4 to the square's 1: a heard clang wins the roll four
-  # times in five.
+  # The rows are rolled, not ordered (R8): every row whose `when` holds is in
+  # the roll, by weight. So the sound row says TWO things, in the list form
+  # where every entry must hold: a clang was heard, AND nobody is in sight.
+  # Without the second, a fresh clang's weight 4 would out-roll the shout and
+  # the strike too, and a guard looking straight at the thug would turn away
+  # to walk to where it heard it. With it, the sound row only ever competes
+  # with the square, which it wins four times in five.
   - id: guard
     ref: "dnd5e:monsters:bandit"
     faction: watch
@@ -149,7 +152,7 @@ place:
     on:
       time:
         - { when: { enemy: none },                       toward: { path: [[2, 1], [4, 1], [4, 6], [2, 6]] }, weight: 1 }
-        - { when: { heard: { kind: clang, within: 2 } }, toward: sound,                                     weight: 4 }
+        - { when: [{ heard: { kind: clang, within: 2 } }, { enemy: none }], toward: sound,                  weight: 4 }
         - { when: { enemy: seen },                       say: "To arms!", fact: alarm-raised }
         - { when: { enemy: reach },                      attack: enemy }
 
@@ -159,7 +162,9 @@ place:
   # the open door, not through the closed one. A creature that hears a fact
   # being shouted holds it. That is this file's `when: { fact }`: once it
   # holds `alarm-raised` it makes for [5, 4], the guardroom cell beside the
-  # door. Its `hold` row covers the quiet before.
+  # door. Its `hold` row covers the quiet before, and only before: it also
+  # says `not: { fact: alarm-raised }`, so once the guard holds the alarm the
+  # hold leaves the roll instead of tying with the walk.
   - id: guard-2
     ref: "dnd5e:monsters:bandit"
     faction: watch
@@ -167,7 +172,7 @@ place:
     targeting: closest
     on:
       time:
-        - { when: { enemy: none },         hold: {} }
+        - { when: [{ enemy: none }, { not: { fact: alarm-raised } }], hold: {} }
         - { when: { fact: alarm-raised },  toward: { at: [5, 4] } }
         - { when: { enemy: reach },        attack: enemy }
 
