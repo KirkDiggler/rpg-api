@@ -83,7 +83,12 @@ func (s *HearingSuite) TestTheGuardWalksASquareAndListensForAClang() {
 
 	s.Require().NotNil(patrol, "nobody in sight: walk the square")
 	s.Require().NotNil(patrol.Toward)
-	s.Len(patrol.Toward.Path, 4, "four corners")
+	orientation := s.hearing.Spec.Field.Canvas.Orientation
+	corners := make([]spatial.Position, 0, 4)
+	for _, c := range [][2]float64{{2, 1}, {4, 1}, {4, 6}, {2, 6}} {
+		corners = append(corners, cellOf(orientation, spatial.Position{X: c[0], Y: c[1]}))
+	}
+	s.Equal(corners, patrol.Toward.Path, "the four authored corners, in order, in the field's axial frame")
 
 	s.Require().NotNil(listen, "a clang heard: walk toward it")
 	s.Equal(&tkencounter.HeardWhen{Kind: tkencounter.SoundClang, Within: 2}, listen.When[0].Heard)
@@ -117,6 +122,8 @@ func (s *HearingSuite) TestTheReserveWaitsForTheAlarmAndWalksToTheGuardroom() {
 	s.Require().NotNil(walk, "a row reads the alarm")
 	s.Require().NotNil(walk.Toward)
 	s.Require().NotNil(walk.Toward.At)
+	s.Equal(cellOf(s.hearing.Spec.Field.Canvas.Orientation, spatial.Position{X: 3, Y: 3}), *walk.Toward.At,
+		"the reserve walks onto the offset [3, 3] the file names, compiled to the field's axial frame")
 	s.Equal("guardroom", s.regionOf(*walk.Toward.At), "the cell it walks to is in the guardroom")
 
 	s.Nil(s.placement("thug").Arrives, "the thug behind the door stands there from the first frame")
@@ -141,13 +148,13 @@ func (s *HearingSuite) TestTheWatchTurnsOnTheAlarm() {
 	s.Equal(tkencounter.StanceHostile, stances[pair{"watch", "thugs"}].Stance)
 }
 
-// regionOf names the region that owns a cell of the compiled field.
+// regionOf names the region that owns a cell of the compiled field. Both
+// sides are compiled cells, so they compare in the field's own frame.
 func (s *HearingSuite) regionOf(cell spatial.Position) string {
 	s.T().Helper()
-	orientation := s.hearing.Spec.Field.Canvas.Orientation
 	for _, r := range s.hearing.Spec.Field.Regions {
 		for _, c := range r.Cells {
-			if cellOf(orientation, c) == cell {
+			if c == cell {
 				return r.ID
 			}
 		}
