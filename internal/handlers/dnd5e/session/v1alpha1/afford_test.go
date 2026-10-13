@@ -322,3 +322,77 @@ func TestAfford_AimPreviewRequiresOwner(t *testing.T) {
 	_, err := h.Afford(auth.WithPlayerID(context.Background(), "bob"), &sessionpb.AffordRequest{Session: "sess", Member: "char-1", CastAim: &sessionpb.CastAim{Declaration: "offer", Cell: &sessionpb.Position{X: 1.25, Y: 2}}})
 	requireCode(t, err, codes.PermissionDenied)
 }
+
+// TestAfford_SpeakRowCarriesItsMenu pins the Speak row's projection
+// (rpg-project#569): one wire option per (target, line) pair, the target on
+// its own oneof arm, the line verbatim, Available copied, and a shortfall only
+// where the SDK set Why. The menu rides `speak_options`, never the cast
+// `options` field beside it.
+func TestAfford_SpeakRowCarriesItsMenu(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Afford(gomock.Any(), gomock.Any()).Return(&sdk.AffordOutput{
+		Clock: sdk.ClockWorld,
+		Declarations: []sdk.Declaration{{
+			Verb: sdk.VerbSpeak, Slot: sdk.SlotAction, Available: true, ID: "decl-speak",
+			SpeakOptions: []sdk.SpeakOptionRow{
+				{Target: "front-goblin", OptionID: "lean-on-it", Line: "Where's the cellar? Tell me or you're next.", Available: true},
+				{Prop: "altar", OptionID: "pray", Line: "Hear me.", Available: true},
+				{
+					Target: "front-goblin", OptionID: "hidden", Line: "x", Available: false,
+					Why: &sdk.Shortfall{Reason: sdk.ShortfallNoOption, Text: "not yours to say"},
+				},
+			},
+		}},
+	}, nil)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
+	require.NoError(t, err)
+	require.Len(t, resp.GetDeclarations(), 1)
+	decl := resp.GetDeclarations()[0]
+	require.Equal(t, sessionpb.Verb_VERB_SPEAK, decl.GetVerb())
+	require.Empty(t, decl.GetOptions(), "the cast menu stays empty on a Speak row")
+
+	menu := decl.GetSpeakOptions()
+	require.Len(t, menu, 3)
+	require.Equal(t, "front-goblin", menu[0].GetMemberId())
+	require.Empty(t, menu[0].GetPropId())
+	require.Equal(t, "lean-on-it", menu[0].GetOptionId())
+	require.Equal(t, "Where's the cellar? Tell me or you're next.", menu[0].GetLine())
+	require.True(t, menu[0].GetAvailable())
+	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_UNSPECIFIED, menu[0].GetShortfall(),
+		"no Why, no shortfall")
+
+	require.Equal(t, "altar", menu[1].GetPropId())
+	require.Empty(t, menu[1].GetMemberId())
+	require.Equal(t, "pray", menu[1].GetOptionId())
+
+	require.False(t, menu[2].GetAvailable())
+	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_OPTION, menu[2].GetShortfall())
+}
+
+// TestAfford_EmptySpeakRowSaysNoOption pins the declaration-level shortfall:
+// a Speak row with nothing on its menu crosses unavailable with NO_OPTION and
+// an empty menu.
+func TestAfford_EmptySpeakRowSaysNoOption(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Afford(gomock.Any(), gomock.Any()).Return(&sdk.AffordOutput{
+		Clock: sdk.ClockWorld,
+		Declarations: []sdk.Declaration{{
+			Verb: sdk.VerbSpeak, Slot: sdk.SlotAction, Available: false, ID: "decl-speak",
+			Why: &sdk.Shortfall{Reason: sdk.ShortfallNoOption, Text: "nothing here has a line for you"},
+		}},
+	}, nil)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
+	require.NoError(t, err)
+	decl := resp.GetDeclarations()[0]
+	require.False(t, decl.GetAvailable())
+	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_OPTION, decl.GetWhy().GetReason())
+	require.Empty(t, decl.GetSpeakOptions())
+}

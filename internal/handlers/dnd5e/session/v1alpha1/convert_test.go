@@ -93,12 +93,11 @@ func TestVerbToProto(t *testing.T) {
 	// client can act on while the fight waits -- would arrive UNSPECIFIED,
 	// and the panel would have nothing to draw but a dead table.
 	require.Equal(t, sessionpb.Verb_VERB_REACT, verbToProto(sdk.VerbReact))
-	// The first shenanigan (rpg-project#454). Afford emits this row on the
-	// turn clock unconditionally, the way it emits VerbMove, so unmapped it
-	// would not be one wrong label but the whole Intimidate affordance
+	// Speak (rpg-project#569), which replaced the Intimidate and Persuade
+	// rows. Unmapped it would not be one wrong label but the whole menu
 	// missing: a client drops a verb it cannot name rather than drawing it
 	// wrong.
-	require.Equal(t, sessionpb.Verb_VERB_INTIMIDATE, verbToProto(sdk.VerbIntimidate))
+	require.Equal(t, sessionpb.Verb_VERB_SPEAK, verbToProto(sdk.VerbSpeak))
 	require.Equal(t, sessionpb.Verb_VERB_UNSPECIFIED, verbToProto(sdk.Verb("bogus")))
 }
 
@@ -817,8 +816,8 @@ func TestKeepRuleToProto_RefusesARuleThisBuildCannotName(t *testing.T) {
 
 	// The refusal reaches the caller rather than stopping at the helper: a
 	// beat carrying an unnameable rule does not become an event at all.
-	err := setEventBody(&sessionpb.Event{}, sdk.IntimidatedBody{
-		Actor: "char-1", Target: "goblin-1", DC: 13, Total: 7, Beaten: false,
+	err := setEventBody(&sessionpb.Event{}, sdk.SpokeBody{
+		Actor: "char-1", Target: "goblin-1", OptionID: "lean-on-it", DC: 13, Total: 7, Beaten: false,
 		Calculation: d20WithKeep([]int{7, 18}, []int{0}, &sdk.DiceKeep{
 			Rule:    sdk.KeepRule("elven-accuracy"),
 			Imposed: []sdk.RollSource{{Ref: "dnd5e:rules:untrained", Name: "Untrained", SourceID: "char-1"}},
@@ -842,23 +841,13 @@ func TestCheckBeatsCarryTheCalculation(t *testing.T) {
 		read func(*sessionpb.Event) *sessionpb.RollCalculation
 	}{
 		{
-			name: "intimidated",
-			body: sdk.IntimidatedBody{
-				Actor: "char-1", Target: "goblin-1", DC: 13, Total: 7,
+			name: "spoke",
+			body: sdk.SpokeBody{
+				Actor: "char-1", Target: "goblin-1", OptionID: "lean-on-it", Skill: "intimidation", DC: 13, Total: 7,
 				Calculation: d20WithKeep([]int{7, 18}, []int{0}, untrained),
 			},
 			read: func(e *sessionpb.Event) *sessionpb.RollCalculation {
-				return e.GetIntimidated().GetCalculation()
-			},
-		},
-		{
-			name: "persuaded",
-			body: sdk.PersuadedBody{
-				Actor: "char-1", Target: "goblin-1", DC: 13, Total: 7,
-				Calculation: d20WithKeep([]int{7, 18}, []int{0}, untrained),
-			},
-			read: func(e *sessionpb.Event) *sessionpb.RollCalculation {
-				return e.GetPersuaded().GetCalculation()
+				return e.GetSpoke().GetCheck().GetCalculation()
 			},
 		},
 		{
@@ -913,8 +902,8 @@ func TestBeatsWithoutArithmeticLeaveTheCalculationUnset(t *testing.T) {
 	require.Nil(t, event.GetDoor().GetCalculation())
 
 	event = &sessionpb.Event{}
-	require.NoError(t, setEventBody(event, sdk.IntimidatedBody{Actor: "char-1", Target: "goblin-1", DC: 13, Total: 7}))
-	require.Nil(t, event.GetIntimidated().GetCalculation())
+	require.NoError(t, setEventBody(event, sdk.SpokeBody{Actor: "char-1", Target: "goblin-1", OptionID: "lean-on-it", DC: 13, Total: 7}))
+	require.Nil(t, event.GetSpoke().GetCheck().GetCalculation())
 }
 
 // THE STRUCK BEAT WRITES NEITHER DEPRECATED LIST (rpg-project#462, R1), even
@@ -1741,6 +1730,8 @@ func TestShortfallReasonToProto(t *testing.T) {
 		// it unmapped would blank the reason on the whole panel at the one
 		// moment a player most needs to be told why nothing works.
 		{sdk.ShortfallWindowOpen, sessionpb.ShortfallReason_SHORTFALL_REASON_WINDOW_OPEN},
+		// A Speak row nobody in sight offers a line on (rpg-project#569).
+		{sdk.ShortfallNoOption, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_OPTION},
 		{sdk.ShortfallReason("bogus"), sessionpb.ShortfallReason_SHORTFALL_REASON_UNSPECIFIED},
 	}
 	for _, tt := range tests {
@@ -2904,67 +2895,6 @@ func TestConditionRemovedToProto_NamesWhoIsResponsible(t *testing.T) {
 	require.Equal(t, "char_bard", condition.GetSourceId(),
 		"which instance ended is the source plus the target plus the ref")
 	require.Equal(t, "concentration ended", condition.GetReason())
-}
-
-// TestIntimidatedBodyToProto_CarriesTheWholeRollBothWays is the beat half of
-// the first shenanigan (rpg-project#454), and the missed case is the one that
-// matters most: IntimidateResponse carries no beaten, total or dc, so this
-// beat is the ONLY account of the roll and the actor reads it here like every
-// other witness. A body that failed to cross would leave the person who threw
-// the die with nothing at all.
-//
-// FALSE IS AN ANSWER. The SDK writes beaten, dc and total with no omitempty
-// precisely because `beaten: false` is the whole content of a missed threat,
-// and this converter must not reintroduce the absence its author removed.
-func TestIntimidatedBodyToProto_CarriesTheWholeRollBothWays(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		beaten bool
-		total  int
-	}{
-		{name: "beaten", beaten: true, total: 14},
-		{name: "missed", beaten: false, total: 4},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			event := &sessionpb.Event{}
-			setEventBody(event, sdk.IntimidatedBody{
-				Actor: "char-alice", Target: "goblin-2", DC: 9, Total: tc.total, Beaten: tc.beaten,
-			})
-
-			got := event.GetIntimidated()
-			require.NotNil(t, got, "a threat that reached this seam must reach the wire")
-			require.Equal(t, "char-alice", got.GetActor())
-			require.Equal(t, "goblin-2", got.GetTarget())
-			require.Equal(t, int32(9), got.GetDc())
-			require.Equal(t, int32(tc.total), got.GetTotal())
-			require.Equal(t, tc.beaten, got.GetBeaten())
-		})
-	}
-}
-
-// TestIntimidatedBodyToProto_BeatenIsCopiedNeverDerived pins the reading as
-// the provider's. A 20 the rulebook says did not beat a DC 9 crosses as
-// beaten=false, because the day a rule changes what beating a DC means, every
-// reader that compared total against dc would be wrong at once -- the law
-// Saved.succeeded and DoorChanged.beaten already keep.
-func TestIntimidatedBodyToProto_BeatenIsCopiedNeverDerived(t *testing.T) {
-	event := &sessionpb.Event{}
-	setEventBody(event, sdk.IntimidatedBody{
-		Actor: "char-alice", Target: "goblin-2", DC: 9, Total: 20, Beaten: false,
-	})
-	require.False(t, event.GetIntimidated().GetBeaten())
-	require.Equal(t, int32(20), event.GetIntimidated().GetTotal())
-	require.Equal(t, int32(9), event.GetIntimidated().GetDc())
-}
-
-// TestEventIntimidatedKindToProto is the kind half. An unmapped kind does not
-// fail -- it demotes to EVENT_KIND_UNKNOWN and the body stays nil -- so a
-// missing arm here would lose the die for the whole table rather than degrade
-// one field of it.
-func TestEventIntimidatedKindToProto(t *testing.T) {
-	require.Equal(t,
-		sessionpb.EventKind_EVENT_KIND_INTIMIDATED,
-		eventKindToProto(sdk.EventIntimidated))
 }
 
 // mustEventToProto is eventToProto for a scene that pins a PROJECTION rather

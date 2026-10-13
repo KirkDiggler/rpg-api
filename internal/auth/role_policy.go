@@ -51,7 +51,7 @@ func GameMethodPermission(method string) (Permissions, bool) {
 		switch name {
 		case "Join", "Exit", "Move", "Attack", "DeathSave", "OpenDoor", "CloseDoor", "Unlock", "Search", "SetDiscoverySharing", "Interact",
 			"Trade", "Unpack", "Loot", "Hold", "Turn", "Rest",
-			"Afford", "Activate", "Cast", "React", "Intimidate", "Persuade", "EndTurn", "Dissolve", "End", "GetStatus", "GetStory", "GetView",
+			"Afford", "Activate", "Cast", "React", "Speak", "Intimidate", "Persuade", "EndTurn", "Dissolve", "End", "GetStatus", "GetStory", "GetView",
 			"GetWhere", "GetAtlas", "GetRoster", "GetDoors", "GetKnowledge", "GetSeat", "StreamEvents":
 			return PermissionPlay, true
 		}

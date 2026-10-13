@@ -12,11 +12,11 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
-// shenanigans_test.go covers the social verbs' authoring half
-// (rpg-project#454, rpg-project#458): a monster placement may price the checks
-// a character has to beat to lean on it or talk it round, and say what the
-// creature DOES about either -- what it says, what it teaches, and whether it
-// runs.
+// shenanigans_test.go covers Speak's authoring half (rpg-project#454,
+// rpg-project#458, migrated to options by rpg-project#569): a monster
+// placement may author the lines a character can say to it, the check each
+// line has to beat, and what the creature DOES about it -- what it says, what
+// it teaches, and whether it runs.
 //
 // It compiles the REAL shipped files rather than fixtures, for
 // armed_minds_test.go's reason: the thing under test is the file the walk
@@ -72,36 +72,51 @@ func (s *ShenanigansSuite) placement(d *Dungeon, id string) Monster {
 	return Monster{}
 }
 
+// optionOf finds one authored line on a compiled placement by its id.
+func (s *ShenanigansSuite) optionOf(m Monster, id string) tkencounter.Option {
+	s.T().Helper()
+	for _, o := range m.Options {
+		if o.ID == id {
+			return o
+		}
+	}
+	s.Require().Failf("no such option", "%s authors no option %q", m.PlacementID, id)
+	return tkencounter.Option{}
+}
+
 // TestTheAuthoredCheckSurvivesTheCompile is the acceptance case for the
-// authoring half: a placement that priced `intimidate:` reaches this package
-// with the author's own route and number, uninterpreted.
+// authoring half: the thug's one line reaches this package with the author's
+// own route and number, uninterpreted (rpg-project#569). It was a priced
+// `intimidate:` with no table; it is one option at the same DC and no rows.
 func (s *ShenanigansSuite) TestTheAuthoredCheckSurvivesTheCompile() {
 	thug := s.monsterOf(s.minds, "dnd5e:monsters:thug")
 
-	s.Require().Len(thug.Intimidate, 1, "the thug prices exactly one route through")
-	s.Equal("intimidation", thug.Intimidate[0].Ability,
-		"the author's own skill ref, never mapped to something else on the way")
-	s.Equal(12, thug.Intimidate[0].DC,
-		"and the author's own number, which is not the thug's derived 10")
+	s.Require().Len(thug.Options, 1, "the thug authors exactly one line")
+	line := thug.Options[0]
+	s.Equal("lean-on-it", line.ID)
+	s.Equal("Step aside, or I move you.", line.Say, "the line crosses verbatim")
+	s.Equal([]tkencounter.CheckApproach{{Ability: "intimidation", DC: 12}}, line.Check,
+		"the author's own skill and number, never mapped to something else on the way")
+	s.Nil(line.Requires, "the line is offered to everybody")
+	s.Empty(line.Success, "a landed threat answers with the deed alone")
+	s.Empty(line.Failure)
 }
 
-// TestAnUnpricedPlacementCarriesNothing is the control, and it is the half of
-// the design that matters most: absent means DERIVED, not ungated. The
-// goblins price nothing, so the field is nil here and the rulebook rolls
-// against each one's own passive Insight (DC 9) at threat time. A zero value
-// invented on this side would be a DC nobody chose.
+// TestAnUnpricedPlacementCarriesNothing is the control: a creature nobody
+// wrote a line for has no options, and it cannot be spoken to at all
+// (rpg-project#494 R1). A zero value invented on this side would be a line
+// nobody wrote.
 func (s *ShenanigansSuite) TestAnUnpricedPlacementCarriesNothing() {
 	var checked int
 	for _, m := range monstersOf(s.minds) {
 		if m.Ref == "dnd5e:monsters:thug" {
 			continue
 		}
-		s.Nil(m.Intimidate, "%s prices no threat and is checked against its own stat block", m.Ref)
-		s.Nil(m.Persuade, "%s prices no appeal and is checked against its own stat block", m.Ref)
+		s.Nil(m.Options, "%s has no lines and cannot be spoken to", m.Ref)
 		s.Nil(m.Table, "%s carries no authored orders, so its kind's default table speaks alone", m.Ref)
 		checked++
 	}
-	require.Positive(s.T(), checked, "the file must still place monsters the author priced nothing on")
+	require.Positive(s.T(), checked, "the file must still place monsters the author wrote no line for")
 }
 
 // TestTheMindsDungeonAuthorsNoOrders pins what that file does NOT author. The
@@ -121,42 +136,46 @@ func (s *ShenanigansSuite) TestTheMindsDungeonAuthorsNoOrders() {
 	}
 }
 
-// TestTheFrontRoomGoblinPricesBothVerbs is the front room's own acceptance
-// case (rpg-project#458). BOTH numbers are the author's and NEITHER is the
-// derived one: a goblin's own passive Insight is 9, the threat is priced
-// HARDER at 12 and the appeal EASIER at 10.
+// TestTheFrontRoomGoblinOffersTwoLines is the front room's own acceptance
+// case (rpg-project#458, migrated to options by rpg-project#569). The threat
+// is priced HARDER at 12 and the appeal EASIER at 10 -- the same numbers the
+// retired `intimidate:`/`persuade:` keys carried.
 //
 // THE ASYMMETRY IS THE AUTHORING TOOL WORKING. "This one would rather be
 // talked to than shouted at" is a sentence about a creature that no stat block
 // can express and that the engine now hears.
-func (s *ShenanigansSuite) TestTheFrontRoomGoblinPricesBothVerbs() {
+func (s *ShenanigansSuite) TestTheFrontRoomGoblinOffersTwoLines() {
 	goblin := s.placement(s.frontRoom, "front-goblin")
+	s.Require().Len(goblin.Options, 2)
 
-	s.Require().Len(goblin.Intimidate, 1)
-	s.Equal("intimidation", goblin.Intimidate[0].Ability)
-	s.Equal(12, goblin.Intimidate[0].DC, "harder than its derived 9")
+	threat := s.optionOf(goblin, "lean-on-it")
+	s.Equal("Where's the cellar? Tell me or you're next.", threat.Say)
+	s.Equal([]tkencounter.CheckApproach{{Ability: "intimidation", DC: 12}}, threat.Check)
+	s.Nil(threat.Requires)
 
-	s.Require().Len(goblin.Persuade, 1)
-	s.Equal("persuasion", goblin.Persuade[0].Ability)
-	s.Equal(10, goblin.Persuade[0].DC, "easier than the threat, which is the author saying something")
+	appeal := s.optionOf(goblin, "talk-it-round")
+	s.Equal("We're not here for you. Where did the bandits go?", appeal.Say)
+	s.Equal([]tkencounter.CheckApproach{{Ability: "persuasion", DC: 10}}, appeal.Check,
+		"easier than the threat, which is the author saying something")
+	s.Nil(appeal.Requires)
 }
 
-// TestTheFrontRoomTableSurvivesTheCompile is the table's own acceptance case:
-// four outcome keys, the weights the author wrote, the lines VERBATIM, and one
-// word per entry.
+// TestTheFrontRoomRowsSurviveTheCompile is the rows' own acceptance case: the
+// four tables the faction used to carry, now on the option each answered, the
+// weights the author wrote, the lines VERBATIM, and one word per entry.
 //
 // THE LINES ARE ASSERTED IN FULL, not by prefix. `say` is the one field in
 // this whole slice the engine is forbidden to compose, and a test that
 // matched loosely would not notice a converter that trimmed, escaped or
 // re-cased what the author typed.
-func (s *ShenanigansSuite) TestTheFrontRoomTableSurvivesTheCompile() {
-	answers := s.placement(s.frontRoom, "front-goblin").Table
-	s.Require().NotNil(answers,
-		"the front room goblin's whole point is its table, and it INHERITS one from its faction")
+func (s *ShenanigansSuite) TestTheFrontRoomRowsSurviveTheCompile() {
+	goblin := s.placement(s.frontRoom, "front-goblin")
+	threat := s.optionOf(goblin, "lean-on-it")
+	appeal := s.optionOf(goblin, "talk-it-round")
 
 	// A landed threat: 70/30, and the 30 is the gamble -- the goblin you
 	// frightened away is one you can no longer talk to.
-	threatened := answers[tkencounter.AnswerIntimidated]
+	threatened := threat.Success
 	s.Require().Len(threatened, 2)
 	s.Equal(70, threatened[0].Weight)
 	s.Equal("Fine! FINE. The cellar door is behind the barrels. Just don't.", threatened[0].Say)
@@ -169,7 +188,7 @@ func (s *ShenanigansSuite) TestTheFrontRoomTableSurvivesTheCompile() {
 
 	// A missed threat: one entry, no word. It speaks and nothing else
 	// happens, and an omitted weight compiles to 1.
-	missed := answers[tkencounter.AnswerIntimidateFailed]
+	missed := threat.Failure
 	s.Require().Len(missed, 1)
 	s.Equal(1, missed[0].Weight, "an omitted weight is 1, not 0 and not 100")
 	s.Equal("Big talk, for someone standing in my doorway.", missed[0].Say)
@@ -177,24 +196,23 @@ func (s *ShenanigansSuite) TestTheFrontRoomTableSurvivesTheCompile() {
 	s.False(missed[0].Flee)
 
 	// A landed appeal: the truth, and NOT `goblin-cowed`. Talking somebody
-	// round is not frightening them, and the disposition flips on the
-	// threat's fact alone -- a shared fact here would make the two verbs one
-	// verb with two names.
-	persuaded := answers[tkencounter.AnswerPersuaded]
+	// round is not frightening them.
+	persuaded := appeal.Success
 	s.Require().Len(persuaded, 1)
 	s.Equal("Bandits took the cellar. Go left at the rope, and mind the third step.", persuaded[0].Say)
 	s.Empty(persuaded[0].Fact, "an appeal that lands teaches the party nothing the world reads")
 
 	// A failed appeal: THE TRAP. The lie is a fact like any other.
-	failed := answers[tkencounter.AnswerPersuadeFailed]
+	failed := appeal.Failure
 	s.Require().Len(failed, 1)
+	s.Equal(100, failed[0].Weight)
 	s.Equal("Cellar's empty, friend. Nothing down there but rats. Straight on through.", failed[0].Say)
 	s.Equal(tkencounter.FactID("cellar-is-clear"), failed[0].Fact)
 }
 
 // TestTheGoblinsLieIsWhatBringsTheBandits is the scenario's own wiring, and
 // the reason it can be tested at all is that a false fact is an ID AND NOTHING
-// ELSE. There is no truth bit anywhere -- not on the table, not on the beat --
+// ELSE. There is no truth bit anywhere -- not on the option, not on the beat --
 // so "the goblin lied" is expressed entirely by which placement reads the
 // fact it minted.
 //
@@ -202,8 +220,9 @@ func (s *ShenanigansSuite) TestTheFrontRoomTableSurvivesTheCompile() {
 // the bug this catches is an author renaming one end and not the other, which
 // leaves a lie nobody ever walks into and a trap that never springs.
 func (s *ShenanigansSuite) TestTheGoblinsLieIsWhatBringsTheBandits() {
-	lie := s.placement(s.frontRoom, "front-goblin").
-		Table[tkencounter.AnswerPersuadeFailed][0].Fact
+	appeal := s.optionOf(s.placement(s.frontRoom, "front-goblin"), "talk-it-round")
+	s.Require().NotEmpty(appeal.Failure, "the failed appeal must have a row for anything to read")
+	lie := appeal.Failure[0].Fact
 	s.Require().NotEmpty(lie, "the failed appeal must teach something for anything to read")
 
 	for _, id := range []string{"bandit-1", "bandit-2"} {
@@ -225,56 +244,38 @@ func (s *ShenanigansSuite) TestTheGoblinIsNotOnTheBanditsSide() {
 	s.Equal("bandits", s.placement(s.frontRoom, "bandit-2").Faction)
 }
 
-// TestTheBanditsArePricedForNothingAndSayNothing is the front room's own
-// control: only the GOBLINS are a conversation. A bandit priced with a DC
-// would quietly claim you can talk down the ambush you walked into, and one
-// with a social key on its table would be a second scene nobody designed.
+// TestTheBanditsSayNothing is the front room's own control: only the GOBLIN
+// is a conversation. A bandit with a line would quietly claim you can talk
+// down the ambush you walked into, which is a second scene nobody designed.
 //
-// ITS TABLE IS NOT EMPTY ANY MORE, and that is a different claim: the bandits
-// carry a `time` standing order and nothing else (rpg-project#465). What this
-// pins is that the standing order did not bring a conversation with it.
-func (s *ShenanigansSuite) TestTheBanditsArePricedForNothingAndSayNothing() {
+// THEIR TABLE IS NOT EMPTY: the bandits carry a `time` standing order and
+// nothing else (rpg-project#465). What this pins is that the standing order
+// did not bring a conversation with it.
+func (s *ShenanigansSuite) TestTheBanditsSayNothing() {
 	for _, id := range []string{"bandit-1", "bandit-2"} {
 		bandit := s.placement(s.frontRoom, id)
-		s.Nilf(bandit.Intimidate, "%s prices no threat", id)
-		s.Nilf(bandit.Persuade, "%s prices no appeal", id)
-		for _, key := range tkencounter.AnswerKeys {
-			s.Nilf(bandit.Table[key], "%s answers nothing to %s", id, key)
+		s.Nilf(bandit.Options, "%s has no lines", id)
+		for key := range bandit.Table {
+			s.Equalf(tkencounter.AnswerTime, key, "%s's table answers time and nothing else", id)
 		}
 	}
 }
 
-// TestTheFourGoblinsShareOneTable is the slice's own claim, in the file
-// (rpg-project#465): four creatures, one set of orders, and the orders live on
-// the FACTION so that sentence is true by construction rather than by an
-// author copying a block four times.
+// TestOnlyTheNamedGoblinHasLines is the control beside the goblin's own case.
+// The three siblings exist so the walk can watch ONE variable -- the die each
+// was dealt -- and a line written on any of them would be a second one.
 //
-// IDENTITY, NOT EQUIVALENCE. The compiler lays each placement's own `on:` over
-// its faction's, and none of these four writes one — so what every goblin
-// carries is the faction's table entry for entry. A test that compared only
-// lengths would pass against four blocks that had drifted apart.
-func (s *ShenanigansSuite) TestTheFourGoblinsShareOneTable() {
-	ids := []string{"front-goblin", "front-goblin-2", "front-goblin-3", "front-goblin-4"}
-	first := s.placement(s.frontRoom, ids[0]).Table
-	s.Require().NotNil(first)
-
-	for _, id := range ids[1:] {
-		s.Equalf(first, s.placement(s.frontRoom, id).Table,
-			"%s answers from the same authored table as %s", id, ids[0])
-	}
-}
-
-// TestOnlyTheNamedGoblinIsPriced is the control beside it. The three siblings
-// exist so the walk can watch ONE variable — the die each was dealt — and a
-// DC written on any of them would be a second one.
-//
-// NIL IS DERIVED, NOT UNGATED: each of the three is checked against its own
-// stat block's passive Insight, which for a goblin is 9.
-func (s *ShenanigansSuite) TestOnlyTheNamedGoblinIsPriced() {
-	for _, id := range []string{"front-goblin-2", "front-goblin-3", "front-goblin-4"} {
-		sibling := s.placement(s.frontRoom, id)
-		s.Nilf(sibling.Intimidate, "%s prices no threat and is checked against its own stat block", id)
-		s.Nilf(sibling.Persuade, "%s prices no appeal and is checked against its own stat block", id)
+// THEY ALSO CARRY NO AUTHORED TABLE. The goblins' answers used to be the
+// faction's four social `on:` keys, inherited by all four; those keys are
+// retired (rpg-project#569) and the answers live on front-goblin's options,
+// so each sibling falls through to its kind's default `time` table.
+func (s *ShenanigansSuite) TestOnlyTheNamedGoblinHasLines() {
+	for _, id := range []string{"front-goblin", "front-goblin-2", "front-goblin-3", "front-goblin-4"} {
+		goblin := s.placement(s.frontRoom, id)
+		s.Nilf(goblin.Table, "%s authors no table over its kind's default", id)
+		if id != "front-goblin" {
+			s.Nilf(goblin.Options, "%s has no lines and cannot be spoken to", id)
+		}
 	}
 }
 

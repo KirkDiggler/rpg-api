@@ -21,8 +21,7 @@ type Monster struct {
 	Holds       []string
 	Faction     string
 	Arrives     tkencounter.Trigger
-	Intimidate  []tkencounter.CheckApproach
-	Persuade    []tkencounter.CheckApproach
+	Options     []tkencounter.Option
 	Table       tkencounter.Table
 	Temper      tkencounter.Temper
 }
@@ -36,7 +35,7 @@ func monstersOf(d *Dungeon) []Monster {
 			Ref: m.Ref, MemberID: m.MemberID, At: cellOf(orientation, m.At), Facing: m.Facing,
 			Boss: m.Boss, Targeting: m.Targeting, Actions: m.Actions, PlacementID: m.ID,
 			Holds: m.Holds, Faction: m.Faction, Arrives: m.Arrives,
-			Intimidate: m.Intimidate, Persuade: m.Persuade, Table: m.Table, Temper: m.Temper,
+			Options: m.Options, Table: m.Table, Temper: m.Temper,
 		}
 	}
 	return out

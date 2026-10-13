@@ -702,23 +702,17 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_STRUCK
 	case sdk.EventDoor:
 		return sessionpb.EventKind_EVENT_KIND_DOOR
-	// The first shenanigan (rpg-project#454). BOTH ARMS LAND IN THE SAME
-	// CHANGE as the body below, for the cast door's stated reason: an
-	// unmapped kind does not fail, it demotes to EVENT_KIND_UNKNOWN and its
-	// body stays nil -- and this beat is the ONLY account of its roll, since
-	// IntimidateResponse deliberately carries no beaten, total or dc. A
-	// demoted arm would lose the die for the whole table, the actor
-	// included, rather than degrade one field of it.
-	case sdk.EventIntimidated:
-		return sessionpb.EventKind_EVENT_KIND_INTIMIDATED
-	// The front room goblin (rpg-project#458). EventPersuaded is the threat
-	// beat's twin and takes its reasoning whole. EventAnswered is the second
-	// roll -- the WORLD's, on the author's table -- and it is the arm that
-	// would be missed most quietly: the creature's line, the fact it taught
-	// and whether it bolted all ride this one body, so a demotion would leave
-	// a goblin running out of the room with nothing in the log saying why.
-	case sdk.EventPersuaded:
-		return sessionpb.EventKind_EVENT_KIND_PERSUADED
+	// Speak (rpg-project#569), which replaced the Intimidated and Persuaded
+	// arms. IT LANDS IN THE SAME CHANGE as the body below, for the cast
+	// door's stated reason: an unmapped kind does not fail, it demotes to
+	// EVENT_KIND_UNKNOWN and its body stays nil -- and this beat is the ONLY
+	// account of its roll, since SpeakResponse deliberately carries no
+	// beaten, total or dc. EventAnswered is the second roll -- the WORLD's,
+	// on the option's rows -- and the arm that would be missed most quietly:
+	// the creature's line, the fact it taught and whether it bolted all ride
+	// that one body.
+	case sdk.EventSpoke:
+		return sessionpb.EventKind_EVENT_KIND_SPOKE
 	case sdk.EventAnswered:
 		return sessionpb.EventKind_EVENT_KIND_ANSWERED
 	// The creature's table (rpg-project#465). EventTempered lands in the same
@@ -1158,72 +1152,12 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			Member: b.Member, Ability: b.Ability, Beaten: b.Beaten,
 			Total: int32(b.Total), Calculation: calculation,
 		}}
-	case sdk.IntimidatedBody:
-		// A threat, landed or missed (rpg-project#454). VERBATIM, and
-		// BEATEN IS COPIED rather than derived here from total against dc --
-		// the law Saved.succeeded and DoorChanged.beaten already keep, for
-		// the same reason: the day a rule changes what beating a DC means,
-		// every reader that derived it would be wrong at once.
-		//
-		// EVERY FIELD CROSSES ON A MISS TOO. The SDK writes beaten, dc and
-		// total with no omitempty precisely because `beaten: false` is the
-		// whole content of a missed threat, and this seam must not
-		// reintroduce the absence its author removed.
-		//
-		// NOTHING ABOUT THE CONSEQUENCE, and the wire has no field for one.
-		// A beaten threat lands a deed on the witnesses and what it is worth
-		// is the threatened creature's mind's to decide; a client narrates
-		// that from the creature's next turn. Deliberately unlike
-		// DoorChanged below, which can report the state its own check
-		// produced -- there is no state here to report yet.
-		//
-		// THE WHOLE ROLL RIDES WITH THE VERDICT (rpg-project#462). dc, total
-		// and beaten are the outcome; the calculation is what was thrown to
-		// get there -- both d20 faces when a rule decided between them, and
-		// the keep record naming the rule and who brought it. An untrained
-		// character threw two dice and this seam used to publish one number,
-		// so the house rule shipped applied and invisible. It is ABSENT on a
-		// beat that recorded no arithmetic, which is the truth rather than a
-		// zero-valued calculation a reader would have to tell apart.
-		calculation, err := rollCalculationToProto(b.Calculation)
+	case sdk.SpokeBody:
+		spoke, err := spokeToProto(b)
 		if err != nil {
 			return err
 		}
-		evt.Body = &sessionpb.Event_Intimidated{Intimidated: &sessionpb.Intimidated{
-			Actor:       b.Actor,
-			Target:      b.Target,
-			Dc:          int32(b.DC),
-			Total:       int32(b.Total),
-			Beaten:      b.Beaten,
-			Calculation: calculation,
-		}}
-	case sdk.PersuadedBody:
-		// An appeal, landed or missed (rpg-project#458). The threat body's
-		// twin, field for field and law for law -- beaten is COPIED and never
-		// derived from total against dc, and every field crosses on a miss
-		// too, because `beaten: false` is the whole content of a failed
-		// appeal and the `persuade_failed` table fired on it.
-		//
-		// A SEPARATE ARM RATHER THAN ONE SHARED "SOCIAL CHECK" BODY, which is
-		// the wire's own decision (rpg-api-protos#340) and not this
-		// converter's to relitigate: a consumer switching on Event.body gets a
-		// typed verb out of the arm it matched, and a shared body would make
-		// it branch twice -- once to find the arm, once to read a
-		// discriminator.
-		//
-		// It carries the whole roll for the threat body's reason, above.
-		calculation, err := rollCalculationToProto(b.Calculation)
-		if err != nil {
-			return err
-		}
-		evt.Body = &sessionpb.Event_Persuaded{Persuaded: &sessionpb.Persuaded{
-			Actor:       b.Actor,
-			Target:      b.Target,
-			Dc:          int32(b.DC),
-			Total:       int32(b.Total),
-			Beaten:      b.Beaten,
-			Calculation: calculation,
-		}}
+		evt.Body = &sessionpb.Event_Spoke{Spoke: spoke}
 	case sdk.AnsweredBody:
 		answered, err := answeredToProto(b)
 		if err != nil {
@@ -2116,27 +2050,14 @@ func verbToProto(v sdk.Verb) sessionpb.Verb {
 	// showing it wrong. That is the whole panel this slice exists to fill.
 	case sdk.VerbCast:
 		return sessionpb.Verb_VERB_CAST
-	// VerbIntimidate (rpg-project#454). LOAD-BEARING FOR THE DOCK, not a
-	// completeness sweep: leaving it unmapped would label every threat a
-	// member can make VERB_UNSPECIFIED -- and a client drops a verb it cannot
-	// name rather than showing it wrong, so the row would simply never appear.
-	//
-	// ON BOTH CLOCKS AS OF rpg-project#458 R3, which corrects what this
-	// comment used to say. Afford emitted this row on the TURN clock
-	// unconditionally, the way it emits VerbMove, and returned an empty list
-	// on the world clock. It now emits both social rows on the world clock
-	// too, at no cost -- not a discount, but Move's own rule: the world clock
-	// has no economy to fall short of. So this arm is what a player standing
-	// in a front room with no fight in it reads.
-	case sdk.VerbIntimidate:
-		return sessionpb.Verb_VERB_INTIMIDATE
-	// VerbPersuade (rpg-project#458). Intimidate's reason, and one more that
-	// is new with it: Afford emits BOTH social rows on the WORLD clock as well
-	// as the turn clock (R3), so this is the row a player sees standing in a
-	// front room where no fight exists. Unmapped, the one panel this slice
-	// exists to fill would come up empty.
-	case sdk.VerbPersuade:
-		return sessionpb.Verb_VERB_PERSUADE
+	// VerbSpeak (rpg-project#569), which replaced the Intimidate and
+	// Persuade rows. LOAD-BEARING FOR THE DOCK, not a completeness sweep:
+	// leaving it unmapped would label the row VERB_UNSPECIFIED -- and a client
+	// drops a verb it cannot name rather than showing it wrong, so the menu
+	// would never appear. Afford emits it on BOTH clocks (rpg-project#458 R3):
+	// free on the world clock, the action on the turn clock.
+	case sdk.VerbSpeak:
+		return sessionpb.Verb_VERB_SPEAK
 	default:
 		return sessionpb.Verb_VERB_UNSPECIFIED
 	}
@@ -2151,11 +2072,11 @@ func verbToProto(v sdk.Verb) sessionpb.Verb {
 // of bodies — which is the one thing it has to stay.
 func answeredToProto(b sdk.AnsweredBody) (*sessionpb.Answered, error) {
 	// THE WORLD'S OWN ROLL ON THE AUTHOR'S TABLE (rpg-project#458 R1,
-	// rpg-project#465 §6). Two things reach this one body: a social
-	// verdict's answer -- the player's check published `intimidated` or
-	// `persuaded`, and then the world rolled -- and a creature spending
-	// one turn's worth of doing, on its turn in a fight or a round of the
-	// world clock. One table, one roll, one shape; `key` says which.
+	// rpg-project#465 §6, rpg-project#569). Two things reach this one body:
+	// a spoken line's answer -- the player's check published `spoke`, and
+	// then the world rolled the option's `success` or `failure` rows -- and
+	// a creature spending one turn's worth of doing, on its turn in a fight
+	// or a round of the world clock. One roll, one shape; `key` says which.
 	//
 	// EVERY FIELD CROSSES, none of them derived. `entry: 0` is an answer
 	// (the author's first line fired), `beaten: false` is an answer (the
@@ -2183,6 +2104,11 @@ func answeredToProto(b sdk.AnsweredBody) (*sessionpb.Answered, error) {
 	}
 	answered := &sessionpb.Answered{
 		Creature: b.Creature,
+		// WHICH LINE'S ROWS WERE ROLLED (rpg-project#569), empty on a `time`
+		// pick because nothing was said. Copied, never derived from a
+		// preceding `spoke` beat: pairing two beats would assume an ordering
+		// the stream does not promise.
+		OptionId: b.OptionID,
 		Roll:     int32(b.Roll),
 		Of:       int32(b.Of),
 		Entry:    int32(b.Entry),
@@ -2218,8 +2144,8 @@ func answeredToProto(b sdk.AnsweredBody) (*sessionpb.Answered, error) {
 		// response one file over.
 	}
 	// THE DEPRECATED PAIR IS STILL FILLED, BUT ONLY WHERE IT CAN TELL THE
-	// TRUTH (rpg-project#465). A reader written against the shipped shape
-	// keeps working on all four social keys, and on `time` both stay unset
+	// TRUTH (rpg-project#465). It is filled on both option keys -- `verb`
+	// is VERB_SPEAK there (rpg-project#569) -- and on `time` both stay unset
 	// -- because no verb spoke and no check was beaten, and a zero Verb
 	// beside `beaten: false` would read as a threat that failed. Leaving
 	// them out is the honest account of a turn; filling them in would be a
@@ -2237,7 +2163,7 @@ func answeredToProto(b sdk.AnsweredBody) (*sessionpb.Answered, error) {
 		// a word demoted to UNSPECIFIED would assert that the creature
 		// merely spoke.
 		//nolint:staticcheck // Deprecated by `key`, and deliberately still
-		// written: the contract keeps both filled on every social key so a
+		// written: the contract keeps both filled on every option key so a
 		// reader built against the shipped shape goes on working.
 		answered.Verb = verbToProto(sdk.Verb(b.Verb))
 		//nolint:staticcheck // Deprecated by `key`; see the line above.
@@ -2245,6 +2171,59 @@ func answeredToProto(b sdk.AnsweredBody) (*sessionpb.Answered, error) {
 	}
 
 	return answered, nil
+}
+
+// spokeToProto projects one Spoke beat: who said which authored line to what,
+// the skill the check rolled, and the check itself (rpg-project#569). It
+// replaces the Intimidated and Persuaded bodies, and keeps their laws.
+//
+// VERBATIM, and BEATEN IS COPIED rather than derived here from total against
+// dc -- the law Saved.succeeded and DoorChanged.beaten already keep, for the
+// same reason: the day a rule changes what beating a DC means, every reader
+// that derived it would be wrong at once.
+//
+// EVERY FIELD CROSSES ON A MISS TOO. The SDK writes beaten, dc and total with
+// no omitempty because `beaten: false` is the whole content of a missed line,
+// and this seam must not reintroduce the absence its author removed.
+//
+// THE WHOLE ROLL RIDES WITH THE VERDICT (rpg-project#462). The calculation is
+// what was thrown -- both d20 faces when a rule decided between them, and the
+// keep record naming the rule -- and it is ABSENT on a beat that recorded no
+// arithmetic, which is the truth rather than a zero-valued calculation.
+//
+// EXACTLY ONE TARGET ARM. The SDK sets one of Target and Prop; a beat with
+// both or neither is a producer defect, and this seam refuses it rather than
+// pick one, because a line said to the wrong thing is the wrong scene.
+//
+// NOTHING ABOUT THE CONSEQUENCE. A landed Intimidation lands a deed on the
+// witnesses and what it is worth is the creature's mind's to decide; the
+// option's answer arrives as its own `answered` beat.
+func spokeToProto(b sdk.SpokeBody) (*sessionpb.Spoke, error) {
+	calculation, err := rollCalculationToProto(b.Calculation)
+	if err != nil {
+		return nil, err
+	}
+	spoke := &sessionpb.Spoke{
+		Actor:    b.Actor,
+		OptionId: b.OptionID,
+		Line:     b.Line,
+		Skill:    b.Skill,
+		Check: &sessionpb.SpeakCheck{
+			Dc:          int32(b.DC),
+			Total:       int32(b.Total),
+			Beaten:      b.Beaten,
+			Calculation: calculation,
+		},
+	}
+	switch {
+	case b.Target != "" && b.Prop == "":
+		spoke.Target = &sessionpb.Spoke_MemberId{MemberId: b.Target}
+	case b.Prop != "" && b.Target == "":
+		spoke.Target = &sessionpb.Spoke_PropId{PropId: b.Prop}
+	default:
+		return nil, fmt.Errorf("spoke beat names target %q and prop %q; exactly one must be set", b.Target, b.Prop)
+	}
+	return spoke, nil
 }
 
 // answerWordToProto names WHAT A CREATURE DID when the world rolled the
@@ -2293,32 +2272,34 @@ func answerWordToProto(word string) (sessionpb.AnswerWord, error) {
 	}
 }
 
-// answerKeyToProto names WHICH TABLE the world rolled on (rpg-project#465 §2)
-// -- the author's own spelling under `on:`, carried so the beat stands alone.
+// answerKeyToProto names WHICH ROWS the world rolled on (rpg-project#465 §2,
+// rpg-project#569): an option's `success` or `failure` rows, or the creature's
+// own `time` table.
 //
-// IT REFUSES ANYTHING BUT THE FIVE, answerWordToProto's law for
-// answerWordToProto's reason. The design seals the trigger vocabulary and says
-// it grows one word per use case, so a sixth key means this seam is older than
-// the toolkit that produced the beat. ANSWER_KEY_UNSPECIFIED is the zero this
-// file's every enum keeps for "the producer failed", and publishing it about a
-// creature that answered a real trigger would be exactly that claim.
+// IT REFUSES ANYTHING BUT THE THREE, answerWordToProto's law for
+// answerWordToProto's reason. The vocabulary is sealed and grows one word per
+// use case, so a fourth key means this seam is older than the toolkit that
+// produced the beat. ANSWER_KEY_UNSPECIFIED is the zero this file's every enum
+// keeps for "the producer failed", and publishing it about a creature that
+// answered a real trigger would be exactly that claim.
+//
+// THE FOUR RETIRED SOCIAL KEYS REFUSE TOO (`intimidated`, `intimidate_failed`,
+// `persuaded`, `persuade_failed`). The session no longer writes them; a beat
+// carrying one was stored by a build before rpg-project#569, and pre-release a
+// run that old is a run nobody is playing. Their wire values stay in the enum,
+// deprecated, for the protos' own additive law.
 //
 // EMPTY REFUSES TOO, and this is the one place that differs from the word
 // above. An empty Word is an author's real choice -- an entry that only speaks
 // -- but there is no such thing as a pick on no key: the SDK fills this on
 // every beat it writes, and empty means a beat stored by the build BEFORE the
-// table existed, which this seam cannot honestly spell. Loud is the point:
-// pre-release, a run that old is a run nobody is playing.
+// table existed, which this seam cannot honestly spell.
 func answerKeyToProto(key string) (sessionpb.AnswerKey, error) {
 	switch key {
-	case "intimidated":
-		return sessionpb.AnswerKey_ANSWER_KEY_INTIMIDATED, nil
-	case "intimidate_failed":
-		return sessionpb.AnswerKey_ANSWER_KEY_INTIMIDATE_FAILED, nil
-	case "persuaded":
-		return sessionpb.AnswerKey_ANSWER_KEY_PERSUADED, nil
-	case "persuade_failed":
-		return sessionpb.AnswerKey_ANSWER_KEY_PERSUADE_FAILED, nil
+	case "success":
+		return sessionpb.AnswerKey_ANSWER_KEY_SUCCESS, nil
+	case "failure":
+		return sessionpb.AnswerKey_ANSWER_KEY_FAILURE, nil
 	case "time":
 		return sessionpb.AnswerKey_ANSWER_KEY_TIME, nil
 	default:
@@ -2329,21 +2310,17 @@ func answerKeyToProto(key string) (sessionpb.AnswerKey, error) {
 
 // answerKeyIsSocial says whether a key had a VERB and a CHECK behind it --
 // which is the whole question `verb` and `beaten` answer, and the reason those
-// two are filled on four keys and left unset on the fifth (rpg-project#465).
+// two are filled on the option keys and left unset on `time`
+// (rpg-project#465).
 //
 // A `time` pick has neither: nothing spoke and nothing was beaten. Writing
-// VERB_UNSPECIFIED and `beaten: false` there would spell "a threat that
+// VERB_UNSPECIFIED and `beaten: false` there would spell "a line that
 // failed", a sentence about an event that never happened, which is precisely
 // what deprecated the pair.
 func answerKeyIsSocial(key sessionpb.AnswerKey) bool {
 	switch key {
-	case sessionpb.AnswerKey_ANSWER_KEY_INTIMIDATED,
-		sessionpb.AnswerKey_ANSWER_KEY_INTIMIDATE_FAILED,
-		sessionpb.AnswerKey_ANSWER_KEY_PERSUADED,
-		sessionpb.AnswerKey_ANSWER_KEY_PERSUADE_FAILED:
+	case sessionpb.AnswerKey_ANSWER_KEY_SUCCESS, sessionpb.AnswerKey_ANSWER_KEY_FAILURE:
 		return true
-	case sessionpb.AnswerKey_ANSWER_KEY_UNSPECIFIED, sessionpb.AnswerKey_ANSWER_KEY_TIME:
-		return false
 	default:
 		return false
 	}
@@ -2584,6 +2561,35 @@ func castOptionsToProto(options []sdk.CastOption) []*sessionpb.CastOption {
 	return out
 }
 
+// speakOptionsToProto mirrors the Speak row's menu field for field. Available
+// is the SDK's own answer, copied (every row listed today is available: a line
+// whose `requires` the speaker does not meet is left off, not listed
+// unavailable). Shortfall is the line's own reason, present exactly when the
+// SDK set Why. Nil in is nil out, so a non-Speak row carries no menu.
+func speakOptionsToProto(rows []sdk.SpeakOptionRow) []*sessionpb.SpeakOption {
+	if rows == nil {
+		return nil
+	}
+	out := make([]*sessionpb.SpeakOption, len(rows))
+	for i, row := range rows {
+		option := &sessionpb.SpeakOption{
+			OptionId:  row.OptionID,
+			Line:      row.Line,
+			Available: row.Available,
+		}
+		if row.Prop != "" {
+			option.Target = &sessionpb.SpeakOption_PropId{PropId: row.Prop}
+		} else {
+			option.Target = &sessionpb.SpeakOption_MemberId{MemberId: row.Target}
+		}
+		if row.Why != nil {
+			option.Shortfall = shortfallReasonToProto(row.Why.Reason)
+		}
+		out[i] = option
+	}
+	return out
+}
+
 // footprintShapeToProto mirrors the provider's closed outline vocabulary.
 // An unrecognized value reaches UNSPECIFIED, a producer defect.
 func footprintShapeToProto(shape sdk.FootprintShape) sessionpb.FootprintShape {
@@ -2658,8 +2664,12 @@ func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
 		// law TargetKind already keeps for the aimed cell: the offer says what
 		// the answer needs, rather than the client assembling a second
 		// selector out of rows.
-		Options:   castOptionsToProto(d.Options),
-		Footprint: footprintToProto(d.Footprint),
+		Options: castOptionsToProto(d.Options),
+		// THE SPEAK ROW'S MENU (rpg-project#569): one entry per (target,
+		// line) pair. Empty on every other verb. A Speak request brings back
+		// the option id AND the same target, since an id alone names nothing.
+		SpeakOptions: speakOptionsToProto(d.SpeakOptions),
+		Footprint:    footprintToProto(d.Footprint),
 		// WHAT BEARS ON THIS ROW, as the toolkit answered it. Rows never grant
 		// or refuse the declaration; Available and Why above stay the only gate.
 		Effects: effectRowsToProto(d.Effects),
@@ -2703,6 +2713,10 @@ func shortfallReasonToProto(r sdk.ShortfallReason) sessionpb.ShortfallReason {
 		return sessionpb.ShortfallReason_SHORTFALL_REASON_NO_BUDGET
 	case sdk.ShortfallNotYourTurn:
 		return sessionpb.ShortfallReason_SHORTFALL_REASON_NOT_YOUR_TURN
+	// A Speak row with nothing on its menu (rpg-project#569): nobody in
+	// sight offers this speaker a line.
+	case sdk.ShortfallNoOption:
+		return sessionpb.ShortfallReason_SHORTFALL_REASON_NO_OPTION
 	case sdk.ShortfallNoTargetInReach:
 		return sessionpb.ShortfallReason_SHORTFALL_REASON_NO_TARGET_IN_REACH
 	case sdk.ShortfallDowned:
