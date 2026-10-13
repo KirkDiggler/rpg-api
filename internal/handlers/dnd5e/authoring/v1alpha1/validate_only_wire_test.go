@@ -116,15 +116,20 @@ func (s *ValidateOnlyWireSuite) TestMissingFactionNamesThePlacement() {
 }
 
 // TestTypoedTriggerKeyNamesTheKey is the second probe: a misspelled trigger
-// on the faction's answer table. The engine lists the triggers this build
+// on a placement's answer table. The engine lists the triggers this build
 // rolls, at the path the key sits on; that list is the engine's to keep, and
 // nobody downstream has to hold a copy of it.
+//
+// THE PROBE MOVED to the first bandit's `time` table (rpg-project#569). It
+// used to typo the faction's `intimidate_failed:` key, and the four social
+// keys are retired: the goblin's answers are option rows now, and `time` is
+// the one table key the file still writes.
 func (s *ValidateOnlyWireSuite) TestTypoedTriggerKeyNamesTheKey() {
-	resp := s.grade(s.mutate("intimidate_failed:", "intimdate_failed:"))
+	resp := s.grade(s.mutate("    on:\n      time:", "    on:\n      tme:"))
 
 	s.Require().Len(resp.GetErrors(), 1)
-	s.Equal("factions[0].on.intimdate_failed", resp.GetErrors()[0].GetPath())
-	s.Contains(resp.GetErrors()[0].GetMessage(), "intimdate_failed")
+	s.Equal("place[7].on.tme", resp.GetErrors()[0].GetPath())
+	s.Contains(resp.GetErrors()[0].GetMessage(), "tme")
 	s.Nil(resp.GetAtlas())
 }
 

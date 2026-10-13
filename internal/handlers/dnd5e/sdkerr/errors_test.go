@@ -116,21 +116,21 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// the same shape as ErrOutOfReach above.
 		{"ErrOutOfRange", sdk.ErrOutOfRange, codes.FailedPrecondition},
 		{"ErrNotVisible", sdk.ErrNotVisible, codes.FailedPrecondition},
-		// Intimidate's own refusal (rpg-project#454): the threatened member
+		// Speak's sight refusal (rpg-project#454): the threatened member
 		// cannot see who is threatening them. FAILED_PRECONDITION like the
 		// rows around it, and DELIBERATELY NOT folded into ErrOutOfReach --
 		// reach is a distance and this is a sightline, so a client that read
 		// the two as one would tell the player to step closer when what they
 		// need is to be seen.
 		{"ErrUnwitnessed", sdk.ErrUnwitnessed, codes.FailedPrecondition},
-		// The social offer comes from the NPC (rpg-project#494): a real,
-		// visible creature whose binding authored no entries for the verb.
+		// The offer comes from the NPC (rpg-project#494, rpg-project#569): a
+		// real, visible target that offers this speaker no line by that id.
 		// FAILED_PRECONDITION with the rows around it, and NOT NotFound --
 		// the creature is on the roster and in plain sight, so answering
 		// "no such member" would deny something the player can see. Without
 		// this row the refusal falls through to Internal, and an ordinary
 		// "you cannot talk to that one" reads to a client as a server fault.
-		{"ErrNoSocialEntry", sdk.ErrNoSocialEntry, codes.FailedPrecondition},
+		{"ErrNoOption", sdk.ErrNoOption, codes.FailedPrecondition},
 		// Holdings (rpg-project#368): Loot's and Hold's own state refusals,
 		// each reachable only about a body or prop the member can SEE --
 		// for anything they cannot, the composition collapses the refusal

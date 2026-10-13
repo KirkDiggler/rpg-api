@@ -10,35 +10,34 @@ import (
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 )
 
-// answered_convert_test.go is the front room goblin's wire half
-// (rpg-project#458): the appeal's own beat, and the WORLD's roll on the
-// author's answer table.
+// answered_convert_test.go is Speak's wire half (rpg-project#458, migrated by
+// rpg-project#569): the line's own `spoke` beat, and the WORLD's roll on the
+// option's rows.
 
-// TestVerbPersuadeToProto is the dock's half. Afford emits this row on BOTH
-// clocks now (R3), and the world-clock one is the whole panel this slice
-// exists to fill -- a client drops a verb it cannot name rather than drawing
-// it wrong, so unmapped the row would simply never appear in the front room.
-func TestVerbPersuadeToProto(t *testing.T) {
-	require.Equal(t, sessionpb.Verb_VERB_PERSUADE, verbToProto(sdk.VerbPersuade))
+// TestVerbSpeakToProto is the dock's half. Afford emits this row on BOTH
+// clocks, and a client drops a verb it cannot name rather than drawing it
+// wrong, so unmapped the menu would simply never appear.
+func TestVerbSpeakToProto(t *testing.T) {
+	require.Equal(t, sessionpb.Verb_VERB_SPEAK, verbToProto(sdk.VerbSpeak))
 }
 
-// TestEventPersuadedAndAnsweredKindsToProto is the kind half of both beats. An
+// TestEventSpokeAndAnsweredKindsToProto is the kind half of both beats. An
 // unmapped kind does not fail -- it demotes to EVENT_KIND_UNKNOWN and the body
 // stays nil -- so a missing arm here would lose the whole account of a throw
 // rather than degrade one field of it.
-func TestEventPersuadedAndAnsweredKindsToProto(t *testing.T) {
-	require.Equal(t, sessionpb.EventKind_EVENT_KIND_PERSUADED, eventKindToProto(sdk.EventPersuaded))
+func TestEventSpokeAndAnsweredKindsToProto(t *testing.T) {
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_SPOKE, eventKindToProto(sdk.EventSpoke))
 	require.Equal(t, sessionpb.EventKind_EVENT_KIND_ANSWERED, eventKindToProto(sdk.EventAnswered))
 }
 
-// TestPersuadedBodyToProto_CarriesTheWholeRollBothWays mirrors the threat
-// beat's own scene, and the missed case is again the one that matters most:
-// PersuadeResponse carries no beaten, total or dc, so this beat is the ONLY
-// account of the roll and the actor reads it here like every other witness.
+// TestSpokeBodyToProto_CarriesTheWholeRollBothWays is the line's acceptance
+// case, and the missed case is the one that matters most: SpeakResponse
+// carries no beaten, total or dc, so this beat is the ONLY account of the roll
+// and the actor reads it here like every other witness.
 //
-// FALSE IS AN ANSWER. `beaten: false` is the whole content of a failed appeal,
-// and it is the verdict the `persuade_failed` table was read against.
-func TestPersuadedBodyToProto_CarriesTheWholeRollBothWays(t *testing.T) {
+// FALSE IS AN ANSWER. `beaten: false` is the whole content of a missed line,
+// and it is the verdict the option's `failure` rows were read against.
+func TestSpokeBodyToProto_CarriesTheWholeRollBothWays(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		beaten bool
@@ -49,33 +48,78 @@ func TestPersuadedBodyToProto_CarriesTheWholeRollBothWays(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			event := &sessionpb.Event{}
-			require.NoError(t, setEventBody(event, sdk.PersuadedBody{
-				Actor: "char-alice", Target: "front-goblin", DC: 10, Total: tc.total, Beaten: tc.beaten,
+			require.NoError(t, setEventBody(event, sdk.SpokeBody{
+				Actor: "char-alice", Target: "front-goblin", OptionID: "talk-it-round",
+				Line: "We're not here for you. Where did the bandits go?", Skill: "persuasion",
+				DC: 10, Total: tc.total, Beaten: tc.beaten,
+				Calculation: &sdk.RollCalculation{Total: tc.total, Components: []sdk.RollComponent{{
+					Source: sdk.RollSource{Ref: "dnd5e:skills:persuasion", Name: "Persuasion", SourceID: "char-alice"},
+					Dice:   &sdk.DiceTrace{Notation: "1d20", DieSize: 20, OriginalRolls: []int{7}, FinalRolls: []int{7}, Subtotal: 7},
+				}}},
 			}))
 
-			got := event.GetPersuaded()
-			require.NotNil(t, got, "an appeal that reached this seam must reach the wire")
+			got := event.GetSpoke()
+			require.NotNil(t, got, "a line that reached this seam must reach the wire")
 			require.Equal(t, "char-alice", got.GetActor())
-			require.Equal(t, "front-goblin", got.GetTarget())
-			require.Equal(t, int32(10), got.GetDc())
-			require.Equal(t, int32(tc.total), got.GetTotal())
-			require.Equal(t, tc.beaten, got.GetBeaten())
+			require.Equal(t, "front-goblin", got.GetMemberId())
+			require.Empty(t, got.GetPropId(), "exactly one target arm crosses")
+			require.Equal(t, "talk-it-round", got.GetOptionId())
+			require.Equal(t, "We're not here for you. Where did the bandits go?", got.GetLine(),
+				"the author's line VERBATIM")
+			require.Equal(t, "persuasion", got.GetSkill(), "carried, never interpreted")
+			require.Equal(t, int32(10), got.GetCheck().GetDc())
+			require.Equal(t, int32(tc.total), got.GetCheck().GetTotal())
+			require.Equal(t, tc.beaten, got.GetCheck().GetBeaten())
+			require.NotNil(t, got.GetCheck().GetCalculation(), "the whole roll rides with the verdict")
+			require.Equal(t, int32(tc.total), got.GetCheck().GetCalculation().GetTotal())
 		})
 	}
 }
 
-// TestPersuadedBodyToProto_BeatenIsCopiedNeverDerived pins the reading as the
+// TestSpokeBodyToProto_ALineToAProp crosses on the prop arm: speaking to a
+// thing is the same beat with the other target (rpg-project#569).
+func TestSpokeBodyToProto_ALineToAProp(t *testing.T) {
+	event := &sessionpb.Event{}
+	require.NoError(t, setEventBody(event, sdk.SpokeBody{
+		Actor: "char-alice", Prop: "altar", OptionID: "pray", Line: "Hear me.",
+		Skill: "religion", DC: 12, Total: 15, Beaten: true,
+	}))
+
+	got := event.GetSpoke()
+	require.NotNil(t, got)
+	require.Equal(t, "altar", got.GetPropId())
+	require.Empty(t, got.GetMemberId())
+	require.True(t, got.GetCheck().GetBeaten())
+	require.Nil(t, got.GetCheck().GetCalculation(),
+		"absent arithmetic stays absent rather than a zero-valued calculation")
+}
+
+// TestSpokeBodyToProto_BothOrNeitherTargetIsRefused pins the producer-defect
+// refusal: a line said to the wrong thing is the wrong scene, so this seam
+// does not pick one.
+func TestSpokeBodyToProto_BothOrNeitherTargetIsRefused(t *testing.T) {
+	for name, body := range map[string]sdk.SpokeBody{
+		"both":    {Actor: "char-alice", Target: "front-goblin", Prop: "altar", OptionID: "x"},
+		"neither": {Actor: "char-alice", OptionID: "x"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.Error(t, setEventBody(&sessionpb.Event{}, body))
+		})
+	}
+}
+
+// TestSpokeBodyToProto_BeatenIsCopiedNeverDerived pins the reading as the
 // provider's. A 20 the rulebook says did not beat a DC 10 crosses as
 // beaten=false, because the day a rule changes what beating a DC means, every
 // reader that compared total against dc would be wrong at once.
-func TestPersuadedBodyToProto_BeatenIsCopiedNeverDerived(t *testing.T) {
+func TestSpokeBodyToProto_BeatenIsCopiedNeverDerived(t *testing.T) {
 	event := &sessionpb.Event{}
-	require.NoError(t, setEventBody(event, sdk.PersuadedBody{
-		Actor: "char-alice", Target: "front-goblin", DC: 10, Total: 20, Beaten: false,
+	require.NoError(t, setEventBody(event, sdk.SpokeBody{
+		Actor: "char-alice", Target: "front-goblin", OptionID: "talk-it-round", DC: 10, Total: 20, Beaten: false,
 	}))
-	require.False(t, event.GetPersuaded().GetBeaten())
-	require.Equal(t, int32(20), event.GetPersuaded().GetTotal())
-	require.Equal(t, int32(10), event.GetPersuaded().GetDc())
+	require.False(t, event.GetSpoke().GetCheck().GetBeaten())
+	require.Equal(t, int32(20), event.GetSpoke().GetCheck().GetTotal())
+	require.Equal(t, int32(10), event.GetSpoke().GetCheck().GetDc())
 }
 
 // TestAnsweredBodyToProto_CarriesTheAuthorsLineAndTheWorldsDie is the second
@@ -88,8 +132,9 @@ func TestAnsweredBodyToProto_CarriesTheAuthorsLineAndTheWorldsDie(t *testing.T) 
 	event := &sessionpb.Event{}
 	require.NoError(t, setEventBody(event, sdk.AnsweredBody{
 		Creature: "front-goblin",
-		Key:      "intimidated",
-		Verb:     "intimidate",
+		Key:      "success",
+		Verb:     "speak",
+		OptionID: "lean-on-it",
 		Beaten:   true,
 		Roll:     42,
 		Of:       100,
@@ -102,8 +147,11 @@ func TestAnsweredBodyToProto_CarriesTheAuthorsLineAndTheWorldsDie(t *testing.T) 
 	got := event.GetAnswered()
 	require.NotNil(t, got)
 	require.Equal(t, "front-goblin", got.GetCreature())
-	require.Equal(t, sessionpb.Verb_VERB_INTIMIDATE, got.GetVerb(),
+	require.Equal(t, sessionpb.Verb_VERB_SPEAK, got.GetVerb(),
 		"the verb is typed on the wire, so a client that already branches on Verb branches once")
+	require.Equal(t, sessionpb.AnswerKey_ANSWER_KEY_SUCCESS, got.GetKey())
+	require.Equal(t, "lean-on-it", got.GetOptionId(),
+		"which line's rows were rolled, copied so the beat stands alone (rpg-project#569)")
 	require.True(t, got.GetBeaten(), "which table the world rolled on, repeated so the beat stands alone")
 	require.Equal(t, int32(42), got.GetRoll())
 	require.Equal(t, int32(100), got.GetOf(), "the die SIZE, which is the summed weights and not the entry count")
@@ -130,7 +178,7 @@ func TestAnsweredBodyToProto_CarriesTheAuthorsLineAndTheWorldsDie(t *testing.T) 
 func TestAnsweredBodyToProto_TheFactNeverRidesTheBeat(t *testing.T) {
 	event := &sessionpb.Event{}
 	require.NoError(t, setEventBody(event, sdk.AnsweredBody{
-		Creature: "front-goblin", Key: "persuade_failed", Verb: "persuade", Beaten: false,
+		Creature: "front-goblin", Key: "failure", Verb: "speak", OptionID: "talk-it-round", Beaten: false,
 		Roll: 40, Of: 100, Entry: 0, Word: "fact",
 		Say:  "Cellar's empty, friend.",
 		Fact: "cellar-is-clear",
@@ -154,13 +202,15 @@ func TestAnsweredBodyToProto_TheFactNeverRidesTheBeat(t *testing.T) {
 func TestAnsweredBodyToProto_FleeAndTheFailureTable(t *testing.T) {
 	event := &sessionpb.Event{}
 	require.NoError(t, setEventBody(event, sdk.AnsweredBody{
-		Creature: "front-goblin", Key: "persuade_failed", Verb: "persuade", Beaten: false,
+		Creature: "front-goblin", Key: "failure", Verb: "speak", OptionID: "talk-it-round", Beaten: false,
 		Roll: 3, Of: 4, Entry: 1, Word: "flee", Say: "Boss! BOSS!",
 	}))
 
 	got := event.GetAnswered()
 	require.NotNil(t, got)
-	require.Equal(t, sessionpb.Verb_VERB_PERSUADE, got.GetVerb())
+	require.Equal(t, sessionpb.Verb_VERB_SPEAK, got.GetVerb())
+	require.Equal(t, sessionpb.AnswerKey_ANSWER_KEY_FAILURE, got.GetKey())
+	require.Equal(t, "talk-it-round", got.GetOptionId())
 	require.False(t, got.GetBeaten(), "the failure table was read, and the beat says so on its own")
 	require.Equal(t, int32(1), got.GetEntry())
 	require.Equal(t, sessionpb.AnswerWord_ANSWER_WORD_FLEE, got.GetWord())
@@ -175,7 +225,7 @@ func TestAnsweredBodyToProto_FleeAndTheFailureTable(t *testing.T) {
 func TestAnsweredBodyToProto_AnEntryThatOnlySpeaks(t *testing.T) {
 	event := &sessionpb.Event{}
 	require.NoError(t, setEventBody(event, sdk.AnsweredBody{
-		Creature: "front-goblin", Key: "intimidate_failed", Verb: "intimidate", Beaten: false,
+		Creature: "front-goblin", Key: "failure", Verb: "speak", OptionID: "lean-on-it", Beaten: false,
 		Roll: 1, Of: 1, Entry: 0, Word: "",
 		Say: "Big talk, for someone standing in my doorway.",
 	}))
@@ -202,7 +252,7 @@ func TestAnsweredBodyToProto_AnEntryThatOnlySpeaks(t *testing.T) {
 func TestAnsweredBodyToProto_AnUnknownWordIsRefused(t *testing.T) {
 	event := &sessionpb.Event{}
 	err := setEventBody(event, sdk.AnsweredBody{
-		Creature: "front-goblin", Key: "intimidated", Verb: "intimidate", Beaten: false,
+		Creature: "front-goblin", Key: "success", Verb: "speak", OptionID: "lean-on-it", Beaten: false,
 		Roll: 1, Of: 1, Word: "alarm", Say: "Boss! BOSS!",
 	})
 	require.Error(t, err, "a word this build cannot spell must not be demoted to UNSPECIFIED")
@@ -218,7 +268,7 @@ func TestEventToProto_AnUnknownWordFailsTheWholeEvent(t *testing.T) {
 	_, err := eventToProto(sdk.Event{
 		Session: "sess-1", Seq: 91, Kind: sdk.EventAnswered,
 		Body: sdk.AnsweredBody{
-			Creature: "front-goblin", Key: "persuaded", Verb: "persuade", Roll: 1, Of: 1, Word: "lure",
+			Creature: "front-goblin", Key: "success", Verb: "speak", OptionID: "talk-it-round", Roll: 1, Of: 1, Word: "lure",
 		},
 	})
 	require.Error(t, err)
@@ -234,7 +284,7 @@ func TestEventsToProto_OneBadBeatFailsTheWholeRead(t *testing.T) {
 	_, err := eventsToProto([]sdk.Event{
 		{Session: "sess-1", Seq: 1, Kind: sdk.EventDowned, Body: sdk.DownedBody{Member: "goblin-1"}},
 		{Session: "sess-1", Seq: 2, Kind: sdk.EventAnswered, Body: sdk.AnsweredBody{
-			Creature: "front-goblin", Key: "persuaded", Verb: "persuade", Roll: 1, Of: 1, Word: "pretend",
+			Creature: "front-goblin", Key: "success", Verb: "speak", OptionID: "talk-it-round", Roll: 1, Of: 1, Word: "pretend",
 		}},
 	})
 	require.Error(t, err)
@@ -313,7 +363,7 @@ func TestAnswerWordToProto_EveryWordThisBuildShips(t *testing.T) {
 	}
 }
 
-// TestAnswerKeyToProto_TheFiveKeysAndNothingElse pins which table the world
+// TestAnswerKeyToProto_TheThreeKeysAndNothingElse pins which table the world
 // rolled on (rpg-project#465 §2) — the one field that replaces `verb` plus
 // `beaten`, which between them could spell exactly four.
 //
@@ -322,17 +372,21 @@ func TestAnswerWordToProto_EveryWordThisBuildShips(t *testing.T) {
 // writes, so an empty one is a beat stored by the build BEFORE the table
 // existed, and this seam cannot honestly spell it. That is a deliberate choice
 // and the row is where somebody reading this file finds it.
-func TestAnswerKeyToProto_TheFiveKeysAndNothingElse(t *testing.T) {
+func TestAnswerKeyToProto_TheThreeKeysAndNothingElse(t *testing.T) {
 	for _, tc := range []struct {
 		key     string
 		want    sessionpb.AnswerKey
 		refused bool
 	}{
-		{key: "intimidated", want: sessionpb.AnswerKey_ANSWER_KEY_INTIMIDATED},
-		{key: "intimidate_failed", want: sessionpb.AnswerKey_ANSWER_KEY_INTIMIDATE_FAILED},
-		{key: "persuaded", want: sessionpb.AnswerKey_ANSWER_KEY_PERSUADED},
-		{key: "persuade_failed", want: sessionpb.AnswerKey_ANSWER_KEY_PERSUADE_FAILED},
+		{key: "success", want: sessionpb.AnswerKey_ANSWER_KEY_SUCCESS},
+		{key: "failure", want: sessionpb.AnswerKey_ANSWER_KEY_FAILURE},
 		{key: "time", want: sessionpb.AnswerKey_ANSWER_KEY_TIME},
+		// The four retired social keys (rpg-project#569). The session no
+		// longer writes them, and a beat carrying one predates the options.
+		{key: "intimidated", refused: true},
+		{key: "intimidate_failed", refused: true},
+		{key: "persuaded", refused: true},
+		{key: "persuade_failed", refused: true},
 		{key: "", refused: true},
 		// A trigger the design names and this build does not ship. The enum
 		// grows one value per use case, so an unknown key means this seam is
@@ -437,6 +491,7 @@ func TestAnsweredBodyToProto_ATimePickCarriesItsArithmeticAndLeavesTheOldPairUns
 	require.Equal(t, sessionpb.AnswerKey_ANSWER_KEY_TIME, got.GetKey())
 	require.Equal(t, sessionpb.AnswerWord_ANSWER_WORD_AWAY, got.GetWord())
 	require.Equal(t, sessionpb.Temper_TEMPER_COWARD, got.GetTemper())
+	require.Empty(t, got.GetOptionId(), "a time pick rolled no option's rows")
 	require.Equal(t, sessionpb.Verb_VERB_UNSPECIFIED, got.GetVerb(),
 		"no verb stands behind a time pick, and an unset one is the truth rather than a hole")
 	require.False(t, got.GetBeaten(),
@@ -458,35 +513,33 @@ func TestAnsweredBodyToProto_ATimePickCarriesItsArithmeticAndLeavesTheOldPairUns
 	require.Equal(t, got.GetOf(), summed, "`of` is the sum of `loaded`, so a reader can redo the engine's arithmetic")
 }
 
-// TestAnsweredBodyToProto_ASocialPickStillFillsTheDeprecatedPair is the other
+// TestAnsweredBodyToProto_AnOptionPickStillFillsTheDeprecatedPair is the other
 // half of the same rule, and it is the compatibility claim: a reader written
-// before the table keeps working unchanged on all four social keys.
-func TestAnsweredBodyToProto_ASocialPickStillFillsTheDeprecatedPair(t *testing.T) {
+// before the table keeps reading `verb` and `beaten` on both option keys, with
+// the verb now VERB_SPEAK (rpg-project#569), and every option pick names its
+// line in `option_id`.
+func TestAnsweredBodyToProto_AnOptionPickStillFillsTheDeprecatedPair(t *testing.T) {
 	for _, tc := range []struct {
-		key    string
-		verb   sessionpb.Verb
-		beaten bool
+		key     string
+		wantKey sessionpb.AnswerKey
+		beaten  bool
 	}{
-		{key: "intimidated", verb: sessionpb.Verb_VERB_INTIMIDATE, beaten: true},
-		{key: "intimidate_failed", verb: sessionpb.Verb_VERB_INTIMIDATE, beaten: false},
-		{key: "persuaded", verb: sessionpb.Verb_VERB_PERSUADE, beaten: true},
-		{key: "persuade_failed", verb: sessionpb.Verb_VERB_PERSUADE, beaten: false},
+		{key: "success", wantKey: sessionpb.AnswerKey_ANSWER_KEY_SUCCESS, beaten: true},
+		{key: "failure", wantKey: sessionpb.AnswerKey_ANSWER_KEY_FAILURE, beaten: false},
 	} {
 		t.Run(tc.key, func(t *testing.T) {
-			verbWord := "intimidate"
-			if tc.verb == sessionpb.Verb_VERB_PERSUADE {
-				verbWord = "persuade"
-			}
 			event := &sessionpb.Event{}
 			require.NoError(t, setEventBody(event, sdk.AnsweredBody{
-				Creature: "front-goblin", Key: tc.key, Verb: verbWord, Beaten: tc.beaten,
+				Creature: "front-goblin", Key: tc.key, Verb: "speak", OptionID: "lean-on-it", Beaten: tc.beaten,
 				Roll: 4200, Of: 10000, Entry: 0, Word: "fact", Temper: "",
 				Candidates: []sdk.AnswerCandidate{{Entry: 0, Weight: 70, Percent: 100, Loaded: 7000}},
 			}))
 
 			got := event.GetAnswered()
 			require.NotNil(t, got)
-			require.Equal(t, tc.verb, got.GetVerb())
+			require.Equal(t, tc.wantKey, got.GetKey())
+			require.Equal(t, "lean-on-it", got.GetOptionId())
+			require.Equal(t, sessionpb.Verb_VERB_SPEAK, got.GetVerb())
 			require.Equal(t, tc.beaten, got.GetBeaten())
 			require.Equal(t, sessionpb.Temper_TEMPER_NONE, got.GetTemper(),
 				"a creature nobody gave a word to is NONE, never UNSPECIFIED and never SOLDIER")

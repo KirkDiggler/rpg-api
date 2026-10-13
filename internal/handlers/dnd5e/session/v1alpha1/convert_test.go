@@ -93,12 +93,11 @@ func TestVerbToProto(t *testing.T) {
 	// client can act on while the fight waits -- would arrive UNSPECIFIED,
 	// and the panel would have nothing to draw but a dead table.
 	require.Equal(t, sessionpb.Verb_VERB_REACT, verbToProto(sdk.VerbReact))
-	// The first shenanigan (rpg-project#454). Afford emits this row on the
-	// turn clock unconditionally, the way it emits VerbMove, so unmapped it
-	// would not be one wrong label but the whole Intimidate affordance
+	// Speak (rpg-project#569), which replaced the Intimidate and Persuade
+	// rows. Unmapped it would not be one wrong label but the whole menu
 	// missing: a client drops a verb it cannot name rather than drawing it
 	// wrong.
-	require.Equal(t, sessionpb.Verb_VERB_INTIMIDATE, verbToProto(sdk.VerbIntimidate))
+	require.Equal(t, sessionpb.Verb_VERB_SPEAK, verbToProto(sdk.VerbSpeak))
 	require.Equal(t, sessionpb.Verb_VERB_UNSPECIFIED, verbToProto(sdk.Verb("bogus")))
 }
 
@@ -231,7 +230,7 @@ func TestEffectParticipationToProto_UnknownIsUnspecified(t *testing.T) {
 }
 
 func TestDeclarationToProto_CarriesEffectRows(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{
+	out := mustDeclarationToProto(t, sdk.Declaration{
 		Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Available: true, ID: "decl-attack-1",
 		TargetKind: sdk.TargetMember,
 		Effects: []sdk.EffectRow{
@@ -261,7 +260,7 @@ func TestDeclarationToProto_CarriesEffectRows(t *testing.T) {
 
 func TestDeclarationToProto_FieldForField(t *testing.T) {
 	remaining := 0
-	out := declarationToProto(sdk.Declaration{
+	out := mustDeclarationToProto(t, sdk.Declaration{
 		Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Available: false, Remaining: &remaining,
 		Why:        &sdk.Shortfall{Reason: sdk.ShortfallNoBudget, Currency: sdk.CurrencyAction, Needed: 1, Text: "action: 1 needed, 0 left"},
 		ID:         "decl-attack-1",
@@ -316,7 +315,7 @@ func TestDeclarationToProto_FieldForField(t *testing.T) {
 }
 
 func TestDeclarationToProto_PreservesOptionalAbsenceAndEmptyCandidates(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{
+	out := mustDeclarationToProto(t, sdk.Declaration{
 		Verb: sdk.VerbEndTurn, Slot: sdk.SlotNone, Available: true, ID: "decl-end-1",
 		TargetKind: sdk.TargetNone, Candidates: []sdk.TargetCandidate{},
 	})
@@ -334,17 +333,17 @@ func TestDeclarationToProto_PreservesOptionalAbsenceAndEmptyCandidates(t *testin
 // repeated field, so a nil SDK slice must still marshal as "[]", never be
 // left nil at the Go level where a naive append-based converter would.
 func TestDeclarationsToProto_NilOrEmpty_StaysNonNilEmpty(t *testing.T) {
-	out := declarationsToProto(nil)
+	out := mustDeclarationsToProto(t, nil)
 	require.NotNil(t, out)
 	require.Empty(t, out)
 
-	out = declarationsToProto([]sdk.Declaration{})
+	out = mustDeclarationsToProto(t, []sdk.Declaration{})
 	require.NotNil(t, out)
 	require.Empty(t, out)
 }
 
 func TestDeclarationsToProto_Populated(t *testing.T) {
-	out := declarationsToProto([]sdk.Declaration{
+	out := mustDeclarationsToProto(t, []sdk.Declaration{
 		{Verb: sdk.VerbAttack, Slot: sdk.SlotNone, Available: true},
 	})
 	require.Len(t, out, 1)
@@ -817,8 +816,8 @@ func TestKeepRuleToProto_RefusesARuleThisBuildCannotName(t *testing.T) {
 
 	// The refusal reaches the caller rather than stopping at the helper: a
 	// beat carrying an unnameable rule does not become an event at all.
-	err := setEventBody(&sessionpb.Event{}, sdk.IntimidatedBody{
-		Actor: "char-1", Target: "goblin-1", DC: 13, Total: 7, Beaten: false,
+	err := setEventBody(&sessionpb.Event{}, sdk.SpokeBody{
+		Actor: "char-1", Target: "goblin-1", OptionID: "lean-on-it", DC: 13, Total: 7, Beaten: false,
 		Calculation: d20WithKeep([]int{7, 18}, []int{0}, &sdk.DiceKeep{
 			Rule:    sdk.KeepRule("elven-accuracy"),
 			Imposed: []sdk.RollSource{{Ref: "dnd5e:rules:untrained", Name: "Untrained", SourceID: "char-1"}},
@@ -842,23 +841,13 @@ func TestCheckBeatsCarryTheCalculation(t *testing.T) {
 		read func(*sessionpb.Event) *sessionpb.RollCalculation
 	}{
 		{
-			name: "intimidated",
-			body: sdk.IntimidatedBody{
-				Actor: "char-1", Target: "goblin-1", DC: 13, Total: 7,
+			name: "spoke",
+			body: sdk.SpokeBody{
+				Actor: "char-1", Target: "goblin-1", OptionID: "lean-on-it", Skill: "intimidation", DC: 13, Total: 7,
 				Calculation: d20WithKeep([]int{7, 18}, []int{0}, untrained),
 			},
 			read: func(e *sessionpb.Event) *sessionpb.RollCalculation {
-				return e.GetIntimidated().GetCalculation()
-			},
-		},
-		{
-			name: "persuaded",
-			body: sdk.PersuadedBody{
-				Actor: "char-1", Target: "goblin-1", DC: 13, Total: 7,
-				Calculation: d20WithKeep([]int{7, 18}, []int{0}, untrained),
-			},
-			read: func(e *sessionpb.Event) *sessionpb.RollCalculation {
-				return e.GetPersuaded().GetCalculation()
+				return e.GetSpoke().GetCheck().GetCalculation()
 			},
 		},
 		{
@@ -913,8 +902,8 @@ func TestBeatsWithoutArithmeticLeaveTheCalculationUnset(t *testing.T) {
 	require.Nil(t, event.GetDoor().GetCalculation())
 
 	event = &sessionpb.Event{}
-	require.NoError(t, setEventBody(event, sdk.IntimidatedBody{Actor: "char-1", Target: "goblin-1", DC: 13, Total: 7}))
-	require.Nil(t, event.GetIntimidated().GetCalculation())
+	require.NoError(t, setEventBody(event, sdk.SpokeBody{Actor: "char-1", Target: "goblin-1", OptionID: "lean-on-it", DC: 13, Total: 7}))
+	require.Nil(t, event.GetSpoke().GetCheck().GetCalculation())
 }
 
 // THE STRUCK BEAT WRITES NEITHER DEPRECATED LIST (rpg-project#462, R1), even
@@ -1741,6 +1730,8 @@ func TestShortfallReasonToProto(t *testing.T) {
 		// it unmapped would blank the reason on the whole panel at the one
 		// moment a player most needs to be told why nothing works.
 		{sdk.ShortfallWindowOpen, sessionpb.ShortfallReason_SHORTFALL_REASON_WINDOW_OPEN},
+		// A Speak row nobody in sight offers a line on (rpg-project#569).
+		{sdk.ShortfallNoOption, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_OPTION},
 		{sdk.ShortfallReason("bogus"), sessionpb.ShortfallReason_SHORTFALL_REASON_UNSPECIFIED},
 	}
 	for _, tt := range tests {
@@ -1810,7 +1801,7 @@ func TestParticipantToProto(t *testing.T) {
 }
 
 func TestDeclarationToProto_CarriesDeathSaveIdentity(t *testing.T) {
-	got := declarationToProto(sdk.Declaration{
+	got := mustDeclarationToProto(t, sdk.Declaration{
 		Verb: sdk.VerbDeathSave, Slot: sdk.SlotNone, Available: true,
 		ID: "save-selector", TargetKind: sdk.TargetNone,
 		DeathSave: &sdk.DeathSaveRef{Name: "Death Saving Throw"},
@@ -2363,7 +2354,7 @@ func TestEventToProto_UntypedKind_BodyStaysNilPayloadCarries(t *testing.T) {
 // text. The same presence law Attack keeps: present exactly when the SDK
 // carries one, absent otherwise, never defaulted.
 func TestDeclarationToProto_CarriesTheAbility(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{
+	out := mustDeclarationToProto(t, sdk.Declaration{
 		Verb:      sdk.VerbActivate,
 		Slot:      sdk.SlotBonus,
 		Available: true,
@@ -2383,7 +2374,7 @@ func TestDeclarationToProto_CarriesTheAbility(t *testing.T) {
 // defaulted empty AbilityRef would tell a client the producer forgot rather
 // than that this verb has no such identity.
 func TestDeclarationToProto_AttackCarriesNoAbility(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{
+	out := mustDeclarationToProto(t, sdk.Declaration{
 		Verb:   sdk.VerbAttack,
 		Slot:   sdk.SlotAction,
 		Attack: &sdk.AttackRef{Ref: "dnd5e:weapons:greataxe", Name: "Greataxe"},
@@ -2433,7 +2424,7 @@ func TestReactionRefToProto(t *testing.T) {
 // choices are NOT here -- strike and hold are implied by the verb and travel
 // as ReactChoice on the request.
 func TestDeclarationToProto_CarriesTheReaction(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{
+	out := mustDeclarationToProto(t, sdk.Declaration{
 		Verb:       sdk.VerbReact,
 		Slot:       sdk.SlotReaction,
 		Available:  true,
@@ -2456,7 +2447,7 @@ func TestDeclarationToProto_CarriesTheReaction(t *testing.T) {
 // makes the field mean something: every OTHER declaration Afford compiles is
 // on the same wire message.
 func TestDeclarationToProto_OmitsTheReactionOnAnOrdinaryRow(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{Verb: sdk.VerbMove, ID: "decl-move-1"})
+	out := mustDeclarationToProto(t, sdk.Declaration{Verb: sdk.VerbMove, ID: "decl-move-1"})
 	require.Nil(t, out.GetReaction())
 }
 
@@ -2465,7 +2456,7 @@ func TestDeclarationToProto_OmitsTheReactionOnAnOrdinaryRow(t *testing.T) {
 // row per castable cantrip -- so this field is what lets a dock label the
 // button "Vicious Mockery" instead of "Cast".
 func TestDeclarationToProto_CarriesTheSpell(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{
+	out := mustDeclarationToProto(t, sdk.Declaration{
 		Verb:       sdk.VerbCast,
 		Slot:       sdk.SlotAction,
 		Available:  true,
@@ -2489,7 +2480,7 @@ func TestDeclarationToProto_CarriesTheSpell(t *testing.T) {
 // is not a cast carries NO spell. A zeroed SpellRef here would read as a
 // spell nobody named, on every Move and Attack row on the same panel.
 func TestDeclarationToProto_OmitsTheSpellOnAnOrdinaryRow(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{Verb: sdk.VerbMove, ID: "decl-move-2"})
+	out := mustDeclarationToProto(t, sdk.Declaration{Verb: sdk.VerbMove, ID: "decl-move-2"})
 	require.Nil(t, out.GetSpell())
 }
 
@@ -2787,7 +2778,7 @@ func TestCatchingNobodyIsNilRatherThanEmpty(t *testing.T) {
 // them, and a converter that sorted or regrouped would be editing a spell's
 // own presentation from four layers away.
 func TestDeclarationToProto_CarriesTheMenuInContentOrder(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{
+	out := mustDeclarationToProto(t, sdk.Declaration{
 		Verb:       sdk.VerbCast,
 		Slot:       sdk.SlotAction,
 		Available:  true,
@@ -2816,7 +2807,7 @@ func TestDeclarationToProto_CarriesTheMenuInContentOrder(t *testing.T) {
 // promised was answerable. Every verb but Cast and every spell but Command is
 // on this side of the law today.
 func TestDeclarationToProto_CarriesNoMenuOnARowThatOffersNoChoice(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{
+	out := mustDeclarationToProto(t, sdk.Declaration{
 		Verb:       sdk.VerbCast,
 		Slot:       sdk.SlotAction,
 		Available:  true,
@@ -2906,65 +2897,21 @@ func TestConditionRemovedToProto_NamesWhoIsResponsible(t *testing.T) {
 	require.Equal(t, "concentration ended", condition.GetReason())
 }
 
-// TestIntimidatedBodyToProto_CarriesTheWholeRollBothWays is the beat half of
-// the first shenanigan (rpg-project#454), and the missed case is the one that
-// matters most: IntimidateResponse carries no beaten, total or dc, so this
-// beat is the ONLY account of the roll and the actor reads it here like every
-// other witness. A body that failed to cross would leave the person who threw
-// the die with nothing at all.
-//
-// FALSE IS AN ANSWER. The SDK writes beaten, dc and total with no omitempty
-// precisely because `beaten: false` is the whole content of a missed threat,
-// and this converter must not reintroduce the absence its author removed.
-func TestIntimidatedBodyToProto_CarriesTheWholeRollBothWays(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		beaten bool
-		total  int
-	}{
-		{name: "beaten", beaten: true, total: 14},
-		{name: "missed", beaten: false, total: 4},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			event := &sessionpb.Event{}
-			setEventBody(event, sdk.IntimidatedBody{
-				Actor: "char-alice", Target: "goblin-2", DC: 9, Total: tc.total, Beaten: tc.beaten,
-			})
-
-			got := event.GetIntimidated()
-			require.NotNil(t, got, "a threat that reached this seam must reach the wire")
-			require.Equal(t, "char-alice", got.GetActor())
-			require.Equal(t, "goblin-2", got.GetTarget())
-			require.Equal(t, int32(9), got.GetDc())
-			require.Equal(t, int32(tc.total), got.GetTotal())
-			require.Equal(t, tc.beaten, got.GetBeaten())
-		})
-	}
+// mustDeclarationToProto is declarationToProto for a scene that pins a
+// projection rather than the malformed-menu refusal.
+func mustDeclarationToProto(t *testing.T, d sdk.Declaration) *sessionpb.Declaration {
+	t.Helper()
+	out, err := declarationToProto(d)
+	require.NoError(t, err, "this scene pins a projection, not a refusal")
+	return out
 }
 
-// TestIntimidatedBodyToProto_BeatenIsCopiedNeverDerived pins the reading as
-// the provider's. A 20 the rulebook says did not beat a DC 9 crosses as
-// beaten=false, because the day a rule changes what beating a DC means, every
-// reader that compared total against dc would be wrong at once -- the law
-// Saved.succeeded and DoorChanged.beaten already keep.
-func TestIntimidatedBodyToProto_BeatenIsCopiedNeverDerived(t *testing.T) {
-	event := &sessionpb.Event{}
-	setEventBody(event, sdk.IntimidatedBody{
-		Actor: "char-alice", Target: "goblin-2", DC: 9, Total: 20, Beaten: false,
-	})
-	require.False(t, event.GetIntimidated().GetBeaten())
-	require.Equal(t, int32(20), event.GetIntimidated().GetTotal())
-	require.Equal(t, int32(9), event.GetIntimidated().GetDc())
-}
-
-// TestEventIntimidatedKindToProto is the kind half. An unmapped kind does not
-// fail -- it demotes to EVENT_KIND_UNKNOWN and the body stays nil -- so a
-// missing arm here would lose the die for the whole table rather than degrade
-// one field of it.
-func TestEventIntimidatedKindToProto(t *testing.T) {
-	require.Equal(t,
-		sessionpb.EventKind_EVENT_KIND_INTIMIDATED,
-		eventKindToProto(sdk.EventIntimidated))
+// mustDeclarationsToProto is mustDeclarationToProto's plural.
+func mustDeclarationsToProto(t *testing.T, ds []sdk.Declaration) []*sessionpb.Declaration {
+	t.Helper()
+	out, err := declarationsToProto(ds)
+	require.NoError(t, err, "this scene pins a projection, not a refusal")
+	return out
 }
 
 // mustEventToProto is eventToProto for a scene that pins a PROJECTION rather
@@ -3182,7 +3129,7 @@ func TestDeclarationToProto_CarriesActionInformationFieldForField(t *testing.T) 
 			{ID: "approach", Label: "Approach", Description: "Walk toward the caster."},
 			{ID: "flee", Label: "Flee"},
 		}
-		out := declarationToProto(d)
+		out := mustDeclarationToProto(t, d)
 		require.Equal(t, wantInfo.GetDescription(), out.GetInformation().GetDescription())
 		require.Equal(t, wantInfo.GetDetails(), out.GetInformation().GetDetails(), "details cross in the renderer's order")
 		require.Equal(t, []*sessionpb.CastOption{
@@ -3198,21 +3145,21 @@ func TestDeclarationToProto_CarriesActionInformationFieldForField(t *testing.T) 
 		d.Available = false
 		d.Why = &sdk.Shortfall{}
 		d.Information = info
-		out := declarationToProto(d)
+		out := mustDeclarationToProto(t, d)
 		require.False(t, out.GetAvailable())
 		require.Equal(t, wantInfo.GetDescription(), out.GetInformation().GetDescription())
 		require.Equal(t, wantInfo.GetDetails(), out.GetInformation().GetDetails())
 	})
 
 	t.Run("nil information stays absent", func(t *testing.T) {
-		out := declarationToProto(base())
+		out := mustDeclarationToProto(t, base())
 		require.Nil(t, out.Information)
 	})
 
 	t.Run("description only has no fabricated details", func(t *testing.T) {
 		d := base()
 		d.Information = &sdk.ActionInformation{Description: "Only prose."}
-		out := declarationToProto(d)
+		out := mustDeclarationToProto(t, d)
 		require.Equal(t, "Only prose.", out.GetInformation().GetDescription())
 		require.Empty(t, out.GetInformation().GetDetails())
 	})
@@ -3220,7 +3167,7 @@ func TestDeclarationToProto_CarriesActionInformationFieldForField(t *testing.T) 
 	t.Run("details only has an empty description", func(t *testing.T) {
 		d := base()
 		d.Information = &sdk.ActionInformation{Details: []sdk.ActionInformationDetail{{Label: "Range", Value: "5 ft"}}}
-		out := declarationToProto(d)
+		out := mustDeclarationToProto(t, d)
 		require.Empty(t, out.GetInformation().GetDescription())
 		require.Equal(t, []*sessionpb.ActionInformationDetail{{Label: "Range", Value: "5 ft"}}, out.GetInformation().GetDetails())
 	})
@@ -3232,7 +3179,7 @@ func TestDeclarationToProto_CarriesActionInformationFieldForField(t *testing.T) 
 		with.Information = info
 		without := with
 		without.Information = nil
-		a, b := declarationToProto(with), declarationToProto(without)
+		a, b := mustDeclarationToProto(t, with), mustDeclarationToProto(t, without)
 		a.Information = nil
 		require.True(t, proto.Equal(a, b), "information changes nothing else on the row")
 	})

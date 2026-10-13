@@ -266,21 +266,6 @@ func (mr *MockManagerMockRecorder) Interact(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Interact", reflect.TypeOf((*MockManager)(nil).Interact), ctx, in)
 }
 
-// Intimidate mocks base method.
-func (m *MockManager) Intimidate(ctx context.Context, in *session.IntimidateInput) (*session.IntimidateOutput, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Intimidate", ctx, in)
-	ret0, _ := ret[0].(*session.IntimidateOutput)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Intimidate indicates an expected call of Intimidate.
-func (mr *MockManagerMockRecorder) Intimidate(ctx, in any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Intimidate", reflect.TypeOf((*MockManager)(nil).Intimidate), ctx, in)
-}
-
 // Join mocks base method.
 func (m *MockManager) Join(ctx context.Context, in *session.JoinInput) (*session.JoinOutput, error) {
 	m.ctrl.T.Helper()
@@ -356,21 +341,6 @@ func (mr *MockManagerMockRecorder) OpenDoor(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OpenDoor", reflect.TypeOf((*MockManager)(nil).OpenDoor), ctx, in)
 }
 
-// Persuade mocks base method.
-func (m *MockManager) Persuade(ctx context.Context, in *session.PersuadeInput) (*session.PersuadeOutput, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Persuade", ctx, in)
-	ret0, _ := ret[0].(*session.PersuadeOutput)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Persuade indicates an expected call of Persuade.
-func (mr *MockManagerMockRecorder) Persuade(ctx, in any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Persuade", reflect.TypeOf((*MockManager)(nil).Persuade), ctx, in)
-}
-
 // React mocks base method.
 func (m *MockManager) React(ctx context.Context, in *session.ReactInput) (*session.ReactOutput, error) {
 	m.ctrl.T.Helper()
@@ -444,6 +414,21 @@ func (m *MockManager) SetDiscoverySharing(ctx context.Context, in *session.SetDi
 func (mr *MockManagerMockRecorder) SetDiscoverySharing(ctx, in any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetDiscoverySharing", reflect.TypeOf((*MockManager)(nil).SetDiscoverySharing), ctx, in)
+}
+
+// Speak mocks base method.
+func (m *MockManager) Speak(ctx context.Context, in *session.SpeakInput) (*session.SpeakOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Speak", ctx, in)
+	ret0, _ := ret[0].(*session.SpeakOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Speak indicates an expected call of Speak.
+func (mr *MockManagerMockRecorder) Speak(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Speak", reflect.TypeOf((*MockManager)(nil).Speak), ctx, in)
 }
 
 // Status mocks base method.
