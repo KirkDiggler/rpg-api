@@ -332,10 +332,12 @@ func (s *ShenanigansSuite) TestTheBanditsWalkToTheFrontRoom() {
 		entry := orders[len(orders)-1]
 		s.Require().NotNilf(entry.Toward, "%s walks toward something", id)
 		s.Require().NotNilf(entry.Toward.At, "%s walks toward an authored CELL, not a member", id)
-		s.Equalf(spatial.Position{X: 3, Y: 3}, *entry.Toward.At,
+		// The compiled cell is axial, like every cell in the field; the file
+		// names the offset [3, 3], put through the same frame here.
+		s.Equalf(cellOf(s.frontRoom.Spec.Field.Canvas.Orientation, spatial.Position{X: 3, Y: 3}), *entry.Toward.At,
 			"%s walks onto the front room cell the file names", id)
-		s.Require().NotNilf(entry.When, "%s only walks when it has nobody to fight", id)
-		s.Equalf(tkencounter.EnemyNone, entry.When.Enemy,
+		s.Require().Lenf(entry.When, 1, "%s only walks when it has nobody to fight", id)
+		s.Equalf(tkencounter.EnemyNone, entry.When[0].Enemy,
 			"%s stops walking the moment it is opposed to something it can see", id)
 	}
 }
@@ -359,8 +361,10 @@ func (s *ShenanigansSuite) TestTheBanditsCanStillFight() {
 	for _, id := range []string{"bandit-1", "bandit-2"} {
 		answered := map[tkencounter.EnemyWord]bool{}
 		for _, entry := range s.placement(s.frontRoom, id).Table[tkencounter.AnswerTime] {
-			if entry.When != nil && entry.When.Enemy != "" {
-				answered[entry.When.Enemy] = true
+			for _, when := range entry.When {
+				if when.Enemy != "" {
+					answered[when.Enemy] = true
+				}
 			}
 		}
 		for _, band := range tkencounter.EnemyWords {

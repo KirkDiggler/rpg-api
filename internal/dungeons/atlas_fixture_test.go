@@ -27,6 +27,12 @@ import (
 // the #555 walk rather than by an earlier build. It holds nothing derived
 // from a template: the atlas is cells, the orders prop, the region and the
 // party start.
+//
+// AND ONE CAPTURE THAT NEEDED A STRIPPED COPY: reference-hearing.atlas.json
+// (rpg-project#569) was captured from origin/dev at 1dd537bb from the hearing
+// room with every `on:` table removed, because that build cannot compile the
+// `heard`, `path` and time-row `fact` words. The atlas holds no table, and the
+// full file at the hearing branch's head answers the identical atlas.
 func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBeforeTheWave() {
 	files, err := filepath.Glob(filepath.Join(dungeonstest.ContentDir(s.T()), "*.yaml"))
 	s.Require().NoError(err)
