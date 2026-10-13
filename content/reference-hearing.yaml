@@ -135,7 +135,10 @@ place:
   #     `sound` is the freshest clang the guard holds (R10), and the row must
   #     listen for one, or the compiler refuses it;
   #   - an enemy in sight: shout, and the shout teaches `alarm-raised` (R6);
-  #   - an enemy in reach: attack it.
+  #   - an enemy in reach: attack it;
+  #   - an enemy it saw and has lost sight of: walk to where it was. The
+  #     rulebook default's own row, so a guard that loses the thug round a
+  #     corner goes looking rather than standing there forever.
   #
   # The rows are rolled, not ordered (R8): every row whose `when` holds is in
   # the roll, by weight. So the sound row says TWO things, in the list form
@@ -155,6 +158,7 @@ place:
         - { when: [{ heard: { kind: clang, within: 2 } }, { enemy: none }], toward: sound,                  weight: 4 }
         - { when: { enemy: seen },                       say: "To arms!", fact: alarm-raised }
         - { when: { enemy: reach },                      attack: enemy }
+        - { when: { enemy: remembered },                 toward: enemy,                                     weight: 1 }
 
   # THE SECOND GUARD, STANDING STILL. It never hears the clang it is not
   # listening for; it hears the SHOUT. A voice is DC 5 plus 5 a hop, and its
@@ -164,7 +168,9 @@ place:
   # holds `alarm-raised` it makes for [5, 4], the guardroom cell beside the
   # door. Its `hold` row covers the quiet before, and only before: it also
   # says `not: { fact: alarm-raised }`, so once the guard holds the alarm the
-  # hold leaves the roll instead of tying with the walk.
+  # hold leaves the roll instead of tying with the walk. The walk says
+  # `not: { enemy: reach }` for the same reason in the other direction: a
+  # guard with an enemy in reach fights it, and never walks away to the door.
   - id: guard-2
     ref: "dnd5e:monsters:bandit"
     faction: watch
@@ -173,7 +179,7 @@ place:
     on:
       time:
         - { when: [{ enemy: none }, { not: { fact: alarm-raised } }], hold: {} }
-        - { when: { fact: alarm-raised },  toward: { at: [5, 4] } }
+        - { when: [{ fact: alarm-raised }, { not: { enemy: reach } }], toward: { at: [5, 4] } }
         - { when: { enemy: reach },        attack: enemy }
 
   # THE THUG BEHIND THE DOOR. Hostile, and on the rulebook's default table:

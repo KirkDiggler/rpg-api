@@ -58,7 +58,7 @@ func (s *HearingSuite) TestTheDoorBetweenStartsClosed() {
 }
 
 // TestTheGuardWalksASquareAndListensForAClang is the guard's table, row by
-// row: the square, the clang, the shout and the strike.
+// row: the square, the clang, the shout, the strike and the search.
 func (s *HearingSuite) TestTheGuardWalksASquareAndListensForAClang() {
 	guard := s.placement("guard")
 	s.Equal("watch", guard.Faction)
@@ -67,9 +67,9 @@ func (s *HearingSuite) TestTheGuardWalksASquareAndListensForAClang() {
 	s.Equal(cellOf(s.hearing.Spec.Field.Canvas.Orientation, spatial.Position{X: 2, Y: 1}), guard.At,
 		"on the square's first corner")
 	rows := guard.Table[tkencounter.AnswerTime]
-	s.Require().Len(rows, 4, "the use case's gate-patrol, row for row")
+	s.Require().Len(rows, 5, "the use case's gate-patrol, row for row, and the default's search row")
 
-	var patrol, listen, shout, strike *tkencounter.Answer
+	var patrol, listen, shout, strike, search *tkencounter.Answer
 	for i := range rows {
 		row := &rows[i]
 		s.Require().NotEmptyf(row.When, "row %d names a condition", i)
@@ -85,6 +85,8 @@ func (s *HearingSuite) TestTheGuardWalksASquareAndListensForAClang() {
 			shout = row
 		case tkencounter.EnemyReach:
 			strike = row
+		case tkencounter.EnemyRemembered:
+			search = row
 		}
 	}
 
@@ -114,6 +116,11 @@ func (s *HearingSuite) TestTheGuardWalksASquareAndListensForAClang() {
 
 	s.Require().NotNil(strike, "an enemy in reach: attack it")
 	s.NotNil(strike.Attack)
+
+	s.Require().NotNil(search, "an enemy lost from sight: go and look, never hold forever")
+	s.Require().NotNil(search.Toward)
+	s.Equal(tkencounter.SelectorEnemy, search.Toward.Word, "toward the enemy it remembers")
+	s.Equal(1, search.Weight)
 }
 
 // TestTheReserveWaitsForTheAlarmAndWalksToTheGuardroom: off the map until
@@ -179,7 +186,10 @@ func (s *HearingSuite) TestTheSecondGuardMakesForTheDoorOnTheAlarm() {
 	s.Require().NotNil(hold.When[1].Not, "the second entry is a negation")
 	s.Equal("alarm-raised", hold.When[1].Not.Fact,
 		"once the alarm is held the hold leaves the roll, so it never ties with the walk")
-	s.Require().Len(alarm.When, 1)
+	s.Require().Len(alarm.When, 2, "the alarm held AND no enemy in reach: both must hold")
+	s.Require().NotNil(alarm.When[1].Not, "the second entry is a negation")
+	s.Equal(tkencounter.EnemyReach, alarm.When[1].Not.Enemy,
+		"a guard with an enemy in reach fights it and never walks away to the door")
 	s.Require().NotNil(alarm, "holding the alarm: make for the door")
 	s.Require().NotNil(alarm.Toward)
 	s.Require().NotNil(alarm.Toward.At)
