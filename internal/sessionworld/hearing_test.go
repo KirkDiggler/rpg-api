@@ -77,7 +77,6 @@ func (s *HearingSuite) TestTheGuardWalksASquareAndListensForAClang() {
 			listen = row
 			continue
 		}
-		s.Require().Lenf(row.When, 1, "row %d names one condition", i)
 		switch row.When[0].Enemy {
 		case tkencounter.EnemyNone:
 			patrol = row
@@ -111,6 +110,10 @@ func (s *HearingSuite) TestTheGuardWalksASquareAndListensForAClang() {
 	s.Equal(tkencounter.SelectorSound, listen.Toward.Word, "toward where the sound was made, not toward a member")
 
 	s.Require().NotNil(shout, "an enemy in sight: shout")
+	s.Require().Len(shout.When, 2, "an enemy in sight AND the alarm not yet held: both must hold")
+	s.Require().NotNil(shout.When[1].Not, "the second entry is a negation")
+	s.Equal("alarm-raised", shout.When[1].Not.Fact,
+		"a crier that holds the alarm does not cry it again after every swing")
 	s.Equal("To arms!", shout.Say)
 	s.Equal(tkencounter.FactID("alarm-raised"), shout.Fact, "the shout teaches the alarm")
 
@@ -121,6 +124,10 @@ func (s *HearingSuite) TestTheGuardWalksASquareAndListensForAClang() {
 	s.Require().NotNil(search.Toward)
 	s.Equal(tkencounter.SelectorEnemy, search.Toward.Word, "toward the enemy it remembers")
 	s.Equal(1, search.Weight)
+
+	for _, row := range []*tkencounter.Answer{patrol, strike, search} {
+		s.Len(row.When, 1, "the square, the strike and the search each name one condition")
+	}
 }
 
 // TestTheReserveWaitsForTheAlarmAndWalksToTheGuardroom: off the map until

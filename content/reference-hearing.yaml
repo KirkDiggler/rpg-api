@@ -134,7 +134,11 @@ place:
   #   - a clang heard in the last two rounds: walk toward where it was made.
   #     `sound` is the freshest clang the guard holds (R10), and the row must
   #     listen for one, or the compiler refuses it;
-  #   - an enemy in sight: shout, and the shout teaches `alarm-raised` (R6);
+  #   - an enemy in sight: shout, and the shout teaches `alarm-raised` (R6).
+  #     ONCE: the row also says `not: { fact: alarm-raised }`. The crier
+  #     learns its own shout, and `enemy: seen` holds again after every
+  #     swing, so without the negation a guard mid-fight would cry the alarm
+  #     it already raised after each blow;
   #   - an enemy in reach: attack it;
   #   - an enemy it saw and has lost sight of: walk to where it was. The
   #     rulebook default's own row, so a guard that loses the thug round a
@@ -156,7 +160,7 @@ place:
       time:
         - { when: { enemy: none },                       toward: { path: [[2, 1], [4, 1], [4, 6], [2, 6]] }, weight: 1 }
         - { when: [{ heard: { kind: clang, within: 2 } }, { enemy: none }], toward: sound,                  weight: 4 }
-        - { when: { enemy: seen },                       say: "To arms!", fact: alarm-raised }
+        - { when: [{ enemy: seen }, { not: { fact: alarm-raised } }], say: "To arms!", fact: alarm-raised }
         - { when: { enemy: reach },                      attack: enemy }
         - { when: { enemy: remembered },                 toward: enemy,                                     weight: 1 }
 
