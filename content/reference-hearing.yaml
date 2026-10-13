@@ -154,8 +154,9 @@ place:
         - { when: { enemy: reach },                      attack: enemy }
 
   # THE SECOND GUARD, STANDING STILL. It never hears the clang it is not
-  # listening for; it hears the SHOUT, in its own room at 0 hops (a voice is
-  # DC 10, its passive Perception is 10), and a creature that hears a fact
+  # listening for; it hears the SHOUT. A voice is DC 5 plus 5 a hop, and its
+  # passive Perception is 10, so it hears a shout in its own room or through
+  # the open door, not through the closed one. A creature that hears a fact
   # being shouted holds it. That is this file's `when: { fact }`: once it
   # holds `alarm-raised` it makes for [5, 4], the guardroom cell beside the
   # door. Its `hold` row covers the quiet before.
