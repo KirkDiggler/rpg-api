@@ -715,6 +715,12 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_SPOKE
 	case sdk.EventAnswered:
 		return sessionpb.EventKind_EVENT_KIND_ANSWERED
+	// A sound reaching one listener (rpg-project#569, H5). It lands in the
+	// same change as its body below: demoted to EVENT_KIND_UNKNOWN the body
+	// would stay nil, and the player who heard metal clang two rooms over
+	// would be told nothing at all.
+	case sdk.EventHeard:
+		return sessionpb.EventKind_EVENT_KIND_HEARD
 	// The creature's table (rpg-project#465). EventTempered lands in the same
 	// change as its body below, on EventAnswered's argument: a dealt
 	// temperament is rolled ONCE, at the door, and this beat is the only
@@ -1476,6 +1482,12 @@ func setWorldEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			Total:          int32(b.Total),
 			Calculation:    calculation,
 		}}
+	case sdk.HeardBody:
+		heard, err := heardToProto(b)
+		if err != nil {
+			return err
+		}
+		evt.Body = &sessionpb.Event_Heard{Heard: heard}
 	default:
 		// nil (no typed body for this kind) or a body type this build does
 		// not recognize: leave evt.Body nil. payload stays the passthrough
@@ -3345,4 +3357,35 @@ func actionInformationToProto(info *sdk.ActionInformation) *sessionpb.ActionInfo
 		}
 	}
 	return out
+}
+
+// heardToProto projects one Heard beat: a sound, as the one listener it
+// reached hears it (rpg-project#569, H5). The session delivers it scoped to
+// that listener, so the listener is always the recipient.
+//
+// WHERE, NOT WHO. The position is the cell the sound was made on,
+// dungeon-absolute and converted the way every other cell on this seam is;
+// whoever stood there is not on the beat and is not added here.
+//
+// THE KIND IS CARRIED, NEVER INTERPRETED. "clang", "crash", "boom" and
+// "voice" are the rulebook's sealed words; this seam copies the word and
+// lets a client choose how to say it.
+//
+// AN EMPTY KIND OR LISTENER IS REFUSED. Both are producer defects: a sound
+// of no kind is not "an unknown sound", and a beat heard by nobody has no
+// recipient to tell. Sending either would have a client narrate a noise
+// that no rule produced.
+func heardToProto(b sdk.HeardBody) (*sessionpb.Heard, error) {
+	if b.Listener == "" {
+		return nil, fmt.Errorf("heard beat names no listener (kind %q); a sound reaches someone", b.Kind)
+	}
+	if b.Kind == "" {
+		return nil, fmt.Errorf("heard beat for listener %q names no kind; the rulebook seals the sound words", b.Listener)
+	}
+	return &sessionpb.Heard{
+		Listener: b.Listener,
+		Kind:     b.Kind,
+		Position: positionToProto(b.Position),
+		Hops:     int32(b.Hops),
+	}, nil
 }
