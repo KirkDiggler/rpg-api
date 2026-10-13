@@ -90,7 +90,10 @@ func (s *HearingSuite) TestTheGuardWalksASquareAndListensForAClang() {
 	}
 	s.Equal(corners, patrol.Toward.Path, "the four authored corners, in order, in the field's axial frame")
 
+	s.Equal(1, patrol.Weight, "the square is weighted 1")
+
 	s.Require().NotNil(listen, "a clang heard: walk toward it")
+	s.Equal(4, listen.Weight, "a heard clang wins the roll against the square four times in five")
 	s.Equal(&tkencounter.HeardWhen{Kind: tkencounter.SoundClang, Within: 2}, listen.When[0].Heard)
 	s.Require().NotNil(listen.Toward)
 	s.Equal(tkencounter.SelectorSound, listen.Toward.Word, "toward where the sound was made, not toward a member")
@@ -114,19 +117,72 @@ func (s *HearingSuite) TestTheReserveWaitsForTheAlarmAndWalksToTheGuardroom() {
 	rows := reserve.Table[tkencounter.AnswerTime]
 	for i := range rows {
 		for _, when := range rows[i].When {
-			if when.Fact == "alarm-raised" {
+			s.Emptyf(when.Fact, "the reserve was not there to hear the shout, so no row of its waits on a fact")
+			if when.Enemy == tkencounter.EnemyNone {
 				walk = &rows[i]
 			}
 		}
 	}
-	s.Require().NotNil(walk, "a row reads the alarm")
+	s.Require().NotNil(walk, "with nobody in sight, a standing order")
 	s.Require().NotNil(walk.Toward)
 	s.Require().NotNil(walk.Toward.At)
 	s.Equal(cellOf(s.hearing.Spec.Field.Canvas.Orientation, spatial.Position{X: 3, Y: 3}), *walk.Toward.At,
 		"the reserve walks onto the offset [3, 3] the file names, compiled to the field's axial frame")
 	s.Equal("guardroom", s.regionOf(*walk.Toward.At), "the cell it walks to is in the guardroom")
 
-	s.Nil(s.placement("thug").Arrives, "the thug behind the door stands there from the first frame")
+	thug := s.placement("thug")
+	s.Nil(thug.Arrives, "the thug behind the door stands there from the first frame")
+	s.Equal(cellOf(s.hearing.Spec.Field.Canvas.Orientation, spatial.Position{X: 10, Y: 0}), thug.At,
+		"in the north corner, off the doorway's line")
+}
+
+// TestTheSecondGuardMakesForTheDoorOnTheAlarm is the `when: { fact }`
+// demonstration: a guard that stands still until it holds `alarm-raised`,
+// then walks to the guardroom cell beside the door.
+func (s *HearingSuite) TestTheSecondGuardMakesForTheDoorOnTheAlarm() {
+	guard2 := s.placement("guard-2")
+	s.Equal("watch", guard2.Faction)
+	s.Equal("dnd5e:monsters:bandit", guard2.Ref)
+	s.Equal(cellOf(s.hearing.Spec.Field.Canvas.Orientation, spatial.Position{X: 1, Y: 6}), guard2.At)
+	s.Nil(guard2.Arrives, "it stands in the guardroom from the first frame")
+
+	rows := guard2.Table[tkencounter.AnswerTime]
+	s.Require().Len(rows, 3)
+	var hold, alarm, strike *tkencounter.Answer
+	for i := range rows {
+		row := &rows[i]
+		s.Require().Lenf(row.When, 1, "row %d names one condition", i)
+		switch {
+		case row.When[0].Fact == "alarm-raised":
+			alarm = row
+		case row.When[0].Enemy == tkencounter.EnemyNone:
+			hold = row
+		case row.When[0].Enemy == tkencounter.EnemyReach:
+			strike = row
+		}
+	}
+	s.Require().NotNil(hold, "nobody in sight: stand")
+	s.NotNil(hold.Hold)
+	s.Require().NotNil(alarm, "holding the alarm: make for the door")
+	s.Require().NotNil(alarm.Toward)
+	s.Require().NotNil(alarm.Toward.At)
+	s.Equal(cellOf(s.hearing.Spec.Field.Canvas.Orientation, spatial.Position{X: 5, Y: 4}), *alarm.Toward.At,
+		"the guardroom cell beside the door")
+	s.Equal("guardroom", s.regionOf(*alarm.Toward.At))
+	s.Require().NotNil(strike, "an enemy in reach: attack it")
+	s.NotNil(strike.Attack)
+}
+
+// TestTheWatchLearnsThroughTheCrier: the watch's `until` waits on a fact, so
+// the faction needs a mind, and the guard who shouts is it.
+func (s *HearingSuite) TestTheWatchLearnsThroughTheCrier() {
+	var mind string
+	for _, f := range s.hearing.Spec.Field.Factions {
+		if f.ID == "watch" {
+			mind = string(f.Mind)
+		}
+	}
+	s.Equal("guard", mind)
 }
 
 // TestTheWatchTurnsOnTheAlarm: civil to the party until the alarm, and
