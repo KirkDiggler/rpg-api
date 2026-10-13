@@ -230,7 +230,7 @@ func TestEffectParticipationToProto_UnknownIsUnspecified(t *testing.T) {
 }
 
 func TestDeclarationToProto_CarriesEffectRows(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{
+	out := mustDeclarationToProto(t, sdk.Declaration{
 		Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Available: true, ID: "decl-attack-1",
 		TargetKind: sdk.TargetMember,
 		Effects: []sdk.EffectRow{
@@ -260,7 +260,7 @@ func TestDeclarationToProto_CarriesEffectRows(t *testing.T) {
 
 func TestDeclarationToProto_FieldForField(t *testing.T) {
 	remaining := 0
-	out := declarationToProto(sdk.Declaration{
+	out := mustDeclarationToProto(t, sdk.Declaration{
 		Verb: sdk.VerbAttack, Slot: sdk.SlotAction, Available: false, Remaining: &remaining,
 		Why:        &sdk.Shortfall{Reason: sdk.ShortfallNoBudget, Currency: sdk.CurrencyAction, Needed: 1, Text: "action: 1 needed, 0 left"},
 		ID:         "decl-attack-1",
@@ -315,7 +315,7 @@ func TestDeclarationToProto_FieldForField(t *testing.T) {
 }
 
 func TestDeclarationToProto_PreservesOptionalAbsenceAndEmptyCandidates(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{
+	out := mustDeclarationToProto(t, sdk.Declaration{
 		Verb: sdk.VerbEndTurn, Slot: sdk.SlotNone, Available: true, ID: "decl-end-1",
 		TargetKind: sdk.TargetNone, Candidates: []sdk.TargetCandidate{},
 	})
@@ -333,17 +333,17 @@ func TestDeclarationToProto_PreservesOptionalAbsenceAndEmptyCandidates(t *testin
 // repeated field, so a nil SDK slice must still marshal as "[]", never be
 // left nil at the Go level where a naive append-based converter would.
 func TestDeclarationsToProto_NilOrEmpty_StaysNonNilEmpty(t *testing.T) {
-	out := declarationsToProto(nil)
+	out := mustDeclarationsToProto(t, nil)
 	require.NotNil(t, out)
 	require.Empty(t, out)
 
-	out = declarationsToProto([]sdk.Declaration{})
+	out = mustDeclarationsToProto(t, []sdk.Declaration{})
 	require.NotNil(t, out)
 	require.Empty(t, out)
 }
 
 func TestDeclarationsToProto_Populated(t *testing.T) {
-	out := declarationsToProto([]sdk.Declaration{
+	out := mustDeclarationsToProto(t, []sdk.Declaration{
 		{Verb: sdk.VerbAttack, Slot: sdk.SlotNone, Available: true},
 	})
 	require.Len(t, out, 1)
@@ -1801,7 +1801,7 @@ func TestParticipantToProto(t *testing.T) {
 }
 
 func TestDeclarationToProto_CarriesDeathSaveIdentity(t *testing.T) {
-	got := declarationToProto(sdk.Declaration{
+	got := mustDeclarationToProto(t, sdk.Declaration{
 		Verb: sdk.VerbDeathSave, Slot: sdk.SlotNone, Available: true,
 		ID: "save-selector", TargetKind: sdk.TargetNone,
 		DeathSave: &sdk.DeathSaveRef{Name: "Death Saving Throw"},
@@ -2354,7 +2354,7 @@ func TestEventToProto_UntypedKind_BodyStaysNilPayloadCarries(t *testing.T) {
 // text. The same presence law Attack keeps: present exactly when the SDK
 // carries one, absent otherwise, never defaulted.
 func TestDeclarationToProto_CarriesTheAbility(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{
+	out := mustDeclarationToProto(t, sdk.Declaration{
 		Verb:      sdk.VerbActivate,
 		Slot:      sdk.SlotBonus,
 		Available: true,
@@ -2374,7 +2374,7 @@ func TestDeclarationToProto_CarriesTheAbility(t *testing.T) {
 // defaulted empty AbilityRef would tell a client the producer forgot rather
 // than that this verb has no such identity.
 func TestDeclarationToProto_AttackCarriesNoAbility(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{
+	out := mustDeclarationToProto(t, sdk.Declaration{
 		Verb:   sdk.VerbAttack,
 		Slot:   sdk.SlotAction,
 		Attack: &sdk.AttackRef{Ref: "dnd5e:weapons:greataxe", Name: "Greataxe"},
@@ -2424,7 +2424,7 @@ func TestReactionRefToProto(t *testing.T) {
 // choices are NOT here -- strike and hold are implied by the verb and travel
 // as ReactChoice on the request.
 func TestDeclarationToProto_CarriesTheReaction(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{
+	out := mustDeclarationToProto(t, sdk.Declaration{
 		Verb:       sdk.VerbReact,
 		Slot:       sdk.SlotReaction,
 		Available:  true,
@@ -2447,7 +2447,7 @@ func TestDeclarationToProto_CarriesTheReaction(t *testing.T) {
 // makes the field mean something: every OTHER declaration Afford compiles is
 // on the same wire message.
 func TestDeclarationToProto_OmitsTheReactionOnAnOrdinaryRow(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{Verb: sdk.VerbMove, ID: "decl-move-1"})
+	out := mustDeclarationToProto(t, sdk.Declaration{Verb: sdk.VerbMove, ID: "decl-move-1"})
 	require.Nil(t, out.GetReaction())
 }
 
@@ -2456,7 +2456,7 @@ func TestDeclarationToProto_OmitsTheReactionOnAnOrdinaryRow(t *testing.T) {
 // row per castable cantrip -- so this field is what lets a dock label the
 // button "Vicious Mockery" instead of "Cast".
 func TestDeclarationToProto_CarriesTheSpell(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{
+	out := mustDeclarationToProto(t, sdk.Declaration{
 		Verb:       sdk.VerbCast,
 		Slot:       sdk.SlotAction,
 		Available:  true,
@@ -2480,7 +2480,7 @@ func TestDeclarationToProto_CarriesTheSpell(t *testing.T) {
 // is not a cast carries NO spell. A zeroed SpellRef here would read as a
 // spell nobody named, on every Move and Attack row on the same panel.
 func TestDeclarationToProto_OmitsTheSpellOnAnOrdinaryRow(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{Verb: sdk.VerbMove, ID: "decl-move-2"})
+	out := mustDeclarationToProto(t, sdk.Declaration{Verb: sdk.VerbMove, ID: "decl-move-2"})
 	require.Nil(t, out.GetSpell())
 }
 
@@ -2778,7 +2778,7 @@ func TestCatchingNobodyIsNilRatherThanEmpty(t *testing.T) {
 // them, and a converter that sorted or regrouped would be editing a spell's
 // own presentation from four layers away.
 func TestDeclarationToProto_CarriesTheMenuInContentOrder(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{
+	out := mustDeclarationToProto(t, sdk.Declaration{
 		Verb:       sdk.VerbCast,
 		Slot:       sdk.SlotAction,
 		Available:  true,
@@ -2807,7 +2807,7 @@ func TestDeclarationToProto_CarriesTheMenuInContentOrder(t *testing.T) {
 // promised was answerable. Every verb but Cast and every spell but Command is
 // on this side of the law today.
 func TestDeclarationToProto_CarriesNoMenuOnARowThatOffersNoChoice(t *testing.T) {
-	out := declarationToProto(sdk.Declaration{
+	out := mustDeclarationToProto(t, sdk.Declaration{
 		Verb:       sdk.VerbCast,
 		Slot:       sdk.SlotAction,
 		Available:  true,
@@ -2895,6 +2895,23 @@ func TestConditionRemovedToProto_NamesWhoIsResponsible(t *testing.T) {
 	require.Equal(t, "char_bard", condition.GetSourceId(),
 		"which instance ended is the source plus the target plus the ref")
 	require.Equal(t, "concentration ended", condition.GetReason())
+}
+
+// mustDeclarationToProto is declarationToProto for a scene that pins a
+// projection rather than the malformed-menu refusal.
+func mustDeclarationToProto(t *testing.T, d sdk.Declaration) *sessionpb.Declaration {
+	t.Helper()
+	out, err := declarationToProto(d)
+	require.NoError(t, err, "this scene pins a projection, not a refusal")
+	return out
+}
+
+// mustDeclarationsToProto is mustDeclarationToProto's plural.
+func mustDeclarationsToProto(t *testing.T, ds []sdk.Declaration) []*sessionpb.Declaration {
+	t.Helper()
+	out, err := declarationsToProto(ds)
+	require.NoError(t, err, "this scene pins a projection, not a refusal")
+	return out
 }
 
 // mustEventToProto is eventToProto for a scene that pins a PROJECTION rather
@@ -3112,7 +3129,7 @@ func TestDeclarationToProto_CarriesActionInformationFieldForField(t *testing.T) 
 			{ID: "approach", Label: "Approach", Description: "Walk toward the caster."},
 			{ID: "flee", Label: "Flee"},
 		}
-		out := declarationToProto(d)
+		out := mustDeclarationToProto(t, d)
 		require.Equal(t, wantInfo.GetDescription(), out.GetInformation().GetDescription())
 		require.Equal(t, wantInfo.GetDetails(), out.GetInformation().GetDetails(), "details cross in the renderer's order")
 		require.Equal(t, []*sessionpb.CastOption{
@@ -3128,21 +3145,21 @@ func TestDeclarationToProto_CarriesActionInformationFieldForField(t *testing.T) 
 		d.Available = false
 		d.Why = &sdk.Shortfall{}
 		d.Information = info
-		out := declarationToProto(d)
+		out := mustDeclarationToProto(t, d)
 		require.False(t, out.GetAvailable())
 		require.Equal(t, wantInfo.GetDescription(), out.GetInformation().GetDescription())
 		require.Equal(t, wantInfo.GetDetails(), out.GetInformation().GetDetails())
 	})
 
 	t.Run("nil information stays absent", func(t *testing.T) {
-		out := declarationToProto(base())
+		out := mustDeclarationToProto(t, base())
 		require.Nil(t, out.Information)
 	})
 
 	t.Run("description only has no fabricated details", func(t *testing.T) {
 		d := base()
 		d.Information = &sdk.ActionInformation{Description: "Only prose."}
-		out := declarationToProto(d)
+		out := mustDeclarationToProto(t, d)
 		require.Equal(t, "Only prose.", out.GetInformation().GetDescription())
 		require.Empty(t, out.GetInformation().GetDetails())
 	})
@@ -3150,7 +3167,7 @@ func TestDeclarationToProto_CarriesActionInformationFieldForField(t *testing.T) 
 	t.Run("details only has an empty description", func(t *testing.T) {
 		d := base()
 		d.Information = &sdk.ActionInformation{Details: []sdk.ActionInformationDetail{{Label: "Range", Value: "5 ft"}}}
-		out := declarationToProto(d)
+		out := mustDeclarationToProto(t, d)
 		require.Empty(t, out.GetInformation().GetDescription())
 		require.Equal(t, []*sessionpb.ActionInformationDetail{{Label: "Range", Value: "5 ft"}}, out.GetInformation().GetDetails())
 	})
@@ -3162,7 +3179,7 @@ func TestDeclarationToProto_CarriesActionInformationFieldForField(t *testing.T) 
 		with.Information = info
 		without := with
 		without.Information = nil
-		a, b := declarationToProto(with), declarationToProto(without)
+		a, b := mustDeclarationToProto(t, with), mustDeclarationToProto(t, without)
 		a.Information = nil
 		require.True(t, proto.Equal(a, b), "information changes nothing else on the row")
 	})

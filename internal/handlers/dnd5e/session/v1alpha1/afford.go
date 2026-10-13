@@ -3,6 +3,9 @@ package sessionv1alpha1
 import (
 	"context"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sdkerr"
 
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
@@ -34,9 +37,14 @@ func (h *Handler) Afford(ctx context.Context, req *sessionpb.AffordRequest) (*se
 		return nil, sdkerr.StatusError(err)
 	}
 
+	declarations, err := declarationsToProto(out.Declarations)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "project afford: %v", err)
+	}
+
 	return &sessionpb.AffordResponse{
 		Clock:        clockKindToProto(out.Clock),
-		Declarations: declarationsToProto(out.Declarations),
+		Declarations: declarations,
 		CastAim:      castAimPreviewToProto(out.CastAim),
 	}, nil
 }

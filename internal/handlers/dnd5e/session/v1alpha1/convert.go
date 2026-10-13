@@ -2566,9 +2566,14 @@ func castOptionsToProto(options []sdk.CastOption) []*sessionpb.CastOption {
 // whose `requires` the speaker does not meet is left off, not listed
 // unavailable). Shortfall is the line's own reason, present exactly when the
 // SDK set Why. Nil in is nil out, so a non-Speak row carries no menu.
-func speakOptionsToProto(rows []sdk.SpeakOptionRow) []*sessionpb.SpeakOption {
+//
+// EXACTLY ONE TARGET ARM, refused the way spokeToProto refuses it. A row
+// naming both or neither is a producer defect; crossing it as an empty member
+// id, or dropping one target, would offer the player a line said to nobody or
+// to the wrong thing.
+func speakOptionsToProto(rows []sdk.SpeakOptionRow) ([]*sessionpb.SpeakOption, error) {
 	if rows == nil {
-		return nil
+		return nil, nil
 	}
 	out := make([]*sessionpb.SpeakOption, len(rows))
 	for i, row := range rows {
@@ -2577,17 +2582,21 @@ func speakOptionsToProto(rows []sdk.SpeakOptionRow) []*sessionpb.SpeakOption {
 			Line:      row.Line,
 			Available: row.Available,
 		}
-		if row.Prop != "" {
-			option.Target = &sessionpb.SpeakOption_PropId{PropId: row.Prop}
-		} else {
+		switch {
+		case row.Target != "" && row.Prop == "":
 			option.Target = &sessionpb.SpeakOption_MemberId{MemberId: row.Target}
+		case row.Prop != "" && row.Target == "":
+			option.Target = &sessionpb.SpeakOption_PropId{PropId: row.Prop}
+		default:
+			return nil, fmt.Errorf("speak option %q names target %q and prop %q; exactly one must be set",
+				row.OptionID, row.Target, row.Prop)
 		}
 		if row.Why != nil {
 			option.Shortfall = shortfallReasonToProto(row.Why.Reason)
 		}
 		out[i] = option
 	}
-	return out
+	return out, nil
 }
 
 // footprintShapeToProto mirrors the provider's closed outline vocabulary.
@@ -2646,7 +2655,11 @@ func footprintToProto(footprint *sdk.Footprint) *sessionpb.Footprint {
 // unchanged. Optional fields preserve presence, including a present zero
 // Remaining value, and repeated candidates use make-then-map so a non-nil
 // empty SDK answer remains non-nil empty in Go.
-func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
+func declarationToProto(d sdk.Declaration) (*sessionpb.Declaration, error) {
+	speakOptions, err := speakOptionsToProto(d.SpeakOptions)
+	if err != nil {
+		return nil, err
+	}
 	out := &sessionpb.Declaration{
 		Verb:       verbToProto(d.Verb),
 		Slot:       slotToProto(d.Slot),
@@ -2668,7 +2681,7 @@ func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
 		// THE SPEAK ROW'S MENU (rpg-project#569): one entry per (target,
 		// line) pair. Empty on every other verb. A Speak request brings back
 		// the option id AND the same target, since an id alone names nothing.
-		SpeakOptions: speakOptionsToProto(d.SpeakOptions),
+		SpeakOptions: speakOptions,
 		Footprint:    footprintToProto(d.Footprint),
 		// WHAT BEARS ON THIS ROW, as the toolkit answered it. Rows never grant
 		// or refuse the declaration; Available and Why above stay the only gate.
@@ -2702,7 +2715,7 @@ func declarationToProto(d sdk.Declaration) *sessionpb.Declaration {
 	if d.Spell != nil {
 		out.Spell = spellRefToProto(*d.Spell)
 	}
-	return out
+	return out, nil
 }
 
 // shortfallReasonToProto mirrors session.ShortfallReason onto the wire enum.
@@ -3158,12 +3171,19 @@ func experienceGrantsToProto(gs []sdk.ExperienceGrant) []*sessionpb.ExperienceGr
 // answer" law for the world clock (AffordOutput.Declarations never marshals
 // as null) -- the same make-then-loop shape every other list converter in
 // this file keeps, so an empty result already comes out non-nil for free.
-func declarationsToProto(ds []sdk.Declaration) []*sessionpb.Declaration {
+//
+// ONE MALFORMED ROW FAILS THE WHOLE LIST, as one bad beat fails a story read:
+// a panel missing a row it was offered is a wrong panel, not a smaller one.
+func declarationsToProto(ds []sdk.Declaration) ([]*sessionpb.Declaration, error) {
 	out := make([]*sessionpb.Declaration, len(ds))
 	for i, d := range ds {
-		out[i] = declarationToProto(d)
+		decl, err := declarationToProto(d)
+		if err != nil {
+			return nil, fmt.Errorf("declaration %q: %w", d.ID, err)
+		}
+		out[i] = decl
 	}
-	return out
+	return out, nil
 }
 
 // doorStateToProto mirrors the SDK's string door state onto the wire enum.

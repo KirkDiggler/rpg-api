@@ -396,3 +396,35 @@ func TestAfford_EmptySpeakRowSaysNoOption(t *testing.T) {
 	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_OPTION, decl.GetWhy().GetReason())
 	require.Empty(t, decl.GetSpeakOptions())
 }
+
+// TestAfford_MalformedSpeakRowIsRefused pins the menu's fail-closed rule, the
+// one spokeToProto keeps: a row naming no target, or both a member and a
+// prop, is a producer defect. Crossing it would offer a line said to nobody or
+// to the wrong thing, so the whole Afford read answers Internal instead.
+func TestAfford_MalformedSpeakRowIsRefused(t *testing.T) {
+	for name, row := range map[string]sdk.SpeakOptionRow{
+		"no target":    {OptionID: "lean-on-it", Line: "x", Available: true},
+		"both targets": {Target: "front-goblin", Prop: "altar", OptionID: "lean-on-it", Line: "x", Available: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+			mgr.EXPECT().Afford(gomock.Any(), gomock.Any()).Return(&sdk.AffordOutput{
+				Clock: sdk.ClockWorld,
+				Declarations: []sdk.Declaration{{
+					Verb: sdk.VerbSpeak, Slot: sdk.SlotAction, Available: true, ID: "decl-speak",
+					SpeakOptions: []sdk.SpeakOptionRow{row},
+				}},
+			}, nil)
+
+			h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+			ctx := auth.WithPlayerID(context.Background(), "alice")
+			resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
+			requireCode(t, err, codes.Internal)
+			require.Nil(t, resp)
+
+			_, convErr := speakOptionsToProto([]sdk.SpeakOptionRow{row})
+			require.Error(t, convErr, "the menu conversion refuses the row itself")
+		})
+	}
+}
