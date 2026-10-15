@@ -762,8 +762,14 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 		return sessionpb.EventKind_EVENT_KIND_DISCOVERY_CHECKED
 	case sdk.EventConcealmentRevealed:
 		return sessionpb.EventKind_EVENT_KIND_CONCEALMENT_REVEALED
-	case sdk.EventRoomRevealed:
-		return sessionpb.EventKind_EVENT_KIND_ROOM_REVEALED
+	// DISCOVERY IS BY CELL (rpg-project#586 R1). Each learning moment reaches
+	// its learner alone as CELLS_REVEALED. ROOM_REVEALED is deprecated on the
+	// wire and nothing produces it any more; the arm stays only so a story
+	// recorded before the change still replays under the kind it was told as.
+	case sdk.EventCellsRevealed:
+		return sessionpb.EventKind_EVENT_KIND_CELLS_REVEALED
+	case sdk.EventRoomRevealed: //nolint:staticcheck // SA1019: replays of stored stories still name it
+		return sessionpb.EventKind_EVENT_KIND_ROOM_REVEALED //nolint:staticcheck // SA1019: same replay
 	case sdk.EventSighted:
 		return sessionpb.EventKind_EVENT_KIND_SIGHTED
 	// Holdings (rpg-project#368). Each kind is a STATEMENT -- looted, held,
@@ -1060,12 +1066,38 @@ func setEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 		evt.Body = &sessionpb.Event_Looted{Looted: &sessionpb.Looted{
 			Looter: b.Looter, Body: b.Body,
 		}}
-	case sdk.RoomRevealedBody:
+	case sdk.CellsRevealedBody:
+		// COPIED, NEVER DERIVED (rpg-project#586, "the session projects, never
+		// computes"). The encounter differenced the recipient's atlas before
+		// and after the learning moment; this arm only changes vocabulary.
+		//
+		// REGIONS ARE PARTIAL. Each entry carries only the newly known cells
+		// of that region, so a client unions cells into its cached region by
+		// id rather than replacing the region -- the reason this is a new kind
+		// and not ROOM_REVEALED, whose client replaces by id. Every other list
+		// is an upsert by identity, read as RegionRevealed's: scenery is extra
+		// unowned floor, and the structural rows and prop presentations
+		// introduce complete permitted records. Absence is no addition, never
+		// a clear.
+		atlas := AtlasToProto(&sdk.Atlas{Regions: b.Regions, Cells: b.Scenery,
+			Props: b.Props, Boundaries: b.Boundaries, Segments: b.Segments, Sealed: b.Sealed,
+			Doorways: b.Doorways, Placed: b.Placed, Exits: b.Exits,
+			StructuralWalls: b.StructuralWalls, StructuralDoors: b.StructuralDoors})
+		evt.Body = &sessionpb.Event_CellsRevealed{CellsRevealed: &sessionpb.CellsRevealed{
+			Regions: atlas.Regions, Scenery: atlas.Cells, Props: atlas.Props,
+			Boundaries: atlas.Boundaries, Segments: atlas.Segments, Sealed: atlas.Sealed,
+			Doorways: atlas.Doorways, Placed: atlas.Placed, Exits: atlas.Exits,
+			StructuralWalls: atlas.StructuralWalls, StructuralDoors: atlas.StructuralDoors,
+			PropPresentations:                  propPresentationsToProto(b.PropPresentations),
+			StructuralWallOpeningsReplacements: structuralWallOpeningsReplacementsToProto(b.StructuralWallOpeningsReplacements)}}
+	// Deprecated: nothing produces a room reveal now. Kept for replays of
+	// stories recorded before discovery went by cell.
+	case sdk.RoomRevealedBody: //nolint:staticcheck // SA1019: replays of stored stories
 		atlas := AtlasToProto(&sdk.Atlas{Regions: []sdk.AtlasRegion{b.Region}, Cells: b.Scenery,
 			Props: b.Props, Boundaries: b.Boundaries, Segments: b.Segments, Sealed: b.Sealed,
 			Doorways: b.Doorways, Placed: b.Placed, Exits: b.Exits,
 			StructuralWalls: b.StructuralWalls, StructuralDoors: b.StructuralDoors})
-		evt.Body = &sessionpb.Event_RoomRevealed{RoomRevealed: &sessionpb.RegionRevealed{
+		evt.Body = &sessionpb.Event_RoomRevealed{RoomRevealed: &sessionpb.RegionRevealed{ //nolint:staticcheck // SA1019: replays of stored stories
 			Region: atlas.Regions[0], Scenery: atlas.Cells, Props: atlas.Props,
 			Boundaries: atlas.Boundaries, Segments: atlas.Segments, Sealed: atlas.Sealed,
 			Doorways: atlas.Doorways, Placed: atlas.Placed, Exits: atlas.Exits,
