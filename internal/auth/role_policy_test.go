@@ -56,12 +56,19 @@ func (s *PolicySuite) TestWritesRequireBuildAndRenderingReadsRequirePlay() {
 		"/api.composition.v1alpha1.CompositionService/GetComposition":    auth.PermissionPlay,
 		"/dnd5e.api.authoring.v1alpha1.AuthoringService/PutDungeon":      auth.PermissionBuild,
 		"/dnd5e.api.authoring.v1alpha1.AuthoringService/GetDungeon":      auth.PermissionBuild,
+		authoringpb.AuthoringService_ListDungeons_FullMethodName:         auth.PermissionBuild,
+		authoringpb.AuthoringService_DeleteDungeon_FullMethodName:        auth.PermissionBuild,
+		authoringpb.AuthoringService_RenameDungeon_FullMethodName:        auth.PermissionBuild,
+		lobbypb.LobbyService_ListDungeons_FullMethodName:                 auth.PermissionPlay,
 	} {
 		permission, known := auth.GameMethodPermission(method)
 		s.True(known)
 		s.Equal(want, permission)
 	}
-	for _, method := range []string{"/new.Service/Play", "/dnd5e.api.session.v1alpha1.SessionService/NewVerb", "malformed"} {
+	for _, method := range []string{
+		"/new.Service/Play", "/dnd5e.api.session.v1alpha1.SessionService/NewVerb",
+		"/dnd5e.api.authoring.v1alpha1.AuthoringService/NewVerb", "malformed",
+	} {
 		_, known := auth.GameMethodPermission(method)
 		s.False(known, method)
 	}

@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 )
 
@@ -43,7 +42,11 @@ func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBefo
 	s.Require().NoError(err)
 	s.Require().NotEmpty(files)
 
-	r := dungeonstest.Shipped(s.T())
+	// Each shipped file's atlas is read off the shipped store's entry: the
+	// same compile and projection a validate-only Put ran when the fixtures
+	// were captured. A Put under a shipped key is now the reference refusal
+	// (design R20), so the store's own entry is the answer to compare.
+	r := dungeonstest.ShippedStore(s.T())
 	for _, f := range files {
 		key := strings.TrimSuffix(filepath.Base(f), ".yaml")
 		raw, err := os.ReadFile(f)
@@ -52,11 +55,11 @@ func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBefo
 		want, err := os.ReadFile(filepath.Join("testdata", "atlas", key+".atlas.json"))
 		s.Require().NoErrorf(err, "%s has no atlas fixture", key)
 
-		res, err := r.Put(s.ctx, &dungeons.PutInput{Key: key, YAML: raw, ValidateOnly: true})
-		s.Require().NoError(err)
-		s.Require().NotNilf(res.Entry, "%s must compile: %+v", key, res.Errors)
+		entry, err := r.Get(s.ctx, key)
+		s.Require().NoErrorf(err, "%s must compile", key)
+		s.Require().Equalf(raw, entry.YAML, "%s is served verbatim", key)
 
-		got, err := json.MarshalIndent(res.Entry.Atlas, "", " ")
+		got, err := json.MarshalIndent(entry.Atlas, "", " ")
 		s.Require().NoError(err)
 		s.JSONEqf(string(want), string(got), "%s: the atlas PutDungeon answers moved", key)
 	}

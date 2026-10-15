@@ -6,7 +6,6 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 	authoringhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1"
 	authoringorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
@@ -32,7 +31,7 @@ func TestWallGeometryWireSuite(t *testing.T) {
 }
 
 func (s *WallGeometryWireSuite) SetupTest() {
-	s.ctx = auth.WithPlayerID(context.Background(), "alice")
+	s.ctx = worldCtx("alice")
 
 	registry, _ := dungeonstest.Scratch(s.T())
 	orch, err := authoringorch.New(&authoringorch.Config{Dungeons: registry})

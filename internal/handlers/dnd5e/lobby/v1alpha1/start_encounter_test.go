@@ -38,7 +38,7 @@ func (s *HandlerSuite) TestStartEncounter_NotAllReady_FailedPrecondition() {
 func (s *HandlerSuite) TestStartEncounter_NotHost_PermissionDenied() {
 	lobbyID, joinRef := s.createLobby("alice", "char-alice", "Alice")
 	s.expectCharacter("char-bob", "bob", "Bob", 10, 10)
-	bobCtx := auth.WithPlayerID(context.Background(), "bob")
+	bobCtx := playerCtx("bob")
 	_, err := s.handler.JoinLobby(bobCtx, &lobbyv1alpha1.JoinLobbyRequest{
 		JoinRef: joinRef, CharacterId: "char-bob",
 	})
@@ -75,4 +75,13 @@ func (s *HandlerSuite) TestStartEncounter_UnknownDungeonKey_NotFound() {
 	s.Require().Error(err)
 	st, _ := status.FromError(err)
 	s.Require().Equal(codes.NotFound, st.Code())
+}
+
+func (s *HandlerSuite) TestStartEncounter_WithoutAWorld_FailedPrecondition() {
+	_, err := s.handler.StartEncounter(auth.WithPlayerID(context.Background(), "alice"),
+		&lobbyv1alpha1.StartEncounterRequest{LobbyId: "lobby-1"})
+	s.Require().Error(err)
+	st, _ := status.FromError(err)
+	s.Equal(codes.FailedPrecondition, st.Code())
+	s.Equal("trusted world context is required", st.Message())
 }

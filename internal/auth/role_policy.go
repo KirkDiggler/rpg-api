@@ -20,7 +20,7 @@ func GameMethodPermission(method string) (Permissions, bool) {
 		}
 	case "dnd5e.api.authoring.v1alpha1.AuthoringService":
 		switch name {
-		case "PutDungeon", "GetDungeon", "ListScenarios", "ListWeapons":
+		case "PutDungeon", "GetDungeon", "ListDungeons", "DeleteDungeon", "RenameDungeon", "ListScenarios", "ListWeapons":
 			return PermissionBuild, true
 		}
 	case "api.v1alpha1.DiceService":

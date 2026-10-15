@@ -26,13 +26,19 @@ func (h *Handler) StartEncounter(
 	if req.GetLobbyId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "lobby_id is required")
 	}
+	worldID, err := trustedWorld(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	out, err := h.orch.StartEncounter(ctx, &lobbyorch.StartEncounterInput{
 		PlayerID: playerID,
 		LobbyID:  req.GetLobbyId(),
+		WorldID:  worldID,
 		// DungeonKey selects which registered dungeon to build from
 		// (rpg-api#806). Empty means the reference tomb; a key the registry
-		// does not have is NotFound, never a silent fallback.
+		// does not have is NotFound, never a silent fallback. The key
+		// resolves in the host's world, then the shipped references.
 		DungeonKey: lobbyorch.DungeonKey(req.GetDungeonKey()),
 	})
 	if err != nil {

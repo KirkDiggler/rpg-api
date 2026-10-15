@@ -10,7 +10,6 @@ import (
 
 	authoringpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/authoring/v1alpha1"
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 	authoringhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1"
 	authoringorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
@@ -38,7 +37,7 @@ func TestSceneryWireSuite(t *testing.T) {
 }
 
 func (s *SceneryWireSuite) SetupTest() {
-	s.ctx = auth.WithPlayerID(context.Background(), "alice")
+	s.ctx = worldCtx("alice")
 
 	registry, _ := dungeonstest.Scratch(s.T())
 	orch, err := authoringorch.New(&authoringorch.Config{Dungeons: registry})

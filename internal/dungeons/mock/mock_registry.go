@@ -41,34 +41,48 @@ func (m *MockRegistry) EXPECT() *MockRegistryMockRecorder {
 	return m.recorder
 }
 
-// Get mocks base method.
-func (m *MockRegistry) Get(ctx context.Context, key string) (*dungeons.Entry, error) {
+// Delete mocks base method.
+func (m *MockRegistry) Delete(ctx context.Context, caller dungeons.Caller, key string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Get", ctx, key)
+	ret := m.ctrl.Call(m, "Delete", ctx, caller, key)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Delete indicates an expected call of Delete.
+func (mr *MockRegistryMockRecorder) Delete(ctx, caller, key any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockRegistry)(nil).Delete), ctx, caller, key)
+}
+
+// Get mocks base method.
+func (m *MockRegistry) Get(ctx context.Context, caller dungeons.Caller, key string) (*dungeons.Entry, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Get", ctx, caller, key)
 	ret0, _ := ret[0].(*dungeons.Entry)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Get indicates an expected call of Get.
-func (mr *MockRegistryMockRecorder) Get(ctx, key any) *gomock.Call {
+func (mr *MockRegistryMockRecorder) Get(ctx, caller, key any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockRegistry)(nil).Get), ctx, key)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockRegistry)(nil).Get), ctx, caller, key)
 }
 
 // List mocks base method.
-func (m *MockRegistry) List(ctx context.Context) ([]dungeons.Summary, error) {
+func (m *MockRegistry) List(ctx context.Context, caller dungeons.Caller) ([]dungeons.Summary, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "List", ctx)
+	ret := m.ctrl.Call(m, "List", ctx, caller)
 	ret0, _ := ret[0].([]dungeons.Summary)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // List indicates an expected call of List.
-func (mr *MockRegistryMockRecorder) List(ctx any) *gomock.Call {
+func (mr *MockRegistryMockRecorder) List(ctx, caller any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockRegistry)(nil).List), ctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockRegistry)(nil).List), ctx, caller)
 }
 
 // Put mocks base method.
@@ -84,4 +98,18 @@ func (m *MockRegistry) Put(ctx context.Context, in *dungeons.PutInput) (*dungeon
 func (mr *MockRegistryMockRecorder) Put(ctx, in any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Put", reflect.TypeOf((*MockRegistry)(nil).Put), ctx, in)
+}
+
+// Rename mocks base method.
+func (m *MockRegistry) Rename(ctx context.Context, in *dungeons.RenameInput) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Rename", ctx, in)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Rename indicates an expected call of Rename.
+func (mr *MockRegistryMockRecorder) Rename(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Rename", reflect.TypeOf((*MockRegistry)(nil).Rename), ctx, in)
 }

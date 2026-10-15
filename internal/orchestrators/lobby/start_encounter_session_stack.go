@@ -29,6 +29,11 @@ type StartEncounterInput struct {
 	PlayerID string
 	LobbyID  string
 
+	// WorldID is the host's world, from the auth boundary. The dungeon key
+	// resolves in it (its store, then the shipped references; design R21),
+	// so a host can launch any member's encounter in their world.
+	WorldID string
+
 	// DungeonKey is the proto's dungeon_key field (rpg-api#688). Empty
 	// plays dungeons.DefaultKey (the reference tomb); a key the registry
 	// does not have is ErrDungeonNotFound, never a silent fallback
@@ -109,7 +114,7 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	if key == "" {
 		key = dungeons.DefaultKey
 	}
-	entry, err := o.dungeons.Get(ctx, key)
+	entry, err := o.dungeons.Get(ctx, dungeons.Caller{WorldID: in.WorldID, PlayerID: in.PlayerID}, key)
 	if err != nil {
 		if errors.Is(err, dungeons.ErrNotFound) {
 			return nil, fmt.Errorf("dungeon %q: %w", key, ErrDungeonNotFound)
