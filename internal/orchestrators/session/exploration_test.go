@@ -93,3 +93,36 @@ func (s *ExplorationHostSuite) TestTheStoreWideGuardLeavesCharacterGuardsPerChar
 	}
 	held.Release()
 }
+
+// TestExplorationProfileRoundTripsTheSharingChoice pins that the host stores
+// the character's explicit sharing choice (R8) and leaves a pre-choice record
+// undecided, so the SDK can tell "never chosen" from "chose shared".
+// A missing record returning sdk.ErrNotFound is pinned above.
+func (s *ExplorationHostSuite) TestExplorationProfileRoundTripsTheSharingChoice() {
+	server := miniredis.RunT(s.T())
+	client := goredis.NewClient(&goredis.Options{Addr: server.Addr()})
+	defer func() { _ = client.Close() }()
+	repo := &redisExplorationRepository{client: client}
+	ctx := context.Background()
+
+	s.Run("an explicit choice survives a save and reload", func() {
+		sharing := true
+		s.Require().NoError(repo.SaveExploration(ctx, &sdk.ExplorationData{Character: "c", DiscoverySharing: &sharing}))
+		got, err := repo.GetExploration(ctx, "c")
+		s.Require().NoError(err)
+		s.Require().NotNil(got.DiscoverySharing, "a chosen preference must not reload as undecided")
+		s.True(*got.DiscoverySharing)
+	})
+
+	s.Run("a legacy record reloads undecided and untouched", func() {
+		legacy := `{"character":"legacy"}`
+		s.Require().NoError(client.Set(ctx, explorationPrefix+"legacy", legacy, 0).Err())
+		got, err := repo.GetExploration(ctx, "legacy")
+		s.Require().NoError(err)
+		s.Nil(got.DiscoverySharing, "a record written before the choice existed has not chosen")
+		s.False(got.PrivateDiscoveries)
+		stored, err := client.Get(ctx, explorationPrefix+"legacy").Result()
+		s.Require().NoError(err)
+		s.Equal(legacy, stored, "a read must not write a default down as a choice")
+	})
+}
