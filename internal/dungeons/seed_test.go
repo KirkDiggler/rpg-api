@@ -23,7 +23,7 @@ func (s *RegistrySuite) TestSeed_AnEmptyMountGetsTheShippedTombAndLoads() {
 	s.Require().NoError(err)
 	s.Equal(s.tomb, onDisk, "byte for byte the shipped file")
 
-	r, err := dungeons.NewFileRegistry(empty, true, dungeonstest.Projector(s.T()))
+	r, err := dungeons.NewFileRegistry(empty, dungeonstest.Projector(s.T()))
 	s.Require().NoError(err)
 	list, err := r.List(s.ctx)
 	s.Require().NoError(err)
@@ -58,7 +58,7 @@ func (s *RegistrySuite) TestSeed_ABrokenExistingTombIsStillRefusedByName() {
 	s.Require().NoError(err)
 	s.Empty(seeded)
 
-	_, err = dungeons.NewFileRegistry(s.dir, false, dungeonstest.Projector(s.T()))
+	_, err = dungeons.NewFileRegistry(s.dir, dungeonstest.Projector(s.T()))
 	s.Require().Error(err)
 	s.Contains(err.Error(), filepath.Join(s.dir, "reference-tomb.yaml"))
 }
@@ -120,6 +120,6 @@ func (s *RegistrySuite) TestSeed_SameDirectoryIsANoOp() {
 	seeded, err = dungeons.SeedShipped(empty, empty)
 	s.Require().NoError(err)
 	s.Empty(seeded, "an empty dir that is its own source is not an error here")
-	_, err = dungeons.NewFileRegistry(empty, false, dungeonstest.Projector(s.T()))
+	_, err = dungeons.NewFileRegistry(empty, dungeonstest.Projector(s.T()))
 	s.Require().Error(err, "the registry still refuses it by name")
 }

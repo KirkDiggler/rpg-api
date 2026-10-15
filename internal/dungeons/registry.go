@@ -2,16 +2,21 @@
 // server can start an encounter in, keyed by the file's own `key:` line
 // (rpg-api#806, rpg-project#256).
 //
-// # One directory, loaded once, written through
+// # Two stores (rpg-project#585, design R20–R24)
 //
-// A [FileRegistry] owns one directory (RPG_CONTENT_DIR). At construction it
-// reads every *.yaml in it and compiles each through internal/sessionworld.
-// A file that does not compile FAILS CONSTRUCTION, naming the file and the
-// problem, rather than being skipped: a dungeon that silently vanished from
-// the picker is a worse failure than a server that refuses to boot and says
-// why. Put compiles first, writes the file atomically (temp + rename), then
-// swaps the in-memory entry, so what is on disk and what is served never
-// disagree and a crash mid-write leaves the previous file intact.
+// A [FileRegistry] is the SHIPPED store: one directory (RPG_CONTENT_DIR),
+// read once at construction and never written by a request. Every *.yaml in
+// it compiles through internal/sessionworld; a file that does not compile
+// FAILS CONSTRUCTION, naming the file and the problem, rather than being
+// skipped: a dungeon that silently vanished from the picker is a worse
+// failure than a server that refuses to boot and says why. Its files are
+// references: read-only, a starting copy for an author.
+//
+// The WORLD store (internal/repositories/worlddungeons) holds what authors
+// save: per world (the Discord server), owned by the author, a key naming one
+// encounter in that world. [NewRegistry] joins the two into the [Registry]
+// the lobby and authoring see, for one [Caller] at a time: the world first,
+// then the shipped references.
 //
 // # What the registry does NOT do
 //
@@ -31,7 +36,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
+
+	"gopkg.in/yaml.v3"
 
 	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
@@ -73,12 +79,60 @@ var (
 	// the caller supplied mutates nothing, and the builder's per-edit preview
 	// is exactly that grade.
 	ErrAuthoringDisabled = errors.New("authoring is disabled")
+
+	// ErrNoCaller means a registry verb was asked without a world or without
+	// a player. Never read as "shipped only": the caller comes from the auth
+	// boundary, and its absence is a wiring fault the caller must see.
+	ErrNoCaller = errors.New("dungeon caller needs a world and a player")
+
+	// ErrReferenceKey means a save named a key the server ships. References
+	// are read-only; the author saves a copy under a key of their own. Its
+	// text is the sentence the author reads (design R20).
+	ErrReferenceKey = errors.New("that key is a reference; save it under your own key")
+
+	// ErrReferenceReadOnly means a rename or delete named a shipped key that
+	// the caller's world does not hold.
+	ErrReferenceReadOnly = errors.New("that key is a reference; references cannot be renamed or deleted")
+
+	// ErrOwnedByOther means the key is held in the caller's world by another
+	// member: a save, rename or delete of it is refused.
+	ErrOwnedByOther = errors.New("that key belongs to another member of this world")
+
+	// ErrKeyExists means a rename's new key already names one of the
+	// caller's own encounters (or is the key being renamed).
+	ErrKeyExists = errors.New("new key already names one of your encounters")
 )
 
-// Summary is one dungeon as the lobby's picker sees it.
+// Source says which store a dungeon came from.
+type Source int
+
+const (
+	// SourceShipped is a reference the server ships: read-only.
+	SourceShipped Source = iota + 1
+	// SourceWorld is a record in the caller's world store; Owner says whose.
+	SourceWorld
+)
+
+// Caller is who is asking, from the auth boundary: the world the boundary
+// installed and the authenticated player. Never a request field.
+type Caller struct {
+	WorldID  string
+	PlayerID string
+}
+
+// complete reports whether both halves are present.
+func (c Caller) complete() bool {
+	return c.WorldID != "" && c.PlayerID != ""
+}
+
+// Summary is one dungeon as a picker sees it. Owner is the owning player for
+// SourceWorld and empty for SourceShipped; ownership is read from Owner, not
+// from Source.
 type Summary struct {
-	Key  string
-	Name string
+	Key    string
+	Name   string
+	Owner  string
+	Source Source
 }
 
 // FieldError is one compile problem and the YAML path it is about
@@ -100,6 +154,16 @@ type FieldError struct {
 type Entry struct {
 	Key  string
 	Name string
+
+	// Source is the store the entry came from; Owner is the owning player
+	// for SourceWorld and empty for SourceShipped.
+	Source Source
+	Owner  string
+
+	// SingleRoom is the toolkit's dialect rule (dungeonspec.Load): a root
+	// `version` of 3 or more is the single-room dialect. Shipped entries
+	// below it stay resolvable by key but are left out of every list (R23).
+	SingleRoom bool
 
 	// YAML is the stored file, verbatim.
 	YAML []byte
@@ -133,6 +197,10 @@ type AtlasProjector interface {
 
 // PutInput is one PutDungeon call.
 type PutInput struct {
+	// Caller is who saves; the record is owned by Caller.PlayerID in
+	// Caller.WorldID.
+	Caller Caller
+
 	// Key names the dungeon and must equal the file's own `key:` line.
 	Key string
 
@@ -153,42 +221,51 @@ type PutResult struct {
 	Entry  *Entry
 }
 
-// Registry is what the lobby and authoring orchestrators see.
+// RenameInput is one RenameDungeon call.
+type RenameInput struct {
+	Caller Caller
+	Key    string
+	NewKey string
+}
+
+// Registry is what the lobby and authoring orchestrators see: the caller's
+// world store joined with the shipped references (see [NewRegistry]).
 //
 //go:generate mockgen -destination=mock/mock_registry.go -package=dungeonsmock github.com/KirkDiggler/rpg-api/internal/dungeons Registry
 type Registry interface {
-	// List returns every registered dungeon, sorted by key.
-	List(ctx context.Context) ([]Summary, error)
+	// List returns, for the caller, every record in their world sorted by
+	// key, then the single-room references sorted by key that no record in
+	// the world shadows.
+	List(ctx context.Context, caller Caller) ([]Summary, error)
 
-	// Get returns the entry under key, or ErrNotFound.
-	Get(ctx context.Context, key string) (*Entry, error)
+	// Get resolves key for the caller: their world store, then shipped; or
+	// ErrNotFound.
+	Get(ctx context.Context, caller Caller, key string) (*Entry, error)
 
-	// Put compiles and, unless ValidateOnly, stores a dungeon. A file that
-	// does not compile is a PutResult with Errors, not an error: the author
-	// needs the list. An error is a malformed request (ErrInvalidKey,
-	// ErrKeyMismatch), a WRITE asked of a read-only registry
-	// (ErrAuthoringDisabled; a validate-only Put is answered by one), or I/O.
+	// Put compiles and, unless ValidateOnly, stores a dungeon in the
+	// caller's world, owned by the caller. A file that does not compile is a
+	// PutResult with Errors, not an error: the author needs the list. An
+	// error is a malformed request (ErrInvalidKey, ErrKeyMismatch), a key the
+	// caller may not save under (ErrReferenceKey, ErrOwnedByOther; refused
+	// for validate-only too), a WRITE asked of a read-only registry
+	// (ErrAuthoringDisabled), or I/O.
 	Put(ctx context.Context, in *PutInput) (*PutResult, error)
+
+	// Delete removes one of the caller's records.
+	Delete(ctx context.Context, caller Caller, key string) error
+
+	// Rename moves one of the caller's records to a new key, rewriting the
+	// file's root `key:` line and nothing else.
+	Rename(ctx context.Context, in *RenameInput) error
 }
 
-// FileRegistry is the one Registry: a directory of *.yaml files.
+// FileRegistry is the shipped store: a directory of *.yaml files, loaded
+// once and never written by a request.
 type FileRegistry struct {
 	dir       string
-	authoring bool
 	projector AtlasProjector
-
-	// mu guards entries. Reads take it shared; Put swaps under it exclusively.
-	mu      sync.RWMutex
-	entries map[string]*Entry
-
-	// putMu serializes Puts per key: two authors saving the same key land
-	// one after the other, never interleaving the compile/write/swap of one
-	// with the other's. Different keys do not contend.
-	putMu    sync.Mutex
-	putLocks map[string]*sync.Mutex
+	entries   map[string]*Entry
 }
-
-var _ Registry = (*FileRegistry)(nil)
 
 // NewFileRegistry loads every *.yaml under dir and compiles each once.
 //
@@ -197,14 +274,8 @@ var _ Registry = (*FileRegistry)(nil)
 // when DefaultKey is absent — the tomb must load whether or not authoring
 // is on, because StartEncounter with no key plays it.
 //
-// authoring decides whether Put WRITES; with it false a storing Put returns
-// ErrAuthoringDisabled and the directory is never written to. A validate-only
-// Put still compiles and answers on such a registry (rpg-project#481): it
-// writes nothing either way, and the builder's per-edit preview is the one
-// call a read-only registry can still serve.
-//
 // projector produces each Entry's Atlas. Required.
-func NewFileRegistry(dir string, authoring bool, projector AtlasProjector) (*FileRegistry, error) {
+func NewFileRegistry(dir string, projector AtlasProjector) (*FileRegistry, error) {
 	if dir == "" {
 		return nil, errors.New("dungeons: content directory is required")
 	}
@@ -218,10 +289,8 @@ func NewFileRegistry(dir string, authoring bool, projector AtlasProjector) (*Fil
 
 	r := &FileRegistry{
 		dir:       dir,
-		authoring: authoring,
 		projector: projector,
 		entries:   make(map[string]*Entry),
-		putLocks:  make(map[string]*sync.Mutex),
 	}
 
 	for _, d := range names {
@@ -233,7 +302,7 @@ func NewFileRegistry(dir string, authoring bool, projector AtlasProjector) (*Fil
 		if err != nil {
 			return nil, fmt.Errorf("dungeons: read %s: %w", path, err)
 		}
-		entry, ferrs, err := r.compileEntry(context.Background(), raw)
+		entry, ferrs, err := compileEntry(context.Background(), projector, raw)
 		if err != nil {
 			return nil, fmt.Errorf("dungeons: %s: %w", path, err)
 		}
@@ -248,6 +317,7 @@ func NewFileRegistry(dir string, authoring bool, projector AtlasProjector) (*Fil
 		if _, dup := r.entries[entry.Key]; dup {
 			return nil, fmt.Errorf("dungeons: %s: key %q is already registered", path, entry.Key)
 		}
+		entry.Source = SourceShipped
 		r.entries[entry.Key] = entry
 	}
 
@@ -259,25 +329,20 @@ func NewFileRegistry(dir string, authoring bool, projector AtlasProjector) (*Fil
 	return r, nil
 }
 
-// List implements Registry.
+// List returns every shipped dungeon, both dialects, sorted by key. The
+// two-store registry's list leaves out the ones that are not single-room.
 func (r *FileRegistry) List(_ context.Context) ([]Summary, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
 	out := make([]Summary, 0, len(r.entries))
 	for _, e := range r.entries {
-		out = append(out, Summary{Key: e.Key, Name: e.Name})
+		out = append(out, Summary{Key: e.Key, Name: e.Name, Source: SourceShipped})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 
 	return out, nil
 }
 
-// Get implements Registry.
+// Get returns the shipped entry under key, or ErrNotFound.
 func (r *FileRegistry) Get(_ context.Context, key string) (*Entry, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
 	e, ok := r.entries[key]
 	if !ok {
 		return nil, fmt.Errorf("dungeon %q: %w", key, ErrNotFound)
@@ -286,74 +351,18 @@ func (r *FileRegistry) Get(_ context.Context, key string) (*Entry, error) {
 	return e.clone(), nil
 }
 
+// has reports whether key is a shipped reference.
+func (r *FileRegistry) has(key string) bool {
+	_, ok := r.entries[key]
+	return ok
+}
+
 // clone is the copy Get returns: a fresh struct and a fresh YAML slice, so
 // a caller editing what it got back edits nothing the registry serves.
 func (e *Entry) clone() *Entry {
 	out := *e
 	out.YAML = bytes.Clone(e.YAML)
 	return &out
-}
-
-// Put implements Registry. See the package comment for the write discipline.
-func (r *FileRegistry) Put(ctx context.Context, in *PutInput) (*PutResult, error) {
-	if in == nil {
-		return nil, errors.New("dungeons: PutInput is required")
-	}
-	if !keyPattern.MatchString(in.Key) {
-		return nil, fmt.Errorf("dungeon key %q: %w", in.Key, ErrInvalidKey)
-	}
-	// THE GATE IS ON THE WRITE, NOT ON THE GRADE (rpg-project#481).
-	// Compiling bytes the caller handed us touches no file and no entry, so a
-	// read-only registry answers a validate-only request — which is what the
-	// builder calls on every edit — and refuses only the save.
-	if !in.ValidateOnly && !r.authoring {
-		return nil, ErrAuthoringDisabled
-	}
-
-	unlock := r.lockKey(in.Key)
-	defer unlock()
-
-	// The caller's slice is copied ONCE here and never touched again: what
-	// is compiled, written and served are the same bytes, and a caller
-	// reusing its buffer after Put returns cannot reach any of them.
-	raw := bytes.Clone(in.YAML)
-	entry, ferrs, err := r.compileEntry(ctx, raw)
-	if err != nil {
-		return nil, fmt.Errorf("dungeon %q: %w", in.Key, err)
-	}
-	if len(ferrs) > 0 {
-		return &PutResult{Errors: ferrs}, nil
-	}
-	if entry.Key != in.Key {
-		return nil, fmt.Errorf("dungeon %q: file's key line says %q: %w", in.Key, entry.Key, ErrKeyMismatch)
-	}
-	if in.ValidateOnly {
-		return &PutResult{Entry: entry}, nil
-	}
-
-	if err := writeAtomic(r.dir, in.Key, raw); err != nil {
-		return nil, fmt.Errorf("dungeon %q: %w", in.Key, err)
-	}
-
-	r.mu.Lock()
-	r.entries[in.Key] = entry
-	r.mu.Unlock()
-
-	return &PutResult{Entry: entry.clone()}, nil
-}
-
-// lockKey acquires the per-key Put lock and returns its unlock.
-func (r *FileRegistry) lockKey(key string) func() {
-	r.putMu.Lock()
-	l, ok := r.putLocks[key]
-	if !ok {
-		l = &sync.Mutex{}
-		r.putLocks[key] = l
-	}
-	r.putMu.Unlock()
-
-	l.Lock()
-	return l.Unlock
 }
 
 // writeAtomic writes dir/<key>.yaml through a temp file in the same
@@ -391,7 +400,7 @@ func writeAtomic(dir, key string, raw []byte) error {
 
 // compileEntry compiles raw into an Entry. A file that is not a dungeon comes
 // back as FieldErrors (nil entry, nil error); anything else is an error.
-func (r *FileRegistry) compileEntry(ctx context.Context, raw []byte) (*Entry, []FieldError, error) {
+func compileEntry(ctx context.Context, projector AtlasProjector, raw []byte) (*Entry, []FieldError, error) {
 	d, err := sessionworld.Compile(raw)
 	if err != nil {
 		if errors.Is(err, tkdungeonspec.ErrBadSpec) {
@@ -405,7 +414,7 @@ func (r *FileRegistry) compileEntry(ctx context.Context, raw []byte) (*Entry, []
 	// (ErrKeyMismatch, on both the Put path and the load-from-disk path), so
 	// an atlas built here can only ever reach a caller naming the same string
 	// the caller asked for.
-	atlas, err := r.projector.AtlasOf(ctx, d.Key, d.Spec)
+	atlas, err := projector.AtlasOf(ctx, d.Key, d.Spec)
 	if err != nil {
 		// Mostly the stack disagreeing with itself: a dungeon that compiled but
 		// will not project. Not always: a file whose own endings collide with
@@ -414,7 +423,26 @@ func (r *FileRegistry) compileEntry(ctx context.Context, raw []byte) (*Entry, []
 		return nil, nil, fmt.Errorf("project atlas: %w", err)
 	}
 
-	return &Entry{Key: d.Key, Name: d.Name, YAML: raw, Dungeon: d, Atlas: atlas}, nil, nil
+	return &Entry{
+		Key:        d.Key,
+		Name:       d.Name,
+		YAML:       raw,
+		Dungeon:    d,
+		Atlas:      atlas,
+		SingleRoom: isSingleRoom(raw),
+	}, nil, nil
+}
+
+// singleRoomVersion is the first root `version` of the single-room dialect.
+const singleRoomVersion = 3
+
+// isSingleRoom is the toolkit's own dispatch rule (dungeonspec.Load): a root
+// `version` of 3 or more is a single-room site document.
+func isSingleRoom(raw []byte) bool {
+	var root struct {
+		Version int `yaml:"version"`
+	}
+	return yaml.Unmarshal(raw, &root) == nil && root.Version >= singleRoomVersion
 }
 
 // compileErrors turns a compile refusal into the wire's list: a validation

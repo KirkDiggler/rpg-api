@@ -28,7 +28,7 @@ import (
 type CreatureFactsWalkSuite struct {
 	suite.Suite
 	ctx      context.Context
-	registry *dungeons.FileRegistry
+	registry dungeons.Registry
 	raw      []byte
 	dir      string
 }
@@ -38,15 +38,20 @@ func TestCreatureFactsWalkSuite(t *testing.T) { suite.Run(t, new(CreatureFactsWa
 func (s *CreatureFactsWalkSuite) SetupTest() {
 	s.ctx = context.Background()
 	s.registry, s.dir = dungeonstest.Scratch(s.T())
-	s.raw = dungeonstest.CreatureFactsWalkYAML(s.T())
+	s.raw = dungeonstest.AsKey(s.T(), dungeonstest.CreatureFactsWalkYAML(s.T()),
+		dungeonstest.CreatureFactsWalkKey, creatureFactsCopyKey)
 }
+
+// creatureFactsCopyKey is the author's own copy of the walk room: its shipped
+// key is a reference and refuses a save (design R20).
+const creatureFactsCopyKey = "my-creature-facts-walk"
 
 // TestTheWalkDocumentCompiles is the control the scope assertions need: the
 // room is a legal document, so a failure below is about the scopes and not
 // about the file.
 func (s *CreatureFactsWalkSuite) TestTheWalkDocumentCompiles() {
 	out, err := s.registry.Put(s.ctx, &dungeons.PutInput{
-		Key: dungeonstest.CreatureFactsWalkKey, YAML: s.raw, ValidateOnly: true,
+		Caller: dungeonstest.Caller, Key: creatureFactsCopyKey, YAML: s.raw, ValidateOnly: true,
 	})
 	s.Require().NoError(err)
 	s.Empty(out.Errors, "the authored room compiles")
@@ -64,7 +69,7 @@ func (s *CreatureFactsWalkSuite) TestTheWalkDocumentCompiles() {
 // in its own persistence layer.
 func (s *CreatureFactsWalkSuite) TestBothDeedScopesReachTheCompiledTable() {
 	out, err := s.registry.Put(s.ctx, &dungeons.PutInput{
-		Key: dungeonstest.CreatureFactsWalkKey, YAML: s.raw, ValidateOnly: true,
+		Caller: dungeonstest.Caller, Key: creatureFactsCopyKey, YAML: s.raw, ValidateOnly: true,
 	})
 	s.Require().NoError(err)
 	s.Require().Empty(out.Errors)
@@ -78,7 +83,7 @@ func (s *CreatureFactsWalkSuite) TestBothDeedScopesReachTheCompiledTable() {
 // toolkit's migration diagnostics through the API's actual save boundary.
 func (s *CreatureFactsWalkSuite) TestRetiredDeclarationKeysCannotOverwriteTheSavedRoom() {
 	before, err := s.registry.Put(s.ctx, &dungeons.PutInput{
-		Key: dungeonstest.CreatureFactsWalkKey, YAML: s.raw,
+		Caller: dungeonstest.Caller, Key: creatureFactsCopyKey, YAML: s.raw,
 	})
 	s.Require().NoError(err)
 	s.Require().Empty(before.Errors)
@@ -95,18 +100,19 @@ func (s *CreatureFactsWalkSuite) TestRetiredDeclarationKeysCannotOverwriteTheSav
 			bad := strings.Replace(string(s.raw), tc.old, tc.replacement, 1)
 			s.Require().NotEqual(string(s.raw), bad)
 			out, putErr := s.registry.Put(s.ctx, &dungeons.PutInput{
-				Key: dungeonstest.CreatureFactsWalkKey, YAML: []byte(bad),
+				Caller: dungeonstest.Caller, Key: creatureFactsCopyKey, YAML: []byte(bad),
 			})
 			s.Require().NoError(putErr)
 			s.Nil(out.Entry)
 			s.Contains(out.Errors, dungeons.FieldError{Path: tc.path, Message: tc.message})
-			after, getErr := s.registry.Get(s.ctx, dungeonstest.CreatureFactsWalkKey)
+			after, getErr := s.registry.Get(s.ctx, dungeonstest.Caller, creatureFactsCopyKey)
 			s.Require().NoError(getErr)
 			s.Equal(before.Entry.YAML, after.YAML)
 			s.Equal(before.Entry.Atlas, after.Atlas)
+			s.Equal(s.raw, after.YAML)
 			onDisk, readErr := os.ReadFile(filepath.Join(s.dir, dungeonstest.CreatureFactsWalkKey+".yaml"))
 			s.Require().NoError(readErr)
-			s.Equal(s.raw, onDisk)
+			s.Equal(dungeonstest.CreatureFactsWalkYAML(s.T()), onDisk, "the shipped file is never written")
 		})
 	}
 }
@@ -121,7 +127,7 @@ func (s *CreatureFactsWalkSuite) TestRetiredDeclarationKeysCannotOverwriteTheSav
 // permissive half would pass if the check were deleted entirely.
 func (s *CreatureFactsWalkSuite) TestANeutralPairCarriesAnUntil() {
 	out, err := s.registry.Put(s.ctx, &dungeons.PutInput{
-		Key: dungeonstest.CreatureFactsWalkKey, YAML: s.raw, ValidateOnly: true,
+		Caller: dungeonstest.Caller, Key: creatureFactsCopyKey, YAML: s.raw, ValidateOnly: true,
 	})
 	s.Require().NoError(err)
 	s.Empty(out.Errors, "a neutral pair with an `until` is a legal document")
@@ -135,7 +141,7 @@ func (s *CreatureFactsWalkSuite) TestANeutralPairCarriesAnUntil() {
 	s.Require().NotEqual(string(s.raw), allied, "the edit landed on the fixture")
 
 	refused, err := s.registry.Put(s.ctx, &dungeons.PutInput{
-		Key: dungeonstest.CreatureFactsWalkKey, YAML: []byte(allied), ValidateOnly: true,
+		Caller: dungeonstest.Caller, Key: creatureFactsCopyKey, YAML: []byte(allied), ValidateOnly: true,
 	})
 	s.Require().NoError(err)
 	s.Require().NotEmpty(refused.Errors, "an allied pair has nothing to become")
