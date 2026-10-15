@@ -67,6 +67,10 @@ exits:
     cell:
       q: -11
       r: 5
+endings:
+  - id: freed
+    when:
+      fact: cells-opened
 room:
   version: 3
   id: befdc82b-46d1-40b3-ad9f-5e3931b9a56c
@@ -1384,6 +1388,8 @@ room:
           - ability: dex
             tool: dnd5e:item:thieves-tools
             dc: 13
+        opened:
+          fact: cells-opened
     propBindings:
       purse:
         holdable: true
