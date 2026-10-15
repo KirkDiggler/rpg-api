@@ -48,9 +48,14 @@ import (
 	dicesessionrepo "github.com/KirkDiggler/rpg-api/internal/repositories/dice_session"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 	sessionpresentationrepo "github.com/KirkDiggler/rpg-api/internal/repositories/sessionpresentation"
+	"github.com/KirkDiggler/rpg-api/internal/repositories/worlddungeons"
 )
 
 const bufSize = 1024 * 1024
+
+// HarnessWorldID is the world every Dev-scheme caller resolves to under
+// DevMode, as the server's RPG_DEV_WORLD_ID default does.
+const HarnessWorldID = "test-world"
 
 // TestServer encapsulates a fully wired gRPC server with real Redis for integration testing.
 type TestServer struct {
@@ -301,9 +306,34 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	tokenCache := auth.NewTokenCache(5 * time.Minute)
 	authConfig := &auth.InterceptorConfig{DevMode: cfg.DevMode}
 
+	// The world boundary in compatibility mode, as cmd/server wires it with
+	// RPG_WORLD_ACCESS_ENFORCEMENT unset: the world-scoped methods (the
+	// composition and dungeon verbs) get the trusted world; under DevMode
+	// the Dev scheme resolves to HarnessWorldID.
+	membershipCache, err := auth.NewMembershipCache(&auth.MembershipCacheConfig{
+		TTL: 30 * time.Second, MaxEntries: 1024, Now: time.Now,
+	})
+	if err != nil {
+		return fmt.Errorf("membership cache: %w", err)
+	}
+	devWorldID := ""
+	if cfg.DevMode {
+		devWorldID = HarnessWorldID
+	}
+	worldResolver, err := auth.NewWorldResolver(&auth.WorldResolverConfig{
+		MembershipVerifier: discordClient,
+		IdentityCache:      tokenCache,
+		MembershipCache:    membershipCache,
+		DevWorldID:         devWorldID,
+	})
+	if err != nil {
+		return fmt.Errorf("world resolver: %w", err)
+	}
+
 	ts.grpcServer = grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
 			auth.UnaryAuthInterceptor(discordClient, tokenCache, authConfig),
+			auth.UnaryWorldContextInterceptor(worldResolver),
 		),
 		grpc.ChainStreamInterceptor(
 			auth.StreamAuthInterceptor(discordClient, tokenCache, authConfig),
@@ -381,7 +411,20 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 		}
 		contentDir = found
 	}
-	registry, err := dungeons.NewFileRegistry(contentDir, false, dungeonstest.ProjectorFor(sessOrch.Manager))
+	// Two stores, as cmd/server wires them: the content directory is the
+	// shipped store; saves land in the world store over this harness's Redis.
+	projector := dungeonstest.ProjectorFor(sessOrch.Manager)
+	shippedStore, err := dungeons.NewFileRegistry(contentDir, projector)
+	if err != nil {
+		return fmt.Errorf("content registry: %w", err)
+	}
+	worldDungeons, err := worlddungeons.NewRedis(&worlddungeons.RedisConfig{Client: ts.redisClient})
+	if err != nil {
+		return fmt.Errorf("world dungeon store: %w", err)
+	}
+	registry, err := dungeons.NewRegistry(&dungeons.RegistryConfig{
+		Shipped: shippedStore, World: worldDungeons, Projector: projector,
+	})
 	if err != nil {
 		return fmt.Errorf("content registry: %w", err)
 	}

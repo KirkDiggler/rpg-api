@@ -59,6 +59,7 @@ import (
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 	sessionpresentationrepo "github.com/KirkDiggler/rpg-api/internal/repositories/sessionpresentation"
 	worldrepo "github.com/KirkDiggler/rpg-api/internal/repositories/world"
+	"github.com/KirkDiggler/rpg-api/internal/repositories/worlddungeons"
 )
 
 // lobbyTTL is long enough for any single playtest session, short enough
@@ -378,11 +379,30 @@ func runServer(_ *cobra.Command, _ []string) error {
 	}
 	// sessionOrch.Manager is the AtlasProjector: Manager.AtlasOf projects the
 	// compiled dungeon the way GetAtlas does, so PutDungeon's atlas and the game's are one producer.
-	registry, err := dungeons.NewFileRegistry(contentDir, authoringEnabled, registryProjector{sessionOrch.Manager})
+	// Two stores (rpg-project#585): the content directory is the SHIPPED
+	// store, read once and never written by a request; saves land in the
+	// author's world store in Redis, owned by the author.
+	projector := registryProjector{sessionOrch.Manager}
+	shippedStore, err := dungeons.NewFileRegistry(contentDir, projector)
 	if err != nil {
 		return fmt.Errorf("content registry: %w", err)
 	}
-	log.Printf("content registry: %q (authoring enabled: %t)", contentDir, authoringEnabled) //nolint:gosec // operator-supplied env var, logged once at boot
+	worldDungeons, err := worlddungeons.NewRedis(&worlddungeons.RedisConfig{Client: redisClient})
+	if err != nil {
+		return fmt.Errorf("world dungeon store: %w", err)
+	}
+	registry, err := dungeons.NewRegistry(&dungeons.RegistryConfig{
+		Shipped:   shippedStore,
+		World:     worldDungeons,
+		Authoring: authoringEnabled,
+		Projector: projector,
+	})
+	if err != nil {
+		return fmt.Errorf("content registry: %w", err)
+	}
+	//nolint:gosec // operator-supplied env var, logged once at boot
+	log.Printf("content registry: shipped %q, world store redis dungeon:world:<world> (authoring enabled: %t)",
+		contentDir, authoringEnabled)
 
 	// LobbyService v1alpha1 (rpg-api#629): party assembly + the sole encounter
 	// construction path. StartEncounter builds directly onto sessionOrch's

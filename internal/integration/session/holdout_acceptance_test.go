@@ -138,6 +138,7 @@ func launchTheCampWith(t *testing.T, roller sdk.Roller) *campRun {
 	require.NoError(t, err)
 
 	out, err := lobby.StartEncounter(context.Background(), &lobbyorch.StartEncounterInput{
+		WorldID:  dungeonstest.Caller.WorldID,
 		PlayerID: "player-alice", LobbyID: "lobby-1", DungeonKey: raiderCampKey,
 	})
 	require.NoError(t, err, "the camp launches: its chief entered the raiders as their mind")

@@ -1,7 +1,7 @@
 ---
 name: authoring service + dungeon content registry
 description: internal/dungeons (the file registry every authored dungeon lives in) and AuthoringService v1alpha1 (PutDungeon / GetDungeon) on the session stack
-updated: 2026-10-05
+updated: 2026-10-15
 confidence: medium-high — rpg-api#1003 single-room v3 adoption verified on released
 provider tags through registry byte/metadata/full-scene preservation, real-launch member-atlas,
 reload/author-edit snapshot isolation, seat-capacity and unknown-ref refusal suites; legacy v2
@@ -17,7 +17,8 @@ The dungeon builder's seam (rpg-project#256 under journey #169, design in
 the world the game will play. Two pieces, both thin:
 
 ```
-internal/dungeons/                           the content registry (FileRegistry)
+internal/dungeons/                           the registry: shipped store (FileRegistry) + world store, joined
+internal/repositories/worlddungeons/         the per-world store authors save to (Redis)
 internal/orchestrators/authoring/            PutDungeon / GetDungeon business logic
 internal/handlers/dnd5e/authoring/v1alpha1/  proto <-> input, status mapping
 content/reference-tomb.yaml                  the shipped dungeon
@@ -40,7 +41,7 @@ pins are required before consumer merge.
 
 ## The registry (`internal/dungeons`)
 
-`NewFileRegistry(dir, authoring, projector)` reads every `*.yaml` under `dir`
+`NewFileRegistry(dir, projector)` is the **shipped** store: it reads every `*.yaml` under `dir`
 (`RPG_CONTENT_DIR`, default `./content`) and compiles each once through
 `internal/sessionworld.Compile` — the toolkit's
 `rulebooks/dnd5e/encounter/dungeonspec`, never a local copy of its geometry.
@@ -69,18 +70,34 @@ The key is not authorization to fetch the full builder document in gameplay. A
 world that compiled but will not load is a boot refusal / `Internal`, never a
 `FieldError`: the stack disagreed with itself, the author did nothing.
 
-`Registry` is the interface the lobby and authoring orchestrators see:
+### Two stores (rpg-project#585, design R20–R24)
 
-- `List` — every `{Key, Name}`, sorted by key.
-- `Get(key)` — the `Entry` (`Key`, `Name`, verbatim `YAML`, compiled
-  `Dungeon`, `Atlas`) or `ErrNotFound`.
-- `Put(PutInput{Key, YAML, ValidateOnly})` — compile → (unless validate-only)
-  write `dir/<key>.yaml` through a same-directory temp file + rename → swap
-  the entry under the registry mutex. Puts are serialized **per key**
-  (different keys do not contend). A file that does not compile is a
-  `PutResult.Errors` list, not an error. `ErrInvalidKey` (outside
-  `[a-z0-9-]`), `ErrKeyMismatch` (request key ≠ file's `key:`), and
-  `ErrAuthoringDisabled` are errors.
+The shipped store is read once and **never written by a request**; its files
+are references. Authors save to the **world store**
+(`internal/repositories/worlddungeons`): one Redis hash per world,
+`dungeon:world:<worldID>`, field = key, value `{"owner","yaml"}`, every write
+under `WATCH`/`MULTI` with the owner check inside the transaction.
+`dungeons.NewRegistry(&RegistryConfig{Shipped, World, Authoring, Projector})`
+joins them into the `Registry` the lobby and authoring orchestrators see, for
+one `Caller{WorldID, PlayerID}` per call (the world from `worldcontext`, the
+player from `auth`; an incomplete caller is `ErrNoCaller`):
+
+- `List(caller)` — the world's records by key (`SourceWorld`, `Owner`), then
+  the single-room references by key (`SourceShipped`) that no world record
+  shadows. Shipped files below root `version: 3` are left out (R23) and still
+  resolve by key.
+- `Get(caller, key)` — the world store, then shipped; else `ErrNotFound`.
+- `Put(PutInput{Caller, Key, YAML, ValidateOnly})` — grammar
+  (`ErrInvalidKey`), a shipped key (`ErrReferenceKey`), another member's key
+  (`ErrOwnedByOther`), all before compiling and for validate-only too; then
+  compile (`PutResult.Errors`), `ErrKeyMismatch`, and the save into the
+  caller's world (`ErrAuthoringDisabled` without authoring).
+- `Delete(caller, key)` / `Rename(RenameInput{Caller, Key, NewKey})` — the
+  caller's own records only (`ErrOwnedByOther`, `ErrReferenceReadOnly`,
+  `ErrKeyExists`, `ErrNotFound`); Rename rewrites only the root `key:` line.
+
+The refusal sentinels' texts are the sentences the author reads; the handler
+answers them as `PermissionDenied` / `AlreadyExists` with that text.
 
 Unknown keys in the v2 dialect are pathed `FieldError`s from encounter
 v0.94.1 (rpg-project#481 R2), so no refusal this service returns carries a
@@ -98,10 +115,11 @@ The registry never re-marshals: `GetDungeon` hands back the bytes that were
 design §5).
 
 `internal/dungeons/dungeonstest` builds registries for tests: `Shipped(t)`
-(read-only over the repo's `content/`), `Scratch(t)` (a temp copy with
-authoring on) and `ScratchReadOnly(t)` (the same temp copy with authoring
-off — a test that exercises the write refusal should not be the one whose
-failure writes into the repo's content tree).
+(the repo's `content/` with an empty world store, authoring off),
+`Scratch(t)` / `ScratchReadOnly(t)` (a temp copy with authoring on / off),
+`ShippedStore`, `WorldStore`, `Join`, `Caller` (the one test caller) and
+`AsKey` (a shipped file as an author's own copy, since a shipped key refuses
+a save).
 
 ### Seeding an empty mount
 
@@ -146,7 +164,7 @@ than a code change.
 
 | Variable | Effect |
 |---|---|
-| `RPG_CONTENT_DIR` | directory the registry loads and writes; default `content` (the Docker image ships the repo's `content/` at `/home/appuser/content`). When set and lacking `reference-tomb.yaml`, the shipped copy is seeded into it at boot |
+| `RPG_CONTENT_DIR` | the shipped store's directory, loaded at boot and never written by a request (saves land in the world store in Redis); default `content` (the Docker image ships the repo's `content/` at `/home/appuser/content`). When set and lacking `reference-tomb.yaml`, the shipped copy is seeded into it at boot |
 | `RPG_AUTHORING_ENABLED=1` | registers `AuthoringService`; requires `RPG_CONTENT_DIR` |
 | `RPG_SHIPPED_CONTENT_DIR` | where the seed is read from; default `content`, the image sets `/usr/share/rpg-api/content` |
 
