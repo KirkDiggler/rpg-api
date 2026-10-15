@@ -25,6 +25,7 @@ func (s *SessionStackSuite) TestStartEncounter_TheThreeMindsLaunchesWithItsTwoAr
 	s.seedReadyLobby("lobby-1", "alice")
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: "reference-minds",
 	})
 	s.Require().NoError(err, "the shipped minds dungeon must launch with its armed placements")
@@ -67,8 +68,9 @@ func (s *SessionStackSuite) TestStartEncounter_AWeaponTheCatalogDoesNotHaveRefus
 		s.Require().NoError(os.WriteFile(filepath.Join(dir, e.Name()), raw, 0o600))
 	}
 
-	registry, err := dungeons.NewFileRegistry(dir, false, dungeonstest.Projector(s.T()))
+	shipped, err := dungeons.NewFileRegistry(dir, dungeonstest.Projector(s.T()))
 	s.Require().NoError(err, "the file still COMPILES — a weapon ref's shape is all the dungeon can check")
+	registry := dungeonstest.Join(s.T(), shipped, false)
 
 	orch, err := lobbyorch.New(&lobbyorch.Config{
 		LobbyRepo: s.lobbyRepo, LobbyBroker: s.broker,
@@ -80,6 +82,7 @@ func (s *SessionStackSuite) TestStartEncounter_AWeaponTheCatalogDoesNotHaveRefus
 	s.Require().NoError(err)
 
 	_, err = orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: "reference-minds",
 	})
 	s.Require().Error(err, "a weapon nothing can build must take the launch down")

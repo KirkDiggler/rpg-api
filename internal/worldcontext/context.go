@@ -5,6 +5,10 @@ import "context"
 
 type contextKey struct{}
 
+// RequiredMessage is the refusal a world-scoped handler answers, as
+// FailedPrecondition, when no trusted world was installed.
+const RequiredMessage = "trusted world context is required"
+
 // Value contains the trusted domain identity for the current request.
 type Value struct {
 	WorldID string

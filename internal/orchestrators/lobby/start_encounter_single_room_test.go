@@ -36,7 +36,7 @@ import (
 func (s *SessionStackSuite) TestStartEncounter_PlaysCompleteSingleRoom() {
 	registry, _ := dungeonstest.Scratch(s.T())
 	raw := dungeonstest.WorkshopRoomYAML(s.T())
-	put, err := registry.Put(s.ctx, &dungeons.PutInput{Key: dungeonstest.WorkshopRoomKey, YAML: raw})
+	put, err := registry.Put(s.ctx, &dungeons.PutInput{Caller: dungeonstest.Caller, Key: dungeonstest.WorkshopRoomKey, YAML: raw})
 	s.Require().NoError(err)
 	s.Require().Empty(put.Errors)
 
@@ -44,6 +44,7 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysCompleteSingleRoom() {
 	s.seedCharacter("char-alice", "alice", "Alice")
 	s.seedReadyLobby("lobby-1", "alice")
 	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: lobbyorch.DungeonKey(dungeonstest.WorkshopRoomKey),
 	})
 	s.Require().NoError(err)
@@ -160,7 +161,7 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysCompleteSingleRoom() {
 func (s *SessionStackSuite) TestStartEncounter_SingleRoomGeometrySurvivesReloadAndAuthorEdit() {
 	registry, _ := dungeonstest.Scratch(s.T())
 	raw := dungeonstest.WorkshopRoomYAML(s.T())
-	put, err := registry.Put(s.ctx, &dungeons.PutInput{Key: dungeonstest.WorkshopRoomKey, YAML: raw})
+	put, err := registry.Put(s.ctx, &dungeons.PutInput{Caller: dungeonstest.Caller, Key: dungeonstest.WorkshopRoomKey, YAML: raw})
 	s.Require().NoError(err)
 	s.Require().Empty(put.Errors)
 
@@ -168,6 +169,7 @@ func (s *SessionStackSuite) TestStartEncounter_SingleRoomGeometrySurvivesReloadA
 	s.seedCharacter("char-alice", "alice", "Alice")
 	s.seedReadyLobby("lobby-1", "alice")
 	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: lobbyorch.DungeonKey(dungeonstest.WorkshopRoomKey),
 	})
 	s.Require().NoError(err)
@@ -197,7 +199,7 @@ func (s *SessionStackSuite) TestStartEncounter_SingleRoomGeometrySurvivesReloadA
 	// after the launch: one authored hex is gone, so the floor is smaller.
 	edited := bytes.Replace(raw, []byte("{q: -1, r: 1}, "), nil, 1)
 	s.Require().NotEqual(raw, edited, "the fixture's walkable hexes must be where this test expects it")
-	republished, err := registry.Put(s.ctx, &dungeons.PutInput{Key: dungeonstest.WorkshopRoomKey, YAML: edited})
+	republished, err := registry.Put(s.ctx, &dungeons.PutInput{Caller: dungeonstest.Caller, Key: dungeonstest.WorkshopRoomKey, YAML: edited})
 	s.Require().NoError(err)
 	s.Require().Empty(republished.Errors)
 	s.Len(republished.Entry.Atlas.Cells, 7, "the newly authored room is genuinely different")
@@ -218,6 +220,7 @@ func (s *SessionStackSuite) TestStartEncounter_SingleRoomGeometrySurvivesReloadA
 	s.seedCharacter("char-bob", "bob", "Bob")
 	s.seedReadyLobby("lobby-2", "bob")
 	next, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "bob", LobbyID: "lobby-2", DungeonKey: lobbyorch.DungeonKey(dungeonstest.WorkshopRoomKey),
 	})
 	s.Require().NoError(err)
@@ -237,7 +240,7 @@ func (s *SessionStackSuite) TestStartEncounter_SingleRoomGeometrySurvivesReloadA
 func (s *SessionStackSuite) TestStartEncounter_SingleRoomInsufficientSeatsWritesNothing() {
 	registry, _ := dungeonstest.Scratch(s.T())
 	oneSeat := dungeonstest.WorkshopOneSeatYAML(s.T())
-	put, err := registry.Put(s.ctx, &dungeons.PutInput{Key: dungeonstest.WorkshopOneSeatKey, YAML: oneSeat})
+	put, err := registry.Put(s.ctx, &dungeons.PutInput{Caller: dungeonstest.Caller, Key: dungeonstest.WorkshopOneSeatKey, YAML: oneSeat})
 	s.Require().NoError(err)
 	s.Require().Empty(put.Errors, "the one-seat room is valid authored content")
 	s.Require().NotNil(put.Entry.Dungeon)
@@ -258,6 +261,7 @@ func (s *SessionStackSuite) TestStartEncounter_SingleRoomInsufficientSeatsWrites
 	defer func() { _ = sub.Close() }()
 
 	_, err = orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: lobbyorch.DungeonKey(dungeonstest.WorkshopOneSeatKey),
 	})
 	s.Require().Error(err)
@@ -299,11 +303,12 @@ func (s *SessionStackSuite) TestStartEncounter_SingleRoomInsufficientSeatsWrites
 	broken := bytes.Replace(full, []byte("key: workshop-room"), []byte("key: broken-room"), 1)
 	broken = bytes.Replace(broken, []byte("dnd5e:monsters:skeleton"), []byte("dnd5e:monsters:not-real"), 1)
 	s.Require().NotEqual(full, broken)
-	res, err := registry.Put(s.ctx, &dungeons.PutInput{Key: "broken-room", YAML: broken})
+	res, err := registry.Put(s.ctx, &dungeons.PutInput{Caller: dungeonstest.Caller, Key: "broken-room", YAML: broken})
 	s.Require().NoError(err)
 	s.Require().NotEmpty(res.Errors, "the unknown monster ref refuses the save")
 
 	_, err = orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: lobbyorch.DungeonKey("broken-room"),
 	})
 	s.Require().ErrorIs(err, lobbyorch.ErrDungeonNotFound,
@@ -342,7 +347,7 @@ func (s *SessionStackSuite) TestStartEncounter_SingleRoomInsufficientSeatsWrites
 func (s *SessionStackSuite) TestStartEncounter_TheGarrisonIsOnTheBoardBeforeThePartyArrives() {
 	registry, _ := dungeonstest.Scratch(s.T())
 	put, err := registry.Put(s.ctx, &dungeons.PutInput{
-		Key: dungeonstest.WorkshopRoomKey, YAML: dungeonstest.WorkshopRoomYAML(s.T()),
+		Caller: dungeonstest.Caller, Key: dungeonstest.WorkshopRoomKey, YAML: dungeonstest.WorkshopRoomYAML(s.T()),
 	})
 	s.Require().NoError(err)
 	s.Require().Empty(put.Errors)
@@ -351,6 +356,7 @@ func (s *SessionStackSuite) TestStartEncounter_TheGarrisonIsOnTheBoardBeforeTheP
 	s.seedCharacter("char-alice", "alice", "Alice")
 	s.seedReadyLobby("lobby-1", "alice")
 	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: lobbyorch.DungeonKey(dungeonstest.WorkshopRoomKey),
 	})
 	s.Require().NoError(err)

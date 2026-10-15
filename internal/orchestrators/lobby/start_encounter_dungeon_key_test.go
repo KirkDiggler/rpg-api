@@ -30,6 +30,7 @@ func (s *SessionStackSuite) TestStartEncounter_GetAtlasNamesTheDungeonTheLaunchR
 	s.seedReadyLobby("lobby-1", "alice")
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: lobbyorch.DungeonKey(frontRoomKey),
 	})
 	s.Require().NoError(err)
@@ -59,6 +60,7 @@ func (s *SessionStackSuite) TestStartEncounter_ADefaultedLaunchNamesTheDungeonIt
 	s.seedReadyLobby("lobby-1", "alice")
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1",
 	})
 	s.Require().NoError(err)

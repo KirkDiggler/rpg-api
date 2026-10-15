@@ -103,7 +103,7 @@ func ShippedStore(t testing.TB) *dungeons.FileRegistry {
 func Shipped(t testing.TB) dungeons.Registry {
 	t.Helper()
 
-	return join(t, ShippedStore(t), false)
+	return Join(t, ShippedStore(t), false)
 }
 
 // Scratch copies the shipped content into a temp directory and returns a
@@ -169,11 +169,11 @@ func scratch(t testing.TB, authoring bool) (dungeons.Registry, string) {
 		t.Fatalf("dungeonstest: %v", err)
 	}
 
-	return join(t, shipped, authoring), dst
+	return Join(t, shipped, authoring), dst
 }
 
-// join builds the two-store Registry over shipped and a fresh world store.
-func join(t testing.TB, shipped *dungeons.FileRegistry, authoring bool) dungeons.Registry {
+// Join builds the two-store Registry over shipped and a fresh world store.
+func Join(t testing.TB, shipped *dungeons.FileRegistry, authoring bool) dungeons.Registry {
 	t.Helper()
 
 	r, err := dungeons.NewRegistry(&dungeons.RegistryConfig{
@@ -241,4 +241,29 @@ func AsKey(t testing.TB, raw []byte, from, to string) []byte {
 	}
 
 	return bytes.Replace(raw, old, []byte("\nkey: "+to+"\n"), 1)
+}
+
+// ListedReferenceKeys is every shipped key a list shows, sorted: the
+// single-room references (root version 3 or more). The version 2 files stay
+// resolvable by key and are left out (design R23).
+func ListedReferenceKeys(t testing.TB) []string {
+	t.Helper()
+
+	shipped := ShippedStore(t)
+	all, err := shipped.List(context.Background())
+	if err != nil {
+		t.Fatalf("dungeonstest: %v", err)
+	}
+	keys := make([]string, 0, len(all))
+	for _, sum := range all {
+		e, getErr := shipped.Get(context.Background(), sum.Key)
+		if getErr != nil {
+			t.Fatalf("dungeonstest: %v", getErr)
+		}
+		if e.SingleRoom {
+			keys = append(keys, sum.Key)
+		}
+	}
+
+	return keys
 }

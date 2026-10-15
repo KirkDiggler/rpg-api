@@ -6,7 +6,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 )
 
 // lobbyStatusError maps the lobby orchestrator's sentinel errors onto gRPC
@@ -20,6 +22,7 @@ import (
 //   - ErrCharacterOwnershipMismatch → PermissionDenied
 //   - ErrCharacterNotFound → NotFound
 //   - ErrDungeonNotFound → NotFound
+//   - dungeons.ErrNoCaller → FailedPrecondition
 //   - ErrLobbyAlreadyStarted / ErrLobbyFull / ErrNotAllReady / ErrLobbyNotStarted /
 //     ErrEncounterAlreadyEnded / ErrCharacterSeatedElsewhere → FailedPrecondition
 //   - unclassified → Internal
@@ -31,6 +34,8 @@ func lobbyStatusError(err error) error {
 		return status.Error(codes.NotFound, "character not found")
 	case errors.Is(err, lobbyorch.ErrDungeonNotFound):
 		return status.Error(codes.NotFound, "dungeon not found")
+	case errors.Is(err, dungeons.ErrNoCaller):
+		return status.Error(codes.FailedPrecondition, worldcontext.RequiredMessage)
 	case errors.Is(err, lobbyorch.ErrPlayerNotInLobby):
 		return status.Error(codes.PermissionDenied, "player is not a member of this lobby")
 	case errors.Is(err, lobbyorch.ErrNotHost):

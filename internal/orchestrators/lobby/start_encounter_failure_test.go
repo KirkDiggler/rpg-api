@@ -175,7 +175,7 @@ func (s *StartContractSuite) launchSuccessCalls(
 		})
 	}
 
-	calls := []any{s.registry.EXPECT().Get(s.ctx, key).Return(entry, nil)}
+	calls := []any{s.registry.EXPECT().Get(s.ctx, hostCaller, key).Return(entry, nil)}
 	for i := 0; i < n; i++ {
 		calls = append(calls, verbs[i]())
 	}
@@ -196,6 +196,7 @@ func (s *StartContractSuite) TestStartEncounter_NilInput_Refused() {
 // afterwards, rather than compared against a snapshot that cannot be taken.
 func (s *StartContractSuite) TestStartEncounter_MissingLobby_Refused() {
 	err := s.refusedLaunch(contractLobbyID, nil, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: contractLobbyID,
 	})
 	s.Require().ErrorIs(err, lobbyorch.ErrLobbyNotFound)
@@ -210,6 +211,7 @@ func (s *StartContractSuite) TestStartEncounter_AlreadyStarted_Refused() {
 	started.EncounterID = "enc-existing"
 
 	err := s.refusedLaunch(contractLobbyID, started, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: contractLobbyID,
 	})
 	s.Require().ErrorIs(err, lobbyorch.ErrLobbyAlreadyStarted)
@@ -219,6 +221,7 @@ func (s *StartContractSuite) TestStartEncounter_AlreadyStarted_Refused() {
 // host cannot launch, and the ready lobby is untouched.
 func (s *StartContractSuite) TestStartEncounter_NonHost_Refused() {
 	err := s.refusedLaunch(contractLobbyID, readyContractLobby(), &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "bob", LobbyID: contractLobbyID,
 	})
 	s.Require().ErrorIs(err, lobbyorch.ErrNotHost)
@@ -231,6 +234,7 @@ func (s *StartContractSuite) TestStartEncounter_NotReadyMember_Refused() {
 	notReady.Members["bob"].IsReady = false
 
 	err := s.refusedLaunch(contractLobbyID, notReady, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: contractLobbyID,
 	})
 	s.Require().ErrorIs(err, lobbyorch.ErrNotAllReady)
@@ -241,9 +245,10 @@ func (s *StartContractSuite) TestStartEncounter_NotReadyMember_Refused() {
 // lookup is the last thing the launch does.
 func (s *StartContractSuite) TestStartEncounter_UnknownDungeonKey_Refused() {
 	const key = "nope"
-	s.registry.EXPECT().Get(s.ctx, key).Return(nil, dungeons.ErrNotFound)
+	s.registry.EXPECT().Get(s.ctx, hostCaller, key).Return(nil, dungeons.ErrNotFound)
 
 	err := s.refusedLaunch(contractLobbyID, readyContractLobby(), &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: contractLobbyID, DungeonKey: lobbyorch.DungeonKey(key),
 	})
 	s.Require().ErrorIs(err, lobbyorch.ErrDungeonNotFound)
@@ -255,9 +260,10 @@ func (s *StartContractSuite) TestStartEncounter_UnknownDungeonKey_Refused() {
 func (s *StartContractSuite) TestStartEncounter_RegistryGetFailure_IsWrappedAndStops() {
 	boom := errors.New("registry unavailable")
 	const key = "custom-dungeon"
-	s.registry.EXPECT().Get(s.ctx, key).Return(nil, boom)
+	s.registry.EXPECT().Get(s.ctx, hostCaller, key).Return(nil, boom)
 
 	err := s.refusedLaunch(contractLobbyID, readyContractLobby(), &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: contractLobbyID, DungeonKey: lobbyorch.DungeonKey(key),
 	})
 	s.Require().ErrorIs(err, boom)
@@ -279,6 +285,7 @@ func (s *StartContractSuite) TestStartEncounter_LobbyRepoGetFailure_IsWrappedAnd
 	orch := s.newOrchestratorWithLobbyRepo(failingLobbyGet{err: boom})
 
 	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: contractLobbyID,
 	})
 	s.Nil(out)
@@ -307,6 +314,7 @@ func (s *StartContractSuite) TestStartEncounter_LaunchFailure_StopsAndWraps() {
 	gomock.InOrder(calls...)
 
 	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: contractLobbyID, DungeonKey: lobbyorch.DungeonKey(key),
 	})
 	s.Nil(out)
@@ -335,6 +343,7 @@ func (s *StartContractSuite) TestStartEncounter_LaunchSeatedElsewhere_IsAPrecond
 	gomock.InOrder(calls...)
 
 	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: contractLobbyID, DungeonKey: lobbyorch.DungeonKey(key),
 	})
 	s.Nil(out)
@@ -360,6 +369,7 @@ func (s *StartContractSuite) TestStartEncounter_PlaceNPCFailure_StopsAndWraps() 
 	gomock.InOrder(calls...)
 
 	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: contractLobbyID,
 	})
 	s.Nil(out)
@@ -386,6 +396,7 @@ func (s *StartContractSuite) TestStartEncounter_FinalSaveFailure_WritesNothingAn
 	gomock.InOrder(s.launchSuccessCalls(entry, key, false, 1)...)
 
 	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: contractLobbyID, DungeonKey: lobbyorch.DungeonKey(key),
 	})
 	s.Nil(out)

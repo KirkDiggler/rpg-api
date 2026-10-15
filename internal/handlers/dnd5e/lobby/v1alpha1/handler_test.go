@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 
 	"github.com/alicebob/miniredis/v2"
 	goredis "github.com/redis/go-redis/v9"
@@ -49,7 +50,7 @@ type HandlerSuite struct {
 func (s *HandlerSuite) SetupTest() {
 	base, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
-	s.ctx = auth.WithPlayerID(base, "alice")
+	s.ctx = worldcontext.With(auth.WithPlayerID(base, "alice"), worldcontext.Value{WorldID: testWorldID})
 
 	s.ctrl = gomock.NewController(s.T())
 	s.charRepo = charactermock.NewMockRepository(s.ctrl)
@@ -154,12 +155,21 @@ func (s *HandlerSuite) expectCharacterNotFound(characterID string) {
 // need an existing lobby.
 func (s *HandlerSuite) createLobby(playerID, characterID, name string) (lobbyID, joinRef string) {
 	s.expectCharacter(characterID, playerID, name, 12, 12)
-	ctx := auth.WithPlayerID(context.Background(), playerID)
+	ctx := playerCtx(playerID)
 	resp, err := s.handler.CreateLobby(ctx, &lobbyv1alpha1.CreateLobbyRequest{
 		CampaignId: "campaign-1", CharacterId: characterID,
 	})
 	s.Require().NoError(err)
 	return resp.GetLobbyId(), resp.GetJoinRef()
+}
+
+// testWorldID is the world every caller in this suite asks from.
+const testWorldID = "test-world"
+
+// playerCtx is an authenticated player in the suite's world, as the auth
+// boundary installs both.
+func playerCtx(playerID string) context.Context {
+	return worldcontext.With(auth.WithPlayerID(context.Background(), playerID), worldcontext.Value{WorldID: testWorldID})
 }
 
 func TestHandlerSuite(t *testing.T) {
