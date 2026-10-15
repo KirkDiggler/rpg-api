@@ -1,0 +1,37 @@
+version: 4
+key: walled-seats
+play: {void: transparent, lighting: bright, standing: centre-covered}
+room:
+  version: 3
+  id: room
+  name: Walled seats
+  coordinateFrame: {horizontalPlane: world-xz, verticalAxis: world-y-up, distanceUnit: world-scene-unit, hexRadius: 1, footprintFrame: owner-local-xz}
+  workspace: {hexRadius: 6, horizontalLimit: 12}
+  scene:
+    version: 1
+    id: scene
+    name: Walled seats
+    items: []
+    groups: []
+  room:
+    implicitRegionId: region
+    walkableHexes: [{q: 1, r: 0}, {q: 2, r: 0}]
+    propDeclarations: {}
+    arrangementDeclarations: {}
+    monsterDeclarations: []
+    partyStart: {q: 1, r: 0}
+    walls:
+      - id: wall
+        label: Wall
+        line: {start: {x: 2.598076211353316, z: -3}, end: {x: 2.598076211353316, z: 3}}
+        appearance: {assetRef: 'dnd5e:env:dark-fortress:45_wall_01', height: 2, thickness: 0.25, elevation: 0}
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint: {width: 6, depth: 0.25, offsetX: 0, offsetZ: 0}
+        openings:
+          - id: gap
+            position: 3
+            width: 2
+            door: {id: gate, assetRef: 'dnd5e:env:dark-fortress:wall_door_double_01'}
+    doorBindings: {gate: {closed: true}}

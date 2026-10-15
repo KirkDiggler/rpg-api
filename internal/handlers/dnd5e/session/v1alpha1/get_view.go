@@ -29,6 +29,14 @@ func (h *Handler) GetView(ctx context.Context, req *sessionpb.GetViewRequest) (*
 
 func viewToProto(in *sdk.ViewOutput) *sessionpb.GetViewResponse {
 	out := &sessionpb.GetViewResponse{Sightings: sightingsToProto(in.Sightings), Areas: sightAreasToProto(in.Areas)}
+	// SEEN NOW, COPIED IN ORDER (rpg-project#586 R1). The encounter's answer
+	// for this one seat -- never a party union, never derived here. A placed
+	// member always sees its own cell, so a seated member's list is never
+	// empty; the web reads an empty list as "this server sends no visible
+	// cells" and draws every known cell lit.
+	for _, c := range in.VisibleCells {
+		out.VisibleCells = append(out.VisibleCells, positionToProto(c))
+	}
 	for _, s := range in.Props {
 		p := &sessionpb.PropSighting{ObservedEmpty: s.ObservedEmpty, CurrentVia: append([]string(nil), s.CurrentVia...), Status: s.Status, At: s.At}
 		if s.Presentation != nil {

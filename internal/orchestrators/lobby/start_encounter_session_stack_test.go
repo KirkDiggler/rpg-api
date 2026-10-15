@@ -353,11 +353,13 @@ func (s *SessionStackSuite) TestStartEncounter_TheTombReachesTheWire() {
 	s.Nil(coffin, "fixed scenery in an undiscovered room is withheld")
 }
 
-// TestStartEncounter_GetAtlasServesTheSeamsAsTwoLines is rpg-api#899's
+// TestStartEncounter_GetAtlasServesALearnedSeamAsALine is rpg-api#899's
 // acceptance at the seam it names: not PutDungeon's compiled answer, but the
-// atlas a STARTED SESSION serves to a member -- what GetAtlas returns.
+// atlas a STARTED SESSION serves to a member -- what GetAtlas returns. That
+// atlas is per cell (rpg-project#586): at the start the member has learned the
+// entrance side only, so the entrance seam is served and the tomb's is not.
 //
-// Two authored walls, two lines, and nothing sealed. The tomb's seams are
+// An authored wall is a line, and nothing is sealed. The tomb's seams are
 // quarter lines: they run a quarter of a hex's width inside the column they
 // cut and leave every cell either side standable, which is what makes them the
 // right default and also means nothing shipped exercises sealing (the
@@ -367,7 +369,7 @@ func (s *SessionStackSuite) TestStartEncounter_TheTombReachesTheWire() {
 // this repository is one: reading them back out of the projection under test
 // would assert nothing. A side midpoint is exactly half a step from the center
 // it belongs to, which is where the halves come from.
-func (s *SessionStackSuite) TestStartEncounter_GetAtlasServesTheSeamsAsTwoLines() {
+func (s *SessionStackSuite) TestStartEncounter_GetAtlasServesALearnedSeamAsALine() {
 	s.seedCharacter("char-alice", "alice", "Alice")
 	s.seedReadyLobby("lobby-1", "alice")
 
@@ -380,11 +382,12 @@ func (s *SessionStackSuite) TestStartEncounter_GetAtlasServesTheSeamsAsTwoLines(
 	atlas, err := s.sessOrch.Manager.Atlas(s.ctx, &sdk.AtlasInput{Session: out.EncounterID, Member: "char-alice"})
 	s.Require().NoError(err)
 
-	s.Require().Len(atlas.Segments, 2, "the entrance seam and the tomb seam, one line each")
+	// THE ATLAS IS PER CELL (rpg-project#586). At the start only the
+	// entrance seam touches cells this member has learned; the tomb seam
+	// stands behind cells it has not, so it is absent until they are.
+	s.Require().Len(atlas.Segments, 1, "the entrance seam, one line; the tomb seam is not yet learned")
 	s.Equal(sdk.AxialPointF{Q: 2, R: 7.5}, atlas.Segments[0].From)
 	s.Equal(sdk.AxialPointF{Q: 6, R: -0.5}, atlas.Segments[0].To)
-	s.Equal(sdk.AxialPointF{Q: 12, R: 7.5}, atlas.Segments[1].From)
-	s.Equal(sdk.AxialPointF{Q: 16, R: -0.5}, atlas.Segments[1].To)
 	for i, segment := range atlas.Segments {
 		s.Zerof(segment.Height, "segment %d authors no height, and 0 means standard rather than flat", i)
 	}
@@ -402,7 +405,7 @@ func (s *SessionStackSuite) TestStartEncounter_GetAtlasServesTheSeamsAsTwoLines(
 	for _, d := range atlas.Doorways {
 		where[d.Door] = [2]spatial.Position{d.From, d.To}
 	}
-	s.Require().Len(where, 2)
+	s.Require().Len(where, 1, "only the entrance door touches learned cells at the start")
 	s.Equal(
 		[2]spatial.Position{
 			tkencounter.HexCellAt(tkencounter.HexesArePointyTop(), 5, 3),
@@ -410,13 +413,7 @@ func (s *SessionStackSuite) TestStartEncounter_GetAtlasServesTheSeamsAsTwoLines(
 		},
 		where["reference-tomb/entrance-hall"],
 		"the entrance door opens the slanted crossing [5,3]-[6,4]")
-	s.Equal(
-		[2]spatial.Position{
-			tkencounter.HexCellAt(tkencounter.HexesArePointyTop(), 15, 5),
-			tkencounter.HexCellAt(tkencounter.HexesArePointyTop(), 16, 4),
-		},
-		where["reference-tomb/hall-tomb"],
-		"and the tomb door [15,5]-[16,4]")
+	s.NotContains(where, "reference-tomb/hall-tomb", "the tomb door stands behind cells not yet learned")
 }
 
 // TestStartEncounter_ExplicitDefaultKeyIsTheTomb: naming the tomb and naming
@@ -675,8 +672,22 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysADungeonTheAuthorPut() {
 	s.Require().Len(res.Entry.Atlas.Regions, 3, "authoring sees the complete dungeon")
 	s.Require().Len(atlas.Regions, 2, "gameplay only receives discovered regions")
 	s.Equal("crypt", atlas.Regions[0].Archetype)
+	// Known geometry is the authored definition, PER CELL (rpg-project#586):
+	// every region served is an authored region by identity and presentation,
+	// carrying only cells the authored region owns.
 	for _, region := range atlas.Regions {
-		s.Contains(res.Entry.Atlas.Regions, region, "known geometry remains the authored definition")
+		var authored *sdk.AtlasRegion
+		for i := range res.Entry.Atlas.Regions {
+			if res.Entry.Atlas.Regions[i].ID == region.ID {
+				authored = &res.Entry.Atlas.Regions[i]
+			}
+		}
+		s.Require().NotNil(authored, "region %q is authored", region.ID)
+		s.Equal(authored.Name, region.Name)
+		s.Equal(authored.Archetype, region.Archetype)
+		s.Equal(authored.Lighting, region.Lighting)
+		s.NotEmpty(region.Cells)
+		s.Subset(authored.Cells, region.Cells, "region %q carries only authored cells", region.ID)
 	}
 	for _, cell := range atlas.Cells {
 		s.Contains(res.Entry.Atlas.Cells, cell)

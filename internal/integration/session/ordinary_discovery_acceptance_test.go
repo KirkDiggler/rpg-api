@@ -66,17 +66,17 @@ func (s *StructuralPatchAcceptanceSuite) TestOrdinaryClosedDoorWithholdsFloorAnd
 	s.True(found)
 	story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: "ordinary-run", Member: "alice"})
 	s.Require().NoError(err)
-	var reveal *sessionpb.RegionRevealed
+	var reveal *sessionpb.CellsRevealed
 	s.Require().GreaterOrEqual(len(story.Entries), len(beforeStory.Entries))
 	for _, entry := range story.Entries[len(beforeStory.Entries):] {
-		if body := entry.GetRoomRevealed(); body != nil {
+		if body := entry.GetCellsRevealed(); body != nil {
 			s.Nil(reveal)
 			reveal = body
 		}
 	}
-	s.Require().NotNil(reveal, "normal opening delivers the existing region reveal")
-	s.Require().NotNil(reveal.Region)
-	s.Len(reveal.Region.Cells, 3)
+	s.Require().NotNil(reveal, "normal opening delivers the cells it newly permits (rpg-project#586)")
+	s.Require().Len(reveal.Regions, 1)
+	s.Len(reveal.Regions[0].Cells, 3)
 	s.Require().Len(reveal.PropPresentations, 1)
 	s.True(proto.Equal(after.Atlas.PropPresentations[1], reveal.PropPresentations[0]), "event-only appearance equals the fresh snapshot")
 	found = false
@@ -86,9 +86,24 @@ func (s *StructuralPatchAcceptanceSuite) TestOrdinaryClosedDoorWithholdsFloorAnd
 		}
 	}
 	s.True(found, "the event carries the newly permitted prop identity")
+	// REGIONS ARE PARTIAL: the cached region united with the revealed cells,
+	// by id, is the fresh snapshot's region -- a replace would lose the two
+	// cells this member already knew.
+	beforeRegion := map[string]*sessionpb.AtlasRegion{}
+	for _, region := range before.Atlas.Regions {
+		beforeRegion[region.Id] = region
+	}
 	for _, region := range after.Atlas.Regions {
-		if region.Id == reveal.Region.Id {
-			s.True(proto.Equal(region, reveal.Region))
+		if region.Id != reveal.Regions[0].Id {
+			continue
+		}
+		var prior []*sessionpb.Position
+		if known := beforeRegion[region.Id]; known != nil {
+			prior = known.Cells
+		}
+		s.Len(region.Cells, len(prior)+len(reveal.Regions[0].Cells))
+		for _, cell := range append(append([]*sessionpb.Position{}, prior...), reveal.Regions[0].Cells...) {
+			s.True(containsCell(region.Cells, cell), "union by id: %v is in the fresh region", cell)
 		}
 	}
 	_, err = h.handler.CloseDoor(ctx, &sessionpb.CloseDoorRequest{Session: "ordinary-run", Member: "alice", Door: "ordinary-discovery/gate"})
@@ -103,4 +118,13 @@ func (s *StructuralPatchAcceptanceSuite) TestOrdinaryClosedDoorWithholdsFloorAnd
 	for i, entry := range story.Entries {
 		s.True(proto.Equal(entry, replay.Entries[i]), "later knowledge must not rewrite delivered history")
 	}
+}
+
+func containsCell(cells []*sessionpb.Position, want *sessionpb.Position) bool {
+	for _, cell := range cells {
+		if proto.Equal(cell, want) {
+			return true
+		}
+	}
+	return false
 }

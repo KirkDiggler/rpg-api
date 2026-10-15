@@ -292,6 +292,16 @@ func TestStreamEvents_ForwardsTypedBodyPerKind(t *testing.T) {
 				require.Equal(t, 3.0, got.GetMoved().GetTo().GetX())
 			},
 		},
+		{
+			name: "CellsRevealed", kind: sdk.EventCellsRevealed,
+			body: sdk.CellsRevealedBody{Regions: []sdk.AtlasRegion{{ID: "hall", Cells: []spatial.Position{{X: 3, Y: 1}}}}},
+			checkPB: func(t *testing.T, got *sessionpb.Event) {
+				require.Equal(t, sessionpb.EventKind_EVENT_KIND_CELLS_REVEALED, got.GetKind())
+				require.Len(t, got.GetCellsRevealed().GetRegions(), 1)
+				require.Equal(t, "hall", got.GetCellsRevealed().GetRegions()[0].GetId())
+				require.Equal(t, 3.0, got.GetCellsRevealed().GetRegions()[0].GetCells()[0].GetX())
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -437,4 +447,43 @@ waitForFailure:
 	require.Contains(t, logs.messages(), "session stream: send failed, event not forwarded",
 		"a Send that fails must be traced as such, never claimed as forwarded")
 	require.NotContains(t, logs.messages(), "session stream: forwarded event")
+}
+
+// TestStreamEvents_CellsRevealedReachesOnlyItsRecipient: a learning beat is
+// one member's own news (rpg-project#586 R1). Another member's
+// CELLS_REVEALED, published first, never reaches this stream; this member's
+// own arrives with its own cells.
+func TestStreamEvents_CellsRevealedReachesOnlyItsRecipient(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	broker := sessionorch.NewBroker()
+	h := seatedStreamHandler(ctrl, broker)
+
+	ctx, cancel := context.WithCancel(auth.WithPlayerID(context.Background(), "alice"))
+	defer cancel()
+	stream := newCapturingStream(ctx)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- h.StreamEvents(&sessionpb.StreamEventsRequest{Session: "sess-1", Member: "char-1"}, stream)
+	}()
+	waitForPublishedEvent(t, broker, stream, sdk.Event{Session: "sess-1", Recipient: "char-1", Seq: 1, Kind: sdk.EventMoved})
+
+	broker.Publish(context.Background(), []sdk.Event{ //nolint:errcheck // best-effort broker; the positive below proves the subscription is live
+		{Session: "sess-1", Recipient: "someone-else", Seq: 2, Kind: sdk.EventCellsRevealed,
+			Body: sdk.CellsRevealedBody{Regions: []sdk.AtlasRegion{{ID: "theirs", Cells: []spatial.Position{{X: 9, Y: 9}}}}}},
+		{Session: "sess-1", Recipient: "char-1", Seq: 2, Kind: sdk.EventCellsRevealed,
+			Body: sdk.CellsRevealedBody{Regions: []sdk.AtlasRegion{{ID: "mine", Cells: []spatial.Position{{X: 1, Y: 0}}}}}},
+	})
+
+	got := stream.WaitForSend(t, 2*time.Second)
+	require.Equal(t, sessionpb.EventKind_EVENT_KIND_CELLS_REVEALED, got.GetKind())
+	require.Equal(t, "mine", got.GetCellsRevealed().GetRegions()[0].GetId(), "only this recipient's own learning arrives")
+	select {
+	case evt := <-stream.sent:
+		t.Fatalf("must not receive another member's cells reveal, got %v", evt)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	cancel()
+	<-done
 }
