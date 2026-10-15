@@ -149,21 +149,29 @@ func (s *TemplatesSuite) TestCompile_UnknownMonsterIsStillRefused() {
 	s.Contains(ferrs[0].Message, `references unknown monster "dnd5e:monsters:scullion"`)
 }
 
-// TestCompile_ReferenceDungeonsDeclareNoTemplates: every other shipped
-// dungeon still compiles, declaring no templates.
+// TestCompile_ReferenceDungeonsDeclareNoTemplates: every shipped dungeon
+// compiles; the ones authored with the studio's cast (a cast member is a
+// template, rpg-project ideas/encounter-studio R3) declare templates and
+// are named here, and every other shipped dungeon declares none.
 func (s *TemplatesSuite) TestCompile_ReferenceDungeonsDeclareNoTemplates() {
 	paths, err := filepath.Glob(filepath.Join("..", "..", "content", "*.yaml"))
 	s.Require().NoError(err)
 	s.Require().NotEmpty(paths)
 
+	templated := map[string]bool{
+		castleKitchenPath: true,
+		filepath.Join("..", "..", "content", "the-mad-king-cells.yaml"): true,
+	}
+
 	for _, path := range paths {
-		if path == castleKitchenPath {
-			continue
-		}
 		raw, err := os.ReadFile(path)
 		s.Require().NoError(err)
 		d, err := Compile(raw)
 		s.Require().NoErrorf(err, "%s must compile", path)
+		if templated[path] {
+			s.NotEmptyf(d.Spec.Templates, "%s declares templates", path)
+			continue
+		}
 		s.Emptyf(d.Spec.Templates, "%s declares no templates", path)
 	}
 }
