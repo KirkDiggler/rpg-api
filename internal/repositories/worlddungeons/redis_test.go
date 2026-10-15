@@ -104,11 +104,17 @@ func (s *RedisSuite) TestKeysAreUniquePerWorld() {
 }
 
 func (s *RedisSuite) TestHashShape() {
-	s.Require().NoError(s.put(worldOne, alice, myCastle, castleBytes))
+	_, err := s.repo.Put(s.ctx, &PutInput{WorldID: worldOne, Owner: alice, Key: myCastle, Name: "My Castle", YAML: castleBytes})
+	s.Require().NoError(err)
 	raw := s.server.HGet(worldHash, myCastle)
 	var decoded map[string]string
 	s.Require().NoError(json.Unmarshal([]byte(raw), &decoded))
-	s.Equal(map[string]string{"owner": alice, "yaml": string(castleBytes)}, decoded)
+	s.Equal(map[string]string{"owner": alice, "name": "My Castle", "yaml": string(castleBytes)}, decoded)
+	s.Equal("My Castle", s.get(worldOne, myCastle).Name, "the stored name reads back")
+
+	s.Require().NoError(s.put(worldOne, alice, myKeep, []byte("k")))
+	s.NotContains(s.server.HGet(worldHash, myKeep), `"name"`, "an empty name is stored as absent")
+	s.Empty(s.get(worldOne, myKeep).Name)
 }
 
 func (s *RedisSuite) TestListSortedAndEmptyForNewWorld() {
@@ -148,9 +154,10 @@ func (s *RedisSuite) TestDeleteOwnAnotherOwnersAndAbsent() {
 }
 
 func (s *RedisSuite) TestRenameMovesRewrittenBytesAndKeepsTheOwner() {
-	s.Require().NoError(s.put(worldOne, alice, myCastle, castleBytes))
+	_, err := s.repo.Put(s.ctx, &PutInput{WorldID: worldOne, Owner: alice, Key: myCastle, Name: "My Castle", YAML: castleBytes})
+	s.Require().NoError(err)
 	var seen []byte
-	_, err := s.repo.Rename(s.ctx, &RenameInput{
+	_, err = s.repo.Rename(s.ctx, &RenameInput{
 		WorldID: worldOne, Owner: alice, Key: myCastle, NewKey: myKeep,
 		Rewrite: func(old []byte) ([]byte, error) {
 			seen = append([]byte(nil), old...)
@@ -159,7 +166,8 @@ func (s *RedisSuite) TestRenameMovesRewrittenBytesAndKeepsTheOwner() {
 	})
 	s.Require().NoError(err)
 	s.Equal(castleBytes, seen)
-	s.Equal(Record{Key: myKeep, Owner: alice, YAML: []byte("rewritten")}, s.get(worldOne, myKeep))
+	s.Equal(Record{Key: myKeep, Owner: alice, Name: "My Castle", YAML: []byte("rewritten")}, s.get(worldOne, myKeep),
+		"the owner and the stored name move with the record")
 	_, err = s.repo.Get(s.ctx, &GetInput{WorldID: worldOne, Key: myCastle})
 	s.ErrorIs(err, ErrNotFound)
 }
@@ -217,7 +225,7 @@ func (s *RedisSuite) TestWritesRetryWhenTheHashChanges() {
 		Rewrite: func(old []byte) ([]byte, error) {
 			calls++
 			if calls == 1 {
-				value, encodeErr := encodeRecord(bob, []byte("interloper"))
+				value, encodeErr := encodeRecord(bob, "", []byte("interloper"))
 				s.Require().NoError(encodeErr)
 				s.Require().NoError(other.HSet(s.ctx, worldHash, "unrelated", value).Err())
 			}

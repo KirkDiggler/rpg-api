@@ -2,6 +2,8 @@ package authoringv1alpha1_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
@@ -9,6 +11,7 @@ import (
 
 	authoringpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/authoring/v1alpha1"
 	lobbyv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 )
@@ -37,6 +40,21 @@ func (s *HandlerSuite) TestPutDungeon_UnderAReferenceIsPermissionDenied() {
 		_, err := s.handler.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{Key: "castle-kitchen", Yaml: "x", ValidateOnly: validateOnly})
 		s.requireStatus(err, codes.PermissionDenied, referenceSentence)
 	}
+}
+
+// TestAStoreErrorKeepsItsCode: a write that lost its transaction too many
+// times is the world store's Aborted, and reaches the wire as Aborted rather
+// than Internal (apierr.ToGRPCError, as the world and dice handlers map it).
+func (s *HandlerSuite) TestAStoreErrorKeepsItsCode() {
+	aborted := fmt.Errorf("dungeon %q in world %q: %w", "my-castle", "w1",
+		apierr.Abortedf("world %q key %q changed concurrently %d times", "w1", "my-castle", 4))
+	s.registry.EXPECT().Put(gomock.Any(), gomock.Any()).Return(nil, aborted)
+	_, err := s.handler.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{Key: "my-castle", Yaml: "x"})
+	s.requireCode(err, codes.Aborted)
+
+	s.registry.EXPECT().Delete(gomock.Any(), testCaller, "my-castle").Return(errors.New("disk on fire"))
+	_, err = s.handler.DeleteDungeon(s.ctx, &authoringpb.DeleteDungeonRequest{Key: "my-castle"})
+	s.requireCode(err, codes.Internal)
 }
 
 func (s *HandlerSuite) TestPutDungeon_UnderAnotherOwnersKeyIsPermissionDenied() {

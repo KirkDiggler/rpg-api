@@ -75,7 +75,7 @@ world that compiled but will not load is a boot refusal / `Internal`, never a
 The shipped store is read once and **never written by a request**; its files
 are references. Authors save to the **world store**
 (`internal/repositories/worlddungeons`): one Redis hash per world,
-`dungeon:world:<worldID>`, field = key, value `{"owner","yaml"}`, every write
+`dungeon:world:<worldID>`, field = key, value `{"owner","name","yaml"}` (`name` is the compile's, written by Put so List never compiles), every write
 under `WATCH`/`MULTI` with the owner check inside the transaction.
 `dungeons.NewRegistry(&RegistryConfig{Shipped, World, Authoring, Projector})`
 joins them into the `Registry` the lobby and authoring orchestrators see, for

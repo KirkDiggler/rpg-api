@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	authoringpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/authoring/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	authoringorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
@@ -98,6 +99,8 @@ func callerOf(ctx context.Context) (dungeons.Caller, error) {
 //     mistake is a clear refusal rather than a 500)
 //   - dungeons.ErrNoCaller → FailedPrecondition (the handler checks the
 //     caller first; kept so a wiring mistake is a clear refusal)
+//   - an apierr-coded error (the world store's) → its own code, via
+//     apierr.ToGRPCError (exhausted write retries are Aborted)
 //   - unclassified → Internal
 func statusError(err error) error {
 	switch {
@@ -119,6 +122,14 @@ func statusError(err error) error {
 		return status.Error(codes.NotFound, "dungeon not found")
 	case errors.Is(err, dungeons.ErrAuthoringDisabled):
 		return status.Error(codes.FailedPrecondition, "authoring is disabled")
+	}
+
+	// A store error that carries its own code (a write that lost its
+	// transaction too many times is Aborted) reaches the wire with it, the
+	// way the world and dice handlers map apierr; anything else is Internal.
+	var coded *apierr.Error
+	if apierr.As(err, &coded) {
+		return apierr.ToGRPCError(err)
 	}
 
 	return status.Errorf(codes.Internal, "authoring: %v", err)

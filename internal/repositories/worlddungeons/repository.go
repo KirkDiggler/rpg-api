@@ -25,10 +25,13 @@ var ErrKeyExists = errors.New("world dungeon key already exists")
 var ErrOwnedByOther = errors.New("world dungeon is owned by another player")
 
 // Record is one authored dungeon file in a world: its key, the player who
-// owns it, and the file's bytes exactly as they were saved.
+// owns it, the name the registry compiled from it when it was saved, and the
+// file's bytes exactly as they were saved. The store never reads Name out of
+// YAML; it keeps what the writer gave it, so a list needs no compile.
 type Record struct {
 	Key   string
 	Owner string
+	Name  string
 	YAML  []byte
 }
 
@@ -72,7 +75,10 @@ type PutInput struct {
 	WorldID string
 	Owner   string
 	Key     string
-	YAML    []byte
+	// Name is the file's display name as the writer compiled it; empty is
+	// stored as absent and read back empty.
+	Name string
+	YAML []byte
 }
 
 // PutOutput confirms the save.
@@ -88,7 +94,8 @@ type DeleteInput struct {
 // DeleteOutput confirms the removal.
 type DeleteOutput struct{}
 
-// RenameInput moves the owner's record from Key to NewKey. Rewrite receives
+// RenameInput moves the owner's record from Key to NewKey, keeping its owner
+// and its stored Name (a rename changes the key line only). Rewrite receives
 // the stored bytes and returns the bytes to store under NewKey; an error
 // from it is returned and nothing is written. Rewrite runs inside the
 // transaction and may be called again when the transaction retries.

@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/KirkDiggler/rpg-api/internal/repositories/worlddungeons"
-	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 )
 
 // RegistryConfig is what [NewRegistry] joins.
@@ -78,7 +77,7 @@ func (r *storeRegistry) List(ctx context.Context, caller Caller) ([]Summary, err
 	out := make([]Summary, 0, len(listed.Records)+len(r.shipped.entries))
 	for _, rec := range listed.Records {
 		held[rec.Key] = true
-		out = append(out, Summary{Key: rec.Key, Name: nameOf(rec.YAML, rec.Key), Owner: rec.Owner, Source: SourceWorld})
+		out = append(out, Summary{Key: rec.Key, Name: listedName(rec), Owner: rec.Owner, Source: SourceWorld})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 
@@ -94,16 +93,14 @@ func (r *storeRegistry) List(ctx context.Context, caller Caller) ([]Summary, err
 	return append(out, references...), nil
 }
 
-// nameOf is the name a world file gives itself, read the way every entry's
-// Name is (the compile; a single-room file names its scene, not its root),
-// without projecting an atlas; a file whose name cannot be read is listed
-// under its key.
-func nameOf(raw []byte, key string) string {
-	d, err := sessionworld.Compile(raw)
-	if err != nil || d.Name == "" {
-		return key
+// listedName is the name stored with a world record when it was saved (the
+// compile's own Name, written by Put): List never compiles. A record stored
+// without one is listed under its key.
+func listedName(rec worlddungeons.Record) string {
+	if rec.Name == "" {
+		return rec.Key
 	}
-	return d.Name
+	return rec.Name
 }
 
 // Get implements Registry.
@@ -200,6 +197,7 @@ func (r *storeRegistry) Put(ctx context.Context, in *PutInput) (*PutResult, erro
 		WorldID: in.Caller.WorldID,
 		Owner:   in.Caller.PlayerID,
 		Key:     in.Key,
+		Name:    entry.Name,
 		YAML:    raw,
 	})
 	if errors.Is(err, worlddungeons.ErrOwnedByOther) {

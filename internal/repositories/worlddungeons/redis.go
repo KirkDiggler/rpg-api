@@ -52,6 +52,7 @@ func NewRedis(cfg *RedisConfig) (Repository, error) {
 // storedRecord is the JSON value of one hash field.
 type storedRecord struct {
 	Owner string `json:"owner"`
+	Name  string `json:"name,omitempty"`
 	YAML  string `json:"yaml"`
 }
 
@@ -109,7 +110,7 @@ func (r *redisRepository) Put(ctx context.Context, in *PutInput) (*PutOutput, er
 	if !utf8.Valid(in.YAML) {
 		return nil, apierr.InvalidArgumentf("dungeon %q is not UTF-8 text", in.Key)
 	}
-	value, err := encodeRecord(in.Owner, in.YAML)
+	value, err := encodeRecord(in.Owner, in.Name, in.YAML)
 	if err != nil {
 		return nil, apierr.Wrapf(err, "encode dungeon %q in world %q", in.Key, in.WorldID)
 	}
@@ -210,7 +211,7 @@ func (r *redisRepository) Rename(ctx context.Context, in *RenameInput) (*RenameO
 		if !utf8.Valid(next) {
 			return apierr.Internalf("rewritten dungeon %q is not UTF-8 text", in.NewKey)
 		}
-		value, encodeErr := encodeRecord(source.Owner, next)
+		value, encodeErr := encodeRecord(source.Owner, source.Name, next)
 		if encodeErr != nil {
 			return apierr.Wrapf(encodeErr, "encode dungeon %q in world %q", in.NewKey, in.WorldID)
 		}
@@ -261,8 +262,8 @@ func readRecord(ctx context.Context, reader hashReader, worldID, key string) (Re
 	return record, true, nil
 }
 
-func encodeRecord(owner string, yaml []byte) ([]byte, error) {
-	return json.Marshal(storedRecord{Owner: owner, YAML: string(yaml)})
+func encodeRecord(owner, name string, yaml []byte) ([]byte, error) {
+	return json.Marshal(storedRecord{Owner: owner, Name: name, YAML: string(yaml)})
 }
 
 func decodeRecord(stored []byte, worldID, key string) (Record, error) {
@@ -274,7 +275,7 @@ func decodeRecord(stored []byte, worldID, key string) (Record, error) {
 	if value.Owner == "" {
 		return Record{}, apierr.Internalf("dungeon %q in world %q has no owner", key, worldID)
 	}
-	return Record{Key: key, Owner: value.Owner, YAML: []byte(value.YAML)}, nil
+	return Record{Key: key, Owner: value.Owner, Name: value.Name, YAML: []byte(value.YAML)}, nil
 }
 
 func validateScope(worldID, key string) error {

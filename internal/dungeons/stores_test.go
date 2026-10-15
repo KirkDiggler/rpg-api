@@ -96,7 +96,27 @@ func (s *StoresSuite) TestPutWritesTheWorldStoreAndNotTheDirectory() {
 	raw := s.save(r, alice, storeMyCastle)
 
 	s.Equal(before, s.dirSnapshot(), "the directory is unchanged")
-	s.Equal(worlddungeons.Record{Key: storeMyCastle, Owner: alice.PlayerID, YAML: raw}, s.stored(alice.WorldID, storeMyCastle))
+	s.Equal(worlddungeons.Record{Key: storeMyCastle, Owner: alice.PlayerID, Name: "The Castle Kitchen", YAML: raw},
+		s.stored(alice.WorldID, storeMyCastle), "the compiled name is stored with the record")
+}
+
+// TestListDoesNotCompile: List names world records from the name stored at
+// the write, never by compiling; a record whose bytes would not compile is
+// still listed by its stored name, and one stored without a name by its key.
+func (s *StoresSuite) TestListDoesNotCompile() {
+	r := s.registry(true)
+	for _, in := range []*worlddungeons.PutInput{
+		{WorldID: alice.WorldID, Owner: alice.PlayerID, Key: "broken-keep", Name: "The Broken Keep", YAML: []byte("version: 4\nkey: broken-keep\nvoid: nonsense\n")},
+		{WorldID: alice.WorldID, Owner: alice.PlayerID, Key: "nameless", YAML: []byte("not a dungeon")},
+	} {
+		_, err := s.world.Put(s.ctx, in)
+		s.Require().NoError(err)
+	}
+
+	list, err := r.List(s.ctx, alice)
+	s.Require().NoError(err)
+	s.Equal(dungeons.Summary{Key: "broken-keep", Name: "The Broken Keep", Owner: alice.PlayerID, Source: dungeons.SourceWorld}, list[0])
+	s.Equal(dungeons.Summary{Key: "nameless", Name: "nameless", Owner: alice.PlayerID, Source: dungeons.SourceWorld}, list[1])
 }
 
 func (s *StoresSuite) TestPutUnderAShippedKeyIsTheReferenceRefusal() {
@@ -122,7 +142,8 @@ func (s *StoresSuite) TestPutUnderAnotherOwnersKeyIsRefused() {
 		})
 		s.ErrorIsf(err, dungeons.ErrOwnedByOther, "validate-only %v", validateOnly)
 	}
-	s.Equal(worlddungeons.Record{Key: storeMyCastle, Owner: alice.PlayerID, YAML: raw}, s.stored(alice.WorldID, storeMyCastle))
+	s.Equal(worlddungeons.Record{Key: storeMyCastle, Owner: alice.PlayerID, Name: "The Castle Kitchen", YAML: raw},
+		s.stored(alice.WorldID, storeMyCastle))
 }
 
 func (s *StoresSuite) TestPutReplacesTheCallersOwn() {
@@ -259,6 +280,7 @@ func (s *StoresSuite) TestRenameRewritesOnlyTheKeyLine() {
 
 	got := s.stored(alice.WorldID, storeMyKeep)
 	s.Equal(alice.PlayerID, got.Owner)
+	s.Equal("The Castle Kitchen", got.Name, "the stored name moves with the record")
 	want := bytes.Replace(raw, []byte("\nkey: my-castle\n"), []byte("\nkey: my-keep\n"), 1)
 	s.Equal(want, got.YAML, "every other byte unchanged")
 	_, err := s.world.Get(s.ctx, &worlddungeons.GetInput{WorldID: alice.WorldID, Key: storeMyCastle})
