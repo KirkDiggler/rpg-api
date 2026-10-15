@@ -11,21 +11,26 @@ import (
 	authoringorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
 )
 
-// PutDungeon compiles a dungeon file and, unless validate_only, stores it.
+// PutDungeon compiles a dungeon file and, unless validate_only, stores it in
+// the caller's world, owned by the caller. A shipped key and another
+// member's key are refused PermissionDenied with their sentences, for
+// validate_only too, so the preview names them before Save.
 //
 // Two kinds of failure, two transports (the proto's rule): a request that
 // cannot name its target (empty key, bad charset, key/file mismatch) is a
 // gRPC status; a file that does not compile is an OK response carrying
 // `errors`, because the author needs the list, not a code.
 func (h *Handler) PutDungeon(ctx context.Context, req *authoringpb.PutDungeonRequest) (*authoringpb.PutDungeonResponse, error) {
-	if err := requireAuthenticated(ctx); err != nil {
+	caller, err := callerOf(ctx)
+	if err != nil {
 		return nil, err
 	}
 	if req.GetKey() == "" {
-		return nil, status.Error(codes.InvalidArgument, "key is required")
+		return nil, status.Error(codes.InvalidArgument, keyRequiredMessage)
 	}
 
 	out, err := h.orch.PutDungeon(ctx, &authoringorch.PutDungeonInput{
+		Caller:       caller,
 		Key:          req.GetKey(),
 		YAML:         []byte(req.GetYaml()),
 		ValidateOnly: req.GetValidateOnly(),

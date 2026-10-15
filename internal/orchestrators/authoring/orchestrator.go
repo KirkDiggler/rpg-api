@@ -47,6 +47,9 @@ func New(cfg *Config) (*Orchestrator, error) {
 
 // PutDungeonInput is one PutDungeon call.
 type PutDungeonInput struct {
+	// Caller is who saves, from the auth boundary; the record lands in their
+	// world, owned by them.
+	Caller       dungeons.Caller
 	Key          string
 	YAML         []byte
 	ValidateOnly bool
@@ -63,9 +66,10 @@ type PutDungeonOutput struct {
 	Atlas *sdk.Atlas
 }
 
-// PutDungeon compiles and, unless ValidateOnly, stores a dungeon. Registry
-// sentinels (dungeons.ErrInvalidKey, ErrKeyMismatch, ErrAuthoringDisabled)
-// pass through for the handler to map.
+// PutDungeon compiles and, unless ValidateOnly, stores a dungeon in the
+// caller's world. Registry sentinels (dungeons.ErrInvalidKey,
+// ErrKeyMismatch, ErrReferenceKey, ErrOwnedByOther, ErrAuthoringDisabled,
+// ErrNoCaller) pass through for the handler to map.
 //
 // ErrAuthoringDisabled belongs to the SAVE alone (rpg-project#481): a
 // validate-only call is answered by a read-only registry, so the builder's
@@ -76,7 +80,7 @@ func (o *Orchestrator) PutDungeon(ctx context.Context, in *PutDungeonInput) (*Pu
 	}
 
 	res, err := o.dungeons.Put(ctx, &dungeons.PutInput{
-		Key: in.Key, YAML: in.YAML, ValidateOnly: in.ValidateOnly,
+		Caller: in.Caller, Key: in.Key, YAML: in.YAML, ValidateOnly: in.ValidateOnly,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("put dungeon: %w", err)
@@ -88,9 +92,11 @@ func (o *Orchestrator) PutDungeon(ctx context.Context, in *PutDungeonInput) (*Pu
 	return &PutDungeonOutput{Atlas: res.Entry.Atlas}, nil
 }
 
-// GetDungeonInput names a stored dungeon.
+// GetDungeonInput names a stored dungeon, resolved for the caller: their
+// world, then the shipped references.
 type GetDungeonInput struct {
-	Key string
+	Caller dungeons.Caller
+	Key    string
 }
 
 // GetDungeonOutput is the stored file, verbatim.
@@ -105,12 +111,85 @@ func (o *Orchestrator) GetDungeon(ctx context.Context, in *GetDungeonInput) (*Ge
 		return nil, errors.New("authoring orchestrator: GetDungeonInput is required")
 	}
 
-	entry, err := o.dungeons.Get(ctx, in.Key)
+	entry, err := o.dungeons.Get(ctx, in.Caller, in.Key)
 	if err != nil {
 		return nil, fmt.Errorf("get dungeon: %w", err)
 	}
 
 	return &GetDungeonOutput{YAML: entry.YAML}, nil
+}
+
+// ListDungeonsInput asks for the caller's library.
+type ListDungeonsInput struct {
+	Caller dungeons.Caller
+}
+
+// ListDungeonsOutput is the caller's world's encounters by key (owner on
+// each), then the single-room references by key.
+type ListDungeonsOutput struct {
+	Dungeons []dungeons.Summary
+}
+
+// ListDungeons returns the caller's library.
+func (o *Orchestrator) ListDungeons(ctx context.Context, in *ListDungeonsInput) (*ListDungeonsOutput, error) {
+	if in == nil {
+		return nil, errors.New("authoring orchestrator: ListDungeonsInput is required")
+	}
+
+	list, err := o.dungeons.List(ctx, in.Caller)
+	if err != nil {
+		return nil, fmt.Errorf("list dungeons: %w", err)
+	}
+
+	return &ListDungeonsOutput{Dungeons: list}, nil
+}
+
+// DeleteDungeonInput names one of the caller's records to remove.
+type DeleteDungeonInput struct {
+	Caller dungeons.Caller
+	Key    string
+}
+
+// DeleteDungeonOutput confirms the removal.
+type DeleteDungeonOutput struct{}
+
+// DeleteDungeon removes one of the caller's records. dungeons.ErrOwnedByOther,
+// ErrReferenceReadOnly, ErrNotFound and ErrAuthoringDisabled pass through.
+func (o *Orchestrator) DeleteDungeon(ctx context.Context, in *DeleteDungeonInput) (*DeleteDungeonOutput, error) {
+	if in == nil {
+		return nil, errors.New("authoring orchestrator: DeleteDungeonInput is required")
+	}
+
+	if err := o.dungeons.Delete(ctx, in.Caller, in.Key); err != nil {
+		return nil, fmt.Errorf("delete dungeon: %w", err)
+	}
+
+	return &DeleteDungeonOutput{}, nil
+}
+
+// RenameDungeonInput moves one of the caller's records to a new key.
+type RenameDungeonInput struct {
+	Caller dungeons.Caller
+	Key    string
+	NewKey string
+}
+
+// RenameDungeonOutput confirms the move.
+type RenameDungeonOutput struct{}
+
+// RenameDungeon moves one of the caller's records to NewKey, rewriting its
+// root key line. The registry's refusals pass through.
+func (o *Orchestrator) RenameDungeon(ctx context.Context, in *RenameDungeonInput) (*RenameDungeonOutput, error) {
+	if in == nil {
+		return nil, errors.New("authoring orchestrator: RenameDungeonInput is required")
+	}
+
+	err := o.dungeons.Rename(ctx, &dungeons.RenameInput{Caller: in.Caller, Key: in.Key, NewKey: in.NewKey})
+	if err != nil {
+		return nil, fmt.Errorf("rename dungeon: %w", err)
+	}
+
+	return &RenameDungeonOutput{}, nil
 }
 
 // ListScenariosInput asks for the whole registry. No fields, and none are

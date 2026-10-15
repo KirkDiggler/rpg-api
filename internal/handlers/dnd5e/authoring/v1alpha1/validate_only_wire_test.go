@@ -12,7 +12,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	authoringpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/authoring/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 	authoringhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1"
 	authoringorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
@@ -22,6 +21,11 @@ import (
 // design measured its three refusals against, and the one with a faction
 // graph and an answer table to misspell.
 const frontRoomKey = "reference-front-room"
+
+// frontRoomCopyKey is the author's own copy of the front room the probes
+// grade: the shipped key is a reference and refuses a save, for a grade too
+// (design R20).
+const frontRoomCopyKey = "my-front-room"
 
 // ValidateOnlyWireSuite drives PutDungeon{validate_only} end to end over a
 // REAL registry constructed READ-ONLY — the shape a server boots with when
@@ -40,7 +44,7 @@ type ValidateOnlyWireSuite struct {
 	ctx     context.Context
 	handler *authoringhandler.Handler
 
-	// yaml is the shipped front room, verbatim, and the base every probe
+	// yaml is the shipped front room under the copy's key, and the base every probe
 	// mutates by exactly one token.
 	yaml string
 }
@@ -50,7 +54,7 @@ func TestValidateOnlyWireSuite(t *testing.T) {
 }
 
 func (s *ValidateOnlyWireSuite) SetupTest() {
-	s.ctx = auth.WithPlayerID(context.Background(), "alice")
+	s.ctx = worldCtx("alice")
 
 	registry, dir := dungeonstest.ScratchReadOnly(s.T())
 	orch, err := authoringorch.New(&authoringorch.Config{Dungeons: registry})
@@ -61,7 +65,7 @@ func (s *ValidateOnlyWireSuite) SetupTest() {
 
 	raw, err := os.ReadFile(filepath.Join(dir, frontRoomKey+".yaml")) //nolint:gosec // dir is t.TempDir()
 	s.Require().NoError(err)
-	s.yaml = string(raw)
+	s.yaml = string(dungeonstest.AsKey(s.T(), raw, frontRoomKey, frontRoomCopyKey))
 }
 
 // grade sends one file through PutDungeon{validate_only}. Nothing here is
@@ -71,7 +75,7 @@ func (s *ValidateOnlyWireSuite) grade(yaml string) *authoringpb.PutDungeonRespon
 	s.T().Helper()
 
 	resp, err := s.handler.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{
-		Key: frontRoomKey, Yaml: yaml, ValidateOnly: true,
+		Key: frontRoomCopyKey, Yaml: yaml, ValidateOnly: true,
 	})
 	s.Require().NoError(err, "a grade is never a status, least of all on a read-only registry")
 
@@ -90,7 +94,7 @@ func (s *ValidateOnlyWireSuite) mutate(old, replacement string) string {
 	return out
 }
 
-// TestAGoodFileGradesOnAReadOnlyRegistry: the shipped front room, unedited,
+// TestAGoodFileGradesOnAReadOnlyRegistry: the shipped front room, unedited but its key,
 // comes back with no defects and the atlas the game would play — from a
 // registry that refuses to write.
 func (s *ValidateOnlyWireSuite) TestAGoodFileGradesOnAReadOnlyRegistry() {
@@ -98,7 +102,7 @@ func (s *ValidateOnlyWireSuite) TestAGoodFileGradesOnAReadOnlyRegistry() {
 
 	s.Require().Empty(resp.GetErrors(), "the shipped file compiles")
 	s.Require().NotNil(resp.GetAtlas(), "and the grade carries the map")
-	s.Equal(frontRoomKey, resp.GetAtlas().GetDungeonKey(),
+	s.Equal(frontRoomCopyKey, resp.GetAtlas().GetDungeonKey(),
 		"the preview names its dungeon the way a session's atlas does")
 }
 
@@ -169,7 +173,7 @@ func (s *ValidateOnlyWireSuite) TestUnknownKeyIsPathed() {
 // refusal is still the proto's FailedPrecondition.
 func (s *ValidateOnlyWireSuite) TestARealSaveIsStillRefused() {
 	_, err := s.handler.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{
-		Key: frontRoomKey, Yaml: s.yaml,
+		Key: frontRoomCopyKey, Yaml: s.yaml,
 	})
 
 	s.Require().Error(err)
