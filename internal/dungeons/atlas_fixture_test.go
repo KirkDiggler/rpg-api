@@ -33,6 +33,11 @@ import (
 // room with every `on:` table removed, because that build cannot compile the
 // `heard`, `path` and time-row `fact` words. The atlas holds no table, and the
 // full file at the hearing branch's head answers the identical atlas.
+//
+// AND the-mad-king-cells.atlas.json (rpg-project#569, the first studio-authored
+// castle room) was captured at its own content commit's base, origin/dev
+// 8f22676a, with no Go change in the commit: a change detector from there on,
+// vouched for by the operator's play of the room on 2026-10-15.
 func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBeforeTheWave() {
 	files, err := filepath.Glob(filepath.Join(dungeonstest.ContentDir(s.T()), "*.yaml"))
 	s.Require().NoError(err)
