@@ -43,14 +43,18 @@ func (s *TemplatesSuite) SetupTest() {
 
 	raw, err := os.ReadFile(filepath.Join(dir, castleKitchenKey+".yaml")) //nolint:gosec // dir is t.TempDir()
 	s.Require().NoError(err)
-	s.yaml = raw
+	s.yaml = dungeonstest.AsKey(s.T(), raw, castleKitchenKey, castleKitchenCopyKey)
 }
+
+// castleKitchenCopyKey is the author's own copy of the castle: the shipped
+// key is a reference and refuses a grade (design R20).
+const castleKitchenCopyKey = "my-castle-kitchen"
 
 func (s *TemplatesSuite) put(yaml []byte) *authoringorch.PutDungeonOutput {
 	s.T().Helper()
 
 	out, err := s.orch.PutDungeon(s.ctx, &authoringorch.PutDungeonInput{
-		Key: castleKitchenKey, YAML: yaml, ValidateOnly: true,
+		Caller: dungeonstest.Caller, Key: castleKitchenCopyKey, YAML: yaml, ValidateOnly: true,
 	})
 	s.Require().NoError(err)
 

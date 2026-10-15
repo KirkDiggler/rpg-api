@@ -19,6 +19,7 @@ import (
 	dungeonsmock "github.com/KirkDiggler/rpg-api/internal/dungeons/mock"
 	authoringhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1"
 	authoringorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 )
 
 // HandlerSuite drives the AuthoringService handler over a mocked registry:
@@ -33,12 +34,16 @@ type HandlerSuite struct {
 	handler  *authoringhandler.Handler
 }
 
+// testCaller is the suite's signed-in player in their world.
+var testCaller = dungeons.Caller{WorldID: "w1", PlayerID: "alice"}
+
 func TestHandlerSuite(t *testing.T) {
 	suite.Run(t, new(HandlerSuite))
 }
 
 func (s *HandlerSuite) SetupTest() {
-	s.ctx = auth.WithPlayerID(context.Background(), "alice")
+	s.ctx = worldcontext.With(auth.WithPlayerID(context.Background(), testCaller.PlayerID),
+		worldcontext.Value{WorldID: testCaller.WorldID})
 	s.ctrl = gomock.NewController(s.T())
 	s.registry = dungeonsmock.NewMockRegistry(s.ctrl)
 
@@ -91,7 +96,7 @@ func (s *HandlerSuite) TestPutDungeon_MalformedRequestIsAStatus() {
 // and no atlas, so the builder's inline-error path has the list.
 func (s *HandlerSuite) TestPutDungeon_AFileThatDoesNotCompileIsABody() {
 	s.registry.EXPECT().
-		Put(gomock.Any(), &dungeons.PutInput{Key: "crypt", YAML: []byte("version: 2\n"), ValidateOnly: true}).
+		Put(gomock.Any(), &dungeons.PutInput{Caller: testCaller, Key: "crypt", YAML: []byte("version: 2\n"), ValidateOnly: true}).
 		Return(&dungeons.PutResult{Errors: []dungeons.FieldError{{Path: "start", Message: "start is required"}}}, nil)
 
 	resp, err := s.handler.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{
@@ -110,7 +115,7 @@ func (s *HandlerSuite) TestPutDungeon_AFileThatDoesNotCompileIsABody() {
 func (s *HandlerSuite) TestPutDungeon_TheRequestReachesTheRegistryVerbatim() {
 	yaml := "version: 2\nkey: crypt\n# a comment\n"
 	s.registry.EXPECT().
-		Put(gomock.Any(), &dungeons.PutInput{Key: "crypt", YAML: []byte(yaml), ValidateOnly: false}).
+		Put(gomock.Any(), &dungeons.PutInput{Caller: testCaller, Key: "crypt", YAML: []byte(yaml), ValidateOnly: false}).
 		Return(&dungeons.PutResult{Entry: &dungeons.Entry{
 			Key: "crypt", YAML: []byte(yaml),
 			Atlas: &sdk.Atlas{Grid: sdk.GridHex, Cells: []spatial.Position{{X: 0, Y: 0}},
@@ -185,7 +190,7 @@ func (s *HandlerSuite) TestGetDungeon_EmptyKey_InvalidArgument() {
 }
 
 func (s *HandlerSuite) TestGetDungeon_Unknown_NotFound() {
-	s.registry.EXPECT().Get(gomock.Any(), "nope").Return(nil, dungeons.ErrNotFound)
+	s.registry.EXPECT().Get(gomock.Any(), testCaller, "nope").Return(nil, dungeons.ErrNotFound)
 	_, err := s.handler.GetDungeon(s.ctx, &authoringpb.GetDungeonRequest{Key: "nope"})
 	s.requireCode(err, codes.NotFound)
 }
@@ -194,7 +199,7 @@ func (s *HandlerSuite) TestGetDungeon_Unknown_NotFound() {
 // back exactly, because the handler hands the registry's bytes through.
 func (s *HandlerSuite) TestGetDungeon_ReturnsTheStoredBytesVerbatim() {
 	yaml := "version: 2\nkey: crypt   # trailing spaces and a comment\n"
-	s.registry.EXPECT().Get(gomock.Any(), "crypt").Return(&dungeons.Entry{Key: "crypt", YAML: []byte(yaml)}, nil)
+	s.registry.EXPECT().Get(gomock.Any(), testCaller, "crypt").Return(&dungeons.Entry{Key: "crypt", YAML: []byte(yaml)}, nil)
 
 	resp, err := s.handler.GetDungeon(s.ctx, &authoringpb.GetDungeonRequest{Key: "crypt"})
 	s.Require().NoError(err)

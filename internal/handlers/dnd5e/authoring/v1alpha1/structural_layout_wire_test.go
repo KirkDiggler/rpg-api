@@ -1,7 +1,6 @@
 package authoringv1alpha1_test
 
 import (
-	"context"
 	_ "embed"
 	"math"
 	"testing"
@@ -9,7 +8,6 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	authoringpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/authoring/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 	authoringhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1"
 	authoringorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
@@ -25,7 +23,7 @@ type StructuralLayoutWireSuite struct{ suite.Suite }
 func TestStructuralLayoutWireSuite(t *testing.T) { suite.Run(t, new(StructuralLayoutWireSuite)) }
 
 func (s *StructuralLayoutWireSuite) TestRealRegistryAndSDKCarryAuthoredLayoutToTheWire() {
-	ctx := auth.WithPlayerID(context.Background(), "structural-author")
+	ctx := worldCtx("structural-author")
 	registry, _ := dungeonstest.Scratch(s.T())
 	orch, err := authoringorch.New(&authoringorch.Config{Dungeons: registry})
 	s.Require().NoError(err)

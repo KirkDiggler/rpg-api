@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
+	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 )
 
 // raiderCampKey is the dungeon the hold-out scenario is authored against
@@ -59,7 +60,7 @@ func (s *RegistrySuite) TestRaiderCampFixture_CompilesAndDeclaresItsScenarioEndi
 	s.Require().NoError(err)
 	s.write(raiderCampKey+".yaml", raw)
 
-	r := s.open(false)
+	r := s.open()
 	entry, err := r.Get(s.ctx, raiderCampKey)
 	s.Require().NoError(err, "the shipped raider camp fixture must compile")
 
@@ -114,9 +115,9 @@ func (s *RegistrySuite) TestPut_AHoldOutNobodyCanWinIsAFormFillerAnswer() {
 			broken := bytes.Replace(raw, []byte(tc.from), []byte(tc.to), 1)
 			s.Require().NotEqual(raw, broken, "the fixture line this case edits must be where it expects it")
 
-			r := s.open(true)
+			r := s.library(true)
 			out, putErr := r.Put(s.ctx, &dungeons.PutInput{
-				Key: raiderCampKey, YAML: broken, ValidateOnly: true,
+				Caller: dungeonstest.Caller, Key: raiderCampKey, YAML: broken, ValidateOnly: true,
 			})
 			s.Require().NoError(putErr, "a form filled in wrong is an answer, never a status")
 			s.Require().Len(out.Errors, 1, "one defect, reported once: %v", out.Errors)
@@ -133,8 +134,8 @@ func (s *RegistrySuite) TestPut_TheRaiderCampItselfStillCompiles() {
 	raw, err := os.ReadFile(shippedRaiderCamp)
 	s.Require().NoError(err)
 
-	r := s.open(true)
-	out, err := r.Put(s.ctx, &dungeons.PutInput{Key: raiderCampKey, YAML: raw, ValidateOnly: true})
+	r := s.library(true)
+	out, err := r.Put(s.ctx, &dungeons.PutInput{Caller: dungeonstest.Caller, Key: raiderCampKey, YAML: raw, ValidateOnly: true})
 	s.Require().NoError(err)
 	s.Empty(out.Errors)
 }

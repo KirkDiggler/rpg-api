@@ -60,7 +60,7 @@ func (s *RegistrySuite) TestHeirloomFixture_CompilesAndDeclaresItsScenarioEnding
 	s.Require().NoError(err)
 	s.write(heirloomKey+".yaml", raw)
 
-	r := s.open(false)
+	r := s.open()
 	entry, err := r.Get(s.ctx, heirloomKey)
 	s.Require().NoError(err, "the shipped heirloom fixture must compile")
 
@@ -92,7 +92,7 @@ func (s *RegistrySuite) TestSeed_AnEmptyMountGetsEveryShippedDungeon() {
 	s.Require().NoError(err)
 	s.Len(seeded, len(onDisk), "every shipped dungeon, not a curated subset")
 
-	r, err := dungeons.NewFileRegistry(empty, false, dungeonstest.Projector(s.T()))
+	r, err := dungeons.NewFileRegistry(empty, dungeonstest.Projector(s.T()))
 	s.Require().NoError(err)
 	list, err := r.List(s.ctx)
 	s.Require().NoError(err)
@@ -155,9 +155,9 @@ func (s *RegistrySuite) TestPut_ABadScenarioBindingIsAFormFillerAnswer() {
 			broken := bytes.Replace(raw, []byte(tc.from), []byte(tc.to), 1)
 			s.Require().NotEqual(raw, broken, "the fixture line this case edits must be where it expects it")
 
-			r := s.open(true)
+			r := s.library(true)
 			out, putErr := r.Put(s.ctx, &dungeons.PutInput{
-				Key: heirloomKey, YAML: broken, ValidateOnly: true,
+				Caller: dungeonstest.Caller, Key: heirloomKey, YAML: broken, ValidateOnly: true,
 			})
 			s.Require().NoError(putErr, "a form filled in wrong is an answer, never a status")
 			s.Require().Len(out.Errors, 1)
@@ -174,8 +174,8 @@ func (s *RegistrySuite) TestPut_TheHeirloomFixtureItselfStillCompiles() {
 	raw, err := os.ReadFile(shippedHeirloom)
 	s.Require().NoError(err)
 
-	r := s.open(true)
-	out, err := r.Put(s.ctx, &dungeons.PutInput{Key: heirloomKey, YAML: raw, ValidateOnly: true})
+	r := s.library(true)
+	out, err := r.Put(s.ctx, &dungeons.PutInput{Caller: dungeonstest.Caller, Key: heirloomKey, YAML: raw, ValidateOnly: true})
 	s.Require().NoError(err)
 	s.Empty(out.Errors)
 }
@@ -198,9 +198,9 @@ func (s *RegistrySuite) TestPut_TheOldSpellingOfKnowledgeIsRefusedByName() {
 	s.Require().Contains(string(raw), holds, "the fixture's holds line must be where this test expects it")
 	legacy := []byte(strings.Replace(string(raw), holds, "knows: [vault-map]", 1))
 
-	r := s.open(true)
+	r := s.library(true)
 	out, err := r.Put(s.ctx, &dungeons.PutInput{
-		Key: heirloomKey, YAML: legacy, ValidateOnly: true,
+		Caller: dungeonstest.Caller, Key: heirloomKey, YAML: legacy, ValidateOnly: true,
 	})
 	s.Require().NoError(err, "a retired spelling is a form filled in wrong, not a status")
 	s.Require().Len(out.Errors, 1)

@@ -173,6 +173,7 @@ func (s *SessionStackSuite) TestStartEncounter_BuildsAGenuineNewStackSession() {
 	s.seedReadyLobby("lobby-1", "alice", "bob")
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1",
 	})
 	s.Require().NoError(err)
@@ -204,6 +205,7 @@ func (s *SessionStackSuite) TestStartEncounter_SDKRosterIsAuthoritative() {
 	s.seedReadyLobby("lobby-1", "alice", "bob")
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1",
 	})
 	s.Require().NoError(err)
@@ -258,6 +260,7 @@ func (s *SessionStackSuite) TestStartEncounter_SeatsTheTombsWholeGarrison() {
 	s.seedReadyLobby("lobby-1", "alice")
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1",
 	})
 	s.Require().NoError(err)
@@ -286,6 +289,7 @@ func (s *SessionStackSuite) TestStartEncounter_ThePartyEntersOutOfSightOfTheGarr
 	s.seedReadyLobby("lobby-1", "alice", "bob")
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1",
 	})
 	s.Require().NoError(err)
@@ -327,6 +331,7 @@ func (s *SessionStackSuite) TestStartEncounter_TheTombReachesTheWire() {
 	s.seedReadyLobby("lobby-1", "alice")
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1",
 	})
 	s.Require().NoError(err)
@@ -367,6 +372,7 @@ func (s *SessionStackSuite) TestStartEncounter_GetAtlasServesTheSeamsAsTwoLines(
 	s.seedReadyLobby("lobby-1", "alice")
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1",
 	})
 	s.Require().NoError(err)
@@ -420,6 +426,7 @@ func (s *SessionStackSuite) TestStartEncounter_ExplicitDefaultKeyIsTheTomb() {
 	s.seedReadyLobby("lobby-1", "alice")
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: lobbyorch.DungeonKey(dungeons.DefaultKey),
 	})
 	s.Require().NoError(err)
@@ -438,6 +445,7 @@ func (s *SessionStackSuite) TestStartEncounter_DemoVendorIsPlacedAndInteractable
 	s.seedReadyLobby("lobby-1", "alice")
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1",
 	})
 	s.Require().NoError(err)
@@ -480,6 +488,7 @@ func (s *SessionStackSuite) TestStartEncounter_TradeBuysFromTheDemoVendor() {
 	s.seedReadyLobby("lobby-1", "alice")
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1",
 	})
 	s.Require().NoError(err)
@@ -539,6 +548,7 @@ func (s *SessionStackSuite) TestStartEncounter_SellToTheDemoVendor() {
 	s.seedReadyLobby("lobby-1", "alice")
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1",
 	})
 	s.Require().NoError(err)
@@ -594,6 +604,7 @@ func (s *SessionStackSuite) TestStartEncounter_UnpackDecomposesAnOwnedPack() {
 	s.seedReadyLobby("lobby-1", "alice")
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1",
 	})
 	s.Require().NoError(err)
@@ -640,10 +651,10 @@ func (s *SessionStackSuite) lobbyOver(registry dungeons.Registry) *lobbyorch.Orc
 // the one a session starts on, and its atlas reaches the wire.
 func (s *SessionStackSuite) TestStartEncounter_PlaysADungeonTheAuthorPut() {
 	registry, _ := dungeonstest.Scratch(s.T())
-	tomb, err := registry.Get(s.ctx, dungeons.DefaultKey)
+	tomb, err := registry.Get(s.ctx, dungeonstest.Caller, dungeons.DefaultKey)
 	s.Require().NoError(err)
 	crypt := bytes.Replace(tomb.YAML, []byte("key: reference-tomb"), []byte("key: crypt"), 1)
-	res, err := registry.Put(s.ctx, &dungeons.PutInput{Key: "crypt", YAML: crypt})
+	res, err := registry.Put(s.ctx, &dungeons.PutInput{Caller: dungeonstest.Caller, Key: "crypt", YAML: crypt})
 	s.Require().NoError(err)
 	s.Require().Empty(res.Errors)
 
@@ -653,6 +664,7 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysADungeonTheAuthorPut() {
 	s.seedReadyLobby("lobby-1", "alice")
 
 	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: "crypt",
 	})
 	s.Require().NoError(err)
@@ -683,7 +695,7 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysADungeonTheAuthorPut() {
 func (s *SessionStackSuite) TestStartEncounter_GetAtlasServesSceneryAsFloorNobodyOwns() {
 	registry, _ := dungeonstest.Scratch(s.T())
 	res, err := registry.Put(s.ctx, &dungeons.PutInput{
-		Key: dungeonstest.SceneryStripKey, YAML: []byte(dungeonstest.SceneryStripYAML),
+		Caller: dungeonstest.Caller, Key: dungeonstest.SceneryStripKey, YAML: []byte(dungeonstest.SceneryStripYAML),
 	})
 	s.Require().NoError(err)
 	s.Require().Empty(res.Errors, "the scenery file must compile: %v", res.Errors)
@@ -692,6 +704,7 @@ func (s *SessionStackSuite) TestStartEncounter_GetAtlasServesSceneryAsFloorNobod
 	s.seedReadyLobby("lobby-1", "alice")
 
 	out, err := s.lobbyOver(registry).StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: dungeonstest.SceneryStripKey,
 	})
 	s.Require().NoError(err)
@@ -720,19 +733,19 @@ func (s *SessionStackSuite) TestStartEncounter_GetAtlasServesSceneryAsFloorNobod
 }
 
 func (s *SessionStackSuite) TestListDungeons_ReadsTheRegistry() {
-	out, err := s.orch.ListDungeons(s.ctx, &lobbyorch.ListDungeonsInput{})
+	out, err := s.orch.ListDungeons(s.ctx, &lobbyorch.ListDungeonsInput{Caller: dungeonstest.Caller})
 	s.Require().NoError(err)
 
 	keys := make([]string, 0, len(out.Dungeons))
 	for _, d := range out.Dungeons {
 		keys = append(keys, d.Key)
 	}
-	// Every shipped dungeon, counted rather than spelled: the content tree
-	// gained the heirloom fixture with rpg-project#368, and a literal here
-	// would turn each new piece of content into a failure that says nothing
-	// about the content.
-	s.Contains(keys, dungeons.DefaultKey)
-	s.Len(keys, dungeonstest.ShippedCount(s.T()))
+	// Every single-room reference, counted rather than spelled: a literal
+	// here would turn each new piece of content into a failure that says
+	// nothing about the content. The version 2 files, the default tomb among
+	// them, still play by key but are not listed (design R23).
+	s.Equal(dungeonstest.ListedReferenceKeys(s.T()), keys)
+	s.NotContains(keys, dungeons.DefaultKey)
 }
 
 // TestStartEncounter_FirstAdmissionPersistsCompleteLongRestOutcomes is the
@@ -750,6 +763,7 @@ func (s *SessionStackSuite) TestStartEncounter_FirstAdmissionPersistsCompleteLon
 	s.seedReadyLobby("lobby-rest", "p1", "p2")
 
 	_, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "p1", LobbyID: "lobby-rest",
 	})
 	s.Require().NoError(err)
@@ -981,7 +995,7 @@ func (s *SessionStackSuite) lootTheAuthoredCaptain(authored string) *sdk.Atlas {
 
 	registry, _ := dungeonstest.Scratch(s.T())
 	res, err := registry.Put(s.ctx, &dungeons.PutInput{
-		Key: dungeonstest.HeirloomVaultKey, YAML: []byte(authored),
+		Caller: dungeonstest.Caller, Key: dungeonstest.HeirloomVaultKey, YAML: []byte(authored),
 	})
 	s.Require().NoError(err)
 	s.Require().Empty(res.Errors, "the heirloom fixture must compile: %v", res.Errors)
@@ -1008,6 +1022,7 @@ func (s *SessionStackSuite) lootTheAuthoredCaptain(authored string) *sdk.Atlas {
 	s.seedReadyLobby("lobby-1", "alice")
 
 	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: dungeonstest.HeirloomVaultKey,
 	})
 	s.Require().NoError(err)
@@ -1065,6 +1080,7 @@ func (s *SessionStackSuite) TestStartEncounter_ACharacterSharingAMonstersIdIsRef
 	}))
 
 	_, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "cap", LobbyID: "lobby-1", DungeonKey: "reference-tomb-heirloom",
 	})
 	s.Require().Error(err)
@@ -1086,6 +1102,7 @@ func (s *SessionStackSuite) TestStartEncounter_TheHeirloomsCaptainSpawnsUnderHis
 	s.seedReadyLobby("lobby-1", "alice")
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: "reference-tomb-heirloom",
 	})
 	s.Require().NoError(err)
@@ -1112,6 +1129,7 @@ func (s *SessionStackSuite) TestStartEncounter_TheCampLaunchesWithItsChiefAsTheM
 	s.seedReadyLobby("lobby-1", "alice")
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: "reference-raider-camp",
 	})
 	s.Require().NoError(err, "the camp launches: its mind entered its own faction")

@@ -57,8 +57,9 @@ func (s *ScenerySuite) put() *authoringorch.PutDungeonOutput {
 	s.T().Helper()
 
 	out, err := s.orch.PutDungeon(s.ctx, &authoringorch.PutDungeonInput{
-		Key:  dungeonstest.SceneryStripKey,
-		YAML: []byte(dungeonstest.SceneryStripYAML),
+		Caller: dungeonstest.Caller,
+		Key:    dungeonstest.SceneryStripKey,
+		YAML:   []byte(dungeonstest.SceneryStripYAML),
 	})
 	s.Require().NoError(err)
 	s.Require().Empty(out.Errors, "the scenery file must compile: %v", out.Errors)
@@ -80,23 +81,20 @@ func cell(col, row int) spatial.Position {
 // not be the exception: what comes back is the bytes that went in, comments,
 // spacing and the `scenery:` block included.
 //
-// Asked of BOTH things a Put leaves behind, because they are written by
-// different lines and only one of them survives a restart: the entry
-// GetDungeon reads, and the file on disk the registry writes atomically. A
-// test that checked only the in-memory entry would pass on a registry that
-// persisted something else entirely.
+// GetDungeon reads the world store the save persisted to (not an in-memory
+// copy), so the round trip is what survives a restart; the content directory
+// is never written by a save (design R20).
 func (s *ScenerySuite) TestPutDungeon_AFileWithSceneryRoundTripsVerbatim() {
 	s.put()
 
-	got, err := s.orch.GetDungeon(s.ctx, &authoringorch.GetDungeonInput{Key: dungeonstest.SceneryStripKey})
+	got, err := s.orch.GetDungeon(s.ctx, &authoringorch.GetDungeonInput{Caller: dungeonstest.Caller, Key: dungeonstest.SceneryStripKey})
 	s.Require().NoError(err)
 	s.Equal(dungeonstest.SceneryStripYAML, string(got.YAML),
 		"what GetDungeon serves is the authored file, byte for byte")
 
-	onDisk, err := os.ReadFile(filepath.Join(s.dir, dungeonstest.SceneryStripKey+".yaml"))
-	s.Require().NoError(err)
-	s.Equal(dungeonstest.SceneryStripYAML, string(onDisk),
-		"and so is what PutDungeon persisted, `scenery:` block included")
+	_, statErr := os.Stat(filepath.Join(s.dir, dungeonstest.SceneryStripKey+".yaml"))
+	s.True(os.IsNotExist(statErr),
+		"GetDungeon read the world store PutDungeon persisted to, never the content directory")
 }
 
 // TestPutDungeon_SceneryIsFloorInNoRegion is the second half: the atlas

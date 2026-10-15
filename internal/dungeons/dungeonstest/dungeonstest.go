@@ -5,6 +5,7 @@
 package dungeonstest
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -21,7 +22,12 @@ import (
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	"github.com/KirkDiggler/rpg-api/internal/repositories/worlddungeons"
 )
+
+// Caller is the one caller test registries are asked as: one player in one
+// world. A test about who may see or write what builds its own callers.
+var Caller = dungeons.Caller{WorldID: "test-world", PlayerID: "test-author"}
 
 // Projector is a dungeons.AtlasProjector over a real, miniredis-backed
 // session Manager — the same Manager.AtlasOf production wires, so a test
@@ -77,15 +83,12 @@ func ContentDir(t testing.TB) string {
 	return dir
 }
 
-// Shipped returns a read-only registry over the real content/ directory.
-// WRITES are refused, so nothing a test does can touch the tree; a
-// validate-only Put is answered, because a grade writes nothing
-// (rpg-project#481). A test that wants a read-only registry it may Put to
-// freely wants ScratchReadOnly.
-func Shipped(t testing.TB) *dungeons.FileRegistry {
+// ShippedStore returns the shipped store over the real content/ directory.
+// It is never written: the shipped store has no write path.
+func ShippedStore(t testing.TB) *dungeons.FileRegistry {
 	t.Helper()
 
-	r, err := dungeons.NewFileRegistry(ContentDir(t), false, Projector(t))
+	r, err := dungeons.NewFileRegistry(ContentDir(t), Projector(t))
 	if err != nil {
 		t.Fatalf("dungeonstest: %v", err)
 	}
@@ -93,30 +96,35 @@ func Shipped(t testing.TB) *dungeons.FileRegistry {
 	return r
 }
 
+// Shipped returns a read-only Registry over the real content/ directory and
+// an empty world store: every key resolves to its reference. WRITES are
+// refused; a validate-only Put is answered, because a grade writes nothing
+// (rpg-project#481).
+func Shipped(t testing.TB) dungeons.Registry {
+	t.Helper()
+
+	return Join(t, ShippedStore(t), false)
+}
+
 // Scratch copies the shipped content into a temp directory and returns a
-// registry over it with authoring ON, for tests that Put.
-func Scratch(t testing.TB) (*dungeons.FileRegistry, string) {
+// Registry over it and an in-memory world store with authoring ON, for tests
+// that Put. Saves land in the world store, never in the directory.
+func Scratch(t testing.TB) (dungeons.Registry, string) {
 	t.Helper()
 
 	return scratch(t, true)
 }
 
-// ScratchReadOnly is Scratch with authoring OFF: the same temp copy of the
-// shipped content, behind a registry that refuses to store anything — the
-// shape the server boots with when RPG_AUTHORING_ENABLED is unset.
-//
-// A COPY rather than Shipped's real content/ directory, deliberately: a test
-// that proves the write refusal should not be the one test whose failure
-// writes into the repo's own content tree.
-func ScratchReadOnly(t testing.TB) (*dungeons.FileRegistry, string) {
+// ScratchReadOnly is Scratch with authoring OFF: the shape the server boots
+// with when RPG_AUTHORING_ENABLED is unset.
+func ScratchReadOnly(t testing.TB) (dungeons.Registry, string) {
 	t.Helper()
 
 	return scratch(t, false)
 }
 
-// scratch copies the shipped content into a temp directory and opens a
-// registry over it.
-func scratch(t testing.TB, authoring bool) (*dungeons.FileRegistry, string) {
+// ScratchDir copies the shipped content into a temp directory and returns it.
+func ScratchDir(t testing.TB) string {
 	t.Helper()
 
 	src := ContentDir(t)
@@ -132,12 +140,53 @@ func scratch(t testing.TB, authoring bool) (*dungeons.FileRegistry, string) {
 		copyFile(t, filepath.Join(src, e.Name()), filepath.Join(dst, e.Name()))
 	}
 
-	r, err := dungeons.NewFileRegistry(dst, authoring, Projector(t))
+	return dst
+}
+
+// WorldStore returns a world store over its own miniredis.
+func WorldStore(t testing.TB) worlddungeons.Repository {
+	t.Helper()
+
+	server := miniredis.RunT(t)
+	client := goredis.NewClient(&goredis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	repo, err := worlddungeons.NewRedis(&worlddungeons.RedisConfig{Client: client})
 	if err != nil {
 		t.Fatalf("dungeonstest: %v", err)
 	}
 
-	return r, dst
+	return repo
+}
+
+// scratch copies the shipped content into a temp directory and joins a
+// registry over it.
+func scratch(t testing.TB, authoring bool) (dungeons.Registry, string) {
+	t.Helper()
+
+	dst := ScratchDir(t)
+	shipped, err := dungeons.NewFileRegistry(dst, Projector(t))
+	if err != nil {
+		t.Fatalf("dungeonstest: %v", err)
+	}
+
+	return Join(t, shipped, authoring), dst
+}
+
+// Join builds the two-store Registry over shipped and a fresh world store.
+func Join(t testing.TB, shipped *dungeons.FileRegistry, authoring bool) dungeons.Registry {
+	t.Helper()
+
+	r, err := dungeons.NewRegistry(&dungeons.RegistryConfig{
+		Shipped:   shipped,
+		World:     WorldStore(t),
+		Authoring: authoring,
+		Projector: Projector(t),
+	})
+	if err != nil {
+		t.Fatalf("dungeonstest: %v", err)
+	}
+
+	return r
 }
 
 // copyFile copies one content file into the scratch directory.
@@ -178,4 +227,43 @@ func ShippedCount(t testing.TB) int {
 	}
 
 	return n
+}
+
+// AsKey is raw with its root `key: <from>` line renamed to `key: <to>`: the
+// same document as an author's own copy. A shipped key is a reference, so a
+// test that saves or grades a shipped file does it under a key of its own.
+func AsKey(t testing.TB, raw []byte, from, to string) []byte {
+	t.Helper()
+
+	old := []byte("\nkey: " + from + "\n")
+	if !bytes.Contains(raw, old) {
+		t.Fatalf("dungeonstest: no root `key: %s` line", from)
+	}
+
+	return bytes.Replace(raw, old, []byte("\nkey: "+to+"\n"), 1)
+}
+
+// ListedReferenceKeys is every shipped key a list shows, sorted: the
+// single-room references (root version 3 or more). The version 2 files stay
+// resolvable by key and are left out (design R23).
+func ListedReferenceKeys(t testing.TB) []string {
+	t.Helper()
+
+	shipped := ShippedStore(t)
+	all, err := shipped.List(context.Background())
+	if err != nil {
+		t.Fatalf("dungeonstest: %v", err)
+	}
+	keys := make([]string, 0, len(all))
+	for _, sum := range all {
+		e, getErr := shipped.Get(context.Background(), sum.Key)
+		if getErr != nil {
+			t.Fatalf("dungeonstest: %v", getErr)
+		}
+		if e.SingleRoom {
+			keys = append(keys, sum.Key)
+		}
+	}
+
+	return keys
 }

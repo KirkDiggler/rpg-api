@@ -16,9 +16,11 @@ import (
 	"google.golang.org/grpc/status"
 
 	authoringpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/authoring/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	authoringorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
+	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 )
 
 // HandlerConfig configures an authoring Handler.
@@ -48,16 +50,38 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 	return &Handler{orch: cfg.Orchestrator}, nil
 }
 
-// requireAuthenticated is the one gate every RPC here runs: authoring is a
-// signed-in verb even though no per-player ownership exists on a dungeon yet
-// (rpg-api#803 tracks verb authorization generally), so the caller's identity
-// is checked and not yet used.
+// keyRequiredMessage is the InvalidArgument refusal for an empty key.
+const keyRequiredMessage = "key is required"
+
+// noPlayerMessage is the Unauthenticated refusal every RPC here answers
+// without a signed-in player.
+const noPlayerMessage = "no player id in context"
+
+// requireAuthenticated is the gate the catalog RPCs run (ListScenarios,
+// ListWeapons): their answer is a property of the binary, so they need a
+// signed-in player and no world.
 func requireAuthenticated(ctx context.Context) error {
 	if auth.GetPlayerID(ctx) == "" {
-		return status.Error(codes.Unauthenticated, "no player id in context")
+		return status.Error(codes.Unauthenticated, noPlayerMessage)
 	}
 
 	return nil
+}
+
+// callerOf is the gate every dungeon RPC runs: the signed-in player and the
+// world the auth boundary installed (worldcontext), never a request field
+// (design R21). No player is Unauthenticated; no world is FailedPrecondition.
+func callerOf(ctx context.Context) (dungeons.Caller, error) {
+	playerID := auth.GetPlayerID(ctx)
+	if playerID == "" {
+		return dungeons.Caller{}, status.Error(codes.Unauthenticated, noPlayerMessage)
+	}
+	world, ok := worldcontext.Get(ctx)
+	if !ok || world.WorldID == "" {
+		return dungeons.Caller{}, status.Error(codes.FailedPrecondition, worldcontext.RequiredMessage)
+	}
+
+	return dungeons.Caller{WorldID: world.WorldID, PlayerID: playerID}, nil
 }
 
 // statusError maps the registry's sentinels (passed through the
@@ -66,12 +90,30 @@ func requireAuthenticated(ctx context.Context) error {
 //   - dungeons.ErrInvalidKey / ErrKeyMismatch → InvalidArgument (the
 //     request could not name its target; the proto's own rule)
 //   - dungeons.ErrNotFound → NotFound
+//   - dungeons.ErrReferenceKey / ErrReferenceReadOnly / ErrOwnedByOther →
+//     PermissionDenied, the sentinel's own sentence as the message: the
+//     author reads it at the key field, the preview included (S7-Q2)
+//   - dungeons.ErrKeyExists → AlreadyExists, its sentence
 //   - dungeons.ErrAuthoringDisabled → FailedPrecondition (unreachable when
 //     the service is only registered with the gate on; kept so a wiring
 //     mistake is a clear refusal rather than a 500)
+//   - dungeons.ErrNoCaller → FailedPrecondition (the handler checks the
+//     caller first; kept so a wiring mistake is a clear refusal)
+//   - an apierr-coded error (the world store's) → its own code, via
+//     apierr.ToGRPCError (exhausted write retries are Aborted)
 //   - unclassified → Internal
 func statusError(err error) error {
 	switch {
+	case errors.Is(err, dungeons.ErrReferenceKey):
+		return status.Error(codes.PermissionDenied, dungeons.ErrReferenceKey.Error())
+	case errors.Is(err, dungeons.ErrReferenceReadOnly):
+		return status.Error(codes.PermissionDenied, dungeons.ErrReferenceReadOnly.Error())
+	case errors.Is(err, dungeons.ErrOwnedByOther):
+		return status.Error(codes.PermissionDenied, dungeons.ErrOwnedByOther.Error())
+	case errors.Is(err, dungeons.ErrKeyExists):
+		return status.Error(codes.AlreadyExists, dungeons.ErrKeyExists.Error())
+	case errors.Is(err, dungeons.ErrNoCaller):
+		return status.Error(codes.FailedPrecondition, worldcontext.RequiredMessage)
 	case errors.Is(err, dungeons.ErrInvalidKey):
 		return status.Error(codes.InvalidArgument, "key must match [a-z0-9-]+")
 	case errors.Is(err, dungeons.ErrKeyMismatch):
@@ -80,6 +122,14 @@ func statusError(err error) error {
 		return status.Error(codes.NotFound, "dungeon not found")
 	case errors.Is(err, dungeons.ErrAuthoringDisabled):
 		return status.Error(codes.FailedPrecondition, "authoring is disabled")
+	}
+
+	// A store error that carries its own code (a write that lost its
+	// transaction too many times is Aborted) reaches the wire with it, the
+	// way the world and dice handlers map apierr; anything else is Internal.
+	var coded *apierr.Error
+	if apierr.As(err, &coded) {
+		return apierr.ToGRPCError(err)
 	}
 
 	return status.Errorf(codes.Internal, "authoring: %v", err)

@@ -92,7 +92,7 @@ func (s *StartContractSuite) armContractLaunch(entry *dungeons.Entry, key string
 
 	calls := []any{
 		// 1. The registry is asked for the RESOLVED key.
-		s.registry.EXPECT().Get(s.ctx, key).Return(entry, nil),
+		s.registry.EXPECT().Get(s.ctx, hostCaller, key).Return(entry, nil),
 		// 2. ONE Launch: the API-minted session id, the resolved key, the very
 		// compiled spec the entry holds, and the party in seat order.
 		s.manager.EXPECT().Launch(s.ctx, gomock.Any()).DoAndReturn(
@@ -162,6 +162,7 @@ func (s *StartContractSuite) TestStartEncounter_CustomKey_PinsLaunchInputsAndSav
 	}
 
 	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: contractLobbyID, DungeonKey: lobbyorch.DungeonKey(key),
 	})
 	s.Require().NoError(err)
@@ -202,6 +203,7 @@ func (s *StartContractSuite) TestStartEncounter_ExplicitDefaultKey_ResolvesTheTo
 	sessionID := s.armContractLaunch(entry, dungeons.DefaultKey, true)
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: contractLobbyID,
 		DungeonKey: lobbyorch.DungeonKey(dungeons.DefaultKey),
 	})
@@ -219,8 +221,41 @@ func (s *StartContractSuite) TestStartEncounter_OmittedKey_ResolvesTheTombAndPla
 	sessionID := s.armContractLaunch(entry, dungeons.DefaultKey, true)
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: contractLobbyID,
 	})
 	s.Require().NoError(err)
 	s.Equal(*sessionID, out.EncounterID)
+}
+
+// TestStartEncounter_ResolvesTheKeyInTheHostsWorld pins design R21: the
+// launch asks the registry for the key as the host, in the host's world, so
+// a member's encounter there resolves for the host (and the shipped
+// references behind it); the demo vendor stays the default's alone.
+func (s *StartContractSuite) TestStartEncounter_ResolvesTheKeyInTheHostsWorld() {
+	const key = "my-castle"
+	entry := contractEntry(key)
+
+	s.seedLobby(readyContractLobby())
+	sessionID := s.armContractLaunch(entry, key, false)
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID: testWorldID, PlayerID: "alice", LobbyID: contractLobbyID, DungeonKey: key,
+	})
+	s.Require().NoError(err)
+	s.Equal(*sessionID, out.EncounterID)
+}
+
+// TestListDungeons_PassesTheCaller: the lobby list is the caller's (O3).
+func (s *StartContractSuite) TestListDungeons_PassesTheCaller() {
+	caller := dungeons.Caller{WorldID: "w1", PlayerID: "player-1"}
+	want := []dungeons.Summary{
+		{Key: "my-castle", Name: "My Castle", Owner: "player-2", Source: dungeons.SourceWorld},
+		{Key: "castle-kitchen", Name: "The Castle Kitchen", Source: dungeons.SourceShipped},
+	}
+	s.registry.EXPECT().List(s.ctx, caller).Return(want, nil)
+
+	out, err := s.orch.ListDungeons(s.ctx, &lobbyorch.ListDungeonsInput{Caller: caller})
+	s.Require().NoError(err)
+	s.Equal(want, out.Dungeons)
 }
