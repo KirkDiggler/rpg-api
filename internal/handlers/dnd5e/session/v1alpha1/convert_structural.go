@@ -3,6 +3,7 @@ package sessionv1alpha1
 import (
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
 // These are already permitted SDK records. Preserve their identity, order,
@@ -15,8 +16,19 @@ func atlasStructuralWallsToProto(walls []sdk.AtlasStructuralWall) []*sessionpb.A
 			From:   &sessionpb.FootprintPoint{X: wall.From.X, Y: wall.From.Y},
 			To:     &sessionpb.FootprintPoint{X: wall.To.X, Y: wall.To.Y},
 			Height: wall.Height, Thickness: wall.Thickness, Elevation: wall.Elevation,
-			Openings: atlasStructuralOpeningsToProto(wall.Openings),
+			Openings:       atlasStructuralOpeningsToProto(wall.Openings),
+			FootprintCells: atlasFootprintCellsToProto(wall.FootprintCells),
 		})
+	}
+	return out
+}
+
+// The hexes a wall's blocker stands on, in the session's line order. They are
+// cells like the atlas's cells and sealed list: same frame, same converter.
+func atlasFootprintCellsToProto(cells []spatial.Position) []*sessionpb.Position {
+	out := make([]*sessionpb.Position, len(cells))
+	for i, c := range cells {
+		out[i] = positionToProto(c)
 	}
 	return out
 }
