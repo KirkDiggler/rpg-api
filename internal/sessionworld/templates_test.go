@@ -161,6 +161,7 @@ func (s *TemplatesSuite) TestCompile_ReferenceDungeonsDeclareNoTemplates() {
 	templated := map[string]bool{
 		castleKitchenPath: true,
 		filepath.Join("..", "..", "content", "the-mad-king-cells.yaml"): true,
+		filepath.Join("..", "..", "content", "the-mad-king.yaml"):       true,
 	}
 
 	for _, path := range paths {

@@ -40,6 +40,20 @@ import (
 // recaptured at rpg-api#1111's own head for fog of war R9, which adds
 // footprint_cells to its four structural walls. That field is the only
 // change to the captured atlas.
+//
+// AND the-mad-king.atlas.json (rpg-project#605, the whole castle as one
+// studio document) was captured at the commit that added it, because no
+// earlier build carries the castle file: like the kitchen's, a change
+// detector from that commit on, not proof of correctness. It was recaptured
+// when the castle took rpg-toolkit d428cf40's twelve outer wall lines: twelve
+// structural walls with no openings, and their twelve wall props and twelve
+// spans in placed, are the only change to the captured atlas. It was
+// recaptured again at rpg-toolkit 1d590c5b. Two partition walls close the
+// kitchen and chapel off as their own regions. The chapel wall and its door
+// move onto the hex boundary, which frees the four sealed cells the wall
+// stood on. It was recaptured last at rpg-toolkit 8c9c4495, where the
+// kitchen wall and its door do the same. Its four sealed cells and the
+// one-cell space beside it join the kitchen, and nothing is sealed.
 func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBeforeTheWave() {
 	files, err := filepath.Glob(filepath.Join(dungeonstest.ContentDir(s.T()), "*.yaml"))
 	s.Require().NoError(err)
