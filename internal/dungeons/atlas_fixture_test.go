@@ -47,7 +47,11 @@ import (
 // detector from that commit on, not proof of correctness. It was recaptured
 // when the castle took rpg-toolkit d428cf40's twelve outer wall lines: twelve
 // structural walls with no openings, and their twelve wall props and twelve
-// spans in placed, are the only change to the captured atlas.
+// spans in placed, are the only change to the captured atlas. It was
+// recaptured again at rpg-toolkit 1d590c5b. Two partition walls close the
+// kitchen and chapel off as their own regions. The chapel wall and its door
+// move onto the hex boundary, which frees the four sealed cells the wall
+// stood on.
 func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBeforeTheWave() {
 	files, err := filepath.Glob(filepath.Join(dungeonstest.ContentDir(s.T()), "*.yaml"))
 	s.Require().NoError(err)
