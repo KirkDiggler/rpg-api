@@ -253,8 +253,14 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 	require.Equal(t, beforeSealed.without(vault).union(setOfPositions(revealed.GetSealed())),
 		afterSealed,
 		"sealed after a reveal is sealed before it, less the revealed room's cells, plus the beat's")
-	require.NotEmpty(t, beforeSealed.without(afterSealed),
-		"cells have to LEAVE the sealed list, or this assertion would pass on an append too")
+	// Under fog of war R9 the wall no longer brings its footing: presenting a
+	// wall teaches no footing hex, and footing under a concealed room stays
+	// withheld. So before the reveal her sealed list holds none of the vault,
+	// where it used to hold the wall's footing that then had to LEAVE. This
+	// room no longer tells a replace from an append; the equality above still
+	// pins the replace rule, and this pins that the footing never arrived.
+	require.Equal(t, beforeSealed, beforeSealed.without(vault),
+		"the vault's footing is withheld until sight reaches it (fog of war R9)")
 }
 
 // doorIDsOf and doorwayConnectionsOf read a reveal's door and doorway lists by
