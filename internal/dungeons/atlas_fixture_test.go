@@ -51,7 +51,9 @@ import (
 // recaptured again at rpg-toolkit 1d590c5b. Two partition walls close the
 // kitchen and chapel off as their own regions. The chapel wall and its door
 // move onto the hex boundary, which frees the four sealed cells the wall
-// stood on.
+// stood on. It was recaptured last at rpg-toolkit 8c9c4495, where the
+// kitchen wall and its door do the same. Its four sealed cells and the
+// one-cell space beside it join the kitchen, and nothing is sealed.
 func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBeforeTheWave() {
 	files, err := filepath.Glob(filepath.Join(dungeonstest.ContentDir(s.T()), "*.yaml"))
 	s.Require().NoError(err)
