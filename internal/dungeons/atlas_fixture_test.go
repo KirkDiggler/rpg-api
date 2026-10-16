@@ -44,7 +44,10 @@ import (
 // AND the-mad-king.atlas.json (rpg-project#605, the whole castle as one
 // studio document) was captured at the commit that added it, because no
 // earlier build carries the castle file: like the kitchen's, a change
-// detector from that commit on, not proof of correctness.
+// detector from that commit on, not proof of correctness. It was recaptured
+// when the castle took rpg-toolkit d428cf40's twelve outer wall lines: twelve
+// structural walls with no openings, and their twelve wall props and twelve
+// spans in placed, are the only change to the captured atlas.
 func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBeforeTheWave() {
 	files, err := filepath.Glob(filepath.Join(dungeonstest.ContentDir(s.T()), "*.yaml"))
 	s.Require().NoError(err)

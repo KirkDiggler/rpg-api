@@ -6398,6 +6398,81 @@
    ]
   },
   {
+   "id": "gatehouse-east-wall",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 25.98076211353316,
+    "origin": {
+     "x": 25,
+     "y": 58.45671475544962
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": false,
+   "blocks_line_of_sight": false,
+   "holdable": false,
+   "cells": [
+    {
+     "x": -2,
+     "y": 13
+    }
+   ]
+  },
+  {
+   "id": "gatehouse-south-wall",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 47.5,
+    "origin": {
+     "x": 1.250000000000001,
+     "y": 71.44709581221619
+    },
+    "facing": 0,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": false,
+   "blocks_line_of_sight": false,
+   "holdable": false,
+   "cells": [
+    {
+     "x": -8,
+     "y": 16
+    }
+   ]
+  },
+  {
+   "id": "gatehouse-west-wall",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 25.98076211353316,
+    "origin": {
+     "x": -22.5,
+     "y": 58.45671475544962
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": false,
+   "blocks_line_of_sight": false,
+   "holdable": false,
+   "cells": [
+    {
+     "x": -11,
+     "y": 14
+    }
+   ]
+  },
+  {
    "id": "hall-wall",
    "placement": {
     "width": 1.4433756729740645,
@@ -6444,6 +6519,106 @@
     {
      "x": 3,
      "y": -6
+    }
+   ]
+  },
+  {
+   "id": "keep-east-wall",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 116.91342951089923,
+    "origin": {
+     "x": 135,
+     "y": -12.99038105676658
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": false,
+   "blocks_line_of_sight": false,
+   "holdable": false,
+   "cells": [
+    {
+     "x": 28,
+     "y": -3
+    }
+   ]
+  },
+  {
+   "id": "keep-north-east-wall",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 98.91560817564839,
+    "origin": {
+     "x": 85.5421959121758,
+     "y": -71.44709581221619
+    },
+    "facing": 0,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": false,
+   "blocks_line_of_sight": false,
+   "holdable": false,
+   "cells": [
+    {
+     "x": 25,
+     "y": -16
+    }
+   ]
+  },
+  {
+   "id": "keep-north-west-wall",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 96.4156081756484,
+    "origin": {
+     "x": -84.29219591217581,
+     "y": -71.44709581221619
+    },
+    "facing": 0,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": false,
+   "blocks_line_of_sight": false,
+   "holdable": false,
+   "cells": [
+    {
+     "x": -9,
+     "y": -16
+    }
+   ]
+  },
+  {
+   "id": "keep-west-wall",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 116.91342951089923,
+    "origin": {
+     "x": -132.5,
+     "y": -12.99038105676658
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": false,
+   "blocks_line_of_sight": false,
+   "holdable": false,
+   "cells": [
+    {
+     "x": -25,
+     "y": -2
     }
    ]
   },
@@ -6564,6 +6739,56 @@
    ]
   },
   {
+   "id": "throne-east-wall",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 25.98076211353316,
+    "origin": {
+     "x": 35,
+     "y": -84.43747686898277
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": false,
+   "blocks_line_of_sight": false,
+   "holdable": false,
+   "cells": [
+    {
+     "x": 16,
+     "y": -19
+    }
+   ]
+  },
+  {
+   "id": "throne-north-wall",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 67.50000000000001,
+    "origin": {
+     "x": 1.2499999999999984,
+     "y": -97.42785792574935
+    },
+    "facing": 0,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": false,
+   "blocks_line_of_sight": false,
+   "holdable": false,
+   "cells": [
+    {
+     "x": 11,
+     "y": -22
+    }
+   ]
+  },
+  {
    "id": "throne-wall",
    "placement": {
     "width": 1.4433756729740645,
@@ -6610,6 +6835,31 @@
     {
      "x": 8,
      "y": -16
+    }
+   ]
+  },
+  {
+   "id": "throne-west-wall",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 25.98076211353316,
+    "origin": {
+     "x": -32.50000000000001,
+     "y": -84.43747686898277
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": false,
+   "blocks_line_of_sight": false,
+   "holdable": false,
+   "cells": [
+    {
+     "x": 4,
+     "y": -20
     }
    ]
   },
@@ -6726,6 +6976,81 @@
    ]
   },
   {
+   "id": "wall/gatehouse-east-wall/span/0",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 25.98076211353316,
+    "origin": {
+     "x": 25,
+     "y": 58.45671475544962
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": true,
+   "blocks_line_of_sight": true,
+   "holdable": false,
+   "cells": [
+    {
+     "x": -2,
+     "y": 13
+    }
+   ]
+  },
+  {
+   "id": "wall/gatehouse-south-wall/span/0",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 47.5,
+    "origin": {
+     "x": 1.250000000000001,
+     "y": 71.44709581221619
+    },
+    "facing": 0,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": true,
+   "blocks_line_of_sight": true,
+   "holdable": false,
+   "cells": [
+    {
+     "x": -8,
+     "y": 16
+    }
+   ]
+  },
+  {
+   "id": "wall/gatehouse-west-wall/span/0",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 25.98076211353316,
+    "origin": {
+     "x": -22.5,
+     "y": 58.45671475544962
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": true,
+   "blocks_line_of_sight": true,
+   "holdable": false,
+   "cells": [
+    {
+     "x": -11,
+     "y": 14
+    }
+   ]
+  },
+  {
    "id": "wall/hall-wall/span/0",
    "placement": {
     "width": 1.4433756729740645,
@@ -6772,6 +7097,106 @@
     {
      "x": 11,
      "y": -7
+    }
+   ]
+  },
+  {
+   "id": "wall/keep-east-wall/span/0",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 116.91342951089923,
+    "origin": {
+     "x": 135,
+     "y": -12.99038105676658
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": true,
+   "blocks_line_of_sight": true,
+   "holdable": false,
+   "cells": [
+    {
+     "x": 28,
+     "y": -3
+    }
+   ]
+  },
+  {
+   "id": "wall/keep-north-east-wall/span/0",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 98.91560817564839,
+    "origin": {
+     "x": 85.5421959121758,
+     "y": -71.44709581221619
+    },
+    "facing": 0,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": true,
+   "blocks_line_of_sight": true,
+   "holdable": false,
+   "cells": [
+    {
+     "x": 25,
+     "y": -16
+    }
+   ]
+  },
+  {
+   "id": "wall/keep-north-west-wall/span/0",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 96.4156081756484,
+    "origin": {
+     "x": -84.29219591217581,
+     "y": -71.44709581221619
+    },
+    "facing": 0,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": true,
+   "blocks_line_of_sight": true,
+   "holdable": false,
+   "cells": [
+    {
+     "x": -9,
+     "y": -16
+    }
+   ]
+  },
+  {
+   "id": "wall/keep-west-wall/span/0",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 116.91342951089923,
+    "origin": {
+     "x": -132.5,
+     "y": -12.99038105676658
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": true,
+   "blocks_line_of_sight": true,
+   "holdable": false,
+   "cells": [
+    {
+     "x": -25,
+     "y": -2
     }
    ]
   },
@@ -6838,6 +7263,56 @@
    ]
   },
   {
+   "id": "wall/throne-east-wall/span/0",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 25.98076211353316,
+    "origin": {
+     "x": 35,
+     "y": -84.43747686898277
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": true,
+   "blocks_line_of_sight": true,
+   "holdable": false,
+   "cells": [
+    {
+     "x": 16,
+     "y": -19
+    }
+   ]
+  },
+  {
+   "id": "wall/throne-north-wall/span/0",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 67.50000000000001,
+    "origin": {
+     "x": 1.2499999999999984,
+     "y": -97.42785792574935
+    },
+    "facing": 0,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": true,
+   "blocks_line_of_sight": true,
+   "holdable": false,
+   "cells": [
+    {
+     "x": 11,
+     "y": -22
+    }
+   ]
+  },
+  {
    "id": "wall/throne-wall/span/0",
    "placement": {
     "width": 1.4433756729740645,
@@ -6884,6 +7359,131 @@
     {
      "x": 12,
      "y": -16
+    }
+   ]
+  },
+  {
+   "id": "wall/throne-west-wall/span/0",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 25.98076211353316,
+    "origin": {
+     "x": -32.50000000000001,
+     "y": -84.43747686898277
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": true,
+   "blocks_line_of_sight": true,
+   "holdable": false,
+   "cells": [
+    {
+     "x": 4,
+     "y": -20
+    }
+   ]
+  },
+  {
+   "id": "wall/yard-south-east-wall/span/0",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 107.57586221349277,
+    "origin": {
+     "x": 81.21206889325362,
+     "y": 45.46633369868303
+    },
+    "facing": 0,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": true,
+   "blocks_line_of_sight": true,
+   "holdable": false,
+   "cells": [
+    {
+     "x": 11,
+     "y": 10
+    }
+   ]
+  },
+  {
+   "id": "wall/yard-south-west-wall/span/0",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 105.07586221349278,
+    "origin": {
+     "x": -79.96206889325362,
+     "y": 45.46633369868303
+    },
+    "facing": 0,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": true,
+   "blocks_line_of_sight": true,
+   "holdable": false,
+   "cells": [
+    {
+     "x": -21,
+     "y": 10
+    }
+   ]
+  },
+  {
+   "id": "yard-south-east-wall",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 107.57586221349277,
+    "origin": {
+     "x": 81.21206889325362,
+     "y": 45.46633369868303
+    },
+    "facing": 0,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": false,
+   "blocks_line_of_sight": false,
+   "holdable": false,
+   "cells": [
+    {
+     "x": 11,
+     "y": 10
+    }
+   ]
+  },
+  {
+   "id": "yard-south-west-wall",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 105.07586221349278,
+    "origin": {
+     "x": -79.96206889325362,
+     "y": 45.46633369868303
+    },
+    "facing": 0,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": false,
+   "blocks_line_of_sight": false,
+   "holdable": false,
+   "cells": [
+    {
+     "x": -21,
+     "y": 10
     }
    ]
   }
@@ -7076,6 +7676,124 @@
      "width": 5.773502691896258
     }
    ]
+  },
+  {
+   "id": "gatehouse-east-wall",
+   "ref": "dnd5e:env:dark-fortress:45_wall_01",
+   "from": {
+    "x": 25,
+    "y": 45.46633369868303
+   },
+   "to": {
+    "x": 25,
+    "y": 71.44709581221619
+   },
+   "height": 8.660254037844387,
+   "thickness": 0.8660254037844387,
+   "elevation": 0,
+   "footprint_cells": [
+    {
+     "x": 0,
+     "y": 10
+    },
+    {
+     "x": -1,
+     "y": 11
+    },
+    {
+     "x": -2,
+     "y": 13
+    },
+    {
+     "x": -3,
+     "y": 15
+    }
+   ],
+   "openings": []
+  },
+  {
+   "id": "gatehouse-south-wall",
+   "ref": "dnd5e:env:dark-fortress:45_wall_01",
+   "from": {
+    "x": -22.5,
+    "y": 71.44709581221619
+   },
+   "to": {
+    "x": 25,
+    "y": 71.44709581221619
+   },
+   "height": 8.660254037844387,
+   "thickness": 0.8660254037844387,
+   "elevation": 0,
+   "footprint_cells": [
+    {
+     "x": -12,
+     "y": 16
+    },
+    {
+     "x": -11,
+     "y": 16
+    },
+    {
+     "x": -10,
+     "y": 16
+    },
+    {
+     "x": -9,
+     "y": 16
+    },
+    {
+     "x": -8,
+     "y": 16
+    },
+    {
+     "x": -7,
+     "y": 16
+    },
+    {
+     "x": -6,
+     "y": 16
+    },
+    {
+     "x": -5,
+     "y": 16
+    },
+    {
+     "x": -4,
+     "y": 16
+    }
+   ],
+   "openings": []
+  },
+  {
+   "id": "gatehouse-west-wall",
+   "ref": "dnd5e:env:dark-fortress:45_wall_01",
+   "from": {
+    "x": -22.5,
+    "y": 45.46633369868303
+   },
+   "to": {
+    "x": -22.5,
+    "y": 71.44709581221619
+   },
+   "height": 8.660254037844387,
+   "thickness": 0.8660254037844387,
+   "elevation": 0,
+   "footprint_cells": [
+    {
+     "x": -10,
+     "y": 12
+    },
+    {
+     "x": -11,
+     "y": 14
+    },
+    {
+     "x": -12,
+     "y": 16
+    }
+   ],
+   "openings": []
   },
   {
    "id": "hall-wall",
@@ -7338,6 +8056,346 @@
    ]
   },
   {
+   "id": "keep-east-wall",
+   "ref": "dnd5e:env:dark-fortress:45_wall_01",
+   "from": {
+    "x": 135,
+    "y": -71.44709581221619
+   },
+   "to": {
+    "x": 135,
+    "y": 45.46633369868303
+   },
+   "height": 8.660254037844387,
+   "thickness": 0.8660254037844387,
+   "elevation": 0,
+   "footprint_cells": [
+    {
+     "x": 34,
+     "y": -15
+    },
+    {
+     "x": 33,
+     "y": -13
+    },
+    {
+     "x": 32,
+     "y": -11
+    },
+    {
+     "x": 31,
+     "y": -9
+    },
+    {
+     "x": 30,
+     "y": -7
+    },
+    {
+     "x": 29,
+     "y": -5
+    },
+    {
+     "x": 28,
+     "y": -3
+    },
+    {
+     "x": 27,
+     "y": -1
+    },
+    {
+     "x": 26,
+     "y": 1
+    },
+    {
+     "x": 25,
+     "y": 3
+    },
+    {
+     "x": 24,
+     "y": 5
+    },
+    {
+     "x": 23,
+     "y": 7
+    },
+    {
+     "x": 22,
+     "y": 9
+    }
+   ],
+   "openings": []
+  },
+  {
+   "id": "keep-north-east-wall",
+   "ref": "dnd5e:env:dark-fortress:45_wall_01",
+   "from": {
+    "x": 36.08439182435161,
+    "y": -71.44709581221619
+   },
+   "to": {
+    "x": 135,
+    "y": -71.44709581221619
+   },
+   "height": 8.660254037844387,
+   "thickness": 0.8660254037844387,
+   "elevation": 0,
+   "footprint_cells": [
+    {
+     "x": 15,
+     "y": -16
+    },
+    {
+     "x": 16,
+     "y": -16
+    },
+    {
+     "x": 17,
+     "y": -16
+    },
+    {
+     "x": 18,
+     "y": -16
+    },
+    {
+     "x": 19,
+     "y": -16
+    },
+    {
+     "x": 20,
+     "y": -16
+    },
+    {
+     "x": 21,
+     "y": -16
+    },
+    {
+     "x": 22,
+     "y": -16
+    },
+    {
+     "x": 23,
+     "y": -16
+    },
+    {
+     "x": 24,
+     "y": -16
+    },
+    {
+     "x": 25,
+     "y": -16
+    },
+    {
+     "x": 26,
+     "y": -16
+    },
+    {
+     "x": 27,
+     "y": -16
+    },
+    {
+     "x": 28,
+     "y": -16
+    },
+    {
+     "x": 29,
+     "y": -16
+    },
+    {
+     "x": 30,
+     "y": -16
+    },
+    {
+     "x": 31,
+     "y": -16
+    },
+    {
+     "x": 32,
+     "y": -16
+    },
+    {
+     "x": 33,
+     "y": -16
+    },
+    {
+     "x": 34,
+     "y": -16
+    }
+   ],
+   "openings": []
+  },
+  {
+   "id": "keep-north-west-wall",
+   "ref": "dnd5e:env:dark-fortress:45_wall_01",
+   "from": {
+    "x": -132.5,
+    "y": -71.44709581221619
+   },
+   "to": {
+    "x": -36.08439182435161,
+    "y": -71.44709581221619
+   },
+   "height": 8.660254037844387,
+   "thickness": 0.8660254037844387,
+   "elevation": 0,
+   "footprint_cells": [
+    {
+     "x": -18,
+     "y": -16
+    },
+    {
+     "x": -17,
+     "y": -16
+    },
+    {
+     "x": -16,
+     "y": -16
+    },
+    {
+     "x": -15,
+     "y": -16
+    },
+    {
+     "x": -14,
+     "y": -16
+    },
+    {
+     "x": -13,
+     "y": -16
+    },
+    {
+     "x": -12,
+     "y": -16
+    },
+    {
+     "x": -11,
+     "y": -16
+    },
+    {
+     "x": -10,
+     "y": -16
+    },
+    {
+     "x": -9,
+     "y": -16
+    },
+    {
+     "x": -8,
+     "y": -16
+    },
+    {
+     "x": -7,
+     "y": -16
+    },
+    {
+     "x": -6,
+     "y": -16
+    },
+    {
+     "x": -5,
+     "y": -16
+    },
+    {
+     "x": -4,
+     "y": -16
+    },
+    {
+     "x": -3,
+     "y": -16
+    },
+    {
+     "x": -2,
+     "y": -16
+    },
+    {
+     "x": -1,
+     "y": -16
+    },
+    {
+     "x": 0,
+     "y": -16
+    },
+    {
+     "x": 1,
+     "y": -16
+    }
+   ],
+   "openings": []
+  },
+  {
+   "id": "keep-west-wall",
+   "ref": "dnd5e:env:dark-fortress:45_wall_01",
+   "from": {
+    "x": -132.5,
+    "y": -71.44709581221619
+   },
+   "to": {
+    "x": -132.5,
+    "y": 45.46633369868303
+   },
+   "height": 8.660254037844387,
+   "thickness": 0.8660254037844387,
+   "elevation": 0,
+   "footprint_cells": [
+    {
+     "x": -18,
+     "y": -16
+    },
+    {
+     "x": -19,
+     "y": -14
+    },
+    {
+     "x": -20,
+     "y": -12
+    },
+    {
+     "x": -21,
+     "y": -10
+    },
+    {
+     "x": -22,
+     "y": -8
+    },
+    {
+     "x": -23,
+     "y": -6
+    },
+    {
+     "x": -24,
+     "y": -4
+    },
+    {
+     "x": -25,
+     "y": -2
+    },
+    {
+     "x": -26,
+     "y": 0
+    },
+    {
+     "x": -27,
+     "y": 2
+    },
+    {
+     "x": -28,
+     "y": 4
+    },
+    {
+     "x": -29,
+     "y": 6
+    },
+    {
+     "x": -30,
+     "y": 8
+    },
+    {
+     "x": -31,
+     "y": 10
+    }
+   ],
+   "openings": []
+  },
+  {
    "id": "kitchen-wall",
    "ref": "dnd5e:env:dark-fortress:45_wall_01",
    "from": {
@@ -7420,6 +8478,110 @@
      "width": 5.773502691896258
     }
    ]
+  },
+  {
+   "id": "throne-east-wall",
+   "ref": "dnd5e:env:dark-fortress:45_wall_01",
+   "from": {
+    "x": 35,
+    "y": -97.42785792574935
+   },
+   "to": {
+    "x": 35,
+    "y": -71.44709581221619
+   },
+   "height": 8.660254037844387,
+   "thickness": 0.8660254037844387,
+   "elevation": 0,
+   "footprint_cells": [
+    {
+     "x": 17,
+     "y": -21
+    },
+    {
+     "x": 16,
+     "y": -19
+    },
+    {
+     "x": 15,
+     "y": -17
+    },
+    {
+     "x": 15,
+     "y": -16
+    }
+   ],
+   "openings": []
+  },
+  {
+   "id": "throne-north-wall",
+   "ref": "dnd5e:env:dark-fortress:45_wall_01",
+   "from": {
+    "x": -32.50000000000001,
+    "y": -97.42785792574935
+   },
+   "to": {
+    "x": 35,
+    "y": -97.42785792574935
+   },
+   "height": 8.660254037844387,
+   "thickness": 0.8660254037844387,
+   "elevation": 0,
+   "footprint_cells": [
+    {
+     "x": 5,
+     "y": -22
+    },
+    {
+     "x": 6,
+     "y": -22
+    },
+    {
+     "x": 7,
+     "y": -22
+    },
+    {
+     "x": 8,
+     "y": -22
+    },
+    {
+     "x": 9,
+     "y": -22
+    },
+    {
+     "x": 10,
+     "y": -22
+    },
+    {
+     "x": 11,
+     "y": -22
+    },
+    {
+     "x": 12,
+     "y": -22
+    },
+    {
+     "x": 13,
+     "y": -22
+    },
+    {
+     "x": 14,
+     "y": -22
+    },
+    {
+     "x": 15,
+     "y": -22
+    },
+    {
+     "x": 16,
+     "y": -22
+    },
+    {
+     "x": 17,
+     "y": -22
+    }
+   ],
+   "openings": []
   },
   {
    "id": "throne-wall",
@@ -7556,6 +8718,248 @@
      "width": 5.773502691896258
     }
    ]
+  },
+  {
+   "id": "throne-west-wall",
+   "ref": "dnd5e:env:dark-fortress:45_wall_01",
+   "from": {
+    "x": -32.50000000000001,
+    "y": -97.42785792574935
+   },
+   "to": {
+    "x": -32.50000000000001,
+    "y": -71.44709581221619
+   },
+   "height": 8.660254037844387,
+   "thickness": 0.8660254037844387,
+   "elevation": 0,
+   "footprint_cells": [
+    {
+     "x": 5,
+     "y": -22
+    },
+    {
+     "x": 4,
+     "y": -20
+    },
+    {
+     "x": 3,
+     "y": -18
+    }
+   ],
+   "openings": []
+  },
+  {
+   "id": "yard-south-east-wall",
+   "ref": "dnd5e:env:dark-fortress:45_wall_01",
+   "from": {
+    "x": 27.424137786507227,
+    "y": 45.46633369868303
+   },
+   "to": {
+    "x": 135,
+    "y": 45.46633369868303
+   },
+   "height": 8.660254037844387,
+   "thickness": 0.8660254037844387,
+   "elevation": 0,
+   "footprint_cells": [
+    {
+     "x": 0,
+     "y": 10
+    },
+    {
+     "x": 1,
+     "y": 10
+    },
+    {
+     "x": 2,
+     "y": 10
+    },
+    {
+     "x": 3,
+     "y": 10
+    },
+    {
+     "x": 4,
+     "y": 10
+    },
+    {
+     "x": 5,
+     "y": 10
+    },
+    {
+     "x": 6,
+     "y": 10
+    },
+    {
+     "x": 7,
+     "y": 10
+    },
+    {
+     "x": 8,
+     "y": 10
+    },
+    {
+     "x": 9,
+     "y": 10
+    },
+    {
+     "x": 10,
+     "y": 10
+    },
+    {
+     "x": 11,
+     "y": 10
+    },
+    {
+     "x": 12,
+     "y": 10
+    },
+    {
+     "x": 13,
+     "y": 10
+    },
+    {
+     "x": 14,
+     "y": 10
+    },
+    {
+     "x": 15,
+     "y": 10
+    },
+    {
+     "x": 16,
+     "y": 10
+    },
+    {
+     "x": 17,
+     "y": 10
+    },
+    {
+     "x": 18,
+     "y": 10
+    },
+    {
+     "x": 19,
+     "y": 10
+    },
+    {
+     "x": 20,
+     "y": 10
+    },
+    {
+     "x": 21,
+     "y": 10
+    }
+   ],
+   "openings": []
+  },
+  {
+   "id": "yard-south-west-wall",
+   "ref": "dnd5e:env:dark-fortress:45_wall_01",
+   "from": {
+    "x": -132.5,
+    "y": 45.46633369868303
+   },
+   "to": {
+    "x": -27.424137786507227,
+    "y": 45.46633369868303
+   },
+   "height": 8.660254037844387,
+   "thickness": 0.8660254037844387,
+   "elevation": 0,
+   "footprint_cells": [
+    {
+     "x": -31,
+     "y": 10
+    },
+    {
+     "x": -30,
+     "y": 10
+    },
+    {
+     "x": -29,
+     "y": 10
+    },
+    {
+     "x": -28,
+     "y": 10
+    },
+    {
+     "x": -27,
+     "y": 10
+    },
+    {
+     "x": -26,
+     "y": 10
+    },
+    {
+     "x": -25,
+     "y": 10
+    },
+    {
+     "x": -24,
+     "y": 10
+    },
+    {
+     "x": -23,
+     "y": 10
+    },
+    {
+     "x": -22,
+     "y": 10
+    },
+    {
+     "x": -21,
+     "y": 10
+    },
+    {
+     "x": -20,
+     "y": 10
+    },
+    {
+     "x": -19,
+     "y": 10
+    },
+    {
+     "x": -18,
+     "y": 10
+    },
+    {
+     "x": -17,
+     "y": 10
+    },
+    {
+     "x": -16,
+     "y": 10
+    },
+    {
+     "x": -15,
+     "y": 10
+    },
+    {
+     "x": -14,
+     "y": 10
+    },
+    {
+     "x": -13,
+     "y": 10
+    },
+    {
+     "x": -12,
+     "y": 10
+    },
+    {
+     "x": -11,
+     "y": 10
+    },
+    {
+     "x": -10,
+     "y": 10
+    }
+   ],
+   "openings": []
   }
  ],
  "prop_presentations": [
