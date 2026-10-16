@@ -240,21 +240,23 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 		segmentSet(after.GetSegments()),
 		"segments after a reveal are segments before it plus the beat's, exactly")
 
-	// SEALED REPLACES, WITHIN THE ROOM, and cells LEAVE. Before the reveal her
-	// sealed list holds the footing the projection gave that wall: floor it
-	// stands on that belongs to a room she cannot see reaches her as ownerless,
-	// and ownerless floor is floor nobody stands on. The moment the vault is
-	// hers those same cells are ordinary vault floor. A client that appended
-	// the beat's sealed list instead of swapping the room's would leave a room
-	// it can see permanently unwalkable at its edges.
+	// SEALED AFTER THE REVEAL. Sealed after it is sealed before it, less the
+	// revealed room's cells, plus the beat's. Under fog of war R9 a presented
+	// wall teaches no footing hex and footing under a concealed room stays
+	// withheld, so before the reveal her sealed list holds none of the vault.
+	// With the before-sealed list and the vault disjoint, this room no longer
+	// tells a replace from an append: both give the same answer here. No
+	// failing case pins replace over append today; follow-up rpg-toolkit#2062
+	// adds one in the session module.
 	vault := offsetCells(dungeonstest.ConcealedVaultVaultCells)
 	beforeSealed := setOfPositions(before.GetSealed())
 	afterSealed := setOfPositions(after.GetSealed())
 	require.Equal(t, beforeSealed.without(vault).union(setOfPositions(revealed.GetSealed())),
 		afterSealed,
 		"sealed after a reveal is sealed before it, less the revealed room's cells, plus the beat's")
-	require.NotEmpty(t, beforeSealed.without(afterSealed),
-		"cells have to LEAVE the sealed list, or this assertion would pass on an append too")
+	// The vault's footing never arrived before the reveal (fog of war R9).
+	require.Equal(t, beforeSealed, beforeSealed.without(vault),
+		"the vault's footing is withheld until sight reaches it (fog of war R9)")
 }
 
 // doorIDsOf and doorwayConnectionsOf read a reveal's door and doorway lists by

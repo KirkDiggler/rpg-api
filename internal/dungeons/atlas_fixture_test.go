@@ -36,7 +36,10 @@ import (
 // AND the-mad-king-cells.atlas.json (rpg-project#569, the first studio-authored
 // castle room) was captured at its own content commit's base, origin/dev
 // 8f22676a, with no Go change in the commit: a change detector from there on,
-// vouched for by the operator's play of the room on 2026-10-15.
+// vouched for by the operator's play of the room on 2026-10-15. It was
+// recaptured at rpg-api#1111's own head for fog of war R9, which adds
+// footprint_cells to its four structural walls. That field is the only
+// change to the captured atlas.
 func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBeforeTheWave() {
 	files, err := filepath.Glob(filepath.Join(dungeonstest.ContentDir(s.T()), "*.yaml"))
 	s.Require().NoError(err)

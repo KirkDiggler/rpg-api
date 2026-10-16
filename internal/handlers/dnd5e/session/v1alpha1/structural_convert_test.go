@@ -8,6 +8,7 @@ import (
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
 
 // Non-default values distinguish a missing field, unit conversion, and an
@@ -20,6 +21,9 @@ func structuralAtlasFixture() sdk.Atlas {
 			From: sdk.FootprintPoint{X: 13.25, Y: -7.5}, To: sdk.FootprintPoint{X: 21.75, Y: 4.125},
 			Height: 8.75, Thickness: 0.66, Elevation: -1.25,
 			Openings: []sdk.AtlasStructuralOpening{{ID: "cut-a", Position: 4.5, Width: 2.75}},
+			// Deliberately not in coordinate order: the session hands them in
+			// line order, and a converter that sorted would reorder them.
+			FootprintCells: []spatial.Position{{X: 14, Y: -7}, {X: 13, Y: -5}, {X: 21, Y: 4}},
 		}},
 		StructuralDoors: []sdk.AtlasStructuralDoor{{
 			ID: "keep/gate", Ref: "content:gate",
@@ -34,7 +38,8 @@ func expectedStructuralWall() *sessionpb.AtlasStructuralWall {
 		Id: "wall-a", Ref: "content:stone-wall",
 		From: &sessionpb.FootprintPoint{X: 13.25, Y: -7.5}, To: &sessionpb.FootprintPoint{X: 21.75, Y: 4.125},
 		Height: 8.75, Thickness: 0.66, Elevation: -1.25,
-		Openings: []*sessionpb.AtlasStructuralOpening{{Id: "cut-a", Position: 4.5, Width: 2.75}},
+		Openings:       []*sessionpb.AtlasStructuralOpening{{Id: "cut-a", Position: 4.5, Width: 2.75}},
+		FootprintCells: []*sessionpb.Position{{X: 14, Y: -7}, {X: 13, Y: -5}, {X: 21, Y: 4}},
 	}
 }
 
@@ -71,6 +76,19 @@ func (s *StructuralConversionSuite) TestSnapshotCarriesAllFieldsWithoutChangingU
 	s.Equal(13.25, in.StructuralWalls[0].From.X)
 	s.Equal(2.75, in.StructuralWalls[0].Openings[0].Width)
 	s.Equal(-2.75, in.StructuralDoors[0].To.Y)
+}
+
+// The footing hexes are what a client grades a wall's stretches by (fog of
+// war R9), so they cross in the session's line order, cell for cell. The
+// same converter serves the atlas and every reveal beat, which checkRows
+// covers through the expected row.
+func (s *StructuralConversionSuite) TestWallCarriesItsFootprintCellsInLineOrder() {
+	in := structuralAtlasFixture()
+	got := AtlasToProto(&in).StructuralWalls[0].GetFootprintCells()
+	for i, want := range [][2]float64{{14, -7}, {13, -5}, {21, 4}} {
+		s.Require().Greaterf(len(got), i, "footprint cell %d is missing", i)
+		s.Equal(want, [2]float64{got[i].GetX(), got[i].GetY()}, "footprint cell %d", i)
+	}
 }
 
 func (s *StructuralConversionSuite) TestBothRevealKindsCarryTheSameProviderRows() {
