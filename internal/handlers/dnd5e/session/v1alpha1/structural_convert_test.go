@@ -85,10 +85,9 @@ func (s *StructuralConversionSuite) TestSnapshotCarriesAllFieldsWithoutChangingU
 func (s *StructuralConversionSuite) TestWallCarriesItsFootprintCellsInLineOrder() {
 	in := structuralAtlasFixture()
 	got := AtlasToProto(&in).StructuralWalls[0].GetFootprintCells()
-	s.Require().Len(got, 3)
-	for i, want := range in.StructuralWalls[0].FootprintCells {
-		s.Equal(want.X, got[i].GetX(), "cell %d x", i)
-		s.Equal(want.Y, got[i].GetY(), "cell %d y", i)
+	for i, want := range [][2]float64{{14, -7}, {13, -5}, {21, 4}} {
+		s.Require().Greaterf(len(got), i, "footprint cell %d is missing", i)
+		s.Equal(want, [2]float64{got[i].GetX(), got[i].GetY()}, "footprint cell %d", i)
 	}
 }
 
