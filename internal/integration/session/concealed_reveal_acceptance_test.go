@@ -245,8 +245,9 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 	// wall teaches no footing hex and footing under a concealed room stays
 	// withheld, so before the reveal her sealed list holds none of the vault.
 	// With the before-sealed list and the vault disjoint, this room no longer
-	// tells a replace from an append: both give the same answer here. The
-	// replace rule is pinned in the session module, not by this test.
+	// tells a replace from an append: both give the same answer here. No
+	// failing case pins replace over append today; follow-up rpg-toolkit#2062
+	// adds one in the session module.
 	vault := offsetCells(dungeonstest.ConcealedVaultVaultCells)
 	beforeSealed := setOfPositions(before.GetSealed())
 	afterSealed := setOfPositions(after.GetSealed())
