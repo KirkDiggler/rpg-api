@@ -35,9 +35,14 @@ import (
 // recaptured again at rpg-toolkit 1d590c5b. Two partition walls close the
 // kitchen and chapel off as their own regions. The chapel wall and its door
 // move onto the hex boundary, which frees the four sealed cells the wall
-// stood on. It was recaptured last at rpg-toolkit 8c9c4495, where the
+// stood on. It was recaptured at rpg-toolkit 8c9c4495, where the
 // kitchen wall and its door do the same. Its four sealed cells and the
-// one-cell space beside it join the kitchen, and nothing is sealed.
+// one-cell space beside it join the kitchen, and nothing is sealed. It was
+// recaptured at rpg-toolkit d39830fa, the fold (rpg-project#611): the cells
+// room and the kitchen's orders join the castle and the south front moves
+// four rows north. Cells go from 1563 to 1447, structural walls from 19 to
+// 23, doors from 5 to 6, placed from 51 to 62, props from 3 to 4 and
+// regions from 6 to 7, and the cells block takes the id room-1-region.
 func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBeforeTheWave() {
 	files, err := filepath.Glob(filepath.Join(dungeonstest.ContentDir(s.T()), "*.yaml"))
 	s.Require().NoError(err)
