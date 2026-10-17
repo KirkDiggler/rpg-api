@@ -13,9 +13,11 @@ import (
 	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 )
 
-// castleKitchenPath is the shipped walk dungeon for authored stat blocks
-// (rpg-project#555), read from the content tree like the tomb.
-var castleKitchenPath = filepath.Join("..", "..", "content", "castle-kitchen.yaml")
+// castleKitchenPath is the walk dungeon for authored stat blocks
+// (rpg-project#555), a test fixture since it left the shelf
+// (rpg-project#611). Read by path: dungeonstest's reader imports this
+// package.
+var castleKitchenPath = filepath.Join("..", "dungeons", "testdata", "castle-kitchen.yaml")
 
 type TemplatesSuite struct {
 	suite.Suite
@@ -29,7 +31,7 @@ func TestTemplatesSuite(t *testing.T) {
 
 func (s *TemplatesSuite) SetupTest() {
 	raw, err := os.ReadFile(castleKitchenPath)
-	s.Require().NoError(err, "the castle must exist at content/castle-kitchen.yaml")
+	s.Require().NoError(err, "the kitchen must exist at internal/dungeons/testdata/castle-kitchen.yaml")
 	s.castle = raw
 }
 
@@ -159,9 +161,7 @@ func (s *TemplatesSuite) TestCompile_ReferenceDungeonsDeclareNoTemplates() {
 	s.Require().NotEmpty(paths)
 
 	templated := map[string]bool{
-		castleKitchenPath: true,
-		filepath.Join("..", "..", "content", "the-mad-king-cells.yaml"): true,
-		filepath.Join("..", "..", "content", "the-mad-king.yaml"):       true,
+		filepath.Join("..", "..", "content", "the-mad-king.yaml"): true,
 	}
 
 	for _, path := range paths {
