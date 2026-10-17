@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	castleKitchen = "castle-kitchen"
+	castleKitchen = dungeonstest.CastleKitchenKey
 	storeMyCastle = "my-castle"
 	storeMyKeep   = "my-keep"
 	storeBobKeep  = "bob-keep"
@@ -28,7 +28,8 @@ var (
 )
 
 // StoresSuite is the two-store registry over a real shipped store (a temp
-// copy of content/) and a real world store over miniredis.
+// copy of content/ with the castle kitchen fixture staged in as a reference)
+// and a real world store over miniredis.
 type StoresSuite struct {
 	suite.Suite
 	ctx     context.Context
@@ -43,9 +44,7 @@ func (s *StoresSuite) SetupTest() {
 	s.ctx = context.Background()
 	s.dir = dungeonstest.ScratchDir(s.T())
 	s.world = dungeonstest.WorldStore(s.T())
-	raw, err := os.ReadFile(filepath.Join(s.dir, castleKitchen+".yaml"))
-	s.Require().NoError(err)
-	s.kitchen = raw
+	s.kitchen = dungeonstest.StageCastleKitchen(s.T(), s.dir)
 }
 
 func (s *StoresSuite) registry(authoring bool) dungeons.Registry {

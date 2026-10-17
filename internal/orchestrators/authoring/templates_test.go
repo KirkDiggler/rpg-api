@@ -2,8 +2,6 @@ package authoring_test
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,9 +11,9 @@ import (
 	authoringorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
 )
 
-// castleKitchenKey is the shipped walk dungeon for authored stat blocks
-// (rpg-project#555).
-const castleKitchenKey = "castle-kitchen"
+// castleKitchenKey is the walk dungeon for authored stat blocks
+// (rpg-project#555), a test fixture since it left the shelf (rpg-project#611).
+const castleKitchenKey = dungeonstest.CastleKitchenKey
 
 // TemplatesSuite pins that PutDungeon carries a template's refusal to the
 // author as a field error, over the real registry and the real dungeonspec.
@@ -36,18 +34,16 @@ func TestTemplatesSuite(t *testing.T) {
 func (s *TemplatesSuite) SetupTest() {
 	s.ctx = context.Background()
 
-	registry, dir := dungeonstest.ScratchReadOnly(s.T())
+	registry, _ := dungeonstest.ScratchReadOnly(s.T())
 	orch, err := authoringorch.New(&authoringorch.Config{Dungeons: registry})
 	s.Require().NoError(err)
 	s.orch = orch
 
-	raw, err := os.ReadFile(filepath.Join(dir, castleKitchenKey+".yaml")) //nolint:gosec // dir is t.TempDir()
-	s.Require().NoError(err)
-	s.yaml = dungeonstest.AsKey(s.T(), raw, castleKitchenKey, castleKitchenCopyKey)
+	s.yaml = dungeonstest.AsKey(s.T(), dungeonstest.CastleKitchenYAML(s.T()), castleKitchenKey, castleKitchenCopyKey)
 }
 
-// castleKitchenCopyKey is the author's own copy of the castle: the shipped
-// key is a reference and refuses a grade (design R20).
+// castleKitchenCopyKey is the author's own copy of the kitchen, the key a
+// grade runs under (design R20).
 const castleKitchenCopyKey = "my-castle-kitchen"
 
 func (s *TemplatesSuite) put(yaml []byte) *authoringorch.PutDungeonOutput {

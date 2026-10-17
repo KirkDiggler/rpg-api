@@ -197,6 +197,13 @@ func copyFile(t testing.TB, src, dst string) {
 	if err != nil {
 		t.Fatalf("dungeonstest: read %s: %v", src, err)
 	}
+	writeFile(t, dst, raw)
+}
+
+// writeFile writes one content file into a scratch directory.
+func writeFile(t testing.TB, dst string, raw []byte) {
+	t.Helper()
+
 	if err := os.WriteFile(dst, raw, 0o600); err != nil { //nolint:gosec // dst is t.TempDir() + a content filename
 		t.Fatalf("dungeonstest: write %s: %v", dst, err)
 	}

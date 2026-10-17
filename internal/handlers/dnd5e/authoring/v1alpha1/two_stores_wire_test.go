@@ -31,13 +31,14 @@ import (
 )
 
 const (
-	wireKitchen  = "castle-kitchen"
+	wireKitchen  = dungeonstest.CastleKitchenKey
 	wireMyCastle = "my-castle"
 	wireMyKeep   = "my-keep"
 )
 
 // TwoStoresWireSuite is S7-A5's seam: the real authoring and lobby handlers
-// over one real two-store registry (a temp copy of content/ and a world
+// over one real two-store registry (a temp copy of content/ with the castle
+// kitchen fixture staged in as a reference, and a world
 // store over miniredis), with contexts carrying the world and the player as
 // the auth boundary installs them. Alice and bob share w1; carol is in w2.
 type TwoStoresWireSuite struct {
@@ -72,6 +73,7 @@ func (s *TwoStoresWireSuite) SetupTest() {
 	projector := dungeonstest.ProjectorFor(sessOrch.Manager)
 
 	s.dir = dungeonstest.ScratchDir(s.T())
+	s.kitchen = dungeonstest.StageCastleKitchen(s.T(), s.dir)
 	shipped, err := dungeons.NewFileRegistry(s.dir, projector)
 	s.Require().NoError(err)
 	world, err := worlddungeons.NewRedis(&worlddungeons.RedisConfig{Client: client})
@@ -95,10 +97,6 @@ func (s *TwoStoresWireSuite) SetupTest() {
 	s.Require().NoError(err)
 	s.lobby, err = lobbyhandler.New(&lobbyhandler.HandlerConfig{Orchestrator: lOrch, Broker: broker})
 	s.Require().NoError(err)
-
-	raw, err := os.ReadFile(filepath.Join(s.dir, wireKitchen+".yaml")) //nolint:gosec // dir is t.TempDir()
-	s.Require().NoError(err)
-	s.kitchen = raw
 }
 
 func (s *TwoStoresWireSuite) file(key string) string {

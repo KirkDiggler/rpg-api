@@ -19,32 +19,16 @@ import (
 // shipped dungeon with no fixture fails here: add one by capturing it from a
 // build whose atlas you trust, never from the build under test.
 //
-// ONE EXCEPTION, said out loud: castle-kitchen.atlas.json was captured at
-// rpg-api#1090's own head, because no earlier build can compile a dungeon
-// that places templates (rpg-project#555). It proves nothing about
-// correctness — it is a change detector from that head on, vouched for by
-// the #555 walk rather than by an earlier build. It holds nothing derived
-// from a template: the atlas is cells, the orders prop, the region and the
-// party start.
-//
-// AND ONE CAPTURE THAT NEEDED A STRIPPED COPY: reference-hearing.atlas.json
+// ONE CAPTURE THAT NEEDED A STRIPPED COPY: reference-hearing.atlas.json
 // (rpg-project#569) was captured from origin/dev at 1dd537bb from the hearing
 // room with every `on:` table removed, because that build cannot compile the
 // `heard`, `path` and time-row `fact` words. The atlas holds no table, and the
 // full file at the hearing branch's head answers the identical atlas.
 //
-// AND the-mad-king-cells.atlas.json (rpg-project#569, the first studio-authored
-// castle room) was captured at its own content commit's base, origin/dev
-// 8f22676a, with no Go change in the commit: a change detector from there on,
-// vouched for by the operator's play of the room on 2026-10-15. It was
-// recaptured at rpg-api#1111's own head for fog of war R9, which adds
-// footprint_cells to its four structural walls. That field is the only
-// change to the captured atlas.
-//
 // AND the-mad-king.atlas.json (rpg-project#605, the whole castle as one
 // studio document) was captured at the commit that added it, because no
-// earlier build carries the castle file: like the kitchen's, a change
-// detector from that commit on, not proof of correctness. It was recaptured
+// earlier build carries the castle file: a change detector from that commit
+// on, not proof of correctness. It was recaptured
 // when the castle took rpg-toolkit d428cf40's twelve outer wall lines: twelve
 // structural walls with no openings, and their twelve wall props and twelve
 // spans in placed, are the only change to the captured atlas. It was

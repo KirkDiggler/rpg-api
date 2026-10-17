@@ -3,6 +3,10 @@
 # whose creatures' numbers are written IN THE FILE rather than looked up in
 # the rulebook.
 #
+# TEST CONTENT since rpg-project#611: the castle (content/the-mad-king.yaml)
+# absorbed the kitchen, and this file left the shelf for the api suites that
+# grade templates and pin what a reference refuses.
+#
 # Started from rpg-toolkit's dungeonspec fixture
 # testdata/world-builder-v4-castle-kitchen.yaml; this copy adds the captain,
 # the second cook, the alarm and the watch's `until`.
