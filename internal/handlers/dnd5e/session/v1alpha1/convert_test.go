@@ -1654,6 +1654,35 @@ func TestSeenToProto_UnobservedStandingIsNotGuessed(t *testing.T) {
 	require.Equal(t, 2.0, got.GetPosition().GetY())
 }
 
+// TestSeenToProto_Facing pins rpg-project#582 (sneaking R13): an observed
+// facing crosses the wire as the same compass bearing the toolkit holds, and
+// an unobserved one stays unset rather than becoming "facing north".
+func TestSeenToProto_Facing(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		facing *float64
+		want   *float64
+	}{
+		{name: "west passes through", facing: ptrFloat(270), want: ptrFloat(270)},
+		{name: "north is a present zero", facing: ptrFloat(0), want: ptrFloat(0)},
+		{name: "fraction survives", facing: ptrFloat(359.5), want: ptrFloat(359.5)},
+		{name: "unobserved stays unset", facing: nil, want: nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := seenToProto(&sdk.Seen{Position: spatial.Position{X: 1, Y: 2}, Facing: tc.facing})
+			require.NotNil(t, got)
+			if tc.want == nil {
+				require.Nil(t, got.FacingDegrees)
+				return
+			}
+			require.NotNil(t, got.FacingDegrees)
+			require.Equal(t, *tc.want, got.GetFacingDegrees())
+		})
+	}
+}
+
+func ptrFloat(v float64) *float64 { return &v }
+
 // TestSightingToProto_CarriesName pins rpg-dnd5e-web#564: names, not ids --
 // anything an observer can sight, they can name.
 func TestSightingToProto_CarriesName(t *testing.T) {

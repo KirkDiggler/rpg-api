@@ -336,6 +336,15 @@ func seenToProto(s *sdk.Seen) *sessionpb.Seen {
 	if s.Standing != nil {
 		out.Standing = standingToProto(*s.Standing)
 	}
+	// Facing is a compass bearing (0 = map north = -Y of the footprint
+	// plane, 90 = +X, clockwise) and the wire speaks the same frame, so the
+	// number passes through unchanged (rpg-project#582, sneaking R13). Nil is
+	// testimony that predates facing, not "facing north": it stays unset. The
+	// value is copied so the wire message never aliases the toolkit's Seen.
+	if s.Facing != nil {
+		facing := *s.Facing
+		out.FacingDegrees = &facing
+	}
 	return out
 }
 
