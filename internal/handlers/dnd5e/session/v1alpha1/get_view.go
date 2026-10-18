@@ -33,6 +33,9 @@ func viewToProto(in *sdk.ViewOutput) *sessionpb.GetViewResponse {
 		// The viewer's own mode (rpg-project#606, R6), the encounter's answer
 		// carried as given; the client draws its toggle from this.
 		Sneaking: in.Sneaking,
+		// The red floor (rpg-project#619, R15): the session's zones, carried
+		// unchanged; the client computes none.
+		WatchZones: watchZonesToProto(in.WatchZones),
 	}
 	// SEEN NOW, COPIED IN ORDER (rpg-project#586 R1). The encounter's answer
 	// for this one seat -- never a party union, never derived here. A placed
