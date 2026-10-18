@@ -769,6 +769,12 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 	// the proto, deprecated; nothing maps to them any more.
 	case sdk.EventDiscoveryChecked:
 		return sessionpb.EventKind_EVENT_KIND_DISCOVERY_CHECKED
+	// A sneaker's Stealth roll against one watcher (rpg-project#606, R12).
+	// It lands in the same change as its body below: demoted to
+	// EVENT_KIND_UNKNOWN the body would stay nil, and the sneaker would never
+	// learn a roll was made against them.
+	case sdk.EventSnuck:
+		return sessionpb.EventKind_EVENT_KIND_SNUCK
 	case sdk.EventConcealmentRevealed:
 		return sessionpb.EventKind_EVENT_KIND_CONCEALMENT_REVEALED
 	// DISCOVERY IS BY CELL (rpg-project#586 R1). Each learning moment reaches
@@ -1529,6 +1535,18 @@ func setWorldEventBody(evt *sessionpb.Event, body sdk.EventBody) error {
 			return err
 		}
 		evt.Body = &sessionpb.Event_Heard{Heard: heard}
+	case sdk.SnuckBody:
+		// CARRIED, NEVER COMPARED (rpg-project#606, R12). Beaten is the
+		// rulebook's verdict and rides as given; an empty Watcher is "a
+		// watcher the mover cannot see" and stays empty on the wire.
+		calculation, err := rollCalculationToProto(b.Calculation)
+		if err != nil {
+			return err
+		}
+		evt.Body = &sessionpb.Event_Snuck{Snuck: &sessionpb.Snuck{
+			Member: b.Member, Watcher: b.Watcher, Dc: int32(b.DC),
+			Total: int32(b.Total), Beaten: b.Beaten, Calculation: calculation,
+		}}
 	default:
 		// nil (no typed body for this kind) or a body type this build does
 		// not recognize: leave evt.Body nil. payload stays the passthrough

@@ -53,6 +53,7 @@ type Manager interface {
 	Unlock(ctx context.Context, in *sdk.UnlockInput) (*sdk.UnlockOutput, error)
 	Speak(ctx context.Context, in *sdk.SpeakInput) (*sdk.SpeakOutput, error)
 	SetDiscoverySharing(ctx context.Context, in *sdk.SetDiscoverySharingInput) (*sdk.SetDiscoverySharingOutput, error)
+	SetSneaking(ctx context.Context, in *sdk.SetSneakingInput) (*sdk.SetSneakingOutput, error)
 	Interact(ctx context.Context, in *sdk.InteractInput) (*sdk.InteractOutput, error)
 	Loot(ctx context.Context, in *sdk.LootInput) (*sdk.LootOutput, error)
 	Hold(ctx context.Context, in *sdk.HoldInput) (*sdk.HoldOutput, error)

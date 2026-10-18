@@ -28,7 +28,12 @@ func (h *Handler) GetView(ctx context.Context, req *sessionpb.GetViewRequest) (*
 }
 
 func viewToProto(in *sdk.ViewOutput) *sessionpb.GetViewResponse {
-	out := &sessionpb.GetViewResponse{Sightings: sightingsToProto(in.Sightings), Areas: sightAreasToProto(in.Areas)}
+	out := &sessionpb.GetViewResponse{
+		Sightings: sightingsToProto(in.Sightings), Areas: sightAreasToProto(in.Areas),
+		// The viewer's own mode (rpg-project#606, R6), the encounter's answer
+		// carried as given; the client draws its toggle from this.
+		Sneaking: in.Sneaking,
+	}
 	// SEEN NOW, COPIED IN ORDER (rpg-project#586 R1). The encounter's answer
 	// for this one seat -- never a party union, never derived here. A placed
 	// member always sees its own cell, so a seated member's list is never
