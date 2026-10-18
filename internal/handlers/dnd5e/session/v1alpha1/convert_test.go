@@ -3213,3 +3213,70 @@ func TestDeclarationToProto_CarriesActionInformationFieldForField(t *testing.T) 
 		require.True(t, proto.Equal(a, b), "information changes nothing else on the row")
 	})
 }
+
+// TestGetView_WatchZonesConvertWatcherForWatcherCellForCell: the red floor
+// (rpg-project#619, sneaking R15) is the session's answer carried unchanged.
+// Each zone keeps its watcher and its cells in order, through the same
+// position converter visible_cells uses; an empty answer sends no zones.
+func TestGetView_WatchZonesConvertWatcherForWatcherCellForCell(t *testing.T) {
+	type zone struct {
+		Watcher string
+		Cells   []spatial.Position
+	}
+	cases := []struct {
+		name string
+		in   []sdk.WatchZone
+		want []zone
+	}{
+		{
+			name: "two zones",
+			in: []sdk.WatchZone{
+				{Watcher: "monster:knight-1", Cells: []spatial.Position{{X: 2, Y: -1}, {X: 3, Y: -1}, {X: 3, Y: 0}}},
+				{Watcher: "monster:knight-2", Cells: []spatial.Position{{X: -4, Y: 5}}},
+			},
+			want: []zone{
+				{Watcher: "monster:knight-1", Cells: []spatial.Position{{X: 2, Y: -1}, {X: 3, Y: -1}, {X: 3, Y: 0}}},
+				{Watcher: "monster:knight-2", Cells: []spatial.Position{{X: -4, Y: 5}}},
+			},
+		},
+		{
+			// A watcher the viewer holds live whose zone is empty still names
+			// itself; the zone carries no cells.
+			name: "a zone of zero cells",
+			in:   []sdk.WatchZone{{Watcher: "monster:knight-1", Cells: []spatial.Position{}}},
+			want: []zone{{Watcher: "monster:knight-1"}},
+		},
+		{name: "empty list", in: []sdk.WatchZone{}, want: nil},
+		{name: "nil list", in: nil, want: nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := viewToProto(&sdk.ViewOutput{WatchZones: tc.in})
+			var got []zone
+			for _, z := range resp.GetWatchZones() {
+				g := zone{Watcher: z.GetWatcher()}
+				for _, c := range z.GetCells() {
+					g.Cells = append(g.Cells, positionFromProto(c))
+				}
+				got = append(got, g)
+			}
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// TestGetView_WatchZoneCellsReadTheirLiteralWireFields: the round trip above
+// reads cells back through positionFromProto, so a swap made in both
+// converters would pass it. This reads the proto message's own fields: the
+// session's X=2, Y=-1 must arrive as x=2, y=-1 on the wire.
+func TestGetView_WatchZoneCellsReadTheirLiteralWireFields(t *testing.T) {
+	resp := viewToProto(&sdk.ViewOutput{WatchZones: []sdk.WatchZone{
+		{Watcher: "monster:knight-1", Cells: []spatial.Position{{X: 2, Y: -1}}},
+	}})
+	require.NotEmpty(t, resp.GetWatchZones())
+	z := resp.GetWatchZones()[0]
+	require.Equal(t, "monster:knight-1", z.GetWatcher())
+	require.NotEmpty(t, z.GetCells())
+	require.Equal(t, 2.0, z.GetCells()[0].GetX())
+	require.Equal(t, -1.0, z.GetCells()[0].GetY())
+}

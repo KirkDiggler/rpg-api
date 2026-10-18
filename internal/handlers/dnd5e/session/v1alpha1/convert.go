@@ -26,6 +26,25 @@ func positionToProto(p spatial.Position) *sessionpb.Position {
 	return &sessionpb.Position{X: p.X, Y: p.Y}
 }
 
+// watchZonesToProto carries the session's red floor onto the wire
+// (rpg-project#619, sneaking R15): one WatchZone per watcher, in the order
+// the session answered, each cell through positionToProto exactly as
+// visible_cells is. The api computes no zone; an empty answer stays empty.
+func watchZonesToProto(in []sdk.WatchZone) []*sessionpb.WatchZone {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]*sessionpb.WatchZone, 0, len(in))
+	for _, z := range in {
+		w := &sessionpb.WatchZone{Watcher: z.Watcher}
+		for _, c := range z.Cells {
+			w.Cells = append(w.Cells, positionToProto(c))
+		}
+		out = append(out, w)
+	}
+	return out
+}
+
 // positionFromProto mirrors the wire Position onto spatial.Position. A nil
 // proto position (unset field) becomes the zero Position -- callers that
 // require a position validate its presence themselves via the SDK's own
