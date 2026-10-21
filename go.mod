@@ -3,7 +3,7 @@ module github.com/KirkDiggler/rpg-api
 go 1.25.14
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20261018080735-84717feb4897
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20261021054429-02b7470cf24b
 	github.com/KirkDiggler/rpg-toolkit/core v0.12.0
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.3
@@ -40,7 +40,7 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/mind/behavior v0.8.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/mind/perception v0.3.0 // indirect
 	github.com/KirkDiggler/rpg-toolkit/play/intel v0.4.0 // indirect
-	github.com/KirkDiggler/rpg-toolkit/play/record v0.1.1-0.20261021054258-6f9cc5590526 // indirect
+	github.com/KirkDiggler/rpg-toolkit/play/record v0.2.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
