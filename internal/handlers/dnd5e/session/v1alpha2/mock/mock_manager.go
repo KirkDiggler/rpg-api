@@ -41,6 +41,21 @@ func (m *MockManager) EXPECT() *MockManagerMockRecorder {
 	return m.recorder
 }
 
+// Acts mocks base method.
+func (m *MockManager) Acts(ctx context.Context, in *session.ActsInput) (*session.ActsOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Acts", ctx, in)
+	ret0, _ := ret[0].(*session.ActsOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Acts indicates an expected call of Acts.
+func (mr *MockManagerMockRecorder) Acts(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Acts", reflect.TypeOf((*MockManager)(nil).Acts), ctx, in)
+}
+
 // Record mocks base method.
 func (m *MockManager) Record(ctx context.Context, in *session.RecordReadInput) (*session.RecordReadOutput, error) {
 	m.ctrl.T.Helper()
