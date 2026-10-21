@@ -41,6 +41,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	sessionhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1"
+	sessionstory "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha2"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -337,7 +338,11 @@ func acceptanceHairAppearance() *customization.Appearance {
 // walk a multi-room world, meet a monster by sight, fight it, disengage,
 // and recover its own position and the full story after the fact.
 type acceptanceHarness struct {
-	handler  *sessionhandler.Handler
+	handler *sessionhandler.Handler
+	// story is the v1alpha2 StoryService over the same orchestrator: the act
+	// stream every scene reads what happened from, since the v1 event stream
+	// was deleted (rpg-project#631).
+	story    *sessionstory.StoryHandler
 	charRepo characterrepo.Repository
 	manager  *sessionorch.Orchestrator
 
@@ -384,11 +389,11 @@ func newAcceptanceHarnessWith(t *testing.T, roller sdk.Roller, driver sdk.TurnDr
 	require.NoError(t, err)
 
 	h, err := sessionhandler.New(&sessionhandler.HandlerConfig{
-		Manager: orch.Manager, Broker: orch.Broker, Characters: charRepo,
+		Manager: orch.Manager, Characters: charRepo,
 	})
 	require.NoError(t, err)
 
-	return &acceptanceHarness{handler: h, charRepo: charRepo, manager: orch, redis: client}
+	return &acceptanceHarness{handler: h, story: newStoryHandler(t, orch, charRepo), charRepo: charRepo, manager: orch, redis: client}
 }
 
 func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {

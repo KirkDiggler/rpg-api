@@ -51,8 +51,22 @@ func GameMethodPermission(method string) (Permissions, bool) {
 		switch name {
 		case "Join", "Exit", "Move", "Attack", "DeathSave", "OpenDoor", "CloseDoor", "Unlock", "Search", "SetDiscoverySharing", "SetSneaking", "Interact",
 			"Trade", "Unpack", "Loot", "Hold", "Turn", "Rest",
-			"Afford", "Activate", "Cast", "React", "Speak", "Intimidate", "Persuade", "EndTurn", "Dissolve", "End", "GetStatus", "GetStory", "GetView",
-			"GetWhere", "GetAtlas", "GetRoster", "GetDoors", "GetKnowledge", "GetSeat", "StreamEvents":
+			"Afford", "Activate", "Cast", "React", "Speak", "Intimidate", "Persuade", "EndTurn", "Dissolve", "End", "GetStatus", "GetView",
+			"GetWhere", "GetAtlas", "GetRoster", "GetDoors", "GetKnowledge", "GetSeat":
+			return PermissionPlay, true
+		}
+	// The act stream and the record (session v1alpha2, rpg-project#630 and
+	// #628): what a seated player reads the session from. The v1alpha1
+	// StreamEvents and GetStory they replace are deliberately unclassified
+	// (rpg-project#631): nothing serves them, so they are denied.
+	case "dnd5e.api.session.v1alpha2.StoryService":
+		switch name {
+		case "StreamEvents", "GetStory":
+			return PermissionPlay, true
+		}
+	case "dnd5e.api.session.v1alpha2.RecordService":
+		switch name {
+		case "StreamRecord", "GetRecord":
 			return PermissionPlay, true
 		}
 	case "dnd5e.api.session.presentation.v1alpha1.SessionPresentationService":

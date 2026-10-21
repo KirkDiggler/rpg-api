@@ -85,7 +85,7 @@ func TestGetStoryMatchesLiveEvents(t *testing.T) {
 			t.Logf("alice's StreamEvents call returned an error: %v", streamErr)
 		}
 	}()
-	waitForLive(t, h.manager.Broker, session, "alice", stream)
+	waitForLive(t, nil, session, "alice", stream)
 	baseline := len(stream.snapshot())
 
 	// Alice has nothing to do this turn -- three cells out with no movement

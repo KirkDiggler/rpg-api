@@ -12,7 +12,6 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
-	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 )
@@ -66,7 +65,6 @@ func TestEveryMemberTakingVerbRefusesAMissingMember(t *testing.T) {
 
 			h, err := New(&HandlerConfig{
 				Manager:    manager,
-				Broker:     sessionorch.NewBroker(),
 				Characters: characters,
 			})
 			require.NoError(t, err)
@@ -156,10 +154,6 @@ func memberTakingVerbs(member string) map[string]func(ctx context.Context, h *Ha
 			})
 			return err
 		},
-		"GetStory": func(ctx context.Context, h *Handler) error {
-			_, err := h.GetStory(ctx, &sessionpb.GetStoryRequest{Session: "sess-1", Member: member})
-			return err
-		},
 		"GetView": func(ctx context.Context, h *Handler) error {
 			_, err := h.GetView(ctx, &sessionpb.GetViewRequest{Session: "sess-1", Member: member})
 			return err
@@ -168,19 +162,12 @@ func memberTakingVerbs(member string) map[string]func(ctx context.Context, h *Ha
 			_, err := h.GetWhere(ctx, &sessionpb.GetWhereRequest{Session: "sess-1", Member: member})
 			return err
 		},
-		"StreamEvents": func(ctx context.Context, h *Handler) error {
-			return h.StreamEvents(
-				&sessionpb.StreamEventsRequest{Session: "sess-1", Member: member},
-				newCapturingStream(ctx),
-			)
-		},
 	}
 }
 
 // TestEveryMemberTakingVerbRefusesAnEmptyMember pins the other half of the
 // gate. An unnamed member cannot be one this caller owns, so the ownership
-// question has no meaning until the field is filled in -- and StreamEvents in
-// particular would otherwise subscribe under an empty key and hang.
+// question has no meaning until the field is filled in.
 func TestEveryMemberTakingVerbRefusesAnEmptyMember(t *testing.T) {
 	verbs := map[string]func(ctx context.Context, h *Handler) error{
 		"Join": func(ctx context.Context, h *Handler) error {
@@ -223,12 +210,6 @@ func TestEveryMemberTakingVerbRefusesAnEmptyMember(t *testing.T) {
 			_, err := h.GetWhere(ctx, &sessionpb.GetWhereRequest{Session: "sess-1"})
 			return err
 		},
-		"StreamEvents": func(ctx context.Context, h *Handler) error {
-			return h.StreamEvents(
-				&sessionpb.StreamEventsRequest{Session: "sess-1"},
-				newCapturingStream(ctx),
-			)
-		},
 	}
 
 	for name, call := range verbs {
@@ -242,22 +223,4 @@ func TestEveryMemberTakingVerbRefusesAnEmptyMember(t *testing.T) {
 			requireCode(t, err, codes.InvalidArgument)
 		})
 	}
-}
-
-// TestStreamEventsRefusesAnEmptySession pins the one verb that never reaches
-// the Manager. Unvalidated, an empty session does not error -- it subscribes
-// under the empty key and the call HANGS, delivering nothing, which is the
-// hardest kind of wrong to notice from a client.
-func TestStreamEventsRefusesAnEmptySession(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	h := &Handler{
-		manager:    sessionv1alpha1mock.NewMockManager(ctrl),
-		characters: anyMemberOwnedBy(ctrl, "alice"),
-	}
-	ctx := auth.WithPlayerID(context.Background(), "alice")
-	err := h.StreamEvents(
-		&sessionpb.StreamEventsRequest{Member: "char-1"},
-		newCapturingStream(ctx),
-	)
-	requireCode(t, err, codes.InvalidArgument)
 }

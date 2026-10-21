@@ -55,8 +55,9 @@ func TestAcceptance_Stabilization(t *testing.T) {
 				orch, openErr := sessionorch.New(sessionorch.Config{Redis: h.redis, Characters: h.charRepo, Dice: roller, TurnDriver: sdk.Pass{}})
 				require.NoError(t, openErr)
 				h.manager = orch
-				h.handler, openErr = sessionhandler.New(&sessionhandler.HandlerConfig{Manager: orch.Manager, Broker: orch.Broker, Characters: h.charRepo})
+				h.handler, openErr = sessionhandler.New(&sessionhandler.HandlerConfig{Manager: orch.Manager, Characters: h.charRepo})
 				require.NoError(t, openErr)
+				h.story = newStoryHandler(t, orch, h.charRepo)
 			}
 			reopen()
 			row := castRowFor(ctx, t, h, "bella", spells.SpareTheDying)

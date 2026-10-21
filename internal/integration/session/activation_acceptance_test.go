@@ -439,7 +439,7 @@ func TestAcceptance_SecondWindActivationEventsAndHealingCrossTheWire(t *testing.
 			Session: "acceptance-run", Member: "alice",
 		}, stream)
 	}()
-	waitForLive(t, h.manager.Broker, "acceptance-run", "alice", stream)
+	waitForLive(t, nil, "acceptance-run", "alice", stream)
 	baseline := len(stream.snapshot())
 
 	_, err = h.handler.Activate(ctx, &sessionpb.ActivateRequest{

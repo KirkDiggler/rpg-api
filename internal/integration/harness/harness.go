@@ -375,7 +375,6 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	}
 	sessionHandlerImpl, err := sessionhandler.New(&sessionhandler.HandlerConfig{
 		Manager:    sessOrch.Manager,
-		Broker:     sessOrch.Broker,
 		Characters: charRepo,
 		Access:     access,
 	})

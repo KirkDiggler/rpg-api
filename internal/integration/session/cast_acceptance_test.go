@@ -243,7 +243,7 @@ func watchCast(
 		done <- h.handler.StreamEvents(
 			&sessionpb.StreamEventsRequest{Session: castSessionID, Member: member}, stream)
 	}()
-	waitForLive(t, h.manager.Broker, castSessionID, member, stream)
+	waitForLive(t, nil, castSessionID, member, stream)
 	baseline := len(stream.snapshot())
 
 	act()

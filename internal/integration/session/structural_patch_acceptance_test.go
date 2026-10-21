@@ -42,9 +42,10 @@ func (s *StructuralPatchAcceptanceSuite) TestCompiledDoorDiscoveryReplacesOpenin
 	s.Require().NoError(err)
 	h.manager = automatic
 	h.handler, err = sessionhandler.New(&sessionhandler.HandlerConfig{
-		Manager: automatic.Manager, Broker: automatic.Broker, Characters: h.charRepo,
+		Manager: automatic.Manager, Characters: h.charRepo,
 	})
 	s.Require().NoError(err)
+	h.story = newStoryHandler(s.T(), automatic, h.charRepo)
 	ctx := auth.WithPlayerID(context.Background(), "player-alice")
 	_, err = h.charRepo.Create(ctx, characterrepo.CreateInput{
 		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},

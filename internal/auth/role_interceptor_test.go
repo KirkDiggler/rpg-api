@@ -129,7 +129,7 @@ func (s *RoleInterceptorSuite) TestIdleStreamRevocationAndProviderFailureEndSubs
 		ready := make(chan struct{})
 		result := make(chan error, 1)
 		go func() {
-			result <- s.gate.StreamInterceptor()(nil, &roleTestStream{ctx: s.ctx}, &grpc.StreamServerInfo{FullMethod: "/dnd5e.api.session.v1alpha1.SessionService/StreamEvents"}, func(_ interface{}, stream grpc.ServerStream) error {
+			result <- s.gate.StreamInterceptor()(nil, &roleTestStream{ctx: s.ctx}, &grpc.StreamServerInfo{FullMethod: "/dnd5e.api.session.v1alpha2.StoryService/StreamEvents"}, func(_ interface{}, stream grpc.ServerStream) error {
 				_, present := getRequestAuth(stream.Context())
 				s.False(present)
 				close(ready)
@@ -164,7 +164,7 @@ func (s *RoleInterceptorSuite) TestIdleStreamRevocationAndProviderFailureEndSubs
 func (s *RoleInterceptorSuite) TestStreamCancellationStopsRefreshWorker() {
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()
-	err := s.gate.StreamInterceptor()(nil, &roleTestStream{ctx: ctx}, &grpc.StreamServerInfo{FullMethod: "/dnd5e.api.session.v1alpha1.SessionService/StreamEvents"}, func(_ interface{}, stream grpc.ServerStream) error {
+	err := s.gate.StreamInterceptor()(nil, &roleTestStream{ctx: ctx}, &grpc.StreamServerInfo{FullMethod: "/dnd5e.api.session.v1alpha2.StoryService/StreamEvents"}, func(_ interface{}, stream grpc.ServerStream) error {
 		cancel()
 		<-stream.Context().Done()
 		return nil

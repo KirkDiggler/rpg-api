@@ -179,7 +179,7 @@ func TestAcceptance_GreatWeaponFightingRollTraceCrossesLiveAndStory(t *testing.T
 	go func() {
 		done <- h.handler.StreamEvents(&sessionpb.StreamEventsRequest{Session: sessionID, Member: "alice"}, stream)
 	}()
-	waitForLive(t, h.manager.Broker, sessionID, "alice", stream)
+	waitForLive(t, nil, sessionID, "alice", stream)
 	baseline := len(stream.snapshot())
 
 	declarationID := currentDeclarationID(ctx, t, h.handler, sessionID, "alice", sessionpb.Verb_VERB_ATTACK)

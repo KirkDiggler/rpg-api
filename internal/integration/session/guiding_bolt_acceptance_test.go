@@ -137,8 +137,9 @@ func useGuidingBoltDice(t *testing.T, h *acceptanceHarness, roll int) {
 	orch, err := sessionorch.New(sessionorch.Config{Redis: h.redis, Characters: h.charRepo, Dice: guidingBoltDice{attack: roll}, TurnDriver: sdk.Pass{}})
 	require.NoError(t, err)
 	h.manager = orch
-	h.handler, err = sessionhandler.New(&sessionhandler.HandlerConfig{Manager: orch.Manager, Broker: orch.Broker, Characters: h.charRepo})
+	h.handler, err = sessionhandler.New(&sessionhandler.HandlerConfig{Manager: orch.Manager, Characters: h.charRepo})
 	require.NoError(t, err)
+	h.story = newStoryHandler(t, orch, h.charRepo)
 }
 
 func TestAcceptance_GuidingBoltExpiresAfterNextCasterTurn(t *testing.T) {

@@ -199,7 +199,7 @@ func TestAcceptance_ReactionWindowCrossesTheWire(t *testing.T) {
 	go func() {
 		done <- h.handler.StreamEvents(&sessionpb.StreamEventsRequest{Session: sessionID, Member: "alice"}, stream)
 	}()
-	waitForLive(t, h.manager.Broker, sessionID, "alice", stream)
+	waitForLive(t, nil, sessionID, "alice", stream)
 	baseline := len(stream.snapshot())
 
 	// -- alice passes her turn, and the first skeleton's driven walk stops to

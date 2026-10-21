@@ -49,8 +49,9 @@ func reopenClericHost(t *testing.T, h *acceptanceHarness, policy sdk.StaleTarget
 	})
 	require.NoError(t, err)
 	h.manager = orch
-	h.handler, err = sessionhandler.New(&sessionhandler.HandlerConfig{Manager: orch.Manager, Broker: orch.Broker, Characters: h.charRepo})
+	h.handler, err = sessionhandler.New(&sessionhandler.HandlerConfig{Manager: orch.Manager, Characters: h.charRepo})
 	require.NoError(t, err)
+	h.story = newStoryHandler(t, orch, h.charRepo)
 }
 
 func TestAcceptance_BlessHostPolicyAndPersistedMixedOutcomes(t *testing.T) {

@@ -332,7 +332,6 @@ func runServer(_ *cobra.Command, _ []string) error {
 	}
 	sessionHandlerImpl, err := sessionhandler.New(&sessionhandler.HandlerConfig{
 		Manager:    sessionOrch.Manager,
-		Broker:     sessionOrch.Broker,
 		Characters: charRepo,
 		Access:     access,
 	})

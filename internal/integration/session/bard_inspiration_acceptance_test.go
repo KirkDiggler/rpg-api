@@ -280,7 +280,7 @@ func grantAndSwing(t *testing.T) *posedSwing {
 		done <- h.handler.StreamEvents(
 			&sessionpb.StreamEventsRequest{Session: bardSessionID, Member: "alice"}, stream)
 	}()
-	waitForLive(t, h.manager.Broker, bardSessionID, "alice", stream)
+	waitForLive(t, nil, bardSessionID, "alice", stream)
 	baseline := len(stream.snapshot())
 
 	// -- the swing stops after the d20 --

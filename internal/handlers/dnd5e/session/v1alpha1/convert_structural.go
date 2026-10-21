@@ -43,16 +43,6 @@ func atlasStructuralOpeningsToProto(openings []sdk.AtlasStructuralOpening) []*se
 	return out
 }
 
-func structuralWallOpeningsReplacementsToProto(replacements []sdk.StructuralWallOpeningsReplacement) []*sessionpb.StructuralWallOpeningsReplacement {
-	out := make([]*sessionpb.StructuralWallOpeningsReplacement, 0, len(replacements))
-	for _, replacement := range replacements {
-		out = append(out, &sessionpb.StructuralWallOpeningsReplacement{
-			WallId: replacement.WallID, Openings: atlasStructuralOpeningsToProto(replacement.Openings),
-		})
-	}
-	return out
-}
-
 func atlasStructuralDoorsToProto(doors []sdk.AtlasStructuralDoor) []*sessionpb.AtlasStructuralDoor {
 	out := make([]*sessionpb.AtlasStructuralDoor, 0, len(doors))
 	for _, door := range doors {

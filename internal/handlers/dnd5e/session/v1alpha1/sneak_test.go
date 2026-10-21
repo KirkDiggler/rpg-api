@@ -98,43 +98,6 @@ func TestSetSneaking_AnSDKRefusalIsAStatus(t *testing.T) {
 	require.Nil(t, out)
 }
 
-func TestSnuckBodyProjectsOntoTheWire(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		watcher string
-		beaten  bool
-	}{
-		{name: "a watcher the mover sees, beaten", watcher: "goblin-1", beaten: true},
-		{name: "a watcher the mover cannot see stays empty, not beaten", watcher: "", beaten: false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, sessionpb.EventKind_EVENT_KIND_SNUCK, eventKindToProto(sdk.EventSnuck))
-
-			event := &sessionpb.Event{}
-			require.NoError(t, setEventBody(event, sdk.SnuckBody{
-				Member: "char-1", Watcher: tc.watcher, DC: 12, Total: 15, Beaten: tc.beaten,
-				Calculation: d20WithKeep([]int{15}, []int{0}, nil),
-			}))
-
-			got := event.GetSnuck()
-			require.NotNil(t, got, "the snuck body must ride its own oneof arm")
-			require.Equal(t, "char-1", got.GetMember())
-			require.Equal(t, tc.watcher, got.GetWatcher())
-			require.Equal(t, int32(12), got.GetDc())
-			require.Equal(t, int32(15), got.GetTotal())
-			require.Equal(t, tc.beaten, got.GetBeaten(), "the rulebook's verdict is carried, never recomputed from total and dc")
-			require.NotNil(t, got.GetCalculation(), "the roll's arithmetic crosses")
-			require.Equal(t, []int32{15}, got.GetCalculation().GetComponents()[0].GetDice().GetFinalRolls())
-		})
-	}
-}
-
-func TestSnuckBodyWithoutArithmeticLeavesTheCalculationUnset(t *testing.T) {
-	event := &sessionpb.Event{}
-	require.NoError(t, setEventBody(event, sdk.SnuckBody{Member: "char-1", DC: 12, Total: 9}))
-	require.Nil(t, event.GetSnuck().GetCalculation())
-}
-
 func TestViewCarriesTheViewersSneakingMode(t *testing.T) {
 	require.True(t, viewToProto(&sdk.ViewOutput{Sneaking: true}).GetSneaking())
 	require.False(t, viewToProto(&sdk.ViewOutput{}).GetSneaking())

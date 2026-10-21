@@ -11,7 +11,6 @@ import (
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionmock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
-	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
@@ -27,7 +26,7 @@ func TestKnowledgeHandlerSuite(t *testing.T) { suite.Run(t, new(KnowledgeHandler
 func (s *KnowledgeHandlerSuite) SetupTest() {
 	ctrl := gomock.NewController(s.T())
 	s.manager = sessionmock.NewMockManager(ctrl)
-	s.handler = &Handler{manager: s.manager, characters: anyMemberOwnedBy(ctrl, "alice"), broker: sessionorch.NewBroker()}
+	s.handler = &Handler{manager: s.manager, characters: anyMemberOwnedBy(ctrl, "alice")}
 	s.ctx = auth.WithPlayerID(context.Background(), "alice")
 }
 func (s *KnowledgeHandlerSuite) TestSnapshotBindsIdentityAndCopiesTheProviderAnswers() {
@@ -65,11 +64,6 @@ func (s *KnowledgeHandlerSuite) TestAnOwnedCharacterDoesNotGrantAnotherSessionSe
 	s.manager.EXPECT().Knowledge(gomock.Any(), gomock.Any()).Return(nil, sdk.ErrNotSeated)
 	out, err := s.handler.GetKnowledge(s.ctx, &sessionpb.GetKnowledgeRequest{Session: "other-run", Member: "hero"})
 	s.Nil(out)
-	requireCode(s.T(), err, codes.PermissionDenied)
-}
-func (s *KnowledgeHandlerSuite) TestStreamRefusesAnOwnedButUnseatedMember() {
-	s.manager.EXPECT().Roster(gomock.Any(), &sdk.RosterInput{Session: "other-run", Member: "hero", Player: "alice"}).Return(nil, sdk.ErrNotSeated)
-	err := s.handler.StreamEvents(&sessionpb.StreamEventsRequest{Session: "other-run", Member: "hero"}, newCapturingStream(s.ctx))
 	requireCode(s.T(), err, codes.PermissionDenied)
 }
 func (s *KnowledgeHandlerSuite) TestEmptyFootprintDoesNotLeakAnOldPlacement() {

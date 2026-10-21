@@ -218,7 +218,7 @@ func subscribeDeathSaveWitness(t *testing.T, s *deathSaveScene, member string) *
 	go func() {
 		done <- s.h.handler.StreamEvents(&sessionpb.StreamEventsRequest{Session: s.session, Member: member}, stream)
 	}()
-	waitForLive(t, s.h.manager.Broker, s.session, member, stream)
+	waitForLive(t, nil, s.session, member, stream)
 	witness := &deathSaveWitness{member: member, ctx: ctx, stream: stream, baseline: len(stream.snapshot())}
 	t.Cleanup(func() {
 		cancel()

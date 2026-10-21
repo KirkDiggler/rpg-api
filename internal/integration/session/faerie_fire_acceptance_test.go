@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
@@ -50,7 +51,7 @@ func (s *FaerieFireSuite) TestNativeLightGrantPaidAreaSaveAndReplay() {
 			untouched, err := h.charRepo.Get(ctx, characterrepo.GetInput{ID: id})
 			s.Require().NoError(err)
 			s.Equal(2, untouched.Character.Data.Resources[resources.SpellSlotLevel1].Current)
-			live := watchCast(ctx, t, h, id, func() {
+			live := watchCastActs(ctx, t, h, id, func() {
 				_, castErr := h.handler.Cast(ctx, &sessionpb.CastRequest{Session: castSessionID, Member: id, DeclarationId: row.GetId(), Cell: aim})
 				s.Require().NoError(castErr)
 			})
@@ -59,30 +60,27 @@ func (s *FaerieFireSuite) TestNativeLightGrantPaidAreaSaveAndReplay() {
 			s.Zero(stored.Character.Data.ActionEconomy.ActionsRemaining)
 			s.Equal(1, stored.Character.Data.Resources[resources.SpellSlotLevel1].Current)
 			saves, applied := 0, 0
-			for _, event := range live {
-				if save := event.GetSaved(); save != nil {
-					saves++
-					s.Equal(tc.roll == 20, save.GetSucceeded())
+			for _, act := range live {
+				for _, result := range act.GetCast().GetResults() {
+					if result.GetSave() != nil {
+						saves++
+						s.Equal(tc.roll == 20, result.GetOutcome() == storypb.CastOutcome_CAST_OUTCOME_SAVED)
+					}
 				}
-				s.Nil(event.GetActivationResult().GetDamageApplied())
-				if condition := event.GetActivationResult().GetConditionApplied(); condition != nil && condition.GetRef() == refs.Conditions.FaerieFire().String() {
-					applied++
-					s.Equal("skel-1", condition.GetTarget())
-					s.Equal(id, condition.GetSourceId())
+				for _, result := range act.GetActivate().GetResults() {
+					s.NotEqual("damage-applied", result.GetKind(), "Faerie Fire deals no damage")
+					if result.GetKind() == "condition-applied" && result.GetRef() == refs.Conditions.FaerieFire().String() {
+						applied++
+						s.Equal("skel-1", result.GetTarget().GetId())
+						s.Equal(id, result.GetSourceId())
+					}
 				}
-
-				s.Nil(event.GetStruck())
-				s.Nil(event.GetMissed())
+				s.Nil(act.GetAttack(), "a save spell rolls no attack")
 			}
 			s.Equal(1, saves)
 			s.Equal(tc.applied, applied)
 			reopenClericHost(t, h, sdk.StaleTargetRefuse)
-			story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: castSessionID, Member: id, FromSeq: live[0].GetSeq()})
-			s.Require().NoError(err)
-			s.Require().Len(story.GetEntries(), len(live))
-			for i, event := range live {
-				s.True(proto.Equal(event, story.Entries[i]))
-			}
+			requireLiveIsStory(ctx, t, h, castSessionID, id, live)
 		})
 	}
 }
