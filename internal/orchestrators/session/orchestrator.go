@@ -96,12 +96,15 @@ func newDefaultPresentationIDs() sdk.PresentationIDGenerator {
 	return idgen.NewUUID(presentationIDPrefix)
 }
 
-// Orchestrator owns the toolkit session.Manager and the Broker StreamEvents
-// subscribes against. Both are exported for handlers to use directly:
-// Manager for every verb, Broker for StreamEvents' subscription.
+// Orchestrator owns the toolkit session.Manager, the Broker StreamEvents
+// subscribes against, and the RecordBroker StreamRecord subscribes against.
+// All are exported for handlers to use directly: Manager for every verb,
+// Broker for StreamEvents' subscription (v1alpha1), RecordBroker for
+// StreamRecord's (v1alpha2, rpg-project#628).
 type Orchestrator struct {
-	Manager *sdk.Manager
-	Broker  *Broker
+	Manager      *sdk.Manager
+	Broker       *Broker
+	RecordBroker *RecordBroker
 }
 
 // New constructs an Orchestrator, wiring every session.Config capability
@@ -151,6 +154,7 @@ func New(cfg Config) (*Orchestrator, error) {
 	explorations := &redisExplorationRepository{client: cfg.Redis}
 
 	broker := NewBroker()
+	recordBroker := NewRecordBroker(0)
 	mgr, err := sdk.NewManager(&sdk.Config{
 		Locker:            locker,
 		Explorations:      explorations,
@@ -161,6 +165,7 @@ func New(cfg Config) (*Orchestrator, error) {
 		Characters:        NewCharacterRepository(cfg.Characters),
 		Seats:             NewSeatRepository(cfg.Redis),
 		Events:            broker,
+		Record:            recordBroker,
 		Dice:              roller,
 		TurnDriver:        driverForSDK,
 	})
@@ -168,5 +173,5 @@ func New(cfg Config) (*Orchestrator, error) {
 		return nil, fmt.Errorf("construct session manager: %w", err)
 	}
 
-	return &Orchestrator{Manager: mgr, Broker: broker}, nil
+	return &Orchestrator{Manager: mgr, Broker: broker, RecordBroker: recordBroker}, nil
 }
