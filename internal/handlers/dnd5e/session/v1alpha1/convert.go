@@ -873,13 +873,10 @@ func eventKindToProto(k sdk.EventKind) sessionpb.EventKind {
 // by setEventBody, once the spine is built, so the passthrough law above
 // stays true of payload even as body stops being the only carrier.
 //
-// e.Tags (session/v0.23.0, rpg-toolkit#1213) has NO wire counterpart yet --
-// dnd5e.api.session.v1alpha1.Event carries no tags field -- so it is
-// deliberately dropped here rather than smuggled onto payload or forced into
-// a field that does not exist. This is the same converter GetStory now runs
-// its catch-up through (get_story.go, rpg-api-protos#239), so both paths
-// drop it identically; adding a wire `tags` field is a proto change, not
-// something this function can paper over on its own.
+// The SDK event carries no tags (session v0.141.0, rpg-project#627 R23):
+// tags stay on the toolkit's record, and an event names its act through
+// correlation. This is the same converter GetStory runs its catch-up through
+// (get_story.go, rpg-api-protos#239), so both paths carry the same fields.
 //
 // IT RETURNS AN ERROR AS OF rpg-project#458, from setEventBody's one refusing
 // arm. The spine above never fails -- it is field-for-field copying and a kind
