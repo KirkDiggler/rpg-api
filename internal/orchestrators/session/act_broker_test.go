@@ -52,7 +52,7 @@ func (s *ActBrokerTestSuite) drain(sub *sessionorch.ActSubscription) []string {
 			if !ok {
 				return got
 			}
-			got = append(got, a.ID)
+			got = append(got, a.Act.ID)
 		case <-time.After(time.Second):
 			s.FailNow("the subscription never closed")
 			return got
@@ -91,6 +91,22 @@ func (s *ActBrokerTestSuite) TestActBrokerWholeRunFits() {
 	s.Equal([]string{"A", "B", "B", "B"}, s.drain(sub))
 	lagged, _ := sub.Lagged()
 	s.False(lagged)
+}
+
+// TestActBrokerMarksRunEnd: the broker knows the unit, so it marks it: the
+// last act of every same-id run, and every run of one, carries RunEnd.
+func (s *ActBrokerTestSuite) TestActBrokerMarksRunEnd() {
+	broker := sessionorch.NewActBroker(8)
+	sub, err := broker.Subscribe("sess-1", "alice")
+	s.Require().NoError(err)
+
+	s.Require().NoError(broker.PublishActs(s.ctx, acts("alice", "A", "B", "B", "B", "C")))
+	s.Require().NoError(sub.Close())
+	var ends []bool
+	for a := range sub.Acts() {
+		ends = append(ends, a.RunEnd)
+	}
+	s.Equal([]bool{true, false, false, true, true}, ends)
 }
 
 // TestActBrokerRoutesByRecipient: alice's acts never reach bob's

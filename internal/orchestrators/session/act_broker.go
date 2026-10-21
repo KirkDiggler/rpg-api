@@ -101,12 +101,20 @@ func ActBufferFromEnv() int {
 	return n
 }
 
+// BrokeredAct is one act as the broker hands it over, with whether it ends its
+// same-id run. The broker enqueues runs whole, so it knows the unit and marks
+// it (Act.run_end): a client closes a live run on RunEnd, never on a timer.
+type BrokeredAct struct {
+	Act    sdk.Act
+	RunEnd bool
+}
+
 // ActSubscription is one live StreamEvents (v1alpha2) connection's feed.
 type ActSubscription struct {
 	broker *ActBroker
 	key    actKey
 	id     uint64
-	ch     chan sdk.Act
+	ch     chan BrokeredAct
 
 	// Guarded by broker.mu.
 	lastID string
@@ -116,7 +124,7 @@ type ActSubscription struct {
 
 // Acts is the subscription's feed, closed when the subscription ends — by
 // Close, by the broker's Close, or because it lagged ([Lagged]).
-func (s *ActSubscription) Acts() <-chan sdk.Act { return s.ch }
+func (s *ActSubscription) Acts() <-chan BrokeredAct { return s.ch }
 
 // Lagged reports whether the broker closed this subscription because it fell
 // behind, and the last id whose whole run was queued for it before it did.
@@ -148,7 +156,7 @@ func (b *ActBroker) Subscribe(session, recipient string) (*ActSubscription, erro
 		b.subs[key] = make(map[uint64]*ActSubscription)
 	}
 	b.nextID++
-	sub := &ActSubscription{broker: b, key: key, id: b.nextID, ch: make(chan sdk.Act, b.buffer)}
+	sub := &ActSubscription{broker: b, key: key, id: b.nextID, ch: make(chan BrokeredAct, b.buffer)}
 	b.subs[key][sub.id] = sub
 	return sub, nil
 }
@@ -205,8 +213,8 @@ func (b *ActBroker) PublishActs(ctx context.Context, acts []sdk.Act) error {
 				b.endLocked(sub)
 				continue
 			}
-			for _, a := range run {
-				sub.ch <- a
+			for i, a := range run {
+				sub.ch <- BrokeredAct{Act: a, RunEnd: i == len(run)-1}
 			}
 			sub.lastID = run[0].ID
 		}

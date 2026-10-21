@@ -52,8 +52,10 @@ func (h *StoryHandler) GetStory(ctx context.Context, req *sessionpb.GetStoryRequ
 		"folded", len(out.Acts), "returned", cut)
 
 	acts := make([]*sessionpb.Act, 0, cut)
-	for _, a := range out.Acts[:cut] {
-		acts = append(acts, convertLogged(ctx, a))
+	for i, a := range out.Acts[:cut] {
+		act := convertLogged(ctx, a)
+		act.RunEnd = runEndAt(out.Acts, i)
+		acts = append(acts, act)
 	}
 	return &sessionpb.GetStoryResponse{Acts: acts, Restarted: out.Restarted, More: cut < len(out.Acts)}, nil
 }

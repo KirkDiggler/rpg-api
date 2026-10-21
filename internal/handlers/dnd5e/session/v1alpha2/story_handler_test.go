@@ -175,10 +175,14 @@ func (s *StoryHandlerSuite) TestStreamEventsLiveSameIDRunWhole() {
 
 	stream, done := s.run(s.handler(broker), "")
 	var got []string
+	var ends []bool
 	for i := 0; i < 4; i++ {
-		got = append(got, stream.next(s.T()).GetAct().GetId())
+		a := stream.next(s.T()).GetAct()
+		got = append(got, a.GetId())
+		ends = append(ends, a.GetRunEnd())
 	}
 	s.Equal([]string{"A", "B", "B", "B"}, got)
+	s.Equal([]bool{true, false, false, true}, ends, "run_end on the last act of each run, replayed or live")
 	s.quiet(stream)
 	s.cancel()
 	s.NoError(s.ended(done))
@@ -251,6 +255,7 @@ func (s *StoryHandlerSuite) TestGetStoryPagesOnIDBoundary() {
 	page, err := h.GetStory(s.ctx, &sessionpb.GetStoryRequest{Session: "sess-1", Member: "char-1", Limit: 2})
 	s.Require().NoError(err)
 	s.Equal([]string{"A", "B", "B"}, ids(page.GetActs()))
+	s.Equal([]bool{true, false, true}, runEnds(page.GetActs()), "a page ends on a run_end")
 	s.True(page.GetMore())
 
 	page, err = h.GetStory(s.ctx, &sessionpb.GetStoryRequest{Session: "sess-1", Member: "char-1", AfterId: "B", Limit: 2})
@@ -345,6 +350,15 @@ func ids(acts []*sessionpb.Act) []string {
 	out := make([]string, len(acts))
 	for i, a := range acts {
 		out[i] = a.GetId()
+	}
+	return out
+}
+
+// runEnds is each act's run_end, in order.
+func runEnds(acts []*sessionpb.Act) []bool {
+	out := make([]bool, len(acts))
+	for i, a := range acts {
+		out[i] = a.GetRunEnd()
 	}
 	return out
 }

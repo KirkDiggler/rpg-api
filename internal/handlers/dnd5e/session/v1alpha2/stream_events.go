@@ -34,6 +34,9 @@ const logStoryRestarted = "session story: catch-up restarted (older than retenti
 // the last id it sent ends a whole run. It sends StoryLagged{last_id} with
 // that id and ends with OK.
 //
+// EVERY RUN'S LAST ACT CARRIES run_end, replayed or live, so the client
+// closes a run on the producer's word, never on a timer or the next id.
+//
 // A STALE RESUME IS TOLD TOO: StoryRestarted first, then a replay from the
 // oldest retained beat (R25, R28).
 func (h *StoryHandler) StreamEvents(req *sessionpb.StreamEventsRequest, stream sessionpb.StoryService_StreamEventsServer) error {
@@ -68,17 +71,19 @@ func (h *StoryHandler) StreamEvents(req *sessionpb.StreamEventsRequest, stream s
 		last = "" // the replay starts at the oldest retained beat
 	}
 
-	send := func(a sdk.Act) error {
+	send := func(a sdk.Act, runEnd bool) error {
+		out := convertLogged(ctx, a)
+		out.RunEnd = runEnd
 		if err := stream.Send(&sessionpb.StreamEventsResponse{
-			Item: &sessionpb.StreamEventsResponse_Act{Act: convertLogged(ctx, a)},
+			Item: &sessionpb.StreamEventsResponse_Act{Act: out},
 		}); err != nil {
 			return err
 		}
 		last = a.ID
 		return nil
 	}
-	for _, a := range replay.Acts {
-		if err := send(a); err != nil {
+	for i, a := range replay.Acts {
+		if err := send(a, runEndAt(replay.Acts, i)); err != nil {
 			return err
 		}
 	}
@@ -88,7 +93,7 @@ func (h *StoryHandler) StreamEvents(req *sessionpb.StreamEventsRequest, stream s
 		select {
 		case <-ctx.Done():
 			return nil
-		case a, ok := <-sub.Acts():
+		case b, ok := <-sub.Acts():
 			if !ok {
 				if lagged, _ := sub.Lagged(); lagged {
 					slog.WarnContext(ctx, "session story: subscriber lagged, stream ending",
@@ -99,14 +104,20 @@ func (h *StoryHandler) StreamEvents(req *sessionpb.StreamEventsRequest, stream s
 				}
 				return nil
 			}
-			if a.ID <= replayed {
+			if b.Act.ID <= replayed {
 				continue // already sent by the catch-up read
 			}
-			if err := send(a); err != nil {
+			if err := send(b.Act, b.RunEnd); err != nil {
 				return err
 			}
 		}
 	}
+}
+
+// runEndAt reports whether acts[i] ends its same-id run in acts: the replay
+// and a story read are whole runs, so the last act of the slice ends one too.
+func runEndAt(acts []sdk.Act, i int) bool {
+	return i == len(acts)-1 || acts[i+1].ID != acts[i].ID
 }
 
 // convertLogged spells one act, logging the reason when it goes out refused.

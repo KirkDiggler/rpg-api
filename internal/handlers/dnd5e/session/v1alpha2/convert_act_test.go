@@ -43,8 +43,12 @@ var (
 		Expression: "1d20+5", Dice: []int{15}, Modifiers: []sdk.RollModifier{{Source: "Strength", Value: 3}, {Source: "Proficiency", Value: 2}},
 		Total: 20, Against: ip(13), Beaten: bp(true),
 		Influences: []sdk.RollInfluence{
-			{Kind: sdk.InfluenceAdvantage, SourceRef: "dnd5e:conditions:helped", SourceID: "bob"},
+			{Kind: sdk.InfluenceAdvantage, SourceRef: "dnd5e:conditions:helped", SourceID: "bob", Name: "Helped"},
 			{Kind: sdk.InfluenceDisadvantage, SourceRef: "dnd5e:conditions:prone"},
+		},
+		Terms: []sdk.RollDiceTerm{
+			{Count: 1, DieSize: 20, Faces: []int{15}, SourceRef: "dnd5e:weapons:longsword", SourceName: "Longsword", SourceID: "alice"},
+			{Count: 1, DieSize: 4, Faces: []int{2}, Subtract: true, SourceRef: "dnd5e:spells:bane", SourceName: "Bane", SourceID: "cultist"},
 		},
 	}
 	d20P = &sessionpb.Roll{
@@ -52,8 +56,12 @@ var (
 		Modifiers: []*sessionpb.RollModifier{{Source: "Strength", Value: 3}, {Source: "Proficiency", Value: 2}},
 		Total:     20, Against: i32(13), Beaten: bp(true),
 		Influences: []*sessionpb.RollInfluence{
-			{Kind: sessionpb.InfluenceKind_INFLUENCE_KIND_ADVANTAGE, SourceRef: "dnd5e:conditions:helped", SourceId: "bob"},
+			{Kind: sessionpb.InfluenceKind_INFLUENCE_KIND_ADVANTAGE, SourceRef: "dnd5e:conditions:helped", SourceId: "bob", Name: "Helped"},
 			{Kind: sessionpb.InfluenceKind_INFLUENCE_KIND_DISADVANTAGE, SourceRef: "dnd5e:conditions:prone"},
+		},
+		Terms: []*sessionpb.RollDiceTerm{
+			{Count: 1, DieSize: 20, Faces: []int32{15}, SourceRef: "dnd5e:weapons:longsword", SourceName: "Longsword", SourceId: "alice"},
+			{Count: 1, DieSize: 4, Faces: []int32{2}, Subtract: true, SourceRef: "dnd5e:spells:bane", SourceName: "Bane", SourceId: "cultist"},
 		},
 	}
 	tableDie  = &sdk.Roll{Dice: []int{4}, Total: 4, Of: 6}

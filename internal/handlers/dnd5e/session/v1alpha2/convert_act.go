@@ -342,7 +342,18 @@ func rollToProto(r *sdk.Roll) (*sessionpb.Roll, error) {
 			return nil, err
 		}
 		out.Influences = append(out.Influences, &sessionpb.RollInfluence{
-			Kind: kind, SourceRef: in.SourceRef, SourceId: in.SourceID,
+			Kind: kind, SourceRef: in.SourceRef, SourceId: in.SourceID, Name: in.Name,
+		})
+	}
+	for _, t := range r.Terms {
+		out.Terms = append(out.Terms, &sessionpb.RollDiceTerm{
+			Count:      int32(t.Count),   //nolint:gosec // a pool's die count fits int32
+			DieSize:    int32(t.DieSize), //nolint:gosec // a die size fits int32
+			Faces:      int32s(t.Faces),
+			Subtract:   t.Subtract,
+			SourceRef:  t.SourceRef,
+			SourceName: t.SourceName,
+			SourceId:   t.SourceID,
 		})
 	}
 	return out, nil
