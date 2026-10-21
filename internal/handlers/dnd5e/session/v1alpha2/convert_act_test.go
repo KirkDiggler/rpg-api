@@ -415,3 +415,55 @@ func (s *ConvertActSuite) TestConvertUnknownInfluenceRefuses() {
 	s.True(got.GetRefused())
 	s.Equal("id-4", got.GetId())
 }
+
+// TestRollToProtoCarriesTheRerollRecord is rpg-project#643 B on the wire: a
+// Great Weapon Fighting damage term keeps its pool as first rolled, its kept
+// indices and its sourced reroll. Mutant: omitting rerolls fails it.
+func (s *ConvertActSuite) TestRollToProtoCarriesTheRerollRecord() {
+	got, err := rollToProto(&sdk.Roll{
+		Expression: "2d6", Dice: []int{4, 5}, Total: 9,
+		Terms: []sdk.RollDiceTerm{{
+			Count: 2, DieSize: 6, Faces: []int{4, 5},
+			SourceRef: "dnd5e:weapons:greatsword", SourceName: "Greatsword", SourceID: "fighter", SourceLabel: "weapon",
+			Rolled: []int{1, 5}, KeptIndices: []int{0, 1},
+			Rerolls: []sdk.RollReroll{{
+				DieIndex: 0, Before: 1, After: 4,
+				SourceRef: "dnd5e:fighting-styles:great-weapon-fighting", SourceName: "Great Weapon Fighting", SourceID: "fighter",
+			}},
+		}},
+	})
+	s.Require().NoError(err)
+	s.Require().Len(got.GetTerms(), 1)
+	term := got.GetTerms()[0]
+	s.Equal([]int32{1, 5}, term.GetRolled())
+	s.Equal([]int32{0, 1}, term.GetKeptIndices())
+	s.Equal([]int32{4, 5}, term.GetFaces())
+	s.Equal("weapon", term.GetSourceLabel())
+	s.Require().Len(term.GetRerolls(), 1)
+	s.True(proto.Equal(&sessionpb.RollReroll{
+		DieIndex: 0, Before: 1, After: 4,
+		SourceRef: "dnd5e:fighting-styles:great-weapon-fighting", SourceName: "Great Weapon Fighting", SourceId: "fighter",
+	}, term.GetRerolls()[0]), "%v", term.GetRerolls()[0])
+}
+
+// TestRollModifierToProtoCarriesItsRef is rpg-project#643 D on the wire:
+// Second Wind's modifier names its source by ref, id and label, beside its
+// name; an influence carries its label. Mutant: omitting source_ref fails it.
+func (s *ConvertActSuite) TestRollModifierToProtoCarriesItsRef() {
+	got, err := rollToProto(&sdk.Roll{
+		Expression: "1d10+1", Total: 7,
+		Modifiers: []sdk.RollModifier{{
+			Source: "Fighter", Value: 1,
+			SourceRef: "dnd5e:classes:fighter", SourceID: "fighter", SourceLabel: "Fighter level",
+		}},
+		Influences: []sdk.RollInfluence{{Kind: sdk.InfluenceAdvantage, SourceRef: "dnd5e:conditions:helped", Name: "Helped", SourceLabel: "help"}},
+	})
+	s.Require().NoError(err)
+	s.Require().Len(got.GetModifiers(), 1)
+	s.True(proto.Equal(&sessionpb.RollModifier{
+		Source: "Fighter", Value: 1,
+		SourceRef: "dnd5e:classes:fighter", SourceId: "fighter", SourceLabel: "Fighter level",
+	}, got.GetModifiers()[0]), "%v", got.GetModifiers()[0])
+	s.Require().Len(got.GetInfluences(), 1)
+	s.Equal("help", got.GetInfluences()[0].GetSourceLabel())
+}

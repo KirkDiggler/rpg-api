@@ -326,7 +326,10 @@ func rollToProto(r *sdk.Roll) (*sessionpb.Roll, error) {
 		Of:         int32(r.Of),    //nolint:gosec // a table size fits int32
 	}
 	for _, m := range r.Modifiers {
-		out.Modifiers = append(out.Modifiers, &sessionpb.RollModifier{Source: m.Source, Value: int32(m.Value)}) //nolint:gosec // a modifier fits int32
+		out.Modifiers = append(out.Modifiers, &sessionpb.RollModifier{
+			Source: m.Source, Value: int32(m.Value), //nolint:gosec // a modifier fits int32
+			SourceRef: m.SourceRef, SourceId: m.SourceID, SourceLabel: m.SourceLabel,
+		})
 	}
 	if r.Against != nil {
 		against := int32(*r.Against) //nolint:gosec // a DC or an AC fits int32
@@ -342,21 +345,43 @@ func rollToProto(r *sdk.Roll) (*sessionpb.Roll, error) {
 			return nil, err
 		}
 		out.Influences = append(out.Influences, &sessionpb.RollInfluence{
-			Kind: kind, SourceRef: in.SourceRef, SourceId: in.SourceID, Name: in.Name,
+			Kind: kind, SourceRef: in.SourceRef, SourceId: in.SourceID, Name: in.Name, SourceLabel: in.SourceLabel,
 		})
 	}
 	for _, t := range r.Terms {
 		out.Terms = append(out.Terms, &sessionpb.RollDiceTerm{
-			Count:      int32(t.Count),   //nolint:gosec // a pool's die count fits int32
-			DieSize:    int32(t.DieSize), //nolint:gosec // a die size fits int32
-			Faces:      int32s(t.Faces),
-			Subtract:   t.Subtract,
-			SourceRef:  t.SourceRef,
-			SourceName: t.SourceName,
-			SourceId:   t.SourceID,
+			Count:       int32(t.Count),   //nolint:gosec // a pool's die count fits int32
+			DieSize:     int32(t.DieSize), //nolint:gosec // a die size fits int32
+			Faces:       int32s(t.Faces),
+			Subtract:    t.Subtract,
+			SourceRef:   t.SourceRef,
+			SourceName:  t.SourceName,
+			SourceId:    t.SourceID,
+			SourceLabel: t.SourceLabel,
+			Rolled:      int32s(t.Rolled),
+			KeptIndices: int32s(t.KeptIndices),
+			Rerolls:     rerollsToProto(t.Rerolls),
 		})
 	}
 	return out, nil
+}
+
+// rerollsToProto spells a term's sourced rerolls (rpg-project#643 B), nil
+// for none.
+func rerollsToProto(rerolls []sdk.RollReroll) []*sessionpb.RollReroll {
+	if len(rerolls) == 0 {
+		return nil
+	}
+	out := make([]*sessionpb.RollReroll, 0, len(rerolls))
+	for _, r := range rerolls {
+		out = append(out, &sessionpb.RollReroll{
+			DieIndex:  int32(r.DieIndex), //nolint:gosec // a die index fits int32
+			Before:    int32(r.Before),   //nolint:gosec // a face fits int32
+			After:     int32(r.After),    //nolint:gosec // a face fits int32
+			SourceRef: r.SourceRef, SourceName: r.SourceName, SourceId: r.SourceID,
+		})
+	}
+	return out
 }
 
 // damageRollToProto spells one damage component's roll as a Roll (R17: every
