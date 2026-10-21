@@ -148,25 +148,85 @@ func (s *RecordHandlerSuite) TestStreamRecordCatchUpThenLive() {
 }
 
 // TestStreamRecordLaggedEndsWithStatus: a subscription the broker closes as
-// lagged delivers what was queued, then RecordLagged with the last id sent,
-// as its last message, and the stream ends OK.
+// lagged delivers what was queued, then RecordLagged with the last id SENT —
+// not the broker's last queued id — as its last message, and the stream ends
+// OK. The replay sends ids beyond what was queued, so the two differ: the
+// broker queued id-05 and lagged on id-06; the client received id-03..id-07.
 func (s *RecordHandlerSuite) TestStreamRecordLaggedEndsWithStatus() {
-	broker := sessionorch.NewRecordBroker(2)
+	broker := sessionorch.NewRecordBroker(1)
 	s.seated()
 	s.manager.EXPECT().Record(gomock.Any(), gomock.Any()).DoAndReturn(
 		func(ctx context.Context, _ *sdk.RecordReadInput) (*sdk.RecordReadOutput, error) {
-			_ = broker.PublishRecord(ctx, beats("id-01", "id-02", "id-03")) // the third overflows
-			return &sdk.RecordReadOutput{}, nil
+			_ = broker.PublishRecord(ctx, beats("id-05", "id-06")) // id-06 overflows
+			return &sdk.RecordReadOutput{Events: beats("id-03", "id-04", "id-05", "id-06", "id-07")}, nil
 		})
 
-	stream, done := s.run(s.handler(broker), "")
-	s.Equal("id-01", stream.next(s.T()).GetEvent().GetId())
-	s.Equal("id-02", stream.next(s.T()).GetEvent().GetId())
+	stream, done := s.run(s.handler(broker), "id-02")
+	var got []string
+	for i := 0; i < 5; i++ {
+		got = append(got, stream.next(s.T()).GetEvent().GetId())
+	}
+	s.Equal([]string{"id-03", "id-04", "id-05", "id-06", "id-07"}, got, "the queued id-05 is not sent twice")
 	lagged := stream.next(s.T()).GetLagged()
 	s.Require().NotNil(lagged, "the stream says it lagged")
-	s.Equal("id-02", lagged.GetLastId())
+	s.Equal("id-07", lagged.GetLastId(), "the last id sent, not the broker's last queued id-05")
 	s.NoError(s.ended(done))
 	s.Empty(stream.sent, "lagged is the last message")
+}
+
+// withBadMiddle is three beats whose middle one's fields are not a JSON
+// object.
+func withBadMiddle() []sdk.RecordEvent {
+	events := beats("id-01", "id-02", "id-03")
+	events[1].Fields = json.RawMessage(`[1,2]`)
+	return events
+}
+
+// requireDegradedMiddle: all three beats arrive; the bad one keeps its id,
+// beat and act and carries no fields; the beats beside it keep theirs.
+func (s *RecordHandlerSuite) requireDegradedMiddle(events []*sessionpb.RecordEvent) {
+	s.Require().Len(events, 3)
+	s.Equal([]string{"id-01", "id-02", "id-03"}, []string{events[0].GetId(), events[1].GetId(), events[2].GetId()})
+	s.Equal("moved", events[1].GetBeat())
+	s.Equal("move:01HF", events[1].GetAct())
+	s.Nil(events[1].GetFields(), "the unreadable payload is dropped from its own beat only")
+	s.NotNil(events[0].GetFields())
+	s.NotNil(events[2].GetFields())
+}
+
+// TestGetRecordDegradesOneBadBeat: one payload that is not a JSON object
+// degrades its own beat, never the read; more and restarted still forward.
+func (s *RecordHandlerSuite) TestGetRecordDegradesOneBadBeat() {
+	s.seated()
+	s.manager.EXPECT().Record(gomock.Any(), gomock.Any()).
+		Return(&sdk.RecordReadOutput{Events: withBadMiddle(), More: true, Restarted: true}, nil)
+	out, err := s.handler(sessionorch.NewRecordBroker(8)).GetRecord(s.ctx,
+		&sessionpb.GetRecordRequest{Session: "sess-1", Member: "char-1"})
+	s.Require().NoError(err)
+	s.requireDegradedMiddle(out.GetEvents())
+	s.True(out.GetMore())
+	s.True(out.GetRestarted())
+}
+
+// TestStreamRecordDegradesOneBadBeat: the same on the stream's replay — no
+// hole, and the stream stays open.
+func (s *RecordHandlerSuite) TestStreamRecordDegradesOneBadBeat() {
+	s.seated()
+	s.manager.EXPECT().Record(gomock.Any(), gomock.Any()).
+		Return(&sdk.RecordReadOutput{Events: withBadMiddle()}, nil)
+	stream, done := s.run(s.handler(sessionorch.NewRecordBroker(8)), "")
+	events := make([]*sessionpb.RecordEvent, 0, 3)
+	for i := 0; i < 3; i++ {
+		events = append(events, stream.next(s.T()).GetEvent())
+	}
+	s.requireDegradedMiddle(events)
+	select {
+	case err := <-done:
+		s.Failf("the stream ended on a bad payload", "%v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	s.cancel()
+	s.NoError(s.ended(done))
 }
 
 // TestStreamRecordOlderThanRetentionRestarts: a resume point the record no

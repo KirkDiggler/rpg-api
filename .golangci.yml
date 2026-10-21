@@ -49,6 +49,7 @@ linters:
         no-rulebook-internals-in-session-handlers:
           files:
             - "**/internal/handlers/dnd5e/session/v1alpha1/*.go"
+            - "**/internal/handlers/dnd5e/session/v1alpha2/*.go"
           deny:
             - pkg: "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
               desc: "game logic belongs in the toolkit — do not import dnd5e conditions in the session handler package"

@@ -46,6 +46,12 @@ func (h *Handler) StreamRecord(req *sessionpb.StreamRecordRequest, stream sessio
 	if err != nil {
 		return sdkerr.StatusError(err)
 	}
+	// last is the last id this stream delivered. Before anything is sent it
+	// is the request's after_id, DELIBERATELY: a lag before the first send
+	// then reports RecordLagged.last_id = after_id, which is exactly the
+	// right GetRecord catch-up, where the proto's "empty when nothing was
+	// delivered" would make the client re-read the whole run. The proto
+	// comment is to be corrected to match (rpg-project#628 follow-up).
 	last := req.GetAfterId()
 	if replay.Restarted {
 		slog.InfoContext(ctx, logRecordRestarted, "session", session, "after_id", req.GetAfterId(), "rpc", "StreamRecord")
