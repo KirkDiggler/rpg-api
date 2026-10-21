@@ -201,6 +201,11 @@ var clockMarkToProto = map[sdk.ClockMark]sessionpb.ClockMark{
 	sdk.ClockRollWindowOpened: sessionpb.ClockMark_CLOCK_MARK_ROLL_WINDOW_OPENED,
 }
 
+var influenceKindToProto = map[sdk.InfluenceKind]sessionpb.InfluenceKind{
+	sdk.InfluenceAdvantage:    sessionpb.InfluenceKind_INFLUENCE_KIND_ADVANTAGE,
+	sdk.InfluenceDisadvantage: sessionpb.InfluenceKind_INFLUENCE_KIND_DISADVANTAGE,
+}
+
 var damageTypeToProto = map[sdk.DamageType]sessionpb.DamageType{
 	sdk.DamageAcid:        sessionpb.DamageType_DAMAGE_TYPE_ACID,
 	sdk.DamageBludgeoning: sessionpb.DamageType_DAMAGE_TYPE_BLUDGEONING,
@@ -285,6 +290,18 @@ func (c *parties) many(ps []sdk.Party) []*sessionpb.Party {
 	return v
 }
 
+// roll spells a roll, keeping the first error (an influence this build
+// cannot spell refuses the act rather than vanishing from the card).
+func (c *parties) roll(r *sdk.Roll) *sessionpb.Roll {
+	v, err := rollToProto(r)
+	if c.err == nil {
+		c.err = err
+	}
+	return v
+}
+
+func (c *parties) rollValue(r sdk.Roll) *sessionpb.Roll { return c.roll(&r) }
+
 func int32s(in []int) []int32 {
 	if len(in) == 0 {
 		return nil
@@ -296,10 +313,11 @@ func int32s(in []int) []int32 {
 	return out
 }
 
-// rollToProto spells a roll, nil for nil.
-func rollToProto(r *sdk.Roll) *sessionpb.Roll {
+// rollToProto spells a roll, nil for nil. An influence kind this build
+// cannot spell is an error.
+func rollToProto(r *sdk.Roll) (*sessionpb.Roll, error) {
 	if r == nil {
-		return nil
+		return nil, nil //nolint:nilnil // an absent roll is a valid answer
 	}
 	out := &sessionpb.Roll{
 		Expression: r.Expression,
@@ -318,10 +336,17 @@ func rollToProto(r *sdk.Roll) *sessionpb.Roll {
 			out.Beaten = &beaten
 		}
 	}
-	return out
+	for _, in := range r.Influences {
+		kind, err := lookup(influenceKindToProto, in.Kind, "influence kind")
+		if err != nil {
+			return nil, err
+		}
+		out.Influences = append(out.Influences, &sessionpb.RollInfluence{
+			Kind: kind, SourceRef: in.SourceRef, SourceId: in.SourceID,
+		})
+	}
+	return out, nil
 }
-
-func rollValueToProto(r sdk.Roll) *sessionpb.Roll { return rollToProto(&r) }
 
 // damageRollToProto spells one damage component's roll as a Roll (R17: every
 // die an act carries is said one way). A traced component reads its kept
@@ -430,7 +455,7 @@ func attackToProto(b sdk.AttackAct) (*sessionpb.AttackAct, error) {
 	out := &sessionpb.AttackAct{
 		By: p.one(b.By), To: p.one(b.To), Attack: ref, Outcome: outcome, Critical: b.Critical,
 		Damage: int32(b.Damage), //nolint:gosec // damage fits int32
-		Roll:   rollToProto(b.Roll), Reaction: reactionRefToProto(b.Reaction), PresentationId: b.PresentationID,
+		Roll:   p.roll(b.Roll), Reaction: reactionRefToProto(b.Reaction), PresentationId: b.PresentationID,
 	}
 	for _, c := range b.DamageComponents {
 		t, err := damageType(c.DamageType)
@@ -447,7 +472,7 @@ func attackToProto(b sdk.AttackAct) (*sessionpb.AttackAct, error) {
 		out.DamageComponents = append(out.DamageComponents, dc)
 	}
 	if w := b.Ward; w != nil {
-		out.Ward = &sessionpb.WardSave{Source: p.one(w.Source), Ability: w.Ability, Roll: rollValueToProto(w.Roll)}
+		out.Ward = &sessionpb.WardSave{Source: p.one(w.Source), Ability: w.Ability, Roll: p.rollValue(w.Roll)}
 	}
 	if s := b.Sequence; s != nil {
 		out.Sequence = &sessionpb.SequenceRef{Ref: s.Ref, Name: s.Name}
@@ -465,7 +490,7 @@ func castToProto(b sdk.CastAct) (*sessionpb.CastAct, error) {
 		}
 		out.Results = append(out.Results, &sessionpb.CastResult{
 			Target: p.one(r.Target), Outcome: outcome, Ability: r.Ability,
-			Save: rollToProto(r.Save), Source: p.one(r.Source),
+			Save: p.roll(r.Save), Source: p.one(r.Source),
 		})
 	}
 	return out, p.err
@@ -485,7 +510,7 @@ func activateToProto(b sdk.ActivateAct) (*sessionpb.ActivateAct, error) {
 			Kind: r.Kind, Target: p.one(r.Target), Ref: r.Ref, Name: r.Name, SourceId: r.SourceID,
 			Amount: int32(r.Amount), Requested: int32(r.Requested), //nolint:gosec // hit points fit int32
 			Before: int32(r.Before), After: int32(r.After), //nolint:gosec // hit points fit int32
-			Roll: rollToProto(r.Roll), DamageType: resultDamage, Detail: r.Detail, Description: r.Description,
+			Roll: p.roll(r.Roll), DamageType: resultDamage, Detail: r.Detail, Description: r.Description,
 			Moved: int32(r.Moved), StoppedBy: r.StoppedBy, //nolint:gosec // a push distance fits int32
 		}
 		if st := r.Stabilization; st != nil {
@@ -501,7 +526,7 @@ func activateToProto(b sdk.ActivateAct) (*sessionpb.ActivateAct, error) {
 	}
 	for _, s := range b.Saves {
 		out.Saves = append(out.Saves, &sessionpb.SaveResult{
-			Saver: p.one(s.Saver), Ability: s.Ability, Source: spellRefToProto(s.Source), Roll: rollValueToProto(s.Roll),
+			Saver: p.one(s.Saver), Ability: s.Ability, Source: spellRefToProto(s.Source), Roll: p.rollValue(s.Roll),
 		})
 	}
 	return out, p.err
@@ -510,7 +535,7 @@ func activateToProto(b sdk.ActivateAct) (*sessionpb.ActivateAct, error) {
 func speakToProto(b sdk.SpeakAct) (*sessionpb.SpeakAct, error) {
 	var p parties
 	out := &sessionpb.SpeakAct{
-		By: p.one(b.By), To: p.one(b.To), Option: b.Option, Line: b.Line, Skill: b.Skill, Roll: rollToProto(b.Roll),
+		By: p.one(b.By), To: p.one(b.To), Option: b.Option, Line: b.Line, Skill: b.Skill, Roll: p.roll(b.Roll),
 	}
 	if b.Answer != nil {
 		answer, err := tableAnswerToProto(*b.Answer)
@@ -525,7 +550,7 @@ func speakToProto(b sdk.SpeakAct) (*sessionpb.SpeakAct, error) {
 func deathSaveToProto(b sdk.DeathSaveAct) (*sessionpb.DeathSaveAct, error) {
 	var p parties
 	out := &sessionpb.DeathSaveAct{
-		By: p.one(b.By), Roll: rollToProto(b.Roll), Outcome: b.Outcome,
+		By: p.one(b.By), Roll: p.roll(b.Roll), Outcome: b.Outcome,
 		SuccessesAdded: int32(b.SuccessesAdded), FailuresAdded: int32(b.FailuresAdded), //nolint:gosec // tallies fit int32
 		Successes: int32(b.Successes), Failures: int32(b.Failures), //nolint:gosec // tallies fit int32
 		SuccessesNeeded: int32(b.SuccessesNeeded), FailuresRemaining: int32(b.FailuresRemaining), //nolint:gosec // tallies fit int32
@@ -538,55 +563,63 @@ func deathSaveToProto(b sdk.DeathSaveAct) (*sessionpb.DeathSaveAct, error) {
 
 func lootToProto(b sdk.LootAct) (*sessionpb.LootAct, error) {
 	var p parties
-	return &sessionpb.LootAct{By: p.one(b.By), From: p.one(b.From)}, p.err
+	out := &sessionpb.LootAct{By: p.one(b.By), From: p.one(b.From)}
+	return out, p.err
 }
 
 func holdToProto(b sdk.HoldAct) (*sessionpb.HoldAct, error) {
 	var p parties
-	return &sessionpb.HoldAct{By: p.one(b.By), Prop: p.one(b.Prop)}, p.err
+	out := &sessionpb.HoldAct{By: p.one(b.By), Prop: p.one(b.Prop)}
+	return out, p.err
 }
 
 func dropToProto(b sdk.DropAct) (*sessionpb.DropAct, error) {
 	var p parties
-	return &sessionpb.DropAct{By: p.one(b.By), Prop: p.one(b.Prop), Cell: positionToProto(b.Cell)}, p.err
+	out := &sessionpb.DropAct{By: p.one(b.By), Prop: p.one(b.Prop), Cell: positionToProto(b.Cell)}
+	return out, p.err
 }
 
 func doorToProto(b sdk.DoorAct) (*sessionpb.DoorAct, error) {
 	var p parties
-	return &sessionpb.DoorAct{By: p.one(b.By), Door: b.Door, State: b.State, Roll: rollToProto(b.Roll)}, p.err
+	out := &sessionpb.DoorAct{By: p.one(b.By), Door: b.Door, State: b.State, Roll: p.roll(b.Roll)}
+	return out, p.err
 }
 
 func equipToProto(b sdk.EquipAct) (*sessionpb.EquipAct, error) {
 	var p parties
-	return &sessionpb.EquipAct{By: p.one(b.By), Slot: b.Slot, Item: b.Item, Change: b.Change}, p.err
+	out := &sessionpb.EquipAct{By: p.one(b.By), Slot: b.Slot, Item: b.Item, Change: b.Change}
+	return out, p.err
 }
 
 func stayToProto(b sdk.StayAct) (*sessionpb.StayAct, error) {
 	var p parties
-	return &sessionpb.StayAct{Member: p.one(b.Member), Cause: b.Cause, Why: b.Why}, p.err
+	out := &sessionpb.StayAct{Member: p.one(b.Member), Cause: b.Cause, Why: b.Why}
+	return out, p.err
 }
 
 func sneakToProto(b sdk.SneakAct) (*sessionpb.SneakAct, error) {
 	var p parties
-	return &sessionpb.SneakAct{By: p.one(b.By), Watcher: p.one(b.Watcher), Roll: rollToProto(b.Roll)}, p.err
+	out := &sessionpb.SneakAct{By: p.one(b.By), Watcher: p.one(b.Watcher), Roll: p.roll(b.Roll)}
+	return out, p.err
 }
 
 func restToProto(b sdk.RestAct) (*sessionpb.RestAct, error) {
 	var p parties
-	return &sessionpb.RestAct{
+	out := &sessionpb.RestAct{
 		By: p.one(b.By), Kind: b.Kind,
 		HitPointsRestored: int32(b.HitPointsRestored), HitPoints: int32(b.HitPoints), //nolint:gosec // hit points fit int32
 		HitDiceSpent: int32(b.HitDiceSpent), HitDiceReturned: int32(b.HitDiceReturned), //nolint:gosec // hit dice fit int32
 		HitDiceRemaining:  int32(b.HitDiceRemaining), //nolint:gosec // hit dice fit int32
-		ResourcesRefilled: b.ResourcesRefilled, Roll: rollToProto(b.Roll),
-	}, p.err
+		ResourcesRefilled: b.ResourcesRefilled, Roll: p.roll(b.Roll),
+	}
+	return out, p.err
 }
 
 func tableAnswerToProto(b sdk.TableAnswer) (*sessionpb.TableAnswer, error) {
 	var p parties
 	out := &sessionpb.TableAnswer{
 		Who: p.one(b.Who), Option: b.Option, Key: b.Key, Word: b.Word, Selector: b.Selector, Say: b.Say,
-		Temperament: b.Temperament, Entry: int32(b.Entry), Roll: rollToProto(b.Roll), //nolint:gosec // a table row fits int32
+		Temperament: b.Temperament, Entry: int32(b.Entry), Roll: p.roll(b.Roll), //nolint:gosec // a table row fits int32
 	}
 	for _, c := range b.Candidates {
 		out.Candidates = append(out.Candidates, &sessionpb.TableCandidate{
@@ -595,7 +628,7 @@ func tableAnswerToProto(b sdk.TableAnswer) (*sessionpb.TableAnswer, error) {
 		})
 	}
 	if d := b.Dealt; d != nil {
-		out.Dealt = &sessionpb.Temper{Faction: p.one(d.Faction), Temper: d.Temper, Roll: rollValueToProto(d.Roll)}
+		out.Dealt = &sessionpb.Temper{Faction: p.one(d.Faction), Temper: d.Temper, Roll: p.rollValue(d.Roll)}
 	}
 	return out, p.err
 }
@@ -641,7 +674,7 @@ func perceptionToProto(b sdk.Perception) (*sessionpb.Perception, error) {
 		out.Heard = &sessionpb.Sound{Kind: h.Kind, Cell: positionToProto(h.Cell), Hops: int32(h.Hops)} //nolint:gosec // hops fit int32
 	}
 	if d := b.Discovery; d != nil {
-		out.Discovery = &sessionpb.DiscoveryCheck{Ability: d.Ability, Roll: rollToProto(d.Roll)}
+		out.Discovery = &sessionpb.DiscoveryCheck{Ability: d.Ability, Roll: p.roll(d.Roll)}
 	}
 	if r := b.Revealed; r != nil {
 		out.Revealed = &sessionpb.SecretRevealed{
@@ -704,7 +737,7 @@ func clockToProto(b sdk.ClockEntry) (*sessionpb.ClockEntry, error) {
 	if r := b.RollWindow; r != nil {
 		out.RollWindow = &sessionpb.RollWindowOpened{
 			PresentationId: r.PresentationID, Audience: p.one(r.Audience),
-			Offer: reactionRefToProto(&r.Offer), Roll: rollToProto(r.Roll),
+			Offer: reactionRefToProto(&r.Offer), Roll: p.roll(r.Roll),
 		}
 	}
 	return out, p.err

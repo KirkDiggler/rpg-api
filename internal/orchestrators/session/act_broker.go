@@ -15,11 +15,20 @@ import (
 // actBuffer is how many acts a subscriber may fall behind by before it is
 // closed as lagged. A monster round's burst is the case it is sized for, as
 // recordBuffer is.
+//
+// THE CLIFF. A same-id run is enqueued whole or not at all, so a run LONGER
+// than the buffer can never be delivered live: even an empty subscriber is
+// closed as lagged before it, and only the GetStory catch-up delivers it. The
+// largest plausible run is one record entry and everything it ended — a rest
+// ending its concentrations and conditions, a departure or an ending lifting
+// the departing members' conditions: a handful of acts. 256 sits far above
+// that, so the cliff is reachable only by an override.
 const actBuffer = 256
 
 // ActBufferEnv overrides actBuffer for one process. It exists for the castle
 // walk, which forces a lag with a small buffer; a value that is not a
-// positive integer is ignored.
+// positive integer is ignored. An override must stay above the largest
+// same-id run (see actBuffer's cliff), or that run arrives only by catch-up.
 const ActBufferEnv = "SESSION_ACT_BUFFER"
 
 // ErrActsLagged is what PublishActs returns when it closed at least one

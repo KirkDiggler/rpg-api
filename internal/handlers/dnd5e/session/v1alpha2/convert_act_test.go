@@ -42,11 +42,19 @@ var (
 	d20     = &sdk.Roll{
 		Expression: "1d20+5", Dice: []int{15}, Modifiers: []sdk.RollModifier{{Source: "Strength", Value: 3}, {Source: "Proficiency", Value: 2}},
 		Total: 20, Against: ip(13), Beaten: bp(true),
+		Influences: []sdk.RollInfluence{
+			{Kind: sdk.InfluenceAdvantage, SourceRef: "dnd5e:conditions:helped", SourceID: "bob"},
+			{Kind: sdk.InfluenceDisadvantage, SourceRef: "dnd5e:conditions:prone"},
+		},
 	}
 	d20P = &sessionpb.Roll{
 		Expression: "1d20+5", Dice: []int32{15},
 		Modifiers: []*sessionpb.RollModifier{{Source: "Strength", Value: 3}, {Source: "Proficiency", Value: 2}},
 		Total:     20, Against: i32(13), Beaten: bp(true),
+		Influences: []*sessionpb.RollInfluence{
+			{Kind: sessionpb.InfluenceKind_INFLUENCE_KIND_ADVANTAGE, SourceRef: "dnd5e:conditions:helped", SourceId: "bob"},
+			{Kind: sessionpb.InfluenceKind_INFLUENCE_KIND_DISADVANTAGE, SourceRef: "dnd5e:conditions:prone"},
+		},
 	}
 	tableDie  = &sdk.Roll{Dice: []int{4}, Total: 4, Of: 6}
 	tableDieP = &sessionpb.Roll{Dice: []int32{4}, Total: 4, Of: 6}
@@ -387,4 +395,15 @@ func (s *ConvertActSuite) TestConvertUnknownResultDamageRefuses() {
 	s.Require().ErrorIs(err, errUnknownValue)
 	s.True(got.GetRefused())
 	s.Equal("id-3", got.GetId())
+}
+
+// TestConvertUnknownInfluenceRefuses: a roll's influence of a kind this build
+// cannot spell refuses its act — the card never silently loses a source.
+func (s *ConvertActSuite) TestConvertUnknownInfluenceRefuses() {
+	got, err := actToProto(sdk.Act{ID: "id-4", Family: sdk.FamilyAct, Body: sdk.SneakAct{
+		By: alice, Roll: &sdk.Roll{Total: 12, Influences: []sdk.RollInfluence{{Kind: "inspired", SourceRef: "x"}}},
+	}})
+	s.Require().ErrorIs(err, errUnknownValue)
+	s.True(got.GetRefused())
+	s.Equal("id-4", got.GetId())
 }
