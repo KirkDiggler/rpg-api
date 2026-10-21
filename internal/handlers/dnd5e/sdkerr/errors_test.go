@@ -87,6 +87,7 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// A malformed reach (a negative range) is the caller's defect, not a
 		// reach that fell short -- ErrOutOfRange keeps FAILED_PRECONDITION.
 		{"ErrBadReach", sdk.ErrBadReach, codes.InvalidArgument},
+		{"ErrBadRecordID", sdk.ErrBadRecordID, codes.InvalidArgument},
 		{"ErrBadEquip", sdk.ErrBadEquip, codes.InvalidArgument},
 		{"ErrBadRest", sdk.ErrBadRest, codes.InvalidArgument},
 		{"ErrDuplicateMember", sdk.ErrDuplicateMember, codes.InvalidArgument},

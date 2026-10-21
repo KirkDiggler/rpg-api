@@ -158,7 +158,10 @@ func StatusError(err error) error {
 		// one member twice. Rebuilding the request is the remedy.
 		errors.Is(err, sdk.ErrBadEquip),
 		errors.Is(err, sdk.ErrBadRest),
-		errors.Is(err, sdk.ErrDuplicateMember):
+		errors.Is(err, sdk.ErrDuplicateMember),
+		// ErrBadRecordID (rpg-project#628) -- a record read's after_id that
+		// is not a record id. Refused rather than read as "caught up".
+		errors.Is(err, sdk.ErrBadRecordID):
 		return status.Error(codes.InvalidArgument, err.Error())
 
 	// FAILED_PRECONDITION -- the request is well-formed but the world's

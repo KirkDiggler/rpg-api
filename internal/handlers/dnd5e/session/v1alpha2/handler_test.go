@@ -251,6 +251,23 @@ func (s *RecordHandlerSuite) TestGetRecordPagesWithMore() {
 	s.False(out.GetMore(), "everything fit")
 }
 
+// TestBadAfterIDIsInvalidArgument: an after_id that is not a record id is
+// the caller's error on both RPCs, never an empty "caught up" answer.
+func (s *RecordHandlerSuite) TestBadAfterIDIsInvalidArgument() {
+	refused := fmt.Errorf("record: %w", sdk.ErrBadRecordID)
+	s.seated()
+	s.manager.EXPECT().Record(gomock.Any(), gomock.Any()).Return(nil, refused)
+	_, err := s.handler(sessionorch.NewRecordBroker(8)).GetRecord(s.ctx,
+		&sessionpb.GetRecordRequest{Session: "sess-1", Member: "char-1", AfterId: "zzz"})
+	s.Equal(codes.InvalidArgument, status.Code(err))
+
+	s.seated()
+	s.manager.EXPECT().Record(gomock.Any(), gomock.Any()).Return(nil, refused)
+	stream, done := s.run(s.handler(sessionorch.NewRecordBroker(8)), "zzz")
+	s.Equal(codes.InvalidArgument, status.Code(s.ended(done)))
+	s.Empty(stream.sent)
+}
+
 // TestGetRecordRequiresSeat: the gate's refusal is the RPC's answer.
 func (s *RecordHandlerSuite) TestGetRecordRequiresSeat() {
 	s.gate.EXPECT().CallerMemberSeated(gomock.Any(), "sess-1", "char-1").Return(status.Error(codes.PermissionDenied, "not seated"))
