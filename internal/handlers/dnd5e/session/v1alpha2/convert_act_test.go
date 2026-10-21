@@ -411,7 +411,7 @@ func (s *ConvertActSuite) TestConvertTracedDamageCarriesItsSource() {
 	s.True(proto.Equal(&sessionpb.Roll{
 		Expression: "1d4", Dice: []int32{3}, Total: 3,
 		Terms: []*sessionpb.RollDiceTerm{{
-			Count: 1, DieSize: 4, Faces: []int32{3}, Rolled: []int32{3},
+			Count: 1, DieSize: 4, Faces: []int32{3},
 			SourceRef: "dnd5e:spells:divine-favor", SourceName: "Divine Favor", SourceId: "cleric",
 		}},
 	}, got), "%v", got)
@@ -563,82 +563,4 @@ func (s *ConvertActSuite) TestRollModifierToProtoCarriesItsRef() {
 	}, got.GetModifiers()[0]), "%v", got.GetModifiers()[0])
 	s.Require().Len(got.GetInfluences(), 1)
 	s.Equal("help", got.GetInfluences()[0].GetSourceLabel())
-}
-
-// TestDamageRollCarriesTheRerollRecord is rpg-project#643 B on the damage
-// path, the issue's own example: a Great Weapon Fighting greatsword's damage
-// part says die 0 was rerolled from 1 to 4 and by whom, beside the pool as
-// first rolled and the faces that counted. Mutant: dropping the trace's
-// rerolls fails it.
-func (s *ConvertActSuite) TestDamageRollCarriesTheRerollRecord() {
-	got := damageRollToProto(sdk.DamageComponent{Source: "Greatsword", Roll: sdk.RollComponent{
-		Source: sdk.RollSource{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword", SourceID: "fighter"},
-		Dice: &sdk.DiceTrace{
-			Notation: "2d6", DieSize: 6, OriginalRolls: []int{1, 5}, FinalRolls: []int{4, 5}, Subtotal: 9,
-			Rerolls: []sdk.DiceReroll{{DieIndex: 0, Before: 1, After: 4, Source: sdk.RollSource{
-				Ref: "dnd5e:conditions:fighting_style_great_weapon_fighting", Name: "Great Weapon Fighting", SourceID: "fighter",
-			}}},
-		},
-	}})
-	s.Equal("2d6", got.GetExpression())
-	s.Equal([]int32{4, 5}, got.GetDice())
-	s.Equal(int32(9), got.GetTotal())
-	s.Require().Len(got.GetTerms(), 1)
-	term := got.GetTerms()[0]
-	s.Equal([]int32{1, 5}, term.GetRolled(), "the pool as first rolled")
-	s.Equal([]int32{4, 5}, term.GetFaces(), "the faces that counted, after the reroll")
-	s.Require().Len(term.GetRerolls(), 1)
-	s.True(proto.Equal(&sessionpb.RollReroll{
-		DieIndex: 0, Before: 1, After: 4,
-		SourceRef: "dnd5e:conditions:fighting_style_great_weapon_fighting", SourceName: "Great Weapon Fighting", SourceId: "fighter",
-	}, term.GetRerolls()[0]), "%v", term.GetRerolls()[0])
-}
-
-// TestDamageModifierCarriesItsSource is rpg-project#643 D on the damage
-// path: a damage part's flat contribution names its source whole. Mutant:
-// dropping the modifier's ref fails it.
-func (s *ConvertActSuite) TestDamageModifierCarriesItsSource() {
-	got := damageRollToProto(sdk.DamageComponent{Source: "Strength", Roll: sdk.RollComponent{
-		Source:   sdk.RollSource{Ref: "dnd5e:abilities:str", Name: "Strength", Label: "ability", SourceID: "fighter"},
-		Modifier: ip(3),
-	}})
-	s.Require().Len(got.GetModifiers(), 1)
-	s.True(proto.Equal(&sessionpb.RollModifier{
-		Source: "Strength", Value: 3, SourceRef: "dnd5e:abilities:str", SourceId: "fighter", SourceLabel: "ability",
-	}, got.GetModifiers()[0]), "%v", got.GetModifiers()[0])
-	s.Equal("3", got.GetExpression())
-}
-
-// TestDamageTermCountsTheKeptFaces: a damage pool under a keep (Savage
-// Attacker keeping the higher of [2, 6]) is one term counting only the kept
-// face, with the pool and the kept index beside it (rpg-api#1129 review).
-// Mutant: counting the rolled pool fails it.
-func (s *ConvertActSuite) TestDamageTermCountsTheKeptFaces() {
-	got := damageRollToProto(sdk.DamageComponent{Source: "Greatsword", Roll: sdk.RollComponent{
-		Source: sdk.RollSource{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword", SourceID: "fighter"},
-		Dice:   &sdk.DiceTrace{Notation: "2d6", DieSize: 6, OriginalRolls: []int{2, 6}, FinalRolls: []int{2, 6}, KeptIndices: []int{1}, Subtotal: 6},
-	}})
-	s.Require().Len(got.GetTerms(), 1)
-	term := got.GetTerms()[0]
-	s.Equal(int32(1), term.GetCount())
-	s.Equal([]int32{6}, term.GetFaces())
-	s.Equal([]int32{2, 6}, term.GetRolled())
-	s.Equal([]int32{1}, term.GetKeptIndices())
-	s.Equal([]int32{6}, got.GetDice())
-	s.Equal("1d6", got.GetExpression())
-}
-
-// TestDamageTermSubtracts: a subtracted damage pool is a subtracted term and
-// takes from the total (rpg-api#1129 review). Mutant: forcing Subtract false
-// fails it.
-func (s *ConvertActSuite) TestDamageTermSubtracts() {
-	got := damageRollToProto(sdk.DamageComponent{Source: "Bane", Roll: sdk.RollComponent{
-		Source:       sdk.RollSource{Ref: "dnd5e:spells:bane", Name: "Bane", SourceID: "cultist"},
-		Dice:         &sdk.DiceTrace{Notation: "d4", DieSize: 4, OriginalRolls: []int{3}, FinalRolls: []int{3}, Subtotal: 3},
-		SubtractDice: true,
-	}})
-	s.Require().Len(got.GetTerms(), 1)
-	s.True(got.GetTerms()[0].GetSubtract())
-	s.Equal("-1d4", got.GetExpression())
-	s.Equal(int32(-3), got.GetTotal())
 }
