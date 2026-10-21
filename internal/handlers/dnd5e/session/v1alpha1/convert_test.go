@@ -1243,7 +1243,6 @@ func TestEventsToProto(t *testing.T) {
 			Session: "sess-1", Seq: 1, At: 10, Correlation: "corr-1", Recipient: "char-1",
 			Kind: sdk.EventTurnEnded, Payload: []byte("p"),
 			Body: sdk.TurnEndedBody{Member: "char-1", Next: "char-2"},
-			Tags: map[string]string{"k": "v"}, // no wire field yet -- dropped, see eventToProto's own doc
 		},
 	})
 	require.Len(t, got, 1)
