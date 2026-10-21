@@ -429,6 +429,7 @@ func (s *ConvertActSuite) TestRollToProtoCarriesTheRerollRecord() {
 			Rerolls: []sdk.RollReroll{{
 				DieIndex: 0, Before: 1, After: 4,
 				SourceRef: "dnd5e:fighting-styles:great-weapon-fighting", SourceName: "Great Weapon Fighting", SourceID: "fighter",
+				SourceLabel: "fighting style",
 			}},
 		}},
 	})
@@ -443,7 +444,43 @@ func (s *ConvertActSuite) TestRollToProtoCarriesTheRerollRecord() {
 	s.True(proto.Equal(&sessionpb.RollReroll{
 		DieIndex: 0, Before: 1, After: 4,
 		SourceRef: "dnd5e:fighting-styles:great-weapon-fighting", SourceName: "Great Weapon Fighting", SourceId: "fighter",
+		SourceLabel: "fighting style",
 	}, term.GetRerolls()[0]), "%v", term.GetRerolls()[0])
+}
+
+// TestTraceTermToProtoCarriesTheRerollRecord is the damage path's half of
+// rpg-project#643 B: a Great Weapon Fighting greatsword component's raw
+// trace spells the same term a folded roll does, with the pool as first
+// rolled, its kept faces and the sourced reroll. Mutant: dropping the trace's
+// rerolls fails it.
+func (s *ConvertActSuite) TestTraceTermToProtoCarriesTheRerollRecord() {
+	gwf := sdk.RollSource{Ref: "dnd5e:conditions:fighting_style_great_weapon_fighting", Name: "Great Weapon Fighting", SourceID: "fighter"}
+	got := traceTermToProto(sdk.RollComponent{
+		Source: sdk.RollSource{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword", SourceID: "fighter"},
+		Dice: &sdk.DiceTrace{
+			Notation: "2d6", DieSize: 6, OriginalRolls: []int{1, 5}, FinalRolls: []int{4, 5}, Subtotal: 9,
+			Rerolls: []sdk.DiceReroll{{DieIndex: 0, Before: 1, After: 4, Source: gwf}},
+		},
+	})
+	s.True(proto.Equal(&sessionpb.RollDiceTerm{
+		Count: 2, DieSize: 6, Faces: []int32{4, 5}, Rolled: []int32{1, 5},
+		SourceRef: "dnd5e:weapons:greatsword", SourceName: "Greatsword", SourceId: "fighter",
+		Rerolls: []*sessionpb.RollReroll{{
+			DieIndex: 0, Before: 1, After: 4,
+			SourceRef: "dnd5e:conditions:fighting_style_great_weapon_fighting", SourceName: "Great Weapon Fighting", SourceId: "fighter",
+		}},
+	}, got), "%v", got)
+	s.Nil(traceTermToProto(sdk.RollComponent{Source: gwf}), "a component that rolled no dice has no term")
+}
+
+// TestSourceModifierToProtoCarriesItsRef is the damage path's half of
+// rpg-project#643 D: a traced component's flat contribution names its source
+// whole. Mutant: dropping the ref fails it.
+func (s *ConvertActSuite) TestSourceModifierToProtoCarriesItsRef() {
+	got := sourceModifierToProto(sdk.RollSource{Ref: "dnd5e:abilities:str", Name: "Strength", Label: "ability", SourceID: "fighter"}, 3)
+	s.True(proto.Equal(&sessionpb.RollModifier{
+		Source: "Strength", Value: 3, SourceRef: "dnd5e:abilities:str", SourceId: "fighter", SourceLabel: "ability",
+	}, got), "%v", got)
 }
 
 // TestRollModifierToProtoCarriesItsRef is rpg-project#643 D on the wire:
