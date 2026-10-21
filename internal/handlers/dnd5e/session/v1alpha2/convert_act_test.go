@@ -411,10 +411,57 @@ func (s *ConvertActSuite) TestConvertTracedDamageCarriesItsSource() {
 	s.True(proto.Equal(&sessionpb.Roll{
 		Expression: "1d4", Dice: []int32{3}, Total: 3,
 		Terms: []*sessionpb.RollDiceTerm{{
-			Count: 1, DieSize: 4, Faces: []int32{3},
+			Count: 1, DieSize: 4, Faces: []int32{3}, Rolled: []int32{3},
 			SourceRef: "dnd5e:spells:divine-favor", SourceName: "Divine Favor", SourceId: "cleric",
 		}},
 	}, got), "%v", got)
+}
+
+// TestConvertDamageRollCarriesTheGWFReroll is rpg-project#643 B and D on the
+// damage path: a Great Weapon Fighting greatsword's 2d6 first rolled [1, 5],
+// die 0 rerolled 1 -> 4 by the fighting style, and the Strength modifier
+// names its ref and label. The v1 Struck beat carried all of it.
+func (s *ConvertActSuite) TestConvertDamageRollCarriesTheGWFReroll() {
+	weapon := damageRollToProto(sdk.DamageComponent{
+		Source: "weapon", DamageType: sdk.DamageSlashing,
+		Roll: sdk.RollComponent{
+			Source: sdk.RollSource{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword"},
+			Dice: &sdk.DiceTrace{
+				Notation: "2d6", DieSize: 6, OriginalRolls: []int{1, 5}, FinalRolls: []int{4, 5}, Subtotal: 9,
+				Rerolls: []sdk.DiceReroll{{
+					DieIndex: 0, Before: 1, After: 4,
+					Source: sdk.RollSource{Ref: "dnd5e:conditions:fighting_style_great_weapon_fighting", Name: "Great Weapon Fighting"},
+				}},
+			},
+		},
+	})
+	s.Require().Len(weapon.GetTerms(), 1)
+	term := weapon.GetTerms()[0]
+	s.Equal([]int32{4, 5}, term.GetFaces(), "the faces that counted")
+	s.Equal([]int32{1, 5}, term.GetRolled(), "the pool as first rolled")
+	s.Require().Len(term.GetRerolls(), 1)
+	reroll := term.GetRerolls()[0]
+	s.Equal(int32(0), reroll.GetDieIndex())
+	s.Equal(int32(1), reroll.GetBefore())
+	s.Equal(int32(4), reroll.GetAfter())
+	s.Equal("dnd5e:conditions:fighting_style_great_weapon_fighting", reroll.GetSourceRef())
+	s.Equal("Great Weapon Fighting", reroll.GetSourceName())
+	s.Equal(int32(9), weapon.GetTotal())
+
+	level := damageRollToProto(sdk.DamageComponent{
+		Source: "ability", DamageType: sdk.DamageSlashing,
+		Roll: sdk.RollComponent{
+			Source:   sdk.RollSource{Ref: "dnd5e:classes:fighter", Name: "Fighter", Label: "Fighter level", SourceID: "alice"},
+			Modifier: ip(1),
+		},
+	})
+	s.Require().Len(level.GetModifiers(), 1)
+	mod := level.GetModifiers()[0]
+	s.Equal("Fighter", mod.GetSource())
+	s.Equal("dnd5e:classes:fighter", mod.GetSourceRef())
+	s.Equal("Fighter level", mod.GetSourceLabel())
+	s.Equal("alice", mod.GetSourceId())
+	s.Equal(int32(1), mod.GetValue())
 }
 
 // TestConvertDamageComponentSourceRef is rpg-project#643 C: a traced

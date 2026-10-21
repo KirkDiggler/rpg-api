@@ -444,9 +444,11 @@ func rerollsToProto(rerolls []sdk.RollReroll) []*sessionpb.RollReroll {
 // die an act carries is said one way). A traced component reads its kept
 // faces, its notation's die count and size, and its modifier; Total is the
 // trace's own subtotal, signed, plus the modifier. Its dice are one term
-// naming the source that rolled them (rpg-project#643 A): which spell or
-// weapon a damage part came from rides the roll, as it rode the v1 trace. A
-// pre-trace component reads its legacy scalars the same way.
+// naming the source that rolled them, with the pool as first rolled and its
+// sourced rerolls (rpg-project#643 A, B): a Great Weapon Fighting reroll rides
+// the damage roll as it rode the v1 trace. Its modifier names its whole
+// source, ref and label too (#643 D). A pre-trace component reads its legacy
+// scalars the same way.
 func damageRollToProto(c sdk.DamageComponent) *sessionpb.Roll {
 	out := &sessionpb.Roll{}
 	rc := c.Roll
@@ -470,15 +472,11 @@ func damageRollToProto(c sdk.DamageComponent) *sessionpb.Roll {
 				sum = -sum
 			}
 			out.Expression = term
-			out.Terms = []*sessionpb.RollDiceTerm{{
-				Count: int32(len(kept)), DieSize: int32(d.DieSize), //nolint:gosec // a dice pool fits int32
-				Faces: int32s(kept), Subtract: rc.SubtractDice,
-				SourceRef: rc.Source.Ref, SourceName: rc.Source.Name, SourceId: rc.Source.SourceID,
-			}}
+			out.Terms = []*sessionpb.RollDiceTerm{traceTermToProto(rc)}
 		}
 		if m := rc.Modifier; m != nil {
 			sum += *m
-			out.Modifiers = []*sessionpb.RollModifier{{Source: rc.Source.Name, Value: int32(*m)}} //nolint:gosec // a modifier fits int32
+			out.Modifiers = []*sessionpb.RollModifier{sourceModifierToProto(rc.Source, *m)}
 			out.Expression = joinExpression(out.Expression, *m)
 		}
 		out.Total = int32(sum) //nolint:gosec // a damage total fits int32
