@@ -11,6 +11,18 @@ This is a living doc. Edit it in the same PR that invalidates a line. Don't let 
 
 ## Active work
 
+**The record stream, session v1alpha2 (rpg-project#628)** — `RecordService`
+(`StreamRecord`, `GetRecord`) in `internal/handlers/dnd5e/session/v1alpha2/`
+serves every beat the encounter writes, as written, to any caller seated as
+the member it names (the same `sessionaccess` gate as `StreamEvents`). Its
+`RecordBroker` (`internal/orchestrators/session/record_broker.go`) is keyed by
+session and closes a full subscriber as lagged; the stream then ends with
+`RecordLagged{last_id}` and the client catches up with `GetRecord`. That is
+rpg-api#1122's fix scoped to the new stream: the v1 `Broker` still skips a
+full subscriber, and #1122 stays open for it. `GetRecord` logs
+`session record: catch-up restarted (older than retention)` as the R25
+measurement.
+
 **Session verbs (rpg-project#542, toolkit#1965 tier 2 F)** — Draft on toolkit
 pseudo-versions (root `8531d337`, encounter `5ccd6e3c`, resolution `501f551e`,
 session `1bc79f04`) and protos v0.1.228; not walked. rpg-api is transport for

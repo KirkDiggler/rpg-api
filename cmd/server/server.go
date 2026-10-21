@@ -15,6 +15,7 @@ import (
 	authoringhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1"
 	lobbyhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/lobby/v1alpha1"
 	sessionhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1"
+	sessionrecordhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha2"
 	sessionaccess "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sessionaccess"
 	sessionpresentationhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sessionpresentation/v1alpha1"
 	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
@@ -38,6 +39,7 @@ import (
 	lobbyv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
 	sessionpresentationv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/presentation/v1alpha1"
 	sessionv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	sessionv1alpha2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	characterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
 
@@ -338,6 +340,19 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("session handler: %w", err)
 	}
 	sessionv1alpha1pb.RegisterSessionServiceServer(srv, sessionHandlerImpl)
+
+	// RecordService, session v1alpha2 (rpg-project#628): the record stream
+	// for the debug panel. Same seat gate as StreamEvents; its own broker,
+	// which closes a lagging subscriber as lagged instead of skipping it.
+	recordHandlerImpl, err := sessionrecordhandler.New(&sessionrecordhandler.HandlerConfig{
+		Manager: sessionOrch.Manager,
+		Broker:  sessionOrch.RecordBroker,
+		Gate:    access,
+	})
+	if err != nil {
+		return fmt.Errorf("session record handler: %w", err)
+	}
+	sessionv1alpha2pb.RegisterRecordServiceServer(srv, recordHandlerImpl)
 
 	presentationService := sessionpresentationorch.New(sessionpresentationrepo.NewRedis(redisClient))
 	presentationHandlerImpl, err := sessionpresentationhandler.New(&sessionpresentationhandler.HandlerConfig{
