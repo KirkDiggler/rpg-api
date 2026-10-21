@@ -164,7 +164,10 @@ func everyBody() map[string]bodyCase {
 				Outcome: sessionpb.AttackOutcome_ATTACK_OUTCOME_HIT, Critical: true, Damage: 7,
 				DamageComponents: []*sessionpb.DamageComponent{{
 					Source: "Spear", SourceRef: "dnd5e:weapons:spear", DamageType: sessionpb.DamageType_DAMAGE_TYPE_PIERCING, Multiplier: fp(0.5),
-					Roll: &sessionpb.Roll{Expression: "2d6+2", Dice: []int32{2, 5}, Modifiers: []*sessionpb.RollModifier{{Source: "Strength", Value: 2}}, Total: 9},
+					Roll: &sessionpb.Roll{
+						Expression: "2d6+2", Dice: []int32{2, 5}, Modifiers: []*sessionpb.RollModifier{{Source: "Strength", Value: 2}}, Total: 9,
+						Terms: []*sessionpb.RollDiceTerm{{Count: 2, DieSize: 6, Faces: []int32{2, 5}, SourceName: "Strength"}},
+					},
 				}},
 				Roll: d20P, Ward: &sessionpb.WardSave{Source: aliceP, Ability: "wis", Roll: d20P},
 				Sequence: &sessionpb.SequenceRef{Ref: "dnd5e:actions:multiattack", Name: "Multiattack"},
@@ -392,6 +395,63 @@ func (s *ConvertActSuite) TestConvertLegacyDamageComponent() {
 	s.True(proto.Equal(&sessionpb.Roll{
 		Expression: "1d8+3", Dice: []int32{6}, Modifiers: []*sessionpb.RollModifier{{Source: "Longsword", Value: 3}}, Total: 9,
 	}, got), "%v", got)
+}
+
+// TestConvertTracedDamageCarriesItsSource is rpg-project#643 A: a traced
+// damage component's roll says which source rolled it. Divine Favor's 1d4
+// rides a weapon swing; its term names the spell.
+func (s *ConvertActSuite) TestConvertTracedDamageCarriesItsSource() {
+	got := damageRollToProto(sdk.DamageComponent{
+		Source: "spell", DamageType: sdk.DamageRadiant,
+		Roll: sdk.RollComponent{
+			Source: sdk.RollSource{Ref: "dnd5e:spells:divine-favor", Name: "Divine Favor", SourceID: "cleric"},
+			Dice:   &sdk.DiceTrace{Notation: "1d4", DieSize: 4, OriginalRolls: []int{3}, FinalRolls: []int{3}, Subtotal: 3},
+		},
+	})
+	s.True(proto.Equal(&sessionpb.Roll{
+		Expression: "1d4", Dice: []int32{3}, Total: 3,
+		Terms: []*sessionpb.RollDiceTerm{{
+			Count: 1, DieSize: 4, Faces: []int32{3},
+			SourceRef: "dnd5e:spells:divine-favor", SourceName: "Divine Favor", SourceId: "cleric",
+		}},
+	}, got), "%v", got)
+}
+
+// TestConvertDamageComponentSourceRef is rpg-project#643 C: a traced
+// component's source_ref is its roll's source, not only the legacy scalar.
+// A Great Weapon Fighting greatsword and its Strength modifier each name
+// their source; the kept faces are the rerolled ones.
+func (s *ConvertActSuite) TestConvertDamageComponentSourceRef() {
+	out, err := attackToProto(sdk.AttackAct{
+		Attack:  sdk.AttackRef{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword", DamageType: sdk.DamageSlashing},
+		Outcome: sdk.AttackHit, Damage: 12,
+		DamageComponents: []sdk.DamageComponent{
+			{Source: "weapon", DamageType: sdk.DamageSlashing, Roll: sdk.RollComponent{
+				Source: sdk.RollSource{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword"},
+				Dice:   &sdk.DiceTrace{Notation: "2d6", DieSize: 6, OriginalRolls: []int{1, 5}, FinalRolls: []int{4, 5}, Subtotal: 9},
+			}},
+			{Source: "ability", DamageType: sdk.DamageSlashing, Roll: sdk.RollComponent{
+				Source: sdk.RollSource{Ref: "dnd5e:abilities:str", Name: "Strength"}, Modifier: ip(3),
+			}},
+		},
+	})
+	s.Require().NoError(err)
+	s.Require().Len(out.GetDamageComponents(), 2)
+	weapon, ability := out.GetDamageComponents()[0], out.GetDamageComponents()[1]
+	s.Equal("dnd5e:weapons:greatsword", weapon.GetSourceRef())
+	s.Equal("dnd5e:abilities:str", ability.GetSourceRef())
+	s.Require().Len(weapon.GetRoll().GetTerms(), 1)
+	s.Equal([]int32{4, 5}, weapon.GetRoll().GetTerms()[0].GetFaces())
+	s.Equal("Greatsword", weapon.GetRoll().GetTerms()[0].GetSourceName())
+	s.Empty(ability.GetRoll().GetTerms(), "a flat modifier rolls no dice")
+
+	// A legacy component keeps its own scalar.
+	legacy, err := attackToProto(sdk.AttackAct{
+		Attack: sdk.AttackRef{Ref: "dnd5e:weapons:spear"}, Outcome: sdk.AttackHit,
+		DamageComponents: []sdk.DamageComponent{{Source: "Spear", SourceRef: "dnd5e:weapons:spear", DamageType: sdk.DamagePiercing}},
+	})
+	s.Require().NoError(err)
+	s.Equal("dnd5e:weapons:spear", legacy.GetDamageComponents()[0].GetSourceRef())
 }
 
 // TestConvertUnknownResultDamageRefuses: an activation result naming a damage
