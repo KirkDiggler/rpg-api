@@ -31,9 +31,8 @@ func (h *Handler) GetRecord(ctx context.Context, req *sessionpb.GetRecordRequest
 	if page <= 0 || page > maxRecordPage {
 		page = maxRecordPage
 	}
-	// One past the page, to learn whether more remain without a second read.
 	out, err := h.manager.Record(ctx, &sdk.RecordReadInput{
-		Session: req.GetSession(), AfterID: req.GetAfterId(), Limit: page + 1,
+		Session: req.GetSession(), AfterID: req.GetAfterId(), Limit: page,
 	})
 	if err != nil {
 		return nil, sdkerr.StatusError(err)
@@ -41,12 +40,8 @@ func (h *Handler) GetRecord(ctx context.Context, req *sessionpb.GetRecordRequest
 	if out.Restarted {
 		slog.InfoContext(ctx, logRecordRestarted, "session", req.GetSession(), "after_id", req.GetAfterId())
 	}
-	read, more := out.Events, false
-	if len(read) > page {
-		read, more = read[:page], true
-	}
-	events := make([]*sessionpb.RecordEvent, 0, len(read))
-	for _, evt := range read {
+	events := make([]*sessionpb.RecordEvent, 0, len(out.Events))
+	for _, evt := range out.Events {
 		converted, cerr := recordEventToProto(evt)
 		if cerr != nil {
 			slog.ErrorContext(ctx, "session record: fields not projectable, sent without them",
@@ -54,5 +49,5 @@ func (h *Handler) GetRecord(ctx context.Context, req *sessionpb.GetRecordRequest
 		}
 		events = append(events, converted)
 	}
-	return &sessionpb.GetRecordResponse{Events: events, Restarted: out.Restarted, More: more}, nil
+	return &sessionpb.GetRecordResponse{Events: events, Restarted: out.Restarted, More: out.More}, nil
 }
