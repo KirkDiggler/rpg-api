@@ -362,8 +362,10 @@ func rollToProto(r *sdk.Roll) (*sessionpb.Roll, error) {
 // damageRollToProto spells one damage component's roll as a Roll (R17: every
 // die an act carries is said one way). A traced component reads its kept
 // faces, its notation's die count and size, and its modifier; Total is the
-// trace's own subtotal, signed, plus the modifier. A pre-trace component
-// reads its legacy scalars the same way.
+// trace's own subtotal, signed, plus the modifier. Its dice are one term
+// naming the source that rolled them (rpg-project#643 A): which spell or
+// weapon a damage part came from rides the roll, as it rode the v1 trace. A
+// pre-trace component reads its legacy scalars the same way.
 func damageRollToProto(c sdk.DamageComponent) *sessionpb.Roll {
 	out := &sessionpb.Roll{}
 	rc := c.Roll
@@ -387,6 +389,11 @@ func damageRollToProto(c sdk.DamageComponent) *sessionpb.Roll {
 				sum = -sum
 			}
 			out.Expression = term
+			out.Terms = []*sessionpb.RollDiceTerm{{
+				Count: int32(len(kept)), DieSize: int32(d.DieSize), //nolint:gosec // a dice pool fits int32
+				Faces: int32s(kept), Subtract: rc.SubtractDice,
+				SourceRef: rc.Source.Ref, SourceName: rc.Source.Name, SourceId: rc.Source.SourceID,
+			}}
 		}
 		if m := rc.Modifier; m != nil {
 			sum += *m
@@ -408,6 +415,16 @@ func damageRollToProto(c sdk.DamageComponent) *sessionpb.Roll {
 	}
 	out.Total = int32(sum) //nolint:gosec // a damage total fits int32
 	return out
+}
+
+// damageSourceRef is a damage component's provider ref: the legacy scalar on
+// a pre-trace payload, else its roll's source (rpg-project#643 C). The SDK
+// fills SourceRef only for payloads written before roll traces.
+func damageSourceRef(c sdk.DamageComponent) string {
+	if c.SourceRef != "" {
+		return c.SourceRef
+	}
+	return c.Roll.Source.Ref
 }
 
 // joinExpression appends a flat modifier to a dice expression: "1d8" and 3
@@ -474,7 +491,7 @@ func attackToProto(b sdk.AttackAct) (*sessionpb.AttackAct, error) {
 			return nil, err
 		}
 		dc := &sessionpb.DamageComponent{
-			Source: c.Source, SourceRef: c.SourceRef, DamageType: t, Roll: damageRollToProto(c),
+			Source: c.Source, SourceRef: damageSourceRef(c), DamageType: t, Roll: damageRollToProto(c),
 		}
 		if c.Multiplier != nil {
 			m := *c.Multiplier
