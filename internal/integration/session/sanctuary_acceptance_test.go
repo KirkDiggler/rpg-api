@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
@@ -51,7 +51,7 @@ func TestAcceptance_Sanctuary(t *testing.T) {
 				require.NoError(t, err)
 				actorCtx, actor = ctx, id
 			}
-			live := watchCast(actorCtx, t, h, actor, func() {
+			live := watchCastActs(actorCtx, t, h, actor, func() {
 				if cast {
 					offer := castRowFor(ctx, t, h, id, spells.SacredFlame)
 					out, castErr := h.handler.Cast(ctx, &sessionpb.CastRequest{Session: castSessionID, Member: id, DeclarationId: offer.GetId(), Targets: []string{"skel-1"}})
@@ -68,18 +68,21 @@ func TestAcceptance_Sanctuary(t *testing.T) {
 				}
 			})
 			warded := 0
-			for _, event := range live {
-				if b := event.GetWarded(); b != nil {
+			for _, act := range live {
+				if b := act.GetAttack(); b != nil && b.GetOutcome() == storypb.AttackOutcome_ATTACK_OUTCOME_WARDED {
 					warded++
-					require.Equal(t, id, b.GetSource())
-					require.Equal(t, "alice", b.GetAttacker())
-					require.NotNil(t, b.GetCalculation())
+					require.Equal(t, id, b.GetWard().GetSource().GetId())
+					require.Equal(t, "alice", b.GetBy().GetId())
+					require.Equal(t, id, b.GetTo().GetId())
+					require.NotNil(t, b.GetWard().GetRoll())
 				}
-				if b := event.GetCastWarded(); b != nil {
-					warded++
-					require.Equal(t, id, b.GetSource())
-					require.Equal(t, "skel-1", b.GetTarget())
-					require.NotNil(t, b.GetCalculation())
+				for _, result := range act.GetCast().GetResults() {
+					if result.GetOutcome() == storypb.CastOutcome_CAST_OUTCOME_WARDED {
+						warded++
+						require.Equal(t, id, result.GetSource().GetId())
+						require.Equal(t, "skel-1", result.GetTarget().GetId())
+						require.NotNil(t, result.GetSave())
+					}
 				}
 			}
 			require.Equal(t, 1, warded)
@@ -94,12 +97,7 @@ func TestAcceptance_Sanctuary(t *testing.T) {
 				require.Equal(t, protected.Character.Data.MaxHitPoints, protected.Character.Data.HitPoints)
 			}
 			reopenClericHost(t, h, sdk.StaleTargetRefuse)
-			story, err := h.handler.GetStory(actorCtx, &sessionpb.GetStoryRequest{Session: castSessionID, Member: actor, FromSeq: live[0].GetSeq()})
-			require.NoError(t, err)
-			require.Len(t, story.GetEntries(), len(live))
-			for i, e := range live {
-				require.True(t, proto.Equal(e, story.Entries[i]))
-			}
+			requireLiveIsStory(actorCtx, t, h, castSessionID, actor, live)
 		})
 	}
 }

@@ -77,21 +77,23 @@ func TestTwoStoryStreamSubscribers(t *testing.T) {
 	// launch has arrived the subscription is live.
 	aliceCtx, cancelAlice := context.WithCancel(ctxAlice)
 	defer cancelAlice()
+	aliceSoFar := len(storyOf(ctxAlice, t, h.story, session, "alice"))
 	aliceStream := newActStream(aliceCtx)
 	go func() {
 		if streamErr := h.story.StreamEvents(&storypb.StreamEventsRequest{Session: session, Member: "alice"}, aliceStream); streamErr != nil {
 			t.Logf("alice's StreamEvents call returned an error: %v", streamErr)
 		}
 	}()
-	require.NotEmpty(t, aliceStream.settle(t, 2*time.Second), "alice's replay of the launch")
+	require.NotEmpty(t, aliceStream.settle(t, aliceSoFar, 2*time.Second), "alice's replay of the launch")
 
 	bobCtx, cancelBob := context.WithCancel(ctxBob)
 	bobDone := make(chan error, 1)
+	bobSoFar := len(storyOf(ctxBob, t, h.story, session, "bob"))
 	bobStream := newActStream(bobCtx)
 	go func() {
 		bobDone <- h.story.StreamEvents(&storypb.StreamEventsRequest{Session: session, Member: "bob"}, bobStream)
 	}()
-	require.NotEmpty(t, bobStream.settle(t, 2*time.Second), "bob's replay of the launch")
+	require.NotEmpty(t, bobStream.settle(t, bobSoFar, 2*time.Second), "bob's replay of the launch")
 	bobBaseline := len(bobStream.snapshot())
 
 	// --- round 1: both real subscribers, a driven monster turn ---
@@ -115,8 +117,8 @@ func TestTwoStoryStreamSubscribers(t *testing.T) {
 
 	// Each live stream holds exactly the acts its own GetStory reads: no gap,
 	// no duplicate, in order.
-	aliceRound1 := aliceStream.settle(t, 2*time.Second)
-	bobRound1 := bobStream.settle(t, 2*time.Second)
+	aliceRound1 := aliceStream.settle(t, len(storyOf(ctxAlice, t, h.story, session, "alice")), 2*time.Second)
+	bobRound1 := bobStream.settle(t, len(storyOf(ctxBob, t, h.story, session, "bob")), 2*time.Second)
 	require.Equal(t, actKeys(storyOf(ctxAlice, t, h.story, session, "alice")), actKeys(aliceRound1))
 	require.Equal(t, actKeys(storyOf(ctxBob, t, h.story, session, "bob")), actKeys(bobRound1))
 	require.True(t, struckBy(bobRound1[bobBaseline:], "skel-1"), "bob must see skel-1's round-1 attack")
@@ -171,7 +173,7 @@ func TestTwoStoryStreamSubscribers(t *testing.T) {
 
 	// The OTHER subscriber -- alice, still live and draining -- gets every
 	// act of this same turn, with no gap carried over from round 1.
-	allAlice := aliceStream.settle(t, 2*time.Second)
+	allAlice := aliceStream.settle(t, len(storyOf(ctxAlice, t, h.story, session, "alice")), 2*time.Second)
 	require.Greater(t, len(allAlice), beforeRound2, "alice must have received round 2's acts too")
 	require.Equal(t, actKeys(storyOf(ctxAlice, t, h.story, session, "alice")), actKeys(allAlice))
 	require.True(t, struckBy(allAlice[beforeRound2:], "skel-1"),

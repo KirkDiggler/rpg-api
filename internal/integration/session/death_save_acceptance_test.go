@@ -3,6 +3,7 @@ package session_test
 import (
 	"context"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -21,6 +22,7 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -203,23 +205,27 @@ func assertPublicDeathSaveState(
 		"progress mismatch: want %v, got %v", progress, participant.GetDeathSaves())
 }
 
+// deathSaveWitness is one member's live act stream (StoryService
+// StreamEvents), opened before the Death Save so it receives it live.
 type deathSaveWitness struct {
 	member   string
 	ctx      context.Context
-	stream   *recordingStream
+	stream   *actStream
 	baseline int
 }
 
 func subscribeDeathSaveWitness(t *testing.T, s *deathSaveScene, member string) *deathSaveWitness {
 	t.Helper()
 	ctx, cancel := context.WithCancel(auth.WithPlayerID(context.Background(), "player-"+member))
-	stream := newRecordingStream(ctx)
+	sofar := len(storyOf(ctx, t, s.h.story, s.session, member))
+	stream := newActStream(ctx)
 	done := make(chan error, 1)
 	go func() {
-		done <- s.h.handler.StreamEvents(&sessionpb.StreamEventsRequest{Session: s.session, Member: member}, stream)
+		done <- s.h.story.StreamEvents(&storypb.StreamEventsRequest{Session: s.session, Member: member}, stream)
 	}()
-	waitForLive(t, nil, s.session, member, stream)
-	witness := &deathSaveWitness{member: member, ctx: ctx, stream: stream, baseline: len(stream.snapshot())}
+	// The handler subscribes before it replays: a settled replay is a live
+	// subscription.
+	witness := &deathSaveWitness{member: member, ctx: ctx, stream: stream, baseline: len(stream.settle(t, sofar, 2*time.Second))}
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -232,21 +238,23 @@ func subscribeDeathSaveWitness(t *testing.T, s *deathSaveScene, member string) *
 	return witness
 }
 
-func (w *deathSaveWitness) deathSaveEvent(t *testing.T) *sessionpb.Event {
+// live is every act this witness received after subscribing.
+func (w *deathSaveWitness) live(t *testing.T) []*storypb.Act {
 	t.Helper()
-	events := waitForQuiescence(t, w.stream, 2*time.Second)[w.baseline:]
-	return singleDeathSaveEvent(t, events)
+	acts := w.stream.settle(t, w.baseline, 2*time.Second)[w.baseline:]
+	require.Nil(t, w.stream.laggedAt(), "a witness stream must not lag")
+	return acts
 }
 
-func singleDeathSaveEvent(t *testing.T, events []*sessionpb.Event) *sessionpb.Event {
+func singleDeathSaveAct(t *testing.T, acts []*storypb.Act) *storypb.Act {
 	t.Helper()
-	var found []*sessionpb.Event
-	for _, event := range events {
-		if event.GetKind() == sessionpb.EventKind_EVENT_KIND_DEATH_SAVE_ROLLED {
-			found = append(found, event)
+	var found []*storypb.Act
+	for _, act := range acts {
+		if act.GetDeathSave() != nil {
+			found = append(found, act)
 		}
 	}
-	require.Len(t, found, 1, "expected exactly one Death Save event")
+	require.Len(t, found, 1, "expected exactly one Death Save act:\n%s", storyEventsJSON(acts))
 	return found[0]
 }
 
@@ -275,29 +283,37 @@ func assertOrdinarySuccessResponse(t *testing.T, s *deathSaveScene, response *se
 	require.False(t, response.GetDelivery().GetFailed())
 }
 
-func assertDeathSaveEventMatchesResponse(
+func assertDeathSaveActMatchesResponse(
 	t *testing.T,
 	actor string,
-	event *sessionpb.DeathSaveRolled,
+	act *storypb.DeathSaveAct,
 	response *sessionpb.DeathSaveResponse,
 ) {
 	t.Helper()
-	require.NotNil(t, event)
-	require.Equal(t, actor, event.GetActor())
-	require.Equal(t, response.GetRoll(), event.GetRoll())
-	require.Equal(t, response.GetOutcome(), event.GetOutcome())
-	require.Equal(t, response.GetSuccessesAdded(), event.GetSuccessesAdded())
-	require.Equal(t, response.GetFailuresAdded(), event.GetFailuresAdded())
-	require.Equal(t, response.GetSuccesses(), event.GetSuccesses())
-	require.Equal(t, response.GetFailures(), event.GetFailures())
-	require.Equal(t, response.GetSuccessesNeeded(), event.GetSuccessesNeeded())
-	require.Equal(t, response.GetFailuresRemaining(), event.GetFailuresRemaining())
-	require.Equal(t, response.GetStabilized(), event.GetStabilized())
-	require.Equal(t, response.GetDead(), event.GetDead())
-	require.Equal(t, response.GetRecovered(), event.GetRecovered())
-	require.Equal(t, response.GetHpRestored(), event.GetHpRestored())
-	require.Equal(t, response.GetContinuation(), event.GetContinuation())
-	require.Equal(t, response.GetPresentationId(), event.GetPresentationId())
+	require.NotNil(t, act)
+	require.Equal(t, actor, act.GetBy().GetId())
+	require.Equal(t, response.GetRoll(), act.GetRoll().GetTotal())
+	require.Equal(t, []int32{response.GetRoll()}, act.GetRoll().GetDice(), "a Death Save is one bare d20: the face is the total")
+	// The act spells the outcome and continuation as the toolkit's own words
+	// ("success", "end_turn"); the response's enums name the same values.
+	require.Equal(t, deathSaveWord(response.GetOutcome().String(), "DEATH_SAVE_OUTCOME_"), act.GetOutcome())
+	require.Equal(t, response.GetSuccessesAdded(), act.GetSuccessesAdded())
+	require.Equal(t, response.GetFailuresAdded(), act.GetFailuresAdded())
+	require.Equal(t, response.GetSuccesses(), act.GetSuccesses())
+	require.Equal(t, response.GetFailures(), act.GetFailures())
+	require.Equal(t, response.GetSuccessesNeeded(), act.GetSuccessesNeeded())
+	require.Equal(t, response.GetFailuresRemaining(), act.GetFailuresRemaining())
+	require.Equal(t, response.GetStabilized(), act.GetStabilized())
+	require.Equal(t, response.GetDead(), act.GetDead())
+	require.Equal(t, response.GetRecovered(), act.GetRecovered())
+	require.Equal(t, response.GetHpRestored(), act.GetHpRestored())
+	require.Equal(t, deathSaveWord(response.GetContinuation().String(), "DEATH_SAVE_CONTINUATION_"), act.GetContinuation())
+	require.Equal(t, response.GetPresentationId(), act.GetPresentationId())
+}
+
+// deathSaveWord is a v1 response enum's name as the act spells it.
+func deathSaveWord(enum, prefix string) string {
+	return strings.ToLower(strings.TrimPrefix(enum, prefix))
 }
 
 type deathSaveStateSnapshot struct {
@@ -367,18 +383,16 @@ func TestAcceptance_DeathSave(t *testing.T) {
 		})
 
 		for _, witness := range []*deathSaveWitness{actorLive, allyLive} {
-			liveEvent := witness.deathSaveEvent(t)
-			require.Equal(t, witness.member, liveEvent.GetRecipient())
-			require.Equal(t, s.session, liveEvent.GetSession())
-			assertDeathSaveEventMatchesResponse(t, s.actor, liveEvent.GetDeathSaveRolled(), resp)
+			live := witness.live(t)
+			liveAct := singleDeathSaveAct(t, live)
+			require.Equal(t, s.session, liveAct.GetSession())
+			assertDeathSaveActMatchesResponse(t, s.actor, liveAct.GetDeathSave(), resp)
 
-			story, storyErr := s.h.handler.GetStory(witness.ctx, &sessionpb.GetStoryRequest{Session: s.session, Member: witness.member})
-			require.NoError(t, storyErr)
-			storyEvent := singleDeathSaveEvent(t, story.GetEntries())
-			require.Equal(t, witness.member, storyEvent.GetRecipient())
-			assertDeathSaveEventMatchesResponse(t, s.actor, storyEvent.GetDeathSaveRolled(), resp)
+			// Each witness's live acts are exactly the tail of its own story.
+			requireLiveIsStory(witness.ctx, t, s.h, s.session, witness.member, live)
+			storyAct := singleDeathSaveAct(t, storyOf(witness.ctx, t, s.h.story, s.session, witness.member))
+			assertDeathSaveActMatchesResponse(t, s.actor, storyAct.GetDeathSave(), resp)
 		}
-		require.Equal(t, actorLive.deathSaveEvent(t).GetSeq(), resp.GetSeq(), "response sequence is the actor recipient's delivered event sequence")
 
 		beforeReplay := s.dice.callCount()
 		beforeState := deathSaveStateSnapshotOf(t, s, s.actor)

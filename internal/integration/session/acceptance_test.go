@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,6 +39,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	sessionhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1"
@@ -585,20 +587,18 @@ func TestAcceptanceLoop_WalkFightDissolveResync(t *testing.T) {
 	require.Equal(t, closeLastStep.GetPosition().GetX(), whereResp.GetPosition().GetX(), "GetWhere must recover the walk's actual stopping cell")
 	require.Equal(t, closeLastStep.GetPosition().GetY(), whereResp.GetPosition().GetY())
 
-	// -- resync from zero and see the whole story --
-	storyResp, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{
-		Session: "acceptance-run", Member: "alice", FromSeq: 0,
-	})
-	require.NoError(t, err)
-	require.NotEmpty(t, storyResp.GetEntries())
-	t.Logf("story replay: %d beats from seq 0", len(storyResp.GetEntries()))
-
-	seqs := make([]uint64, len(storyResp.GetEntries()))
-	for i, e := range storyResp.GetEntries() {
-		seqs[i] = e.GetSeq()
+	// -- resync from the start and see the whole story, in record order --
+	// (the v1 strictly-increasing seq became the act stream's id order: acts
+	// that share an id are one run, so ids never go BACKWARDS)
+	story := storyOf(ctx, t, h.story, "acceptance-run", "alice")
+	require.NotEmpty(t, story)
+	t.Logf("story replay: %d acts from the start", len(story))
+	for i := 1; i < len(story); i++ {
+		require.GreaterOrEqual(t, story[i].GetId(), story[i-1].GetId(), "story ids must never go backwards")
 	}
-	for i := 1; i < len(seqs); i++ {
-		require.Greater(t, seqs[i], seqs[i-1], "story sequence must be strictly increasing (monotonic, gapless)")
+	beats := storyBeats(ctx, t, h, "acceptance-run", "alice")
+	for _, want := range []string{"clock:fight_formed", "walk", "attack", "state:downed", "clock:fight_dissolved"} {
+		require.Contains(t, beats, want, "the resync replays the whole loop -- walk, fight, swing, fall, dissolve: %v", beats)
 	}
 }
 
@@ -754,34 +754,36 @@ func TestAWalkCannotCrossAWallWhereThereIsNoDoorway(t *testing.T) {
 	require.Equal(t, at(5, 2).Y, whereResp.GetPosition().GetY())
 }
 
-// storyBeats reads a session's whole story for member and returns just the
-// "beat" name from each entry's JSON payload, in order -- the same
-// projection the toolkit's own MonsterTurnTestSuite uses (session's own
-// monster_turn_test.go).
-//
-// GetStory carries a typed EventKind now too (session/v0.23.0,
-// rpg-toolkit#1213, rpg-api-protos#239 -- see story_events_test.go for the
-// acceptance proof that it is byte-equal to what the live stream sends), but
-// this helper still reads the composition's own literal beat STRING
-// ("moved", "turn-ended", ...) off Payload rather than the wire enum -- the
-// two vocabularies are not one-to-one everywhere (kindFor's "down" ->
-// EventDowned pairs with THIS package's own "downed" reserved word,
-// design rule 4's payload-is-passthrough corollary), and this file's own
-// assertions below are written against the composition's words.
-func storyBeats(ctx context.Context, t *testing.T, h *sessionhandler.Handler, session, member string) []string {
+// storyBeats reads member's whole story off the act stream (StoryService
+// GetStory) and returns one word per act, in order: the act's body name
+// ("walk", "attack", "table_answer", ...), with a clock act spelled by its
+// mark ("clock:turn_ended") and a state act by its change ("state:downed"),
+// since those two bodies carry many different facts. It is the act-stream
+// restatement of the v1 beat-name list (rpg-project#631): a scene asserts
+// ORDER and PRESENCE with it, and reads the acts themselves for values.
+func storyBeats(ctx context.Context, t *testing.T, h *acceptanceHarness, session, member string) []string {
 	t.Helper()
-	resp, err := h.GetStory(ctx, &sessionpb.GetStoryRequest{Session: session, Member: member, FromSeq: 0})
-	require.NoError(t, err)
-
-	beats := make([]string, len(resp.GetEntries()))
-	for i, e := range resp.GetEntries() {
-		var body struct {
-			Beat string `json:"beat"`
-		}
-		require.NoError(t, json.Unmarshal(e.GetPayload(), &body))
-		beats[i] = body.Beat
+	acts := storyOf(ctx, t, h.story, session, member)
+	beats := make([]string, len(acts))
+	for i, act := range acts {
+		beats[i] = actBeat(act)
 	}
 	return beats
+}
+
+// actBeat is one act's word for storyBeats.
+func actBeat(act *storypb.Act) string {
+	switch {
+	case act.GetClock() != nil:
+		return "clock:" + strings.ToLower(strings.TrimPrefix(act.GetClock().GetMark().String(), "CLOCK_MARK_"))
+	case act.GetState() != nil:
+		return "state:" + strings.ToLower(strings.TrimPrefix(act.GetState().GetChange().String(), "STATE_KIND_"))
+	}
+	m := act.ProtoReflect()
+	if field := m.WhichOneof(m.Descriptor().Oneofs().ByName("body")); field != nil {
+		return string(field.Name())
+	}
+	return "none"
 }
 
 // TestSkeletonsDrivenTurnStrikesFromRange is rpg-project#254's own acceptance
@@ -823,7 +825,7 @@ func TestSkeletonsDrivenTurnStrikesFromRange(t *testing.T) {
 	require.Equal(t, []string{"alice", "skel-1"}, launched.Formed[0].Order,
 		"the tied roll breaks to alice -- it must be her turn first, not the skeleton's")
 
-	before := len(storyBeats(ctx, t, h.handler, "monster-turn-run", "alice"))
+	before := len(storyOf(ctx, t, h.story, "monster-turn-run", "alice"))
 
 	// She has nothing to do this turn -- three cells out with no movement
 	// spent, and no reach without it -- so passing is the honest move, and
@@ -834,39 +836,44 @@ func TestSkeletonsDrivenTurnStrikesFromRange(t *testing.T) {
 	})
 	require.NoError(t, err, "the skeleton's whole turn -- strike, end -- drives inside this one call")
 
-	// Isolated to what THIS EndTurn call itself produced: alice's own
-	// end-turn beat, the skeleton's pick, its swing, and its turn closing
-	// back to her.
+	// Isolated to what THIS EndTurn call itself produced: alice's own turn
+	// passing, the skeleton's pick, its swing, and its turn closing back to
+	// her.
 	//
-	// ASSERTED BY SHAPE, NOT BY COUNT (rpg-project#465). The list used to be
-	// pinned at exactly three, and the creature's table added beats of its own
-	// -- an `answered` naming the pick that chose the swing, and a world `tick`
-	// for the round the fight wrapped. Bumping the number to six would pin
-	// every one of those as though the test were about how many things happen,
-	// which it never was: what it is about is that the shortbow swings FROM
-	// WHERE IT STANDS, inside this one call, and hands the fight back.
+	// ASSERTED BY SHAPE, NOT BY COUNT (rpg-project#465). What this test is
+	// about is that the shortbow swings FROM WHERE IT STANDS, inside this one
+	// call, and hands the fight back -- not how many acts that takes.
 	//
-	// THE `moved` CHECK IS THE ONE THE COUNT WAS REALLY MAKING. A count of
-	// three happened to exclude an approach; this excludes it by name, which
-	// is the claim rpg-project#254 cares about and the one a bow at 80/320
-	// feet is supposed to make true.
-	beats := storyBeats(ctx, t, h.handler, "monster-turn-run", "alice")[before:]
-	require.Equal(t, "turn-ended", beats[0], "alice's own end-turn beat comes first")
-	require.NotContains(t, beats, "moved",
+	// THE `walk` CHECK IS THE ONE A COUNT WOULD REALLY MAKE. It excludes an
+	// approach by name, which is the claim rpg-project#254 cares about and the
+	// one a bow at 80/320 feet is supposed to make true.
+	acts := storyOf(ctx, t, h.story, "monster-turn-run", "alice")[before:]
+	beats := storyBeats(ctx, t, h, "monster-turn-run", "alice")[before:]
+	require.Equal(t, "clock:turn_ended", beats[0], "alice's own end-turn comes first: %v", beats)
+	require.Equal(t, "alice", acts[0].GetClock().GetTurn().GetMember().GetId(), "the first turn passing is alice's own")
+	require.NotContains(t, beats, "walk",
 		"the shortbow reaches three cells out, so nothing closes the distance first: %v", beats)
 
-	swing := slices.IndexFunc(beats, func(beat string) bool {
-		return beat == "struck" || beat == "missed"
-	})
+	swing := slices.Index(beats, "attack")
 	require.Positive(t, swing, "the skeleton swings inside this one call: %v", beats)
-	// THE PICK IS WHY IT SWUNG, and it is on the beat before the swing: the
+	require.Equal(t, "skel-1", acts[swing].GetAttack().GetBy().GetId(), "the swing is the skeleton's")
+	require.Equal(t, "alice", acts[swing].GetAttack().GetTo().GetId())
+	require.Equal(t, "dnd5e:weapons:shortbow", acts[swing].GetAttack().GetAttack().GetRef(), "it swings the bow it carries")
+	// THE PICK IS WHY IT SWUNG, and it is on an act before the swing: the
 	// creature's table rolled `attack` off its own default, which is what a
 	// reader follows back when they ask why a monster did anything.
-	require.Contains(t, beats[:swing], "answered",
-		"the swing is preceded by the pick that chose it: %v", beats)
+	pick := slices.IndexFunc(acts[:swing], func(act *storypb.Act) bool {
+		return act.GetTableAnswer().GetWho().GetId() == "skel-1" && act.GetTableAnswer().GetWord() == "attack"
+	})
+	require.GreaterOrEqual(t, pick, 0, "the swing is preceded by the pick that chose it: %v", beats)
 
-	closing := slices.Index(beats[swing:], "turn-ended")
+	closing := slices.IndexFunc(acts[swing:], func(act *storypb.Act) bool {
+		return act.GetClock().GetMark() == storypb.ClockMark_CLOCK_MARK_TURN_ENDED &&
+			act.GetClock().GetTurn().GetMember().GetId() == "skel-1"
+	})
 	require.Positive(t, closing, "the skeleton's own turn closes after the swing: %v", beats)
+	require.Equal(t, "alice", acts[swing+closing].GetClock().GetTurn().GetNext().GetId(),
+		"and names alice as next")
 
 	require.Equal(t, "alice", endResp.GetNext(), "turn_ended{next: player} -- the fight hands cleanly back")
 	require.True(t, endResp.GetRoundWrapped(), "a two-member fight wraps straight back to whoever led it")
@@ -939,21 +946,19 @@ func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
 	require.Equal(t, sessionpb.DoorState_DOOR_STATE_OPEN, unlockResp.GetDoor().GetState())
 
 	// The attempt is narrated with its author and its numbers, typed.
-	events, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: "doom-run", Member: "alice"})
-	require.NoError(t, err)
-	var door *sessionpb.DoorChanged
-	for _, e := range events.GetEntries() {
-		if e.GetKind() == sessionpb.EventKind_EVENT_KIND_DOOR {
-			door = e.GetDoor()
+	var door *storypb.DoorAct
+	for _, act := range storyOf(ctx, t, h.story, "doom-run", "alice") {
+		if act.GetDoor() != nil {
+			door = act.GetDoor()
 		}
 	}
-	require.NotNil(t, door, "the door beat reaches the wire typed")
+	require.NotNil(t, door, "the door act reaches the wire typed")
 	require.Equal(t, "hall-tomb", door.GetDoor())
-	require.Equal(t, sessionpb.DoorState_DOOR_STATE_OPEN, door.GetState())
-	require.Equal(t, "alice", door.GetActor(), "the story says whose hands")
-	require.Equal(t, int32(12), door.GetDc())
-	require.Equal(t, int32(22), door.GetTotal())
-	require.True(t, door.GetBeaten())
+	require.Equal(t, "open", door.GetState())
+	require.Equal(t, "alice", door.GetBy().GetId(), "the story says whose hands")
+	require.Equal(t, int32(12), door.GetRoll().GetAgainst())
+	require.Equal(t, int32(22), door.GetRoll().GetTotal())
+	require.True(t, door.GetRoll().GetBeaten())
 
 	// -- what the door revealed started the fight: the sightline down row 3
 	// reaches the skeleton through the pillar gap --
@@ -986,30 +991,31 @@ func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
 	require.False(t, statusResp.GetOpen(), "the run is over and nobody had to say so")
 	require.Equal(t, "boss-down", statusResp.GetOutcome().GetEnding())
 
-	beats := storyBeats(ctx, t, h.handler, "doom-run", "alice")
+	acts := storyOf(ctx, t, h.story, "doom-run", "alice")
+	beats := storyBeats(ctx, t, h, "doom-run", "alice")
 	require.GreaterOrEqual(t, len(beats), 5)
 	tail := beats[len(beats)-4:]
-	require.Equal(t, []string{"down", "bubble-dissolved", "ended", "experience_gained"}, tail,
+	require.Equal(t, []string{"state:downed", "clock:fight_dissolved", "clock:ended", "state:experience"}, tail,
 		"the ruled order: the body is news, the fight ends, then the run -- "+
 			"and the party's receipt closes the act, because the settlement is "+
 			"written at commit time after every beat the verb itself produced "+
 			"(rpg-project#496, R5)")
+	require.Equal(t, "skel-1", acts[len(acts)-4].GetState().GetParty().GetId(), "the body that fell is the boss")
+	require.Equal(t, "defeat", acts[len(acts)-3].GetClock().GetDissolved().GetCause(), "nobody decided: the fight ended by defeat")
 
-	// The typed ended body carries the key a client maps to its sentence. It
-	// is FOUND, not read off the end: since the experience settlement lands
-	// after it, "ended" is no longer the last entry in the story, and a test
+	// The typed ending carries the key a client maps to its sentence. It is
+	// FOUND, not read off the end: since the experience settlement lands
+	// after it, the ending is no longer the last act in the story, and a test
 	// that assumed so would be asserting the settlement's position rather
 	// than the ending's content.
-	events, err = h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: "doom-run", Member: "alice"})
-	require.NoError(t, err)
-	var ended *sessionpb.Ended
-	var gained *sessionpb.ExperienceGained
-	for _, e := range events.GetEntries() {
-		switch e.GetKind() {
-		case sessionpb.EventKind_EVENT_KIND_ENDED:
-			ended = e.GetEnded()
-		case sessionpb.EventKind_EVENT_KIND_EXPERIENCE_GAINED:
-			gained = e.GetExperienceGained()
+	var ended *storypb.ClockEntry
+	var gained *storypb.StateChange
+	for _, act := range acts {
+		if act.GetClock().GetMark() == storypb.ClockMark_CLOCK_MARK_ENDED {
+			ended = act.GetClock()
+		}
+		if act.GetState().GetChange() == storypb.StateKind_STATE_KIND_EXPERIENCE {
+			gained = act.GetState()
 		}
 	}
 	require.NotNil(t, ended)
@@ -1018,16 +1024,16 @@ func TestTheRunEndsWhenTheBossFalls(t *testing.T) {
 
 	// -- and it hears that the fall PAID (rpg-project#496). The skeleton's
 	// authored worth is 50 and alice is the whole roster, so she takes all of
-	// it; the beat names the monster as the cause and carries her new total,
+	// it; the act names the monster as the cause and carries her new total,
 	// which is the number the store now holds. Nothing she did asked for
 	// this and no RPC could: experience is read-only over the wire, so this
-	// beat is the only way the table learns the sheet moved.
+	// act is the only way the table learns the sheet moved.
 	require.NotNil(t, gained, "the receipt reaches the wire typed")
-	require.Equal(t, "skel-1", gained.GetMember(), "the cause is the monster that fell")
-	require.Len(t, gained.GetGrants(), 1, "one player on the roster, one share")
-	require.Equal(t, "alice", gained.GetGrants()[0].GetCharacter())
-	require.Equal(t, int32(50), gained.GetGrants()[0].GetAmount(), "a skeleton's whole worth, undivided")
-	require.Equal(t, int32(50), gained.GetGrants()[0].GetTotal())
+	require.Equal(t, "skel-1", gained.GetParty().GetId(), "the cause is the monster that fell")
+	require.Len(t, gained.GetExperience(), 1, "one player on the roster, one share")
+	require.Equal(t, "alice", gained.GetExperience()[0].GetCharacter())
+	require.Equal(t, int32(50), gained.GetExperience()[0].GetAmount(), "a skeleton's whole worth, undivided")
+	require.Equal(t, int32(50), gained.GetExperience()[0].GetTotal())
 
 	// The total is not a claim the wire makes alone: the sheet was saved
 	// before the beat was ever written, so the store agrees with it.

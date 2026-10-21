@@ -48,21 +48,6 @@ func storyOf(ctx context.Context, t *testing.T, story *sessionstory.StoryHandler
 	}
 }
 
-// storyAfter is the acts member has after the act id after.
-func storyAfter(ctx context.Context, t *testing.T, story *sessionstory.StoryHandler, session, member, after string) []*storypb.Act {
-	t.Helper()
-	var acts []*storypb.Act
-	for {
-		page, err := story.GetStory(ctx, &storypb.GetStoryRequest{Session: session, Member: member, AfterId: after})
-		require.NoError(t, err)
-		acts = append(acts, page.GetActs()...)
-		if !page.GetMore() || len(page.GetActs()) == 0 {
-			return acts
-		}
-		after = page.GetActs()[len(page.GetActs())-1].GetId()
-	}
-}
-
 // actStream records, in order, every message a real StoryService
 // StreamEvents call sends: the production path minus the network hop.
 type actStream struct {
@@ -104,16 +89,18 @@ func (s *actStream) laggedAt() *storypb.StoryLagged {
 	return s.lagged
 }
 
-// settle waits until the stream's act count stops growing for a short
-// stable window, then returns the settled acts; it fails after timeout.
-func (s *actStream) settle(t *testing.T, timeout time.Duration) []*storypb.Act {
+// settle waits until the stream holds at least atLeast acts and its count then
+// stops growing for a short stable window, and returns the settled acts; it
+// fails after timeout. atLeast is what makes "settled" mean "arrived": a stream
+// that has not yet sent its replay holds zero acts and is also not growing.
+func (s *actStream) settle(t *testing.T, atLeast int, timeout time.Duration) []*storypb.Act {
 	t.Helper()
 	const stableRounds = 5
 	deadline := time.Now().Add(timeout)
 	last, stable := -1, 0
 	for time.Now().Before(deadline) {
 		cur := len(s.snapshot())
-		if cur == last {
+		if cur >= atLeast && cur == last {
 			stable++
 			if stable >= stableRounds {
 				return s.snapshot()
@@ -124,27 +111,33 @@ func (s *actStream) settle(t *testing.T, timeout time.Duration) []*storypb.Act {
 		last = cur
 		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatalf("act stream never settled within %s (stuck at %d acts)", timeout, last)
+	t.Fatalf("act stream never settled at %d or more acts within %s (stuck at %d)", atLeast, timeout, last)
 	return nil
 }
 
+// subscribe opens a real StoryService StreamEvents for member and returns
+// once its replay of the story so far has arrived: the handler subscribes
+// BEFORE it replays, so a stream holding the whole replay is live.
+func subscribe(ctx context.Context, t *testing.T, h *acceptanceHarness, session, member string) (*actStream, int) {
+	t.Helper()
+	sofar := len(storyOf(ctx, t, h.story, session, member))
+	stream := newActStream(ctx)
+	go func() {
+		_ = h.story.StreamEvents(&storypb.StreamEventsRequest{Session: session, Member: member}, stream)
+	}()
+	return stream, len(stream.settle(t, sofar, 2*time.Second))
+}
+
 // watchActs is the acts member receives live, through a real StoryService
-// StreamEvents subscription, while do runs. The stream replays the story
-// first (the handler subscribes before it replays, so a settled replay means
-// the subscription is live); only what arrives after that baseline is
-// returned.
+// StreamEvents subscription, while do runs: only what arrives after the
+// subscription's replay.
 func watchActs(ctx context.Context, t *testing.T, h *acceptanceHarness, session, member string, do func()) []*storypb.Act {
 	t.Helper()
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stream := newActStream(streamCtx)
-	done := make(chan error, 1)
-	go func() {
-		done <- h.story.StreamEvents(&storypb.StreamEventsRequest{Session: session, Member: member}, stream)
-	}()
-	baseline := len(stream.settle(t, 2*time.Second))
+	stream, baseline := subscribe(streamCtx, t, h, session, member)
 	do()
-	live := stream.settle(t, 2*time.Second)[baseline:]
+	live := stream.settle(t, baseline, 2*time.Second)[baseline:]
 	require.Nil(t, stream.laggedAt(), "a watched stream must not lag")
 	return live
 }

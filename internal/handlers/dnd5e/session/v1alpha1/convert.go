@@ -1755,8 +1755,8 @@ func declarationsToProto(ds []sdk.Declaration) ([]*sessionpb.Declaration, error)
 }
 
 // doorStateToProto mirrors the SDK's string door state onto the wire enum.
-// A state this build does not recognize maps to UNSPECIFIED, the same
-// delivered-not-guessed posture eventKindToProto takes.
+// A state this build does not recognize maps to UNSPECIFIED: delivered, not
+// guessed.
 func doorStateToProto(s string) sessionpb.DoorState {
 	switch s {
 	case "open":

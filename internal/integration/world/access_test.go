@@ -25,7 +25,7 @@ import (
 
 	compositionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/api/composition/v1alpha1"
 	worldpb "github.com/KirkDiggler/rpg-api-protos/gen/go/api/world/v1alpha1"
-	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	compositionhandler "github.com/KirkDiggler/rpg-api/internal/handlers/api/composition/v1alpha1"
@@ -52,7 +52,7 @@ type WorldAccessSuite struct {
 	repository    worldrepo.Repository
 	redis         *miniredis.Miniredis
 	compositions  compositionpb.CompositionServiceClient
-	sessions      sessionpb.SessionServiceClient
+	sessions      sessionpb.StoryServiceClient
 	adminRevoked  atomic.Bool
 	playerRevoked atomic.Bool
 	adminLookups  atomic.Int32
@@ -153,7 +153,7 @@ func (s *WorldAccessSuite) SetupTest() {
 	compositionHandler, err := compositionhandler.New(&compositionhandler.HandlerConfig{Service: compositionOrchestrator, AuthoringEnabled: true})
 	s.Require().NoError(err)
 	compositionpb.RegisterCompositionServiceServer(server, compositionHandler)
-	sessionpb.RegisterSessionServiceServer(server, &roleGateStreamServer{})
+	sessionpb.RegisterStoryServiceServer(server, &roleGateStreamServer{})
 	listener := bufconn.Listen(1024 * 1024)
 	go func() { _ = server.Serve(listener) }()
 	s.T().Cleanup(func() { server.Stop(); _ = listener.Close() })
@@ -163,7 +163,7 @@ func (s *WorldAccessSuite) SetupTest() {
 	s.T().Cleanup(func() { _ = connection.Close() })
 	s.client = worldpb.NewWorldServiceClient(connection)
 	s.compositions = compositionpb.NewCompositionServiceClient(connection)
-	s.sessions = sessionpb.NewSessionServiceClient(connection)
+	s.sessions = sessionpb.NewStoryServiceClient(connection)
 }
 
 func (s *WorldAccessSuite) ctx(token string) context.Context {
@@ -295,13 +295,15 @@ func (s *WorldAccessSuite) TestIdleGRPCStreamRevocationThroughProductionAuthoriz
 }
 
 // This narrow consumer tests stream authorization/context wiring, not SDK
-// seating or game events. World and composition operations above use real
-// business handlers/repositories; session engine behavior has its own suites.
+// seating or game events. Its stream is the act stream (v1alpha2
+// StoryService), since the v1 event stream was deleted (rpg-project#631).
+// World and composition operations above use real business
+// handlers/repositories; session engine behavior has its own suites.
 type roleGateStreamServer struct {
-	sessionpb.UnimplementedSessionServiceServer
+	sessionpb.UnimplementedStoryServiceServer
 }
 
-func (*roleGateStreamServer) StreamEvents(_ *sessionpb.StreamEventsRequest, stream sessionpb.SessionService_StreamEventsServer) error {
+func (*roleGateStreamServer) StreamEvents(_ *sessionpb.StreamEventsRequest, stream sessionpb.StoryService_StreamEventsServer) error {
 	world, ok := worldcontext.Get(stream.Context())
 	if !ok || world.WorldID != worldID {
 		return status.Error(codes.Internal, "verified world context was lost")

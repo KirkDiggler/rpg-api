@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -22,6 +21,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -177,59 +177,63 @@ func holdsTheDie(t *testing.T, repo characterrepo.Repository, id string) bool {
 	return false
 }
 
-// rollWindowsIn returns every ROLL_WINDOW_OPENED body in a captured slice.
-func rollWindowsIn(events []*sessionpb.Event) []*sessionpb.RollWindowOpened {
-	var out []*sessionpb.RollWindowOpened
-	for _, evt := range events {
-		if evt.GetKind() == sessionpb.EventKind_EVENT_KIND_ROLL_WINDOW_OPENED {
-			out = append(out, evt.GetRollWindowOpened())
+// rollWindowsIn returns every roll-window clock body in a captured slice.
+func rollWindowsIn(acts []*storypb.Act) []*storypb.RollWindowOpened {
+	var out []*storypb.RollWindowOpened
+	for _, act := range acts {
+		if act.GetClock().GetMark() == storypb.ClockMark_CLOCK_MARK_ROLL_WINDOW_OPENED {
+			out = append(out, act.GetClock().GetRollWindow())
 		}
 	}
 	return out
 }
 
-// outcomesIn counts the struck-and-missed beats in a captured slice. ONE
-// SWING MUST PRODUCE ONE OUTCOME across the pause and the answer, which is
-// the whole risk of resuming a machine: a resume that re-folded the attack
-// would record the attempt twice.
-func outcomesIn(events []*sessionpb.Event) int {
-	count := 0
-	for _, evt := range events {
-		switch evt.GetKind() {
-		case sessionpb.EventKind_EVENT_KIND_STRUCK, sessionpb.EventKind_EVENT_KIND_MISSED:
-			count++
+// outcomesIn returns the decided attack acts (hit or miss) in a captured
+// slice. ONE SWING MUST PRODUCE ONE OUTCOME across the pause and the answer,
+// which is the whole risk of resuming a machine: a resume that re-folded the
+// attack would record the attempt twice.
+func outcomesIn(acts []*storypb.Act) []*storypb.AttackAct {
+	var out []*storypb.AttackAct
+	for _, act := range acts {
+		switch act.GetAttack().GetOutcome() {
+		case storypb.AttackOutcome_ATTACK_OUTCOME_HIT, storypb.AttackOutcome_ATTACK_OUTCOME_MISS:
+			out = append(out, act.GetAttack())
 		default:
 		}
 	}
-	return count
+	return out
 }
 
-// totalOfOutcome reads the total off the one struck-or-missed beat.
-func totalOfOutcome(t *testing.T, events []*sessionpb.Event) int32 {
+// totalOfOutcome reads the attack roll's total off the one decided attack act.
+func totalOfOutcome(t *testing.T, acts []*storypb.Act) int32 {
 	t.Helper()
-	for _, evt := range events {
-		if struck := evt.GetStruck(); struck != nil {
-			return struck.GetTotal()
-		}
-		if missed := evt.GetMissed(); missed != nil {
-			return missed.GetTotal()
+	outcomes := outcomesIn(acts)
+	require.Len(t, outcomes, 1, "exactly one decided attack in the captured acts")
+	return outcomes[0].GetRoll().GetTotal()
+}
+
+// inspirationTermsIn returns the dice terms the Inspired die contributed to
+// the decided attack's roll.
+func inspirationTermsIn(acts []*storypb.Act) []*storypb.RollDiceTerm {
+	var out []*storypb.RollDiceTerm
+	for _, attack := range outcomesIn(acts) {
+		for _, term := range attack.GetRoll().GetTerms() {
+			if term.GetSourceRef() == inspiredRef {
+				out = append(out, term)
+			}
 		}
 	}
-	require.FailNow(t, "no outcome beat in the captured stream")
-	return 0
+	return out
 }
 
 // grantAndSwing plays the shared half of both branches: the bard grants her
 // die to the fighter, ends her turn, and the fighter swings at the skeleton.
-// It returns the paused response, the fighter's own open REACT row, and the
-// window beat the stream carried.
+// It returns the paused response and the fighter's own open REACT row, having
+// asserted the roll-window act the fighter's live stream carried.
 type posedSwing struct {
 	h       *acceptanceHarness
 	bardCtx context.Context
 	fighter context.Context
-	stream  *recordingStream
-	cancel  context.CancelFunc
-	done    chan error
 
 	attack *sessionpb.AttackResponse
 	row    *sessionpb.Declaration
@@ -271,25 +275,17 @@ func grantAndSwing(t *testing.T) *posedSwing {
 	})
 	require.NoError(t, err)
 
-	// -- the stream, opened on the fighter: she is the audience, so hers is
-	// the one that must carry the question --
-	streamCtx, cancel := context.WithCancel(fighterCtx)
-	stream := newRecordingStream(streamCtx)
-	done := make(chan error, 1)
-	go func() {
-		done <- h.handler.StreamEvents(
-			&sessionpb.StreamEventsRequest{Session: bardSessionID, Member: "alice"}, stream)
-	}()
-	waitForLive(t, nil, bardSessionID, "alice", stream)
-	baseline := len(stream.snapshot())
-
-	// -- the swing stops after the d20 --
-	attack, err := h.handler.Attack(fighterCtx, &sessionpb.AttackRequest{
-		Session: bardSessionID, Attacker: "alice", Target: "skel-1",
-		DeclarationId: currentDeclarationID(
-			fighterCtx, t, h.handler, bardSessionID, "alice", sessionpb.Verb_VERB_ATTACK),
+	// -- the fighter's live act stream: she is the audience, so hers is the
+	// one that must carry the question. The swing stops after the d20. --
+	var attack *sessionpb.AttackResponse
+	posed := watchActs(fighterCtx, t, h, bardSessionID, "alice", func() {
+		attack, err = h.handler.Attack(fighterCtx, &sessionpb.AttackRequest{
+			Session: bardSessionID, Attacker: "alice", Target: "skel-1",
+			DeclarationId: currentDeclarationID(
+				fighterCtx, t, h.handler, bardSessionID, "alice", sessionpb.Verb_VERB_ATTACK),
+		})
+		require.NoError(t, err)
 	})
-	require.NoError(t, err)
 
 	// Roll and total are the two numbers that ARE answers. Everything else on
 	// this response is zero because nothing has landed: the AC has
@@ -300,25 +296,23 @@ func grantAndSwing(t *testing.T) *posedSwing {
 	require.False(t, attack.GetHit())
 	require.Zero(t, attack.GetDamage())
 
-	posed := waitForQuiescence(t, stream, 2*time.Second)[baseline:]
-	require.Zero(t, outcomesIn(posed), "no outcome beat: there is no outcome yet")
+	require.Empty(t, outcomesIn(posed), "no outcome act: there is no outcome yet")
 
 	windows := rollWindowsIn(posed)
 	require.Len(t, windows, 1, "one d20, one window")
-	require.Equal(t, "alice", windows[0].GetAudience(), "the audience is the roller and nobody else")
+	require.Equal(t, "alice", windows[0].GetAudience().GetId(), "the audience is the roller and nobody else")
 	require.Equal(t, inspiredRef, windows[0].GetOffer().GetRef())
 	require.Equal(t, conditions.InspiredName, windows[0].GetOffer().GetName(),
 		"the server authors the label the dock's buttons are named for")
-	require.Equal(t, attack.GetRoll(), windows[0].GetRoll())
-	require.Equal(t, attack.GetTotal(), windows[0].GetTotal())
+	require.Equal(t, []int32{attack.GetRoll()}, windows[0].GetRoll().GetDice())
+	require.Equal(t, attack.GetTotal(), windows[0].GetRoll().GetTotal())
 	require.NotEmpty(t, attack.GetPresentationId())
 	require.Equal(t, attack.GetPresentationId(), windows[0].GetPresentationId())
-	peerStory, err := h.handler.GetStory(bardCtx, &sessionpb.GetStoryRequest{Session: bardSessionID, Member: "bella"})
-	require.NoError(t, err)
-	peerWindows := rollWindowsIn(peerStory.GetEntries())
+	requireLiveIsStory(fighterCtx, t, h, bardSessionID, "alice", posed)
+	peerWindows := rollWindowsIn(storyOf(bardCtx, t, h.story, bardSessionID, "bella"))
 	require.Len(t, peerWindows, 1)
 	require.Equal(t, attack.GetPresentationId(), peerWindows[0].GetPresentationId())
-	require.Equal(t, attack.GetRoll(), peerWindows[0].GetRoll())
+	require.Equal(t, []int32{attack.GetRoll()}, peerWindows[0].GetRoll().GetDice())
 
 	// -- the dock is told, before any click, exactly what it may do. There is
 	// no step and nobody to aim at, so this row carries no candidates and
@@ -340,7 +334,6 @@ func grantAndSwing(t *testing.T) *posedSwing {
 
 	return &posedSwing{
 		h: h, bardCtx: bardCtx, fighter: fighterCtx,
-		stream: stream, cancel: cancel, done: done,
 		attack: attack, row: reaction,
 	}
 }
@@ -348,14 +341,13 @@ func grantAndSwing(t *testing.T) *posedSwing {
 // TestAcceptance_BardicInspirationSpendCrossesTheWire is rpg-project#397 and
 // #398 through the real, wired stack: proto request in, proto response out,
 // the real session.Manager over real Redis-backed repositories, and the real
-// StreamEvents subscriber -- the production path minus the network hop.
+// StoryService act stream -- the production path minus the network hop.
 //
 // The scene is the design's own walk, spend branch: a level-1 bard inspires
 // the fighter as a bonus action, the fighter swings, the swing stops to ask
 // her, and she takes the die.
 func TestAcceptance_BardicInspirationSpendCrossesTheWire(t *testing.T) {
 	scene := grantAndSwing(t)
-	defer scene.cancel()
 
 	// -- somebody else's window is a permission refusal, not a stale one.
 	// The bard passes the ownership gate on her own member and is refused for
@@ -370,29 +362,33 @@ func TestAcceptance_BardicInspirationSpendCrossesTheWire(t *testing.T) {
 		"a refused answer must not close the question")
 
 	// -- STRIKE. The die joins the total, once, and is gone. --
-	baseline := len(scene.stream.snapshot())
-	_, err = scene.h.handler.React(scene.fighter, &sessionpb.ReactRequest{
-		Session: bardSessionID, Member: "alice", DeclarationId: scene.row.GetId(),
-		Choice: sessionpb.ReactChoice_REACT_CHOICE_STRIKE,
+	after := watchActs(scene.fighter, t, scene.h, bardSessionID, "alice", func() {
+		_, err = scene.h.handler.React(scene.fighter, &sessionpb.ReactRequest{
+			Session: bardSessionID, Member: "alice", DeclarationId: scene.row.GetId(),
+			Choice: sessionpb.ReactChoice_REACT_CHOICE_STRIKE,
+		})
+		require.NoError(t, err)
 	})
-	require.NoError(t, err)
-
-	after := waitForQuiescence(t, scene.stream, 2*time.Second)[baseline:]
-	require.Equal(t, 1, outcomesIn(after),
-		"exactly one outcome beat across the pause and the answer -- a resume that re-folded would record two")
+	require.Len(t, outcomesIn(after), 1,
+		"exactly one outcome act across the pause and the answer -- a resume that re-folded would record two")
 
 	total := totalOfOutcome(t, after)
 	require.Equal(t, scene.attack.GetTotal()+6, total,
 		"a d6 rolling its own face joined the total the window showed, and the d20 was not re-rolled")
+	require.Equal(t, scene.attack.GetRoll(), outcomesIn(after)[0].GetRoll().GetDice()[0],
+		"the d20 the window showed is the d20 that decided the swing")
+	inspired := inspirationTermsIn(after)
+	require.Len(t, inspired, 1, "the die joined the roll once")
+	require.Equal(t, int32(6), inspired[0].GetDieSize())
+	require.Equal(t, []int32{6}, inspired[0].GetFaces())
+	require.Equal(t, "bella", inspired[0].GetSourceId(), "the act says whose die it was")
+	requireLiveIsStory(scene.fighter, t, scene.h, bardSessionID, "alice", after)
 
 	require.False(t, holdsTheDie(t, scene.h.charRepo, "alice"), "the die is spent when it is TAKEN")
 	require.Equal(t, 1, poolLeft(t, scene.h.charRepo, "bella"),
 		"the spend is the fighter's die, not a second charge on the bard")
 	require.Nil(t, reactRow(scene.fighter, t, scene.h, bardSessionID, "alice"),
 		"nothing is being asked any more")
-
-	scene.cancel()
-	require.NoError(t, <-scene.done)
 }
 
 // TestAcceptance_BardicInspirationHoldKeepsTheDie is the other branch, and
@@ -400,23 +396,20 @@ func TestAcceptance_BardicInspirationSpendCrossesTheWire(t *testing.T) {
 // the total carries no die, and the fighter still holds one afterwards.
 func TestAcceptance_BardicInspirationHoldKeepsTheDie(t *testing.T) {
 	scene := grantAndSwing(t)
-	defer scene.cancel()
 
-	baseline := len(scene.stream.snapshot())
-	_, err := scene.h.handler.React(scene.fighter, &sessionpb.ReactRequest{
-		Session: bardSessionID, Member: "alice", DeclarationId: scene.row.GetId(),
-		Choice: sessionpb.ReactChoice_REACT_CHOICE_HOLD,
+	after := watchActs(scene.fighter, t, scene.h, bardSessionID, "alice", func() {
+		_, err := scene.h.handler.React(scene.fighter, &sessionpb.ReactRequest{
+			Session: bardSessionID, Member: "alice", DeclarationId: scene.row.GetId(),
+			Choice: sessionpb.ReactChoice_REACT_CHOICE_HOLD,
+		})
+		require.NoError(t, err)
 	})
-	require.NoError(t, err)
-
-	after := waitForQuiescence(t, scene.stream, 2*time.Second)[baseline:]
-	require.Equal(t, 1, outcomesIn(after), "holding still finishes the swing")
+	require.Len(t, outcomesIn(after), 1, "holding still finishes the swing")
 	require.Equal(t, scene.attack.GetTotal(), totalOfOutcome(t, after), "no face joined it")
+	require.Empty(t, inspirationTermsIn(after), "the kept die is no term of the roll")
+	requireLiveIsStory(scene.fighter, t, scene.h, bardSessionID, "alice", after)
 
 	require.True(t, holdsTheDie(t, scene.h.charRepo, "alice"), "declining costs nothing")
 	require.Nil(t, reactRow(scene.fighter, t, scene.h, bardSessionID, "alice"),
 		"the question is answered even though the die was kept")
-
-	scene.cancel()
-	require.NoError(t, <-scene.done)
 }

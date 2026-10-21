@@ -105,7 +105,7 @@ lifecycles) to containers started/terminated once per Go test process — see
 
 #852 restores one full-stack path through this harness: `LobbyService` launch via
 server A, `SessionPresentationService` streams on servers A and B, and
-`SessionService.GetStory` before/after publish. Broader lobby/session full-stack
+`StoryService.GetStory` (the act ids) before/after publish. Broader lobby/session full-stack
 coverage is still narrower than the old deleted suite set; most gameplay acceptance
 coverage remains in `internal/integration/session`, which uses its own local handler
 harness rather than two bufconn servers.

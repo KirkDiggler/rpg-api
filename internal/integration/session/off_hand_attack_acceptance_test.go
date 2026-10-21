@@ -23,6 +23,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -115,21 +116,20 @@ func attackDeclarationForProtoSlot(
 	return found
 }
 
-func offHandStruckEvent(
-	ctx context.Context, t *testing.T, h *acceptanceHarness,
-) *sessionpb.Struck {
+// offHandAttackAct is the latest attack act in alice's story made with
+// attackRef, read through the real StoryService GetStory.
+func offHandAttackAct(
+	ctx context.Context, t *testing.T, h *acceptanceHarness, attackRef string,
+) *storypb.AttackAct {
 	t.Helper()
-	story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{
-		Session: "off-hand-run", Member: "alice", FromSeq: 1,
-	})
-	require.NoError(t, err)
-	for i := len(story.GetEntries()) - 1; i >= 0; i-- {
-		struck := story.GetEntries()[i].GetStruck()
-		if struck != nil && struck.GetAttack().GetRef() == "dnd5e:weapons:scimitar" {
-			return struck
+	story := storyOf(ctx, t, h.story, "off-hand-run", "alice")
+	for i := len(story) - 1; i >= 0; i-- {
+		attack := story[i].GetAttack()
+		if attack != nil && attack.GetAttack().GetRef() == attackRef {
+			return attack
 		}
 	}
-	t.Fatal("story contains no off-hand scimitar strike")
+	t.Fatalf("story contains no attack with %q", attackRef)
 	return nil
 }
 
@@ -178,17 +178,18 @@ func TestAcceptance_OffHandAttackIsASecondServerDeclaration(t *testing.T) {
 			require.Equal(t, tc.wantOffHandDamage, offHandResult.GetDamage())
 			require.Equal(t, "dnd5e:weapons:scimitar", offHandResult.GetAttack().GetRef())
 
-			struck := offHandStruckEvent(ctx, t, h)
+			struck := offHandAttackAct(ctx, t, h, "dnd5e:weapons:scimitar")
+			require.Equal(t, storypb.AttackOutcome_ATTACK_OUTCOME_HIT, struck.GetOutcome())
+			require.Equal(t, tc.wantOffHandDamage, struck.GetDamage(), "the act and the verb response tell one total")
 			require.Len(t, struck.GetDamageComponents(), tc.wantComponents)
 			if tc.fightingStyle {
 				feature := struck.GetDamageComponents()[1]
 				require.Equal(t, "feature", feature.GetSource())
 				require.NotNil(t, feature.GetRoll())
-				require.Equal(t, refs.Conditions.FightingStyleTwoWeaponFighting().String(), feature.GetRoll().GetSource().GetRef())
-				require.NotNil(t, feature.GetRoll().Modifier)
-				require.Equal(t, int32(3), feature.GetRoll().GetModifier())
-				require.Empty(t, feature.GetSourceRef())
-				require.Zero(t, feature.GetFlatBonus())
+				require.Len(t, feature.GetRoll().GetModifiers(), 1)
+				require.Equal(t, "Two-Weapon Fighting", feature.GetRoll().GetModifiers()[0].GetSource())
+				require.Equal(t, int32(3), feature.GetRoll().GetModifiers()[0].GetValue())
+				require.Empty(t, feature.GetRoll().GetDice(), "the restored modifier is flat")
 			}
 
 			stored := storedSheetOf(t, h.charRepo, "alice")

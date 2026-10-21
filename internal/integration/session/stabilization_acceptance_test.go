@@ -3,6 +3,7 @@ package session_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	characterpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1"
@@ -62,33 +64,38 @@ func TestAcceptance_Stabilization(t *testing.T) {
 			reopen()
 			row := castRowFor(ctx, t, h, "bella", spells.SpareTheDying)
 			require.True(t, row.GetAvailable(), "%s", row.GetWhy())
-			var live []*sessionpb.Event
-			patientLive := watchCast(patientCtx, t, h, "alice", func() {
-				live = watchCast(ctx, t, h, "bella", func() {
+			var live []*storypb.Act
+			patientLive := watchCastActs(patientCtx, t, h, "alice", func() {
+				live = watchCastActs(ctx, t, h, "bella", func() {
 					_, castErr := h.handler.Cast(ctx, &sessionpb.CastRequest{Session: castSessionID, Member: "bella", DeclarationId: row.GetId(), Targets: []string{"alice"}})
 					require.NoError(t, castErr)
 				})
 			})
-			var result *sessionpb.Stabilized
-			var kinds []sessionpb.EventKind
-			for _, event := range live {
-				if event.GetKind() == sessionpb.EventKind_EVENT_KIND_CAST || event.GetKind() == sessionpb.EventKind_EVENT_KIND_ACTIVATION_RESULT {
-					kinds = append(kinds, event.GetKind())
+			var result *storypb.ActivationResult
+			var bodies []string
+			for _, act := range live {
+				if act.GetCast() != nil {
+					bodies = append(bodies, "cast")
 				}
-				if activation := event.GetActivationResult(); activation != nil {
-					require.Equal(t, "bella", activation.GetActor())
-					require.Nil(t, activation.GetHealingApplied())
-					result = activation.GetStabilized()
+				if activation := act.GetActivate(); activation != nil {
+					bodies = append(bodies, "activate")
+					require.Equal(t, "bella", activation.GetBy().GetId())
+					for _, r := range activation.GetResults() {
+						require.NotEqual(t, "healing-applied", r.GetKind())
+						if r.GetStabilization() != nil {
+							result = r
+						}
+					}
 				}
 			}
-			require.Equal(t, []sessionpb.EventKind{sessionpb.EventKind_EVENT_KIND_CAST, sessionpb.EventKind_EVENT_KIND_ACTIVATION_RESULT}, kinds)
+			require.Equal(t, []string{"cast", "activate"}, bodies)
 			require.NotNil(t, result)
 			before := sessionpb.LifeState_LIFE_STATE_DYING
 			if stable {
 				before = sessionpb.LifeState_LIFE_STATE_STABILIZED
 			}
-			want := &sessionpb.Stabilized{Target: "alice", SourceRef: refs.Spells.SpareTheDying().String(), SourceName: "Spare the Dying", Before: before, After: sessionpb.LifeState_LIFE_STATE_STABILIZED, Progress: &sessionpb.DeathSaveProgress{SuccessesNeeded: 3, FailuresRemaining: 3, Stabilized: true}}
-			require.True(t, proto.Equal(want, result), "%v", result)
+			want := c1WantStabilized(before)
+			c1RequireStabilized(t, want, result)
 			caster, err = h.charRepo.Get(ctx, characterrepo.GetInput{ID: "bella"})
 			require.NoError(t, err)
 			require.Zero(t, caster.Character.Data.ActionEconomy.ActionsRemaining)
@@ -96,27 +103,21 @@ func TestAcceptance_Stabilization(t *testing.T) {
 			require.False(t, castRowFor(ctx, t, h, "bella", spells.SpareTheDying).GetAvailable())
 
 			reopen()
-			require.NotEmpty(t, patientLive)
-			patientStory, err := h.handler.GetStory(patientCtx, &sessionpb.GetStoryRequest{Session: castSessionID, Member: "alice", FromSeq: patientLive[0].GetSeq()})
-			require.NoError(t, err)
-			require.Len(t, patientStory.GetEntries(), len(patientLive))
+			// Compare each recipient's own projection.
+			requireLiveIsStory(patientCtx, t, h, castSessionID, "alice", patientLive)
 			patientResults := 0
-			for i, event := range patientLive {
-				require.True(t, proto.Equal(event, patientStory.Entries[i]), "compare each recipient's own sequence")
-				if stabilization := event.GetActivationResult().GetStabilized(); stabilization != nil {
-					patientResults++
-					require.True(t, proto.Equal(want, stabilization))
+			for _, act := range patientLive {
+				for _, r := range act.GetActivate().GetResults() {
+					if r.GetStabilization() != nil {
+						patientResults++
+						c1RequireStabilized(t, want, r)
+					}
 				}
 			}
 			require.Equal(t, 1, patientResults)
-			story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: castSessionID, Member: "bella", FromSeq: live[0].GetSeq()})
-			require.NoError(t, err)
-			require.Len(t, story.GetEntries(), len(live))
-			for i, event := range live {
-				require.True(t, proto.Equal(event, story.Entries[i]))
-				if i > 0 {
-					require.Greater(t, event.GetSeq(), live[i-1].GetSeq())
-				}
+			requireLiveIsStory(ctx, t, h, castSessionID, "bella", live)
+			for i := 1; i < len(live); i++ {
+				require.Greater(t, live[i].GetId(), live[i-1].GetId(), "act ids are ordered")
 			}
 			owner, err := characterhandler.New(&characterhandler.HandlerConfig{CharacterService: newAcceptanceCharacterService(t, h)})
 			require.NoError(t, err)
@@ -143,4 +144,31 @@ func TestAcceptance_Stabilization(t *testing.T) {
 			require.Zero(t, roller.calls.Load(), "cast, replay, private refresh and turn advancement must roll no dice")
 		})
 	}
+}
+
+// c1WantStabilized is the stabilization Spare the Dying states for a patient
+// who was before.
+func c1WantStabilized(before sessionpb.LifeState) *sessionpb.Stabilized {
+	return &sessionpb.Stabilized{Target: "alice", SourceRef: refs.Spells.SpareTheDying().String(), SourceName: "Spare the Dying", Before: before, After: sessionpb.LifeState_LIFE_STATE_STABILIZED, Progress: &sessionpb.DeathSaveProgress{SuccessesNeeded: 3, FailuresRemaining: 3, Stabilized: true}}
+}
+
+// c1RequireStabilized fails unless the act's stabilized result states want.
+func c1RequireStabilized(t *testing.T, want *sessionpb.Stabilized, got *storypb.ActivationResult) {
+	t.Helper()
+	require.Equal(t, want.GetTarget(), got.GetTarget().GetId())
+	require.Equal(t, want.GetSourceRef(), got.GetRef())
+	require.Equal(t, want.GetSourceName(), got.GetName())
+	s := got.GetStabilization()
+	lifeState := func(state sessionpb.LifeState) string {
+		return strings.ToLower(strings.TrimPrefix(state.String(), "LIFE_STATE_"))
+	}
+	require.Equal(t, lifeState(want.GetBefore()), s.GetBefore())
+	require.Equal(t, lifeState(want.GetAfter()), s.GetAfter())
+	p := want.GetProgress()
+	require.Equal(t, p.GetSuccesses(), s.GetSuccesses())
+	require.Equal(t, p.GetFailures(), s.GetFailures())
+	require.Equal(t, p.GetSuccessesNeeded(), s.GetSuccessesNeeded())
+	require.Equal(t, p.GetFailuresRemaining(), s.GetFailuresRemaining())
+	require.Equal(t, p.GetStabilized(), s.GetStabilized())
+	require.Equal(t, p.GetDead(), s.GetDead())
 }

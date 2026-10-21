@@ -4,7 +4,6 @@
 package session_test
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 
@@ -21,6 +20,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 )
 
 func quarterstaffMonkAcceptance(t *testing.T, id, playerID string) *tkcharacter.Data {
@@ -47,24 +47,6 @@ func quarterstaffMonkAcceptance(t *testing.T, id, playerID string) *tkcharacter.
 		},
 		Conditions: []json.RawMessage{martialArts},
 	}
-}
-
-func struckEventForAttack(
-	ctx context.Context, t *testing.T, h *acceptanceHarness, attackRef string,
-) *sessionpb.Struck {
-	t.Helper()
-	story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{
-		Session: "off-hand-run", Member: "alice", FromSeq: 1,
-	})
-	require.NoError(t, err)
-	for i := len(story.GetEntries()) - 1; i >= 0; i-- {
-		struck := story.GetEntries()[i].GetStruck()
-		if struck != nil && struck.GetAttack().GetRef() == attackRef {
-			return struck
-		}
-	}
-	t.Fatalf("story contains no strike with attack %q", attackRef)
-	return nil
 }
 
 func TestAcceptance_QuarterstaffAttackGrantsBonusUnarmedStrike(t *testing.T) {
@@ -115,8 +97,10 @@ func TestAcceptance_QuarterstaffAttackGrantsBonusUnarmedStrike(t *testing.T) {
 	require.True(t, bonusResult.GetHit())
 	require.Equal(t, "dnd5e:weapons:unarmed-strike", bonusResult.GetAttack().GetRef())
 
-	struck := struckEventForAttack(ctx, t, h, "dnd5e:weapons:unarmed-strike")
-	var weaponComponent, abilityComponent *sessionpb.DamageComponent
+	struck := offHandAttackAct(ctx, t, h, "dnd5e:weapons:unarmed-strike")
+	require.Equal(t, storypb.AttackOutcome_ATTACK_OUTCOME_HIT, struck.GetOutcome())
+	require.Equal(t, "skel-captain", struck.GetTo().GetId())
+	var weaponComponent, abilityComponent *storypb.DamageComponent
 	for _, component := range struck.GetDamageComponents() {
 		switch component.GetSource() {
 		case "weapon":
@@ -127,18 +111,14 @@ func TestAcceptance_QuarterstaffAttackGrantsBonusUnarmedStrike(t *testing.T) {
 	}
 	require.NotNil(t, weaponComponent)
 	require.NotNil(t, weaponComponent.GetRoll())
-	require.Equal(t, "dnd5e:weapons:unarmed-strike", weaponComponent.GetRoll().GetSource().GetRef())
-	require.Equal(t, "d4", weaponComponent.GetRoll().GetDice().GetNotation(),
-		"the normalized trace records the physical level-1 Martial Arts die")
-	require.Empty(t, weaponComponent.GetSourceRef())
-	require.Empty(t, weaponComponent.GetDice())
+	require.Equal(t, "1d4", weaponComponent.GetRoll().GetExpression(),
+		"the roll records the physical level-1 Martial Arts die")
+	require.Len(t, weaponComponent.GetRoll().GetDice(), 1)
 	require.NotNil(t, abilityComponent)
 	require.NotNil(t, abilityComponent.GetRoll())
-	require.Equal(t, refs.Abilities.Dexterity().String(), abilityComponent.GetRoll().GetSource().GetRef())
-	require.NotNil(t, abilityComponent.GetRoll().Modifier)
-	require.Equal(t, int32(4), abilityComponent.GetRoll().GetModifier())
-	require.Empty(t, abilityComponent.GetSourceRef())
-	require.Zero(t, abilityComponent.GetFlatBonus())
+	require.Len(t, abilityComponent.GetRoll().GetModifiers(), 1)
+	require.Equal(t, "Dexterity", abilityComponent.GetRoll().GetModifiers()[0].GetSource())
+	require.Equal(t, int32(4), abilityComponent.GetRoll().GetModifiers()[0].GetValue())
 
 	storedAfterBonus := storedSheetOf(t, h.charRepo, "alice")
 	require.NotNil(t, storedAfterBonus.ActionEconomy)

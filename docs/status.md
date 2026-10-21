@@ -24,8 +24,16 @@ cuts its page after the fold and extends it to the end of the last same-id
 run, so a page ends only on an id boundary; it logs the acts folded per page
 at debug level (the re-fold per page is quadratic over a full catch-up). A
 refused act keeps its id and carries no body (R22). The buffer is 256,
-overridable by `SESSION_ACT_BUFFER`. v1alpha1's stream and broker are
-untouched.
+overridable by `SESSION_ACT_BUFFER`.
+
+**The v1 event stream is deleted (rpg-project#631, E5c c1).** v1alpha1
+`SessionService.StreamEvents` and `GetStory` answer `Unimplemented` through the
+embedded unimplemented server; their handlers, the v1 `Broker` and the event
+converters only they reached are gone, and the role policy no longer
+classifies them, so a gated deployment denies them. `session.Config.Events` is
+`sdk.DiscardEvents{}` until the session module drops the field (E5c c4), and
+that line goes then (c5). The act stream and the record are classified for
+play in the role policy (`StoryService`, `RecordService`).
 
 **The record stream, session v1alpha2 (rpg-project#628)** — `RecordService`
 (`StreamRecord`, `GetRecord`) in `internal/handlers/dnd5e/session/v1alpha2/`
@@ -34,8 +42,8 @@ the member it names (the same `sessionaccess` gate as `StreamEvents`). Its
 `RecordBroker` (`internal/orchestrators/session/record_broker.go`) is keyed by
 session and closes a full subscriber as lagged; the stream then ends with
 `RecordLagged{last_id}` and the client catches up with `GetRecord`. That is
-rpg-api#1122's fix scoped to the new stream: the v1 `Broker` still skips a
-full subscriber, and #1122 stays open for it. `GetRecord` logs
+rpg-api#1122's fix on the new streams; the v1 `Broker` that skipped a full
+subscriber is deleted (rpg-project#631), which closes #1122. `GetRecord` logs
 `session record: catch-up restarted (older than retention)` as the R25
 measurement.
 
@@ -569,9 +577,9 @@ Attack, turn-clock Move, and End Turn pass the caller's opaque `declaration_id` 
 SDK after the unchanged owner gate and before the one Manager call. Missing selectors
 map to INVALID_ARGUMENT; stale regenerated offers map to FAILED_PRECONDITION. Full
 catalog Attack refs cross Afford, AttackResponse, Struck, and Missed unchanged.
-`StreamEvents` remains live, audience-filtered, best-effort delivery with no replay
-claim; `GetStory` is the persisted catch-up read. Both use the same typed-event wire
-converter, so live and recovered events have one projection.
+What happened reaches clients as acts (v1alpha2 `StoryService.StreamEvents` live,
+`GetStory` catch-up), both from the same act converter, so live and recovered acts
+have one projection; the v1alpha1 event stream is deleted (rpg-project#631).
 
 `v1alpha2.character.CharacterService.GetCharacterData` is the owner-private pull read.
 Ownership is checked before strict projection. Its detached View now includes PlayerID

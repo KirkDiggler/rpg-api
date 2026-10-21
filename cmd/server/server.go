@@ -168,9 +168,9 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("create world resolver: %w", err)
 	}
 	if authConfig.DevMode {
-		// The StreamEvents send trace (rpg-api#819, session/v1alpha1/stream_events.go)
-		// and other per-call debug logging are cheap but silent under
-		// slog's default Info level -- raise it here, gated on the same
+		// Per-call debug logging (the act stream's page and send traces among
+		// it) is cheap but silent under slog's default Info level -- raise it
+		// here, gated on the same
 		// signal that already means "this is a local-dev box, never
 		// production" (AUTH_DEV_MODE), so a missing beat is a one-look
 		// diagnosis by default without a second flag to remember.
@@ -341,7 +341,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 	sessionv1alpha1pb.RegisterSessionServiceServer(srv, sessionHandlerImpl)
 
 	// RecordService, session v1alpha2 (rpg-project#628): the record stream
-	// for the debug panel. Same seat gate as StreamEvents; its own broker,
+	// for the debug panel. Same seat gate as the act stream; its own broker,
 	// which closes a lagging subscriber as lagged instead of skipping it.
 	recordHandlerImpl, err := sessionrecordhandler.New(&sessionrecordhandler.HandlerConfig{
 		Manager: sessionOrch.Manager,

@@ -3,7 +3,6 @@ package session_test
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -16,6 +15,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -30,7 +30,7 @@ import (
 // delivers anything. Between them there is no third shape to miss.
 //
 // EVERY ASSERTION IS THROUGH THE REAL HANDLER, over miniredis, reading the
-// event stream a client subscribes to. Nothing here calls the SDK's Manager
+// act stream a client subscribes to. Nothing here calls the SDK's Manager
 // for a verb, and nothing mints a selector: the rows come from Afford, which
 // is the only author of them.
 const castSessionID = "cast-run"
@@ -200,55 +200,59 @@ func castRowFor(
 	return nil
 }
 
-// beatsOfKind returns every beat of one kind in a captured slice.
-func beatsOfKind(events []*sessionpb.Event, kind sessionpb.EventKind) []*sessionpb.Event {
-	var out []*sessionpb.Event
-	for _, evt := range events {
-		if evt.GetKind() == kind {
-			out = append(out, evt)
+// castActsWith returns every act in a captured slice whose body is a cast.
+func castActsWith(acts []*storypb.Act) []*storypb.CastAct {
+	var out []*storypb.CastAct
+	for _, act := range acts {
+		if cast := act.GetCast(); cast != nil {
+			out = append(out, cast)
 		}
 	}
 
 	return out
 }
 
-// requireNoUnknownBeats is the design's own done-when, and it is the reason
-// the kinds and the bodies had to land in one change: an unmapped kind does
-// not fail, it DEMOTES -- EVENT_KIND_UNKNOWN with a nil body -- so a client
-// would receive a beat that happened and could not be read, and nothing
-// anywhere would say so.
-func requireNoUnknownBeats(t *testing.T, events []*sessionpb.Event) {
-	t.Helper()
-
-	for _, evt := range events {
-		require.NotEqual(t, sessionpb.EventKind_EVENT_KIND_UNKNOWN, evt.GetKind(),
-			"a beat reached the client as UNKNOWN, which is a kind this build failed to map")
-		require.NotEqual(t, sessionpb.EventKind_EVENT_KIND_UNSPECIFIED, evt.GetKind(),
-			"a beat reached the client with no kind at all, a producer defect")
+// castResultsWithSave returns every cast result in a captured slice that
+// carries a saving throw: the act-stream reading of the v1 Saved beat.
+func castResultsWithSave(acts []*storypb.Act) []*storypb.CastResult {
+	var out []*storypb.CastResult
+	for _, cast := range castActsWith(acts) {
+		for _, result := range cast.GetResults() {
+			if result.GetSave() != nil {
+				out = append(out, result)
+			}
+		}
 	}
+
+	return out
 }
 
-// watchCast opens the bard's own stream and returns everything that arrives
-// after the given call, quiesced.
-func watchCast(
-	ctx context.Context, t *testing.T, h *acceptanceHarness, member string, act func(),
-) []*sessionpb.Event {
+// castActivationResults returns every activation result of one kind in a
+// captured slice ("damage-applied", "condition-applied", ...).
+func castActivationResults(acts []*storypb.Act, kind string) []*storypb.ActivationResult {
+	var out []*storypb.ActivationResult
+	for _, act := range acts {
+		for _, result := range act.GetActivate().GetResults() {
+			if result.GetKind() == kind {
+				out = append(out, result)
+			}
+		}
+	}
+
+	return out
+}
+
+// requireEveryActReadable is the design's own done-when, carried onto the act
+// stream: an act that happened and could not be read -- no family, or no body
+// -- is a producer defect a client would receive silently.
+func requireEveryActReadable(t *testing.T, acts []*storypb.Act) {
 	t.Helper()
 
-	streamCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	stream := newRecordingStream(streamCtx)
-	done := make(chan error, 1)
-	go func() {
-		done <- h.handler.StreamEvents(
-			&sessionpb.StreamEventsRequest{Session: castSessionID, Member: member}, stream)
-	}()
-	waitForLive(t, nil, castSessionID, member, stream)
-	baseline := len(stream.snapshot())
-
-	act()
-
-	return waitForQuiescence(t, stream, 2*time.Second)[baseline:]
+	for _, act := range acts {
+		require.NotEqual(t, storypb.Family_FAMILY_UNSPECIFIED, act.GetFamily(),
+			"act %s reached the client with no family", act.GetId())
+		require.NotNil(t, act.GetBody(), "act %s reached the client with no body", act.GetId())
+	}
 }
 
 // TestAcceptance_TheCastDoorOffersOneRowPerCastableCantrip is the panel this
@@ -311,32 +315,42 @@ func TestAcceptance_TrueStrikeDeliversAConditionWithNoRoll(t *testing.T) {
 
 	row := castRowFor(bardCtx, t, h, "bella", spells.TrueStrike)
 
-	beats := watchCast(bardCtx, t, h, "bella", func() {
+	acts := watchCastActs(bardCtx, t, h, "bella", func() {
 		_, err := h.handler.Cast(bardCtx, &sessionpb.CastRequest{
 			Session: castSessionID, Member: "bella",
 			DeclarationId: row.GetId(), Target: "skel-1",
 		})
 		require.NoError(t, err)
 	})
-	requireNoUnknownBeats(t, beats)
+	requireEveryActReadable(t, acts)
 
-	cast := beatsOfKind(beats, sessionpb.EventKind_EVENT_KIND_CAST)
-	require.Len(t, cast, 1, "one cast, one cast beat")
-	require.Equal(t, "bella", cast[0].GetCast().GetActor())
-	require.Equal(t, refs.Spells.TrueStrike().String(), cast[0].GetCast().GetSpell().GetRef())
-	require.Equal(t, "True Strike", cast[0].GetCast().GetSpell().GetName(),
+	cast := castActsWith(acts)
+	require.Len(t, cast, 1, "one cast, one cast act")
+	require.Equal(t, "bella", cast[0].GetBy().GetId())
+	require.Equal(t, refs.Spells.TrueStrike().String(), cast[0].GetSpell().GetRef())
+	require.Equal(t, "True Strike", cast[0].GetSpell().GetName(),
 		"the content authors the name, and the client never derives it from the ref")
-	require.Equal(t, "skel-1", cast[0].GetCast().GetTarget())
+	require.Len(t, cast[0].GetTargets(), 1)
+	require.Equal(t, "skel-1", cast[0].GetTargets()[0].GetId())
 
-	require.Empty(t, beatsOfKind(beats, sessionpb.EventKind_EVENT_KIND_SAVED),
+	require.Empty(t, castResultsWithSave(acts),
 		"True Strike rolls nothing, so nothing may report a roll")
+	for _, act := range acts {
+		require.Empty(t, act.GetActivate().GetSaves(), "True Strike rolls nothing, so nothing may report a save")
+	}
 
 	// The condition lands on the CASTER, not the target: True Strike gives
 	// the bard advantage on her next attack against the skeleton, so the
 	// skeleton holds nothing.
+	applied := castActivationResults(acts, "condition-applied")
+	require.Len(t, applied, 1, "one condition delivered")
+	require.Equal(t, "bella", applied[0].GetTarget().GetId(), "the act says the caster received it")
+	require.Equal(t, refs.Conditions.TrueStrike().String(), applied[0].GetRef())
 	require.Contains(t, conditionRefsOf(t, h.charRepo, "bella"),
 		refs.Conditions.TrueStrike().String(),
 		"the caster holds the condition her own cantrip granted")
+
+	requireLiveIsStory(bardCtx, t, h, castSessionID, "bella", acts)
 }
 
 // TestAcceptance_ViciousMockeryRollsASaveAndDeliversDamage is the gated half,
@@ -349,63 +363,65 @@ func TestAcceptance_ViciousMockeryRollsASaveAndDeliversDamage(t *testing.T) {
 
 	row := castRowFor(bardCtx, t, h, "bella", spells.ViciousMockery)
 
-	beats := watchCast(bardCtx, t, h, "bella", func() {
+	acts := watchCastActs(bardCtx, t, h, "bella", func() {
 		_, err := h.handler.Cast(bardCtx, &sessionpb.CastRequest{
 			Session: castSessionID, Member: "bella",
 			DeclarationId: row.GetId(), Target: "skel-1",
 		})
 		require.NoError(t, err)
 	})
-	requireNoUnknownBeats(t, beats)
+	requireEveryActReadable(t, acts)
 
-	cast := beatsOfKind(beats, sessionpb.EventKind_EVENT_KIND_CAST)
+	cast := castActsWith(acts)
 	require.Len(t, cast, 1)
-	require.Equal(t, refs.Spells.ViciousMockery().String(), cast[0].GetCast().GetSpell().GetRef())
+	require.Equal(t, refs.Spells.ViciousMockery().String(), cast[0].GetSpell().GetRef())
 
-	saved := beatsOfKind(beats, sessionpb.EventKind_EVENT_KIND_SAVED)
-	require.Len(t, saved, 1, "one gate, one save beat")
-	body := saved[0].GetSaved()
-	require.Equal(t, "skel-1", body.GetSaver())
-	require.NotEmpty(t, body.GetAbility(), "the beat says what the save was made with")
-	require.Equal(t, int32(3), body.GetRoll(), "the one authoritative d20 face")
-	require.Equal(t, int32(13), body.GetDc(),
+	saved := castResultsWithSave(acts)
+	require.Len(t, saved, 1, "one gate, one save")
+	result := saved[0]
+	require.Equal(t, "skel-1", result.GetTarget().GetId())
+	require.NotEmpty(t, result.GetAbility(), "the act says what the save was made with")
+	require.Equal(t, []int32{3}, result.GetSave().GetDice(), "the one authoritative d20 face")
+	require.NotNil(t, result.GetSave().Against)
+	require.Equal(t, int32(13), result.GetSave().GetAgainst(),
 		"8 + proficiency 2 + Charisma 16's +3, answered by the caster before any machine ran")
-	require.False(t, body.GetSucceeded(),
+	require.NotNil(t, result.GetSave().Beaten)
+	require.False(t, result.GetSave().GetBeaten(),
 		"a 3 on a skeleton's Wisdom cannot reach 13 from any direction")
-	require.Equal(t, refs.Spells.ViciousMockery().String(), body.GetSource().GetRef(),
-		"the save names what demanded it, so a client narrates it without holding the cast beat beside it")
+	require.Equal(t, storypb.CastOutcome_CAST_OUTCOME_FAILED, result.GetOutcome())
+	require.NotEmpty(t, result.GetSave().GetTerms())
+	require.Equal(t, refs.Spells.ViciousMockery().String(), result.GetSave().GetTerms()[0].GetSourceRef(),
+		"the save names what demanded it, so a client narrates it without holding the cast beside it")
 
 	// -- what the failure delivered: damage AND the rider, both as activation
 	// results, because that is where delivered effects have always lived --
-	var damage *sessionpb.DamageApplied
-	conditionsApplied := map[string]bool{}
-	for _, evt := range beatsOfKind(beats, sessionpb.EventKind_EVENT_KIND_ACTIVATION_RESULT) {
-		result := evt.GetActivationResult()
-		if applied := result.GetDamageApplied(); applied != nil {
-			damage = applied
-		}
-		if applied := result.GetConditionApplied(); applied != nil {
-			conditionsApplied[applied.GetRef()] = true
-		}
-	}
-
-	require.NotNil(t, damage, "a failed save against Vicious Mockery costs the target 1d4 psychic")
-	require.Equal(t, "skel-1", damage.GetTarget())
+	damages := castActivationResults(acts, "damage-applied")
+	require.Len(t, damages, 1, "a failed save against Vicious Mockery costs the target 1d4 psychic")
+	damage := damages[0]
+	require.Equal(t, "skel-1", damage.GetTarget().GetId())
 	require.Positive(t, damage.GetAmount(), "the skeleton actually lost hit points")
-	require.Greater(t, damage.GetHpBefore(), damage.GetHpAfter(),
+	require.Greater(t, damage.GetBefore(), damage.GetAfter(),
 		"the two hit-point readings are either side of the same blow")
-	require.Equal(t, refs.Spells.ViciousMockery().String(), damage.GetSourceRef())
-	require.Equal(t, sessionpb.DamageType_DAMAGE_TYPE_PSYCHIC, damage.GetDamageType(),
+	require.Equal(t, refs.Spells.ViciousMockery().String(), damage.GetRef())
+	require.Equal(t, storypb.DamageType_DAMAGE_TYPE_PSYCHIC, damage.GetDamageType(),
 		"the rulebook says what kind of damage this is; a client never reads the spell's ref to work it out")
-	require.NotNil(t, damage.GetCalculation(),
+	require.NotNil(t, damage.GetRoll(),
 		"the 1d4's own face reaches the client, not only its total")
-	require.Equal(t, damage.GetRequested(), damage.GetCalculation().GetTotal(),
-		"the calculation's total IS the requested damage, never a second number beside it")
+	require.Len(t, damage.GetRoll().GetDice(), 1, "the 1d4's one face")
+	require.Equal(t, damage.GetRequested(), damage.GetRoll().GetTotal(),
+		"the roll's total IS the requested damage, never a second number beside it")
 
+	conditionsApplied := map[string]bool{}
+	for _, applied := range castActivationResults(acts, "condition-applied") {
+		require.Equal(t, "skel-1", applied.GetTarget().GetId())
+		conditionsApplied[applied.GetRef()] = true
+	}
 	require.True(t, conditionsApplied[refs.Conditions.ViciousMockery().String()],
 		"the rider lands on the target beside the damage")
 	require.Equal(t, conditions.ViciousMockeryName, "Vicious Mockery",
-		"the condition's display name is the content's, and this pins the spelling the beat carries")
+		"the condition's display name is the content's, and this pins the spelling the act carries")
+
+	requireLiveIsStory(bardCtx, t, h, castSessionID, "bella", acts)
 }
 
 // TestAcceptance_AKnownCantripWithNoContentMintsNoRow is ruling R9's stated

@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
-	"google.golang.org/protobuf/proto"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
@@ -25,7 +25,7 @@ func (s *DivineFavorSuite) TestNativeWarGrantPaymentReloadDamageAndReplay() {
 			h, ctx, id := nativeClericCombatSceneAt(t, 2, 1, spells.DivineFavor)
 			row := castRowFor(ctx, t, h, id, spells.DivineFavor)
 			s.Require().True(row.GetAvailable(), row.GetWhy())
-			live := watchCast(ctx, t, h, id, func() {
+			live := watchCastActs(ctx, t, h, id, func() {
 				_, err := h.handler.Cast(ctx, &sessionpb.CastRequest{Session: castSessionID, Member: id, DeclarationId: row.GetId()})
 				s.Require().NoError(err)
 			})
@@ -35,23 +35,22 @@ func (s *DivineFavorSuite) TestNativeWarGrantPaymentReloadDamageAndReplay() {
 			s.Zero(stored.Character.Data.ActionEconomy.BonusActionsRemaining)
 			s.Equal(1, stored.Character.Data.Resources[resources.SpellSlotLevel1].Current)
 			applied := 0
-			for _, event := range live {
-				if b := event.GetActivationResult().GetConditionApplied(); b != nil {
-					applied++
-					s.Equal(id, b.GetTarget())
-					s.Equal(id, b.GetSourceId())
+			for _, act := range live {
+				for _, result := range act.GetActivate().GetResults() {
+					if result.GetKind() == "condition-applied" {
+						applied++
+						s.Equal(id, result.GetTarget().GetId())
+						s.Equal(id, result.GetSourceId())
+					}
 				}
-				s.Nil(event.GetStruck())
-				s.Nil(event.GetSaved())
+				s.Nil(act.GetAttack())
+				for _, result := range act.GetCast().GetResults() {
+					s.Nil(result.GetSave(), "Divine Favor asks no save")
+				}
 			}
 			s.Equal(1, applied)
 			reopenClericHost(t, h, sdk.StaleTargetRefuse)
-			story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: castSessionID, Member: id, FromSeq: live[0].GetSeq()})
-			s.Require().NoError(err)
-			s.Require().Len(story.GetEntries(), len(live))
-			for i, event := range live {
-				s.True(proto.Equal(event, story.Entries[i]))
-			}
+			requireLiveIsStory(ctx, t, h, castSessionID, id, live)
 			useGuidingBoltDice(t, h, roll)
 			attacked, err := h.handler.Attack(ctx, &sessionpb.AttackRequest{Session: castSessionID, Attacker: id, Target: "skel-1", DeclarationId: currentDeclarationID(ctx, t, h.handler, castSessionID, id, sessionpb.Verb_VERB_ATTACK)})
 			s.Require().NoError(err)
@@ -60,24 +59,29 @@ func (s *DivineFavorSuite) TestNativeWarGrantPaymentReloadDamageAndReplay() {
 				s.Zero(attacked.GetDamage())
 			} else {
 				s.Positive(attacked.GetDamage())
-				story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: castSessionID, Member: id, FromSeq: 1})
-				s.Require().NoError(err)
-				var extra *sessionpb.DamageComponent
-				for _, event := range story.GetEntries() {
-					for _, component := range event.GetStruck().GetDamageComponents() {
-						if component.GetRoll().GetSource().GetRef() == "dnd5e:spells:divine-favor" {
+				// The attack act's damage part does not yet carry the Divine Favor
+				// source ref or name (convert_act's damageRollToProto drops a traced
+				// component's Roll.Source; reported on rpg-project#631), so the part
+				// is found by the one radiant source in this scene.
+				var extra *storypb.DamageComponent
+				for _, act := range storyOf(ctx, t, h.story, castSessionID, id) {
+					if act.GetAttack().GetOutcome() != storypb.AttackOutcome_ATTACK_OUTCOME_HIT {
+						continue
+					}
+					for _, component := range act.GetAttack().GetDamageComponents() {
+						if component.GetDamageType() == storypb.DamageType_DAMAGE_TYPE_RADIANT {
+							s.Nil(extra, "one Divine Favor part per strike")
 							extra = component
 						}
 					}
 				}
 				s.Require().NotNil(extra, "weapon strike must expose the Divine Favor component in persisted Story")
-				s.Equal(sessionpb.DamageType_DAMAGE_TYPE_RADIANT, extra.GetDamageType())
-				s.Equal("Divine Favor", extra.GetRoll().GetSource().GetName())
+				s.Equal("spell", extra.GetSource())
 				count := 1
 				if roll == 20 {
 					count = 2
 				}
-				s.Len(extra.GetRoll().GetDice().GetFinalRolls(), count)
+				s.Len(extra.GetRoll().GetDice(), count)
 			}
 		})
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	dnd5epb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
@@ -233,41 +234,55 @@ func TestAcceptance_BaneCreationCastPaymentAndAffectedRoll(t *testing.T) {
 	require.Equal(t, 1, after.Character.Data.Resources[resources.SpellSlotLevel1].Current,
 		"one successful cast spends exactly one provider-owned slot")
 
-	story, err := h.handler.GetStory(bardCtx, &sessionpb.GetStoryRequest{Session: "bane-playthrough", Member: bardID})
-	require.NoError(t, err)
-	var castEvent *sessionpb.Cast
-	var saveEvent *sessionpb.Saved
-	var baned *sessionpb.ConditionApplied
-	for _, event := range story.GetEntries() {
-		switch event.GetKind() {
-		case sessionpb.EventKind_EVENT_KIND_CAST:
-			castEvent = event.GetCast()
-		case sessionpb.EventKind_EVENT_KIND_SAVED:
-			saveEvent = event.GetSaved()
-		case sessionpb.EventKind_EVENT_KIND_ACTIVATION_RESULT:
-			if applied := event.GetActivationResult().GetConditionApplied(); applied != nil &&
-				applied.GetRef() == refs.Conditions.Baned().String() {
-				baned = applied
+	story := storyOf(bardCtx, t, h.story, "bane-playthrough", bardID)
+	var castAct *storypb.CastAct
+	var baned *storypb.ActivationResult
+	for _, act := range story {
+		if cast := act.GetCast(); cast != nil && cast.GetSpell().GetRef() == baneSpellRef {
+			castAct = cast
+		}
+		for _, result := range act.GetActivate().GetResults() {
+			if result.GetKind() == "condition-applied" && result.GetRef() == refs.Conditions.Baned().String() {
+				baned = result
 			}
 		}
 	}
-	require.NotNil(t, castEvent)
-	require.Equal(t, []string{"fighter"}, castEvent.GetTargets())
-	require.Equal(t, "fighter", castEvent.GetTarget(), "one canonical target has a faithful legacy projection")
-	require.NotNil(t, saveEvent)
-	require.NotNil(t, saveEvent.GetCalculation(), "the Bane saving throw carries provider-authored calculation facts")
-	require.Equal(t, saveEvent.GetTotal(), saveEvent.GetCalculation().GetTotal())
+	require.NotNil(t, castAct, "the cast reaches the story as a cast act:\n%s", storyEventsJSON(story))
+	require.Equal(t, bardID, castAct.GetBy().GetId())
+	require.Len(t, castAct.GetTargets(), 1)
+	require.Equal(t, "fighter", castAct.GetTargets()[0].GetId())
+
+	// The save is folded into the cast act's result for its target, and it
+	// carries the provider-authored roll facts: the die that fell, the
+	// modifiers, and a total that is exactly their sum.
+	require.Len(t, castAct.GetResults(), 1)
+	result := castAct.GetResults()[0]
+	require.Equal(t, "fighter", result.GetTarget().GetId())
+	require.Equal(t, storypb.CastOutcome_CAST_OUTCOME_FAILED, result.GetOutcome(), "the rigged dice fail the save")
+	require.Equal(t, "cha", result.GetAbility(), "Bane is a Charisma save")
+	save := result.GetSave()
+	require.NotNil(t, save, "the Bane saving throw carries provider-authored calculation facts")
+	require.NotEmpty(t, save.GetTerms())
+	require.Equal(t, baneSpellRef, save.GetTerms()[0].GetSourceRef(), "the save's die names the spell that forced it")
+	sum := int32(0)
+	for _, face := range save.GetDice() {
+		sum += face
+	}
+	for _, modifier := range save.GetModifiers() {
+		sum += modifier.GetValue()
+	}
+	require.Equal(t, sum, save.GetTotal(), "the total is the calculation's own sum")
 
 	// WHOSE BANE. Two casters can each land Bane on this fighter, and the
-	// condition's address is target plus ref plus source -- so the beat that
+	// condition's address is target plus ref plus source -- so the act that
 	// announces one must name the caster, or a client holding two rows cannot
-	// say which is which, and cannot strike the right one when a removal beat
+	// say which is which, and cannot strike the right one when a removal
 	// arrives. Read here, end to end, because the walk found the typed field
 	// empty while the raw payload beside it carried the id (2026-09-12).
-	require.NotNil(t, baned, "the failed save attached Bane, and the beat says so")
-	require.Equal(t, "fighter", baned.GetTarget())
+	require.NotNil(t, baned, "the failed save attached Bane, and the story says so")
+	require.Equal(t, "fighter", baned.GetTarget().GetId())
 	require.Equal(t, bardID, baned.GetSourceId(),
-		"the caster who spent the slot is the source the beat names")
+		"the caster who spent the slot is the source the act names")
 
 	_, err = h.handler.EndTurn(bardCtx, &sessionpb.EndTurnRequest{
 		Session: "bane-playthrough", Member: bardID,

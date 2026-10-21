@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
-	"google.golang.org/protobuf/proto"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	characterpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	characterhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v2/character"
@@ -69,7 +69,7 @@ func (s *WardingFlareSuite) TestNativeLightReactionOwnerSheetAndReplay() {
 			}
 			_, err = h.handler.React(otherCtx, in)
 			s.Error(err, "another player cannot answer this reaction")
-			live := watchCast(ctx, t, h, id, func() { _, e := h.handler.React(ctx, in); s.Require().NoError(e) })
+			live := watchCastActs(ctx, t, h, id, func() { _, e := h.handler.React(ctx, in); s.Require().NoError(e) })
 			want := initial
 			if spend {
 				want--
@@ -79,16 +79,26 @@ func (s *WardingFlareSuite) TestNativeLightReactionOwnerSheetAndReplay() {
 			s.Require().NoError(err)
 			s.Equal(2, stored.Character.Data.Resources[resources.SpellSlotLevel1].Current)
 			swings := 0
-			for _, e := range live {
-				if e.GetMissed() != nil {
-					swings++
-					imposed := e.GetMissed().GetCalculation().GetComponents()[0].GetDice().GetKeep().GetImposed()
-					if spend {
-						s.Require().Len(imposed, 1)
-						s.Equal(refs.Features.WardingFlare().String(), imposed[0].GetRef())
-					} else {
-						s.Empty(imposed)
+			for _, act := range live {
+				b := act.GetAttack()
+				if b == nil {
+					continue
+				}
+				s.Equal(storypb.AttackOutcome_ATTACK_OUTCOME_MISS, b.GetOutcome())
+				s.Equal("alice", b.GetBy().GetId())
+				s.Equal(id, b.GetTo().GetId())
+				swings++
+				var imposed []*storypb.RollInfluence
+				for _, influence := range b.GetRoll().GetInfluences() {
+					if influence.GetKind() == storypb.InfluenceKind_INFLUENCE_KIND_DISADVANTAGE {
+						imposed = append(imposed, influence)
 					}
+				}
+				if spend {
+					s.Require().Len(imposed, 1)
+					s.Equal(refs.Features.WardingFlare().String(), imposed[0].GetSourceRef())
+				} else {
+					s.Empty(imposed)
 				}
 			}
 			s.Equal(1, swings)
@@ -96,13 +106,7 @@ func (s *WardingFlareSuite) TestNativeLightReactionOwnerSheetAndReplay() {
 			s.Error(err)
 			assertSheet(want)
 			reopenClericHost(t, h, sdk.StaleTargetRefuse)
-			s.Require().NotEmpty(live)
-			story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: castSessionID, Member: id, FromSeq: live[0].GetSeq()})
-			s.Require().NoError(err)
-			s.Require().Len(story.GetEntries(), len(live))
-			for i, e := range live {
-				s.True(proto.Equal(e, story.Entries[i]))
-			}
+			requireLiveIsStory(ctx, t, h, castSessionID, id, live)
 		})
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -24,6 +23,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -335,64 +335,52 @@ func TestAcceptance_ASpentSelectorIsRefusedWithFailedPrecondition(t *testing.T) 
 	require.Equal(t, sessionpb.Currency_CURRENCY_ACTION, after.GetWhy().GetCurrency())
 }
 
-func requireSecondWindActivationEvents(t *testing.T, events []*sessionpb.Event) {
+func requireSecondWindActivationActs(t *testing.T, acts []*storypb.Act) {
 	t.Helper()
-	require.Len(t, events, 2, "exactly one Activated and one ActivationResult beat; no duplicate")
+	require.Len(t, acts, 1, "exactly one activate act carrying its one result; no duplicate")
 
-	require.Equal(t, sessionpb.EventKind_EVENT_KIND_ACTIVATED, events[0].GetKind())
-	require.Equal(t, "alice", events[0].GetActivated().GetActor())
-	require.Equal(t, "dnd5e:features:second_wind", events[0].GetActivated().GetAbility().GetRef())
-	require.Equal(t, "Second Wind", events[0].GetActivated().GetAbility().GetName())
-	require.Empty(t, events[0].GetActivated().GetTarget())
+	activate := acts[0].GetActivate()
+	require.NotNil(t, activate)
+	require.Equal(t, storypb.Family_FAMILY_ACT, acts[0].GetFamily())
+	require.Equal(t, "alice", activate.GetBy().GetId())
+	require.Equal(t, "dnd5e:features:second_wind", activate.GetAbility().GetRef())
+	require.Equal(t, "Second Wind", activate.GetAbility().GetName())
+	require.Nil(t, activate.GetTarget(), "Second Wind names no target")
 
-	require.Equal(t, sessionpb.EventKind_EVENT_KIND_ACTIVATION_RESULT, events[1].GetKind())
-	require.Equal(t, events[0].GetSeq()+1, events[1].GetSeq(), "canonical beat order is gapless")
-	result := events[1].GetActivationResult()
-	require.Equal(t, "alice", result.GetActor())
-	healing := result.GetHealingApplied()
-	require.NotNil(t, healing)
-	require.Equal(t, "alice", healing.GetTarget())
+	require.Len(t, activate.GetResults(), 1,
+		"healing is the one result: no condition applied or removed, no capacity granted")
+	healing := activate.GetResults()[0]
+	require.Equal(t, "healing-applied", healing.GetKind())
+	require.Equal(t, "alice", healing.GetTarget().GetId())
 	require.Equal(t, int32(2), healing.GetAmount())
 	require.Equal(t, int32(7), healing.GetRequested())
-	require.Zero(t, healing.GetRoll(), "new healing does not duplicate the roll in deprecated scalars")
-	require.Zero(t, healing.GetModifier(), "new healing does not duplicate the modifier in deprecated scalars")
-	require.Equal(t, "dnd5e:features:second_wind", healing.GetSourceRef())
-	require.Equal(t, "Second Wind", healing.GetSourceName())
-	require.Equal(t, int32(8), healing.GetHpBefore())
-	require.Equal(t, int32(10), healing.GetHpAfter())
+	require.Equal(t, "dnd5e:features:second_wind", healing.GetRef())
+	require.Equal(t, "Second Wind", healing.GetName())
+	require.Equal(t, int32(8), healing.GetBefore())
+	require.Equal(t, int32(10), healing.GetAfter())
 
-	calculation := healing.GetCalculation()
-	require.NotNil(t, calculation)
-	require.Equal(t, int32(7), calculation.GetTotal(), "the provider's authoritative requested total crosses unchanged")
-	require.Len(t, calculation.GetComponents(), 2)
-	dice := calculation.GetComponents()[0]
-	require.Equal(t, "dnd5e:features:second_wind", dice.GetSource().GetRef())
-	require.Equal(t, "Second Wind", dice.GetSource().GetName())
-	require.NotNil(t, dice.GetDice())
-	require.Equal(t, "1d10", dice.GetDice().GetNotation())
-	require.Equal(t, int32(10), dice.GetDice().GetDieSize())
-	require.Equal(t, []int32{6}, dice.GetDice().GetOriginalRolls())
-	require.Empty(t, dice.GetDice().GetRerolls())
-	require.Equal(t, []int32{6}, dice.GetDice().GetFinalRolls())
-	require.Empty(t, dice.GetDice().GetKeptIndices())
-	require.Equal(t, int32(6), dice.GetDice().GetSubtotal())
-	require.Nil(t, dice.Modifier)
+	roll := healing.GetRoll()
+	require.NotNil(t, roll)
+	require.Equal(t, int32(7), roll.GetTotal(), "the provider's authoritative requested total crosses unchanged")
+	require.Equal(t, "1d10+1", roll.GetExpression())
+	require.Equal(t, []int32{6}, roll.GetDice())
+	require.Len(t, roll.GetTerms(), 1)
+	dice := roll.GetTerms()[0]
+	require.Equal(t, "dnd5e:features:second_wind", dice.GetSourceRef())
+	require.Equal(t, "Second Wind", dice.GetSourceName())
+	require.Equal(t, int32(1), dice.GetCount())
+	require.Equal(t, int32(10), dice.GetDieSize())
+	require.Equal(t, []int32{6}, dice.GetFaces())
+	require.False(t, dice.GetSubtract())
 
-	level := calculation.GetComponents()[1]
-	require.Equal(t, "dnd5e:classes:fighter", level.GetSource().GetRef())
-	require.Equal(t, "Fighter", level.GetSource().GetName())
-	require.Equal(t, "Fighter level", level.GetSource().GetLabel())
-	require.Nil(t, level.GetDice())
-	require.NotNil(t, level.Modifier)
-	require.Equal(t, int32(1), level.GetModifier())
-
-	require.Nil(t, result.GetConditionApplied())
-	require.Nil(t, result.GetConditionRemoved())
-	require.Nil(t, result.GetCapacityGranted())
+	require.Len(t, roll.GetModifiers(), 1)
+	level := roll.GetModifiers()[0]
+	require.Equal(t, "Fighter", level.GetSource())
+	require.Equal(t, int32(1), level.GetValue())
 }
 
 // Second Wind heals its own fighter and emits the ordered acknowledgement and
-// applied result through both the live SessionService stream and GetStory.
+// applied result through both the live StoryService act stream and GetStory.
 func TestAcceptance_SecondWindActivationEventsAndHealingCrossTheWire(t *testing.T) {
 	// armedFighter carries no features, so this one gets its own sheet rather
 	// than mutating a fixture five other acceptance tests read. Level one makes
@@ -430,36 +418,16 @@ func TestAcceptance_SecondWindActivationEventsAndHealingCrossTheWire(t *testing.
 	require.True(t, ok, "a fighter carrying Second Wind must be offered it")
 	require.Equal(t, sessionpb.Slot_SLOT_BONUS, secondWind.GetSlot())
 
-	streamCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	stream := newRecordingStream(streamCtx)
-	done := make(chan error, 1)
-	go func() {
-		done <- h.handler.StreamEvents(&sessionpb.StreamEventsRequest{
-			Session: "acceptance-run", Member: "alice",
-		}, stream)
-	}()
-	waitForLive(t, nil, "acceptance-run", "alice", stream)
-	baseline := len(stream.snapshot())
-
-	_, err = h.handler.Activate(ctx, &sessionpb.ActivateRequest{
-		Session: "acceptance-run", Member: "alice", DeclarationId: secondWind.GetId(),
+	live := watchActs(ctx, t, h, "acceptance-run", "alice", func() {
+		_, err = h.handler.Activate(ctx, &sessionpb.ActivateRequest{
+			Session: "acceptance-run", Member: "alice", DeclarationId: secondWind.GetId(),
+		})
+		require.NoError(t, err)
 	})
-	require.NoError(t, err)
 	dice.requireExhausted(t)
 
-	live := waitForQuiescence(t, stream, 2*time.Second)[baseline:]
-	requireSecondWindActivationEvents(t, live)
-
-	story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{
-		Session: "acceptance-run", Member: "alice", FromSeq: live[0].GetSeq(),
-	})
-	require.NoError(t, err)
-	requireSecondWindActivationEvents(t, story.GetEntries())
-	requireStoryContainsLiveEvents(t, story.GetEntries(), live)
-
-	cancel()
-	require.NoError(t, <-done)
+	requireSecondWindActivationActs(t, live)
+	requireLiveIsStory(ctx, t, h, "acceptance-run", "alice", live)
 
 	// The same authoritative result reached persistence; no response-side
 	// optimism or converter arithmetic is involved.
