@@ -453,32 +453,23 @@ func damageRollToProto(c sdk.DamageComponent) *sessionpb.Roll {
 	if rc.Dice != nil || rc.Modifier != nil {
 		sum := 0
 		if d := rc.Dice; d != nil {
-			kept := d.FinalRolls
-			if len(d.KeptIndices) > 0 {
-				kept = make([]int, 0, len(d.KeptIndices))
-				for _, i := range d.KeptIndices {
-					if i >= 0 && i < len(d.FinalRolls) {
-						kept = append(kept, d.FinalRolls[i])
-					}
-				}
-			}
-			out.Dice = int32s(kept)
-			term := fmt.Sprintf("%dd%d", len(kept), d.DieSize)
+			// The one wire spelling of a traced pool: kept faces, the pool as
+			// first rolled, kept indices and sourced rerolls (rpg-project#643 B).
+			term := traceTermToProto(rc)
+			out.Dice = term.GetFaces()
+			out.Terms = []*sessionpb.RollDiceTerm{term}
+			expression := fmt.Sprintf("%dd%d", term.GetCount(), d.DieSize)
 			sum = d.Subtotal
 			if rc.SubtractDice {
-				term = "-" + term
+				expression = "-" + expression
 				sum = -sum
 			}
-			out.Expression = term
-			out.Terms = []*sessionpb.RollDiceTerm{{
-				Count: int32(len(kept)), DieSize: int32(d.DieSize), //nolint:gosec // a dice pool fits int32
-				Faces: int32s(kept), Subtract: rc.SubtractDice,
-				SourceRef: rc.Source.Ref, SourceName: rc.Source.Name, SourceId: rc.Source.SourceID,
-			}}
+			out.Expression = expression
 		}
 		if m := rc.Modifier; m != nil {
 			sum += *m
-			out.Modifiers = []*sessionpb.RollModifier{{Source: rc.Source.Name, Value: int32(*m)}} //nolint:gosec // a modifier fits int32
+			// Its source whole: name, ref, id and label (rpg-project#643 D).
+			out.Modifiers = []*sessionpb.RollModifier{sourceModifierToProto(rc.Source, *m)}
 			out.Expression = joinExpression(out.Expression, *m)
 		}
 		out.Total = int32(sum) //nolint:gosec // a damage total fits int32
@@ -500,7 +491,9 @@ func damageRollToProto(c sdk.DamageComponent) *sessionpb.Roll {
 
 // damageSourceRef is a damage component's provider ref: the legacy scalar on
 // a pre-trace payload, else its roll's source (rpg-project#643 C). The SDK
-// fills SourceRef only for payloads written before roll traces.
+// fills SourceRef only for payloads written before roll traces. The order
+// cannot matter: the SDK refuses a component carrying both shapes, so at most
+// one is set.
 func damageSourceRef(c sdk.DamageComponent) string {
 	if c.SourceRef != "" {
 		return c.SourceRef
