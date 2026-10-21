@@ -12,6 +12,7 @@ import (
 	lobbypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
 	presentationpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/presentation/v1alpha1"
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	characterpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	characterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
@@ -27,6 +28,7 @@ func (s *PolicySuite) TestEveryGameRPCIsExplicitlyClassified() {
 		&authoringpb.AuthoringService_ServiceDesc, &lobbypb.LobbyService_ServiceDesc,
 		&presentationpb.SessionPresentationService_ServiceDesc, &sessionpb.SessionService_ServiceDesc,
 		&characterpb.CharacterService_ServiceDesc, &characterv2pb.CharacterService_ServiceDesc,
+		&storypb.StoryService_ServiceDesc, &storypb.RecordService_ServiceDesc,
 	} {
 		check := func(name string) {
 			method := "/" + descriptor.ServiceName + "/" + name
@@ -40,6 +42,19 @@ func (s *PolicySuite) TestEveryGameRPCIsExplicitlyClassified() {
 		for _, stream := range descriptor.Streams {
 			check(stream.StreamName)
 		}
+	}
+}
+
+func (s *PolicySuite) TestTheActStreamAndTheRecordRequirePlayPermission() {
+	for _, method := range []string{
+		"/dnd5e.api.session.v1alpha2.StoryService/StreamEvents",
+		"/dnd5e.api.session.v1alpha2.StoryService/GetStory",
+		"/dnd5e.api.session.v1alpha2.RecordService/StreamRecord",
+		"/dnd5e.api.session.v1alpha2.RecordService/GetRecord",
+	} {
+		permission, known := auth.GameMethodPermission(method)
+		s.True(known, method)
+		s.Equal(auth.PermissionPlay, permission, method)
 	}
 }
 
