@@ -354,6 +354,19 @@ func runServer(_ *cobra.Command, _ []string) error {
 	}
 	sessionv1alpha2pb.RegisterRecordServiceServer(srv, recordHandlerImpl)
 
+	// StoryService, session v1alpha2 (rpg-project#630): the act stream, per
+	// recipient. Same seat gate; its own broker, keyed by session and member,
+	// which closes a lagging subscriber only between two ids.
+	storyHandlerImpl, err := sessionrecordhandler.NewStory(&sessionrecordhandler.StoryHandlerConfig{
+		Manager: sessionOrch.Manager,
+		Broker:  sessionOrch.ActBroker,
+		Gate:    access,
+	})
+	if err != nil {
+		return fmt.Errorf("session story handler: %w", err)
+	}
+	sessionv1alpha2pb.RegisterStoryServiceServer(srv, storyHandlerImpl)
+
 	presentationService := sessionpresentationorch.New(sessionpresentationrepo.NewRedis(redisClient))
 	presentationHandlerImpl, err := sessionpresentationhandler.New(&sessionpresentationhandler.HandlerConfig{
 		Service: presentationService,
