@@ -3,6 +3,7 @@ package sessionv1alpha2
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -209,7 +210,7 @@ func (s *RecordHandlerSuite) TestStreamRecordRequiresSeat() {
 // beat with restarted set.
 func (s *RecordHandlerSuite) TestGetRecordRestarted() {
 	s.seated()
-	s.manager.EXPECT().Record(gomock.Any(), &sdk.RecordReadInput{Session: "sess-1", AfterID: "id-01", Limit: 50}).Return(
+	s.manager.EXPECT().Record(gomock.Any(), &sdk.RecordReadInput{Session: "sess-1", AfterID: "id-01", Limit: 51}).Return(
 		&sdk.RecordReadOutput{Events: beats("id-07", "id-08"), Restarted: true}, nil)
 
 	out, err := s.handler(sessionorch.NewRecordBroker(8)).GetRecord(s.ctx,
@@ -220,6 +221,34 @@ func (s *RecordHandlerSuite) TestGetRecordRestarted() {
 	s.Equal("id-07", out.GetEvents()[0].GetId())
 	s.Equal("move:01HF", out.GetEvents()[0].GetAct())
 	s.Equal("moved", out.GetEvents()[0].GetBeat())
+}
+
+// TestGetRecordPagesWithMore: a page is never unbounded. A limit of zero, or
+// above the server's maximum, reads the maximum; `more` says whether retained
+// events did not fit, and a page that fits says false.
+func (s *RecordHandlerSuite) TestGetRecordPagesWithMore() {
+	full := make([]sdk.RecordEvent, maxRecordPage+1)
+	for i := range full {
+		full[i] = beat(fmt.Sprintf("id-%04d", i))
+	}
+	h := s.handler(sessionorch.NewRecordBroker(8))
+	for _, limit := range []int32{0, -1, maxRecordPage + 7} {
+		s.seated()
+		s.manager.EXPECT().Record(gomock.Any(), &sdk.RecordReadInput{Session: "sess-1", Limit: maxRecordPage + 1}).
+			Return(&sdk.RecordReadOutput{Events: full}, nil)
+		out, err := h.GetRecord(s.ctx, &sessionpb.GetRecordRequest{Session: "sess-1", Member: "char-1", Limit: limit})
+		s.Require().NoError(err)
+		s.Len(out.GetEvents(), maxRecordPage, "limit %d", limit)
+		s.True(out.GetMore(), "limit %d", limit)
+	}
+
+	s.seated()
+	s.manager.EXPECT().Record(gomock.Any(), &sdk.RecordReadInput{Session: "sess-1", Limit: 3}).
+		Return(&sdk.RecordReadOutput{Events: beats("id-1", "id-2")}, nil)
+	out, err := h.GetRecord(s.ctx, &sessionpb.GetRecordRequest{Session: "sess-1", Member: "char-1", Limit: 2})
+	s.Require().NoError(err)
+	s.Len(out.GetEvents(), 2)
+	s.False(out.GetMore(), "everything fit")
 }
 
 // TestGetRecordRequiresSeat: the gate's refusal is the RPC's answer.
