@@ -437,7 +437,9 @@ func attackToProto(b sdk.AttackAct) (*sessionpb.AttackAct, error) {
 		if err != nil {
 			return nil, err
 		}
-		dc := &sessionpb.DamageComponent{Source: c.Source, DamageType: t, Roll: damageRollToProto(c)}
+		dc := &sessionpb.DamageComponent{
+			Source: c.Source, SourceRef: c.SourceRef, DamageType: t, Roll: damageRollToProto(c),
+		}
 		if c.Multiplier != nil {
 			m := *c.Multiplier
 			dc.Multiplier = &m
@@ -475,11 +477,15 @@ func activateToProto(b sdk.ActivateAct) (*sessionpb.ActivateAct, error) {
 		By: p.one(b.By), Ability: &sessionpb.AbilityRef{Ref: b.Ability.Ref, Name: b.Ability.Name}, Target: p.one(b.Target),
 	}
 	for _, r := range b.Results {
+		resultDamage, err := damageType(sdk.DamageType(r.DamageType))
+		if err != nil {
+			return nil, err
+		}
 		res := &sessionpb.ActivationResult{
 			Kind: r.Kind, Target: p.one(r.Target), Ref: r.Ref, Name: r.Name, SourceId: r.SourceID,
 			Amount: int32(r.Amount), Requested: int32(r.Requested), //nolint:gosec // hit points fit int32
 			Before: int32(r.Before), After: int32(r.After), //nolint:gosec // hit points fit int32
-			Roll: rollToProto(r.Roll), DamageType: r.DamageType, Detail: r.Detail, Description: r.Description,
+			Roll: rollToProto(r.Roll), DamageType: resultDamage, Detail: r.Detail, Description: r.Description,
 			Moved: int32(r.Moved), StoppedBy: r.StoppedBy, //nolint:gosec // a push distance fits int32
 		}
 		if st := r.Stabilization; st != nil {

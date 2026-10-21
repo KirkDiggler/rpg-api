@@ -136,7 +136,7 @@ func everyBody() map[string]bodyCase {
 				By: gate1, To: alice, Attack: sdk.AttackRef{Ref: "dnd5e:weapons:spear", Name: "Spear", DamageType: sdk.DamagePiercing},
 				Outcome: sdk.AttackHit, Critical: true, Damage: 7,
 				DamageComponents: []sdk.DamageComponent{{
-					Source: "Spear", DamageType: sdk.DamagePiercing, Multiplier: fp(0.5),
+					Source: "Spear", SourceRef: "dnd5e:weapons:spear", DamageType: sdk.DamagePiercing, Multiplier: fp(0.5),
 					Roll: sdk.RollComponent{Source: sdk.RollSource{Name: "Strength"}, Dice: &sdk.DiceTrace{DieSize: 6, FinalRolls: []int{2, 5}, Subtotal: 7}, Modifier: ip(2)},
 				}},
 				Roll: d20, Ward: &sdk.WardSave{Source: alice, Ability: "wis", Roll: *d20},
@@ -147,7 +147,7 @@ func everyBody() map[string]bodyCase {
 				By: gate1P, To: aliceP, Attack: &sessionpb.AttackRef{Ref: "dnd5e:weapons:spear", Name: "Spear", DamageType: sessionpb.DamageType_DAMAGE_TYPE_PIERCING},
 				Outcome: sessionpb.AttackOutcome_ATTACK_OUTCOME_HIT, Critical: true, Damage: 7,
 				DamageComponents: []*sessionpb.DamageComponent{{
-					Source: "Spear", DamageType: sessionpb.DamageType_DAMAGE_TYPE_PIERCING, Multiplier: fp(0.5),
+					Source: "Spear", SourceRef: "dnd5e:weapons:spear", DamageType: sessionpb.DamageType_DAMAGE_TYPE_PIERCING, Multiplier: fp(0.5),
 					Roll: &sessionpb.Roll{Expression: "2d6+2", Dice: []int32{2, 5}, Modifiers: []*sessionpb.RollModifier{{Source: "Strength", Value: 2}}, Total: 9},
 				}},
 				Roll: d20P, Ward: &sessionpb.WardSave{Source: aliceP, Ability: "wis", Roll: d20P},
@@ -173,7 +173,7 @@ func everyBody() map[string]bodyCase {
 			act(sessionpb.Family_FAMILY_ACT, &sessionpb.ActivateAct{By: aliceP, Ability: &sessionpb.AbilityRef{Ref: "dnd5e:features:second-wind", Name: "Second Wind"}, Target: gate1P,
 				Results: []*sessionpb.ActivationResult{{
 					Kind: "healed", Target: aliceP, Ref: "r", Name: "n", SourceId: "s", Amount: 6, Requested: 7, Before: 3, After: 9,
-					Roll: d20P, DamageType: "fire", Detail: "d", Description: "desc", Moved: 10, StoppedBy: "wall",
+					Roll: d20P, DamageType: sessionpb.DamageType_DAMAGE_TYPE_FIRE, Detail: "d", Description: "desc", Moved: 10, StoppedBy: "wall",
 					Stabilization: &sessionpb.Stabilization{Before: "dying", After: "stable", Successes: 3, Failures: 1, FailuresRemaining: 2, Stabilized: true},
 				}},
 				Saves: []*sessionpb.SaveResult{{Saver: gate1P, Ability: "con", Source: blessP, Roll: d20P}},
@@ -376,4 +376,15 @@ func (s *ConvertActSuite) TestConvertLegacyDamageComponent() {
 	s.True(proto.Equal(&sessionpb.Roll{
 		Expression: "1d8+3", Dice: []int32{6}, Modifiers: []*sessionpb.RollModifier{{Source: "Longsword", Value: 3}}, Total: 9,
 	}, got), "%v", got)
+}
+
+// TestConvertUnknownResultDamageRefuses: an activation result naming a damage
+// type this build cannot spell refuses its act rather than reading as none.
+func (s *ConvertActSuite) TestConvertUnknownResultDamageRefuses() {
+	got, err := actToProto(sdk.Act{ID: "id-3", Family: sdk.FamilyAct, Body: sdk.ActivateAct{
+		By: alice, Results: []sdk.ActivationResult{{Kind: "damaged", DamageType: "sonic"}},
+	}})
+	s.Require().ErrorIs(err, errUnknownValue)
+	s.True(got.GetRefused())
+	s.Equal("id-3", got.GetId())
 }
