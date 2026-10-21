@@ -168,18 +168,24 @@ func (s *RecordHandlerSuite) TestStreamRecordLaggedEndsWithStatus() {
 	s.Empty(stream.sent, "lagged is the last message")
 }
 
-// TestStreamRecordOlderThanRetentionEndsLagged: a resume point the record
-// no longer reaches is answered as a lag at the requested id, so the client's
-// GetRecord reports the restart.
-func (s *RecordHandlerSuite) TestStreamRecordOlderThanRetentionEndsLagged() {
+// TestStreamRecordOlderThanRetentionRestarts: a resume point the record no
+// longer reaches opens the stream with RecordRestarted, then replays from the
+// oldest retained beat, then goes live.
+func (s *RecordHandlerSuite) TestStreamRecordOlderThanRetentionRestarts() {
+	broker := sessionorch.NewRecordBroker(8)
 	s.seated()
-	s.manager.EXPECT().Record(gomock.Any(), gomock.Any()).Return(
-		&sdk.RecordReadOutput{Events: beats("id-09"), Restarted: true}, nil)
+	s.manager.EXPECT().Record(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, _ *sdk.RecordReadInput) (*sdk.RecordReadOutput, error) {
+			s.Require().NoError(broker.PublishRecord(ctx, beats("id-10")))
+			return &sdk.RecordReadOutput{Events: beats("id-08", "id-09"), Restarted: true}, nil
+		})
 
-	stream, done := s.run(s.handler(sessionorch.NewRecordBroker(8)), "id-01")
-	lagged := stream.next(s.T()).GetLagged()
-	s.Require().NotNil(lagged)
-	s.Equal("id-01", lagged.GetLastId())
+	stream, done := s.run(s.handler(broker), "id-01")
+	s.NotNil(stream.next(s.T()).GetRestarted(), "restarted is the first message")
+	s.Equal("id-08", stream.next(s.T()).GetEvent().GetId())
+	s.Equal("id-09", stream.next(s.T()).GetEvent().GetId())
+	s.Equal("id-10", stream.next(s.T()).GetEvent().GetId())
+	s.cancel()
 	s.NoError(s.ended(done))
 }
 

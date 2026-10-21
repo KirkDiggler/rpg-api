@@ -23,10 +23,12 @@ import (
 //
 // A LAG ENDS THE STREAM, TOLD. When the broker closes the subscription as
 // lagged, the handler sends what was queued, then RecordLagged{last_id} with
-// the last id it sent, and ends with OK. A resume point older than retention
-// is the same failure seen from the other side — the stream cannot deliver
-// from there without a hole — so it is answered the same way, at once, with
-// the requested id: the client's GetRecord then reports restarted.
+// the last id it sent, and ends with OK.
+//
+// A STALE RESUME IS TOLD TOO. A resume point older than retention opens the
+// stream with RecordRestarted, then replays from the oldest retained beat,
+// so the subscriber replaces what it holds instead of appending across a
+// hole (R25, R28).
 func (h *Handler) StreamRecord(req *sessionpb.StreamRecordRequest, stream sessionpb.RecordService_StreamRecordServer) error {
 	ctx := stream.Context()
 	session, member := req.GetSession(), req.GetMember()
@@ -44,12 +46,17 @@ func (h *Handler) StreamRecord(req *sessionpb.StreamRecordRequest, stream sessio
 	if err != nil {
 		return sdkerr.StatusError(err)
 	}
+	last := req.GetAfterId()
 	if replay.Restarted {
 		slog.InfoContext(ctx, logRecordRestarted, "session", session, "after_id", req.GetAfterId(), "rpc", "StreamRecord")
-		return sendLagged(stream, req.GetAfterId())
+		if err := stream.Send(&sessionpb.StreamRecordResponse{
+			Item: &sessionpb.StreamRecordResponse_Restarted{Restarted: &sessionpb.RecordRestarted{}},
+		}); err != nil {
+			return err
+		}
+		last = "" // the replay starts at the oldest retained beat
 	}
 
-	last := req.GetAfterId()
 	send := func(evt sdk.RecordEvent) error {
 		converted, cerr := recordEventToProto(evt)
 		if cerr != nil {
