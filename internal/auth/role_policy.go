@@ -65,18 +65,6 @@ func GameMethodPermission(method string) (Permissions, bool) {
 			return PermissionPlay, true
 		}
 	case "dnd5e.api.session.v1alpha2.RecordService":
-		switch name {
-		case "StreamRecord", "GetRecord":
-			return PermissionPlay, true
-		}
-	// The act stream and the record (session v1alpha2, rpg-project#630 and
-	// #628): what a seated player reads the session from.
-	case "dnd5e.api.session.v1alpha2.StoryService":
-		switch name {
-		case "StreamEvents", "GetStory":
-			return PermissionPlay, true
-		}
-	case "dnd5e.api.session.v1alpha2.RecordService":
 		// Pre-release (event-stream R26): every seated player. R13 makes the
 		// record an entitlement at release (operator/dev); re-classify then.
 		switch name {
