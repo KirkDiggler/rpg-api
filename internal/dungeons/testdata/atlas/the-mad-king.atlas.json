@@ -6018,6 +6018,31 @@
    ]
   },
   {
+   "id": "gate-corner-wall",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 5.773502691896258,
+    "origin": {
+     "x": -11.250000000000002,
+     "y": 31.032576968942386
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": false,
+   "blocks_line_of_sight": false,
+   "holdable": false,
+   "cells": [
+    {
+     "x": -6,
+     "y": 7
+    }
+   ]
+  },
+  {
    "id": "gate-wall",
    "placement": {
     "width": 1.4433756729740645,
@@ -6764,6 +6789,31 @@
     {
      "x": 19,
      "y": -9
+    }
+   ]
+  },
+  {
+   "id": "wall/gate-corner-wall/span/0",
+   "placement": {
+    "width": 1.4433756729740645,
+    "depth": 5.773502691896258,
+    "origin": {
+     "x": -11.250000000000002,
+     "y": 31.032576968942386
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": true,
+   "blocks_line_of_sight": true,
+   "holdable": false,
+   "cells": [
+    {
+     "x": -6,
+     "y": 7
     }
    ]
   },
@@ -7795,6 +7845,36 @@
      "width": 5.773502691896258
     }
    ]
+  },
+  {
+   "id": "gate-corner-wall",
+   "ref": "dnd5e:env:dark-fortress:45_wall_01",
+   "from": {
+    "x": -11.250000000000002,
+    "y": 28.14582562299426
+   },
+   "to": {
+    "x": -11.250000000000002,
+    "y": 33.919328314890514
+   },
+   "height": 8.660254037844387,
+   "thickness": 0.8660254037844387,
+   "elevation": 0,
+   "footprint_cells": [
+    {
+     "x": -5,
+     "y": 6
+    },
+    {
+     "x": -6,
+     "y": 7
+    },
+    {
+     "x": -6,
+     "y": 8
+    }
+   ],
+   "openings": []
   },
   {
    "id": "gate-wall",
