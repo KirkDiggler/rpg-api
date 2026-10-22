@@ -577,6 +577,7 @@ func (s *ConvertActSuite) TestDamageRollCarriesTheRerollRecord() {
 			Notation: "2d6", DieSize: 6, OriginalRolls: []int{1, 5}, FinalRolls: []int{4, 5}, Subtotal: 9,
 			Rerolls: []sdk.DiceReroll{{DieIndex: 0, Before: 1, After: 4, Source: sdk.RollSource{
 				Ref: "dnd5e:conditions:fighting_style_great_weapon_fighting", Name: "Great Weapon Fighting", SourceID: "fighter",
+				Label: "fighting style",
 			}}},
 		},
 	}})
@@ -591,6 +592,7 @@ func (s *ConvertActSuite) TestDamageRollCarriesTheRerollRecord() {
 	s.True(proto.Equal(&sessionpb.RollReroll{
 		DieIndex: 0, Before: 1, After: 4,
 		SourceRef: "dnd5e:conditions:fighting_style_great_weapon_fighting", SourceName: "Great Weapon Fighting", SourceId: "fighter",
+		SourceLabel: "fighting style",
 	}, term.GetRerolls()[0]), "%v", term.GetRerolls()[0])
 }
 
