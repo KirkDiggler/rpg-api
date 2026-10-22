@@ -326,7 +326,7 @@ func rollToProto(r *sdk.Roll) (*sessionpb.Roll, error) {
 		Of:         int32(r.Of),    //nolint:gosec // a table size fits int32
 	}
 	for _, m := range r.Modifiers {
-		out.Modifiers = append(out.Modifiers, &sessionpb.RollModifier{Source: m.Source, Value: int32(m.Value)}) //nolint:gosec // a modifier fits int32
+		out.Modifiers = append(out.Modifiers, modifierToProto(m))
 	}
 	if r.Against != nil {
 		against := int32(*r.Against) //nolint:gosec // a DC or an AC fits int32
@@ -342,55 +342,134 @@ func rollToProto(r *sdk.Roll) (*sessionpb.Roll, error) {
 			return nil, err
 		}
 		out.Influences = append(out.Influences, &sessionpb.RollInfluence{
-			Kind: kind, SourceRef: in.SourceRef, SourceId: in.SourceID, Name: in.Name,
+			Kind: kind, SourceRef: in.SourceRef, SourceId: in.SourceID, Name: in.Name, SourceLabel: in.SourceLabel,
 		})
 	}
 	for _, t := range r.Terms {
-		out.Terms = append(out.Terms, &sessionpb.RollDiceTerm{
-			Count:      int32(t.Count),   //nolint:gosec // a pool's die count fits int32
-			DieSize:    int32(t.DieSize), //nolint:gosec // a die size fits int32
-			Faces:      int32s(t.Faces),
-			Subtract:   t.Subtract,
-			SourceRef:  t.SourceRef,
-			SourceName: t.SourceName,
-			SourceId:   t.SourceID,
-		})
+		out.Terms = append(out.Terms, termToProto(t))
 	}
 	return out, nil
+}
+
+// THE ROLL RECORD'S ONE WIRE SPELLING (rpg-project#643 B and D). A folded
+// Roll's terms and modifiers go through termToProto and modifierToProto. A
+// damage component carries its raw trace instead, so traceTermToProto and
+// sourceModifierToProto first state it as the SDK states a folded term or
+// modifier, then spell it the same way: the reroll record, the kept indices
+// and every source's ref, id and label cannot differ between the two paths.
+
+// termToProto spells one dice pool with its source and its reroll record.
+func termToProto(t sdk.RollDiceTerm) *sessionpb.RollDiceTerm {
+	return &sessionpb.RollDiceTerm{
+		Count:       int32(t.Count),   //nolint:gosec // a pool's die count fits int32
+		DieSize:     int32(t.DieSize), //nolint:gosec // a die size fits int32
+		Faces:       int32s(t.Faces),
+		Subtract:    t.Subtract,
+		SourceRef:   t.SourceRef,
+		SourceName:  t.SourceName,
+		SourceId:    t.SourceID,
+		SourceLabel: t.SourceLabel,
+		Rolled:      int32s(t.Rolled),
+		KeptIndices: int32s(t.KeptIndices),
+		Rerolls:     rerollsToProto(t.Rerolls),
+	}
+}
+
+// modifierToProto spells one flat contribution with its whole source.
+func modifierToProto(m sdk.RollModifier) *sessionpb.RollModifier {
+	return &sessionpb.RollModifier{
+		Source: m.Source, Value: int32(m.Value), //nolint:gosec // a modifier fits int32
+		SourceRef: m.SourceRef, SourceId: m.SourceID, SourceLabel: m.SourceLabel,
+	}
+}
+
+// traceTermToProto spells a traced roll component's dice (a damage
+// component's DiceTrace) as one term: its kept faces, the pool as first
+// rolled, the kept indices, its sourced rerolls and its source. Nil when the
+// component rolled no dice.
+func traceTermToProto(rc sdk.RollComponent) *sessionpb.RollDiceTerm {
+	d := rc.Dice
+	if d == nil {
+		return nil
+	}
+	kept := d.FinalRolls
+	if len(d.KeptIndices) > 0 {
+		kept = make([]int, 0, len(d.KeptIndices))
+		for _, i := range d.KeptIndices {
+			if i >= 0 && i < len(d.FinalRolls) {
+				kept = append(kept, d.FinalRolls[i])
+			}
+		}
+	}
+	term := sdk.RollDiceTerm{
+		Count: len(kept), DieSize: d.DieSize, Faces: kept, Subtract: rc.SubtractDice,
+		SourceRef: rc.Source.Ref, SourceName: rc.Source.Name, SourceID: rc.Source.SourceID, SourceLabel: rc.Source.Label,
+		Rolled: d.OriginalRolls, KeptIndices: d.KeptIndices,
+	}
+	for _, r := range d.Rerolls {
+		term.Rerolls = append(term.Rerolls, sdk.RollReroll{
+			DieIndex: r.DieIndex, Before: r.Before, After: r.After,
+			SourceRef: r.Source.Ref, SourceName: r.Source.Name, SourceID: r.Source.SourceID, SourceLabel: r.Source.Label,
+		})
+	}
+	return termToProto(term)
+}
+
+// sourceModifierToProto spells a traced component's flat contribution with
+// its whole source: name, ref, id and label.
+func sourceModifierToProto(src sdk.RollSource, value int) *sessionpb.RollModifier {
+	return modifierToProto(sdk.RollModifier{
+		Source: src.Name, Value: value, SourceRef: src.Ref, SourceID: src.SourceID, SourceLabel: src.Label,
+	})
+}
+
+// rerollsToProto spells a term's sourced rerolls, nil for none.
+func rerollsToProto(rerolls []sdk.RollReroll) []*sessionpb.RollReroll {
+	if len(rerolls) == 0 {
+		return nil
+	}
+	out := make([]*sessionpb.RollReroll, 0, len(rerolls))
+	for _, r := range rerolls {
+		out = append(out, &sessionpb.RollReroll{
+			DieIndex:  int32(r.DieIndex), //nolint:gosec // a die index fits int32
+			Before:    int32(r.Before),   //nolint:gosec // a face fits int32
+			After:     int32(r.After),    //nolint:gosec // a face fits int32
+			SourceRef: r.SourceRef, SourceName: r.SourceName, SourceId: r.SourceID, SourceLabel: r.SourceLabel,
+		})
+	}
+	return out
 }
 
 // damageRollToProto spells one damage component's roll as a Roll (R17: every
 // die an act carries is said one way). A traced component reads its kept
 // faces, its notation's die count and size, and its modifier; Total is the
-// trace's own subtotal, signed, plus the modifier. A pre-trace component
-// reads its legacy scalars the same way.
+// trace's own subtotal, signed, plus the modifier. Its dice are one term
+// naming the source that rolled them (rpg-project#643 A): which spell or
+// weapon a damage part came from rides the roll, as it rode the v1 trace. A
+// pre-trace component reads its legacy scalars the same way.
 func damageRollToProto(c sdk.DamageComponent) *sessionpb.Roll {
 	out := &sessionpb.Roll{}
 	rc := c.Roll
 	if rc.Dice != nil || rc.Modifier != nil {
 		sum := 0
 		if d := rc.Dice; d != nil {
-			kept := d.FinalRolls
-			if len(d.KeptIndices) > 0 {
-				kept = make([]int, 0, len(d.KeptIndices))
-				for _, i := range d.KeptIndices {
-					if i >= 0 && i < len(d.FinalRolls) {
-						kept = append(kept, d.FinalRolls[i])
-					}
-				}
-			}
-			out.Dice = int32s(kept)
-			term := fmt.Sprintf("%dd%d", len(kept), d.DieSize)
+			// The one wire spelling of a traced pool: kept faces, the pool as
+			// first rolled, kept indices and sourced rerolls (rpg-project#643 B).
+			term := traceTermToProto(rc)
+			out.Dice = term.GetFaces()
+			out.Terms = []*sessionpb.RollDiceTerm{term}
+			expression := fmt.Sprintf("%dd%d", term.GetCount(), d.DieSize)
 			sum = d.Subtotal
 			if rc.SubtractDice {
-				term = "-" + term
+				expression = "-" + expression
 				sum = -sum
 			}
-			out.Expression = term
+			out.Expression = expression
 		}
 		if m := rc.Modifier; m != nil {
 			sum += *m
-			out.Modifiers = []*sessionpb.RollModifier{{Source: rc.Source.Name, Value: int32(*m)}} //nolint:gosec // a modifier fits int32
+			// Its source whole: name, ref, id and label (rpg-project#643 D).
+			out.Modifiers = []*sessionpb.RollModifier{sourceModifierToProto(rc.Source, *m)}
 			out.Expression = joinExpression(out.Expression, *m)
 		}
 		out.Total = int32(sum) //nolint:gosec // a damage total fits int32
@@ -408,6 +487,18 @@ func damageRollToProto(c sdk.DamageComponent) *sessionpb.Roll {
 	}
 	out.Total = int32(sum) //nolint:gosec // a damage total fits int32
 	return out
+}
+
+// damageSourceRef is a damage component's provider ref: the legacy scalar on
+// a pre-trace payload, else its roll's source (rpg-project#643 C). The SDK
+// fills SourceRef only for payloads written before roll traces. The order
+// cannot matter: the SDK refuses a component carrying both shapes, so at most
+// one is set.
+func damageSourceRef(c sdk.DamageComponent) string {
+	if c.SourceRef != "" {
+		return c.SourceRef
+	}
+	return c.Roll.Source.Ref
 }
 
 // joinExpression appends a flat modifier to a dice expression: "1d8" and 3
@@ -474,7 +565,7 @@ func attackToProto(b sdk.AttackAct) (*sessionpb.AttackAct, error) {
 			return nil, err
 		}
 		dc := &sessionpb.DamageComponent{
-			Source: c.Source, SourceRef: c.SourceRef, DamageType: t, Roll: damageRollToProto(c),
+			Source: c.Source, SourceRef: damageSourceRef(c), DamageType: t, Roll: damageRollToProto(c),
 		}
 		if c.Multiplier != nil {
 			m := *c.Multiplier

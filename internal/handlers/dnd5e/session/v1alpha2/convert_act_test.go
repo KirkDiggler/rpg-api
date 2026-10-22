@@ -164,7 +164,10 @@ func everyBody() map[string]bodyCase {
 				Outcome: sessionpb.AttackOutcome_ATTACK_OUTCOME_HIT, Critical: true, Damage: 7,
 				DamageComponents: []*sessionpb.DamageComponent{{
 					Source: "Spear", SourceRef: "dnd5e:weapons:spear", DamageType: sessionpb.DamageType_DAMAGE_TYPE_PIERCING, Multiplier: fp(0.5),
-					Roll: &sessionpb.Roll{Expression: "2d6+2", Dice: []int32{2, 5}, Modifiers: []*sessionpb.RollModifier{{Source: "Strength", Value: 2}}, Total: 9},
+					Roll: &sessionpb.Roll{
+						Expression: "2d6+2", Dice: []int32{2, 5}, Modifiers: []*sessionpb.RollModifier{{Source: "Strength", Value: 2}}, Total: 9,
+						Terms: []*sessionpb.RollDiceTerm{{Count: 2, DieSize: 6, Faces: []int32{2, 5}, SourceName: "Strength"}},
+					},
 				}},
 				Roll: d20P, Ward: &sessionpb.WardSave{Source: aliceP, Ability: "wis", Roll: d20P},
 				Sequence: &sessionpb.SequenceRef{Ref: "dnd5e:actions:multiattack", Name: "Multiattack"},
@@ -394,6 +397,63 @@ func (s *ConvertActSuite) TestConvertLegacyDamageComponent() {
 	}, got), "%v", got)
 }
 
+// TestConvertTracedDamageCarriesItsSource is rpg-project#643 A: a traced
+// damage component's roll says which source rolled it. Divine Favor's 1d4
+// rides a weapon swing; its term names the spell.
+func (s *ConvertActSuite) TestConvertTracedDamageCarriesItsSource() {
+	got := damageRollToProto(sdk.DamageComponent{
+		Source: "spell", DamageType: sdk.DamageRadiant,
+		Roll: sdk.RollComponent{
+			Source: sdk.RollSource{Ref: "dnd5e:spells:divine-favor", Name: "Divine Favor", SourceID: "cleric"},
+			Dice:   &sdk.DiceTrace{Notation: "1d4", DieSize: 4, OriginalRolls: []int{3}, FinalRolls: []int{3}, Subtotal: 3},
+		},
+	})
+	s.True(proto.Equal(&sessionpb.Roll{
+		Expression: "1d4", Dice: []int32{3}, Total: 3,
+		Terms: []*sessionpb.RollDiceTerm{{
+			Count: 1, DieSize: 4, Faces: []int32{3}, Rolled: []int32{3},
+			SourceRef: "dnd5e:spells:divine-favor", SourceName: "Divine Favor", SourceId: "cleric",
+		}},
+	}, got), "%v", got)
+}
+
+// TestConvertDamageComponentSourceRef is rpg-project#643 C: a traced
+// component's source_ref is its roll's source, not only the legacy scalar.
+// A Great Weapon Fighting greatsword and its Strength modifier each name
+// their source; the kept faces are the rerolled ones.
+func (s *ConvertActSuite) TestConvertDamageComponentSourceRef() {
+	out, err := attackToProto(sdk.AttackAct{
+		Attack:  sdk.AttackRef{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword", DamageType: sdk.DamageSlashing},
+		Outcome: sdk.AttackHit, Damage: 12,
+		DamageComponents: []sdk.DamageComponent{
+			{Source: "weapon", DamageType: sdk.DamageSlashing, Roll: sdk.RollComponent{
+				Source: sdk.RollSource{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword"},
+				Dice:   &sdk.DiceTrace{Notation: "2d6", DieSize: 6, OriginalRolls: []int{1, 5}, FinalRolls: []int{4, 5}, Subtotal: 9},
+			}},
+			{Source: "ability", DamageType: sdk.DamageSlashing, Roll: sdk.RollComponent{
+				Source: sdk.RollSource{Ref: "dnd5e:abilities:str", Name: "Strength"}, Modifier: ip(3),
+			}},
+		},
+	})
+	s.Require().NoError(err)
+	s.Require().Len(out.GetDamageComponents(), 2)
+	weapon, ability := out.GetDamageComponents()[0], out.GetDamageComponents()[1]
+	s.Equal("dnd5e:weapons:greatsword", weapon.GetSourceRef())
+	s.Equal("dnd5e:abilities:str", ability.GetSourceRef())
+	s.Require().Len(weapon.GetRoll().GetTerms(), 1)
+	s.Equal([]int32{4, 5}, weapon.GetRoll().GetTerms()[0].GetFaces())
+	s.Equal("Greatsword", weapon.GetRoll().GetTerms()[0].GetSourceName())
+	s.Empty(ability.GetRoll().GetTerms(), "a flat modifier rolls no dice")
+
+	// A legacy component keeps its own scalar.
+	legacy, err := attackToProto(sdk.AttackAct{
+		Attack: sdk.AttackRef{Ref: "dnd5e:weapons:spear"}, Outcome: sdk.AttackHit,
+		DamageComponents: []sdk.DamageComponent{{Source: "Spear", SourceRef: "dnd5e:weapons:spear", DamageType: sdk.DamagePiercing}},
+	})
+	s.Require().NoError(err)
+	s.Equal("dnd5e:weapons:spear", legacy.GetDamageComponents()[0].GetSourceRef())
+}
+
 // TestConvertUnknownResultDamageRefuses: an activation result naming a damage
 // type this build cannot spell refuses its act rather than reading as none.
 func (s *ConvertActSuite) TestConvertUnknownResultDamageRefuses() {
@@ -414,4 +474,173 @@ func (s *ConvertActSuite) TestConvertUnknownInfluenceRefuses() {
 	s.Require().ErrorIs(err, errUnknownValue)
 	s.True(got.GetRefused())
 	s.Equal("id-4", got.GetId())
+}
+
+// TestRollToProtoCarriesTheRerollRecord is rpg-project#643 B on the wire: a
+// Great Weapon Fighting damage term keeps its pool as first rolled, its kept
+// indices and its sourced reroll. Mutant: omitting rerolls fails it.
+func (s *ConvertActSuite) TestRollToProtoCarriesTheRerollRecord() {
+	got, err := rollToProto(&sdk.Roll{
+		Expression: "2d6", Dice: []int{4, 5}, Total: 9,
+		Terms: []sdk.RollDiceTerm{{
+			Count: 2, DieSize: 6, Faces: []int{4, 5},
+			SourceRef: "dnd5e:weapons:greatsword", SourceName: "Greatsword", SourceID: "fighter", SourceLabel: "weapon",
+			Rolled: []int{1, 5}, KeptIndices: []int{0, 1},
+			Rerolls: []sdk.RollReroll{{
+				DieIndex: 0, Before: 1, After: 4,
+				SourceRef: "dnd5e:fighting-styles:great-weapon-fighting", SourceName: "Great Weapon Fighting", SourceID: "fighter",
+				SourceLabel: "fighting style",
+			}},
+		}},
+	})
+	s.Require().NoError(err)
+	s.Require().Len(got.GetTerms(), 1)
+	term := got.GetTerms()[0]
+	s.Equal([]int32{1, 5}, term.GetRolled())
+	s.Equal([]int32{0, 1}, term.GetKeptIndices())
+	s.Equal([]int32{4, 5}, term.GetFaces())
+	s.Equal("weapon", term.GetSourceLabel())
+	s.Require().Len(term.GetRerolls(), 1)
+	s.True(proto.Equal(&sessionpb.RollReroll{
+		DieIndex: 0, Before: 1, After: 4,
+		SourceRef: "dnd5e:fighting-styles:great-weapon-fighting", SourceName: "Great Weapon Fighting", SourceId: "fighter",
+		SourceLabel: "fighting style",
+	}, term.GetRerolls()[0]), "%v", term.GetRerolls()[0])
+}
+
+// TestTraceTermToProtoCarriesTheRerollRecord is the damage path's half of
+// rpg-project#643 B: a Great Weapon Fighting greatsword component's raw
+// trace spells the same term a folded roll does, with the pool as first
+// rolled, its kept faces and the sourced reroll. Mutant: dropping the trace's
+// rerolls fails it.
+func (s *ConvertActSuite) TestTraceTermToProtoCarriesTheRerollRecord() {
+	gwf := sdk.RollSource{Ref: "dnd5e:conditions:fighting_style_great_weapon_fighting", Name: "Great Weapon Fighting", SourceID: "fighter"}
+	got := traceTermToProto(sdk.RollComponent{
+		Source: sdk.RollSource{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword", SourceID: "fighter"},
+		Dice: &sdk.DiceTrace{
+			Notation: "2d6", DieSize: 6, OriginalRolls: []int{1, 5}, FinalRolls: []int{4, 5}, Subtotal: 9,
+			Rerolls: []sdk.DiceReroll{{DieIndex: 0, Before: 1, After: 4, Source: gwf}},
+		},
+	})
+	s.True(proto.Equal(&sessionpb.RollDiceTerm{
+		Count: 2, DieSize: 6, Faces: []int32{4, 5}, Rolled: []int32{1, 5},
+		SourceRef: "dnd5e:weapons:greatsword", SourceName: "Greatsword", SourceId: "fighter",
+		Rerolls: []*sessionpb.RollReroll{{
+			DieIndex: 0, Before: 1, After: 4,
+			SourceRef: "dnd5e:conditions:fighting_style_great_weapon_fighting", SourceName: "Great Weapon Fighting", SourceId: "fighter",
+		}},
+	}, got), "%v", got)
+	s.Nil(traceTermToProto(sdk.RollComponent{Source: gwf}), "a component that rolled no dice has no term")
+}
+
+// TestSourceModifierToProtoCarriesItsRef is the damage path's half of
+// rpg-project#643 D: a traced component's flat contribution names its source
+// whole. Mutant: dropping the ref fails it.
+func (s *ConvertActSuite) TestSourceModifierToProtoCarriesItsRef() {
+	got := sourceModifierToProto(sdk.RollSource{Ref: "dnd5e:abilities:str", Name: "Strength", Label: "ability", SourceID: "fighter"}, 3)
+	s.True(proto.Equal(&sessionpb.RollModifier{
+		Source: "Strength", Value: 3, SourceRef: "dnd5e:abilities:str", SourceId: "fighter", SourceLabel: "ability",
+	}, got), "%v", got)
+}
+
+// TestRollModifierToProtoCarriesItsRef is rpg-project#643 D on the wire:
+// Second Wind's modifier names its source by ref, id and label, beside its
+// name; an influence carries its label. Mutant: omitting source_ref fails it.
+func (s *ConvertActSuite) TestRollModifierToProtoCarriesItsRef() {
+	got, err := rollToProto(&sdk.Roll{
+		Expression: "1d10+1", Total: 7,
+		Modifiers: []sdk.RollModifier{{
+			Source: "Fighter", Value: 1,
+			SourceRef: "dnd5e:classes:fighter", SourceID: "fighter", SourceLabel: "Fighter level",
+		}},
+		Influences: []sdk.RollInfluence{{Kind: sdk.InfluenceAdvantage, SourceRef: "dnd5e:conditions:helped", Name: "Helped", SourceLabel: "help"}},
+	})
+	s.Require().NoError(err)
+	s.Require().Len(got.GetModifiers(), 1)
+	s.True(proto.Equal(&sessionpb.RollModifier{
+		Source: "Fighter", Value: 1,
+		SourceRef: "dnd5e:classes:fighter", SourceId: "fighter", SourceLabel: "Fighter level",
+	}, got.GetModifiers()[0]), "%v", got.GetModifiers()[0])
+	s.Require().Len(got.GetInfluences(), 1)
+	s.Equal("help", got.GetInfluences()[0].GetSourceLabel())
+}
+
+// TestDamageRollCarriesTheRerollRecord is rpg-project#643 B on the damage
+// path, the issue's own example: a Great Weapon Fighting greatsword's damage
+// part says die 0 was rerolled from 1 to 4 and by whom, beside the pool as
+// first rolled and the faces that counted. Mutant: dropping the trace's
+// rerolls fails it.
+func (s *ConvertActSuite) TestDamageRollCarriesTheRerollRecord() {
+	got := damageRollToProto(sdk.DamageComponent{Source: "Greatsword", Roll: sdk.RollComponent{
+		Source: sdk.RollSource{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword", SourceID: "fighter"},
+		Dice: &sdk.DiceTrace{
+			Notation: "2d6", DieSize: 6, OriginalRolls: []int{1, 5}, FinalRolls: []int{4, 5}, Subtotal: 9,
+			Rerolls: []sdk.DiceReroll{{DieIndex: 0, Before: 1, After: 4, Source: sdk.RollSource{
+				Ref: "dnd5e:conditions:fighting_style_great_weapon_fighting", Name: "Great Weapon Fighting", SourceID: "fighter",
+				Label: "fighting style",
+			}}},
+		},
+	}})
+	s.Equal("2d6", got.GetExpression())
+	s.Equal([]int32{4, 5}, got.GetDice())
+	s.Equal(int32(9), got.GetTotal())
+	s.Require().Len(got.GetTerms(), 1)
+	term := got.GetTerms()[0]
+	s.Equal([]int32{1, 5}, term.GetRolled(), "the pool as first rolled")
+	s.Equal([]int32{4, 5}, term.GetFaces(), "the faces that counted, after the reroll")
+	s.Require().Len(term.GetRerolls(), 1)
+	s.True(proto.Equal(&sessionpb.RollReroll{
+		DieIndex: 0, Before: 1, After: 4,
+		SourceRef: "dnd5e:conditions:fighting_style_great_weapon_fighting", SourceName: "Great Weapon Fighting", SourceId: "fighter",
+		SourceLabel: "fighting style",
+	}, term.GetRerolls()[0]), "%v", term.GetRerolls()[0])
+}
+
+// TestDamageModifierCarriesItsSource is rpg-project#643 D on the damage
+// path: a damage part's flat contribution names its source whole. Mutant:
+// dropping the modifier's ref fails it.
+func (s *ConvertActSuite) TestDamageModifierCarriesItsSource() {
+	got := damageRollToProto(sdk.DamageComponent{Source: "Strength", Roll: sdk.RollComponent{
+		Source:   sdk.RollSource{Ref: "dnd5e:abilities:str", Name: "Strength", Label: "ability", SourceID: "fighter"},
+		Modifier: ip(3),
+	}})
+	s.Require().Len(got.GetModifiers(), 1)
+	s.True(proto.Equal(&sessionpb.RollModifier{
+		Source: "Strength", Value: 3, SourceRef: "dnd5e:abilities:str", SourceId: "fighter", SourceLabel: "ability",
+	}, got.GetModifiers()[0]), "%v", got.GetModifiers()[0])
+	s.Equal("3", got.GetExpression())
+}
+
+// TestDamageTermCountsTheKeptFaces: a damage pool under a keep (Savage
+// Attacker keeping the higher of [2, 6]) is one term counting only the kept
+// face, with the pool and the kept index beside it (rpg-api#1129 review).
+// Mutant: counting the rolled pool fails it.
+func (s *ConvertActSuite) TestDamageTermCountsTheKeptFaces() {
+	got := damageRollToProto(sdk.DamageComponent{Source: "Greatsword", Roll: sdk.RollComponent{
+		Source: sdk.RollSource{Ref: "dnd5e:weapons:greatsword", Name: "Greatsword", SourceID: "fighter"},
+		Dice:   &sdk.DiceTrace{Notation: "2d6", DieSize: 6, OriginalRolls: []int{2, 6}, FinalRolls: []int{2, 6}, KeptIndices: []int{1}, Subtotal: 6},
+	}})
+	s.Require().Len(got.GetTerms(), 1)
+	term := got.GetTerms()[0]
+	s.Equal(int32(1), term.GetCount())
+	s.Equal([]int32{6}, term.GetFaces())
+	s.Equal([]int32{2, 6}, term.GetRolled())
+	s.Equal([]int32{1}, term.GetKeptIndices())
+	s.Equal([]int32{6}, got.GetDice())
+	s.Equal("1d6", got.GetExpression())
+}
+
+// TestDamageTermSubtracts: a subtracted damage pool is a subtracted term and
+// takes from the total (rpg-api#1129 review). Mutant: forcing Subtract false
+// fails it.
+func (s *ConvertActSuite) TestDamageTermSubtracts() {
+	got := damageRollToProto(sdk.DamageComponent{Source: "Bane", Roll: sdk.RollComponent{
+		Source:       sdk.RollSource{Ref: "dnd5e:spells:bane", Name: "Bane", SourceID: "cultist"},
+		Dice:         &sdk.DiceTrace{Notation: "d4", DieSize: 4, OriginalRolls: []int{3}, FinalRolls: []int{3}, Subtotal: 3},
+		SubtractDice: true,
+	}})
+	s.Require().Len(got.GetTerms(), 1)
+	s.True(got.GetTerms()[0].GetSubtract())
+	s.Equal("-1d4", got.GetExpression())
+	s.Equal(int32(-3), got.GetTotal())
 }
