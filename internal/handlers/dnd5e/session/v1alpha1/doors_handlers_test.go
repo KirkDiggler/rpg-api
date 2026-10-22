@@ -117,7 +117,7 @@ func TestOpenDoor_HappyPath(t *testing.T) {
 			require.Equal(t, "sess-1", in.Session)
 			require.Equal(t, "char-1", in.Member)
 			require.Equal(t, "gate", in.Door)
-			return &sdk.OpenDoorOutput{Door: sdk.Door{ID: "gate", State: "open"}, Seq: 7}, nil
+			return &sdk.OpenDoorOutput{Door: sdk.Door{ID: "gate", State: "open"}}, nil
 		},
 	)
 
@@ -179,7 +179,7 @@ func TestUnlock_Paused_ReturnsRollAndTotalOnly(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	roll := 11
 	mgr.EXPECT().Unlock(gomock.Any(), gomock.Any()).Return(&sdk.UnlockOutput{
-		Paused: true, Total: 15, Roll: &roll, Seq: 3,
+		Paused: true, Total: 15, Roll: &roll,
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}

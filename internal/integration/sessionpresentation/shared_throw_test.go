@@ -21,7 +21,7 @@ import (
 
 	lobbypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
 	presentationpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/presentation/v1alpha1"
-	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	"github.com/KirkDiggler/rpg-api/internal/integration/harness"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -76,9 +76,11 @@ func TestSharedThrowCrossesServerInstances(t *testing.T) {
 	aliceCtx := authContext(ctx, playerAlice)
 	bobCtx := authContext(ctx, playerBob)
 
-	beforeSeqs := storySeqs(aliceCtx, t, serverA.SessionClient, sessionID, memberAlice)
-	require.NotEmpty(t, beforeSeqs, "lobby launch must have written a toolkit Story sequence before presentation publishes")
-	authoritySeq := beforeSeqs[len(beforeSeqs)-1]
+	beforeIDs := storyIDs(aliceCtx, t, serverA.StoryClient, sessionID, memberAlice)
+	require.NotEmpty(t, beforeIDs, "lobby launch must have written acts before presentation publishes")
+	// The draft's authority_seq is opaque to the presentation service, which
+	// carries it through unchecked; acts carry no seq to take it from.
+	const authoritySeq = uint64(1)
 
 	streamCtxA, cancelStreamA := context.WithCancel(aliceCtx)
 	defer cancelStreamA()
@@ -114,8 +116,8 @@ func TestSharedThrowCrossesServerInstances(t *testing.T) {
 	require.True(t, bytes.Equal(publishedBytes, mustMarshalDeterministic(t, planA)), "server A stream plan must be byte-equal to publish response")
 	require.True(t, bytes.Equal(publishedBytes, mustMarshalDeterministic(t, planB)), "server B stream plan must be byte-equal to publish response")
 
-	afterSeqs := storySeqs(aliceCtx, t, serverA.SessionClient, sessionID, memberAlice)
-	require.Equal(t, beforeSeqs, afterSeqs, "presentation-only publish must not append to or renumber toolkit Story")
+	afterIDs := storyIDs(aliceCtx, t, serverA.StoryClient, sessionID, memberAlice)
+	require.Equal(t, beforeIDs, afterIDs, "presentation-only publish must not append to or rewrite the story")
 }
 
 func seedCharacter(ctx context.Context, t *testing.T, repo characterrepo.Repository, id, playerID, name string) {
@@ -161,15 +163,24 @@ func launchSessionThroughServerA(ctx context.Context, t *testing.T, serverA *har
 	return started.GetEncounterId()
 }
 
-func storySeqs(ctx context.Context, t *testing.T, client sessionpb.SessionServiceClient, sessionID, memberID string) []uint64 {
+// storyIDs is every act id the member's StoryService GetStory returns, page
+// by page: the act stream's read of what happened (the v1 GetStory it
+// replaced is deleted, rpg-project#631).
+func storyIDs(ctx context.Context, t *testing.T, client storypb.StoryServiceClient, sessionID, memberID string) []string {
 	t.Helper()
-	story, err := client.GetStory(ctx, &sessionpb.GetStoryRequest{Session: sessionID, Member: memberID, FromSeq: 0})
-	require.NoError(t, err)
-	seqs := make([]uint64, len(story.GetEntries()))
-	for i, event := range story.GetEntries() {
-		seqs[i] = event.GetSeq()
+	var ids []string
+	after := ""
+	for {
+		page, err := client.GetStory(ctx, &storypb.GetStoryRequest{Session: sessionID, Member: memberID, AfterId: after})
+		require.NoError(t, err)
+		for _, act := range page.GetActs() {
+			ids = append(ids, act.GetId())
+		}
+		if !page.GetMore() || len(page.GetActs()) == 0 {
+			return ids
+		}
+		after = page.GetActs()[len(page.GetActs())-1].GetId()
 	}
-	return seqs
 }
 
 func validOneBodyDraft(authoritySeq uint64) *presentationpb.DiceThrowDraft {

@@ -23,7 +23,6 @@ import (
 // records; SDK loading/validation and gameplay belong to their provider.
 func populatedStoredSession() *sdk.SessionData {
 	return &sdk.SessionData{ID: "shared-id", Encounter: "encounter-id", Dungeon: "authored-key",
-		Streams: map[string]sdk.StreamCursor{"member-a": {UpTo: 17, Count: 3}, "member-b": {UpTo: 9, Count: 1}},
 		NPCs:    []monster.Data{{ID: "monster-a", Name: "Stored sheet", HitPoints: 2, MaxHitPoints: 19, ArmorClass: 14}},
 		Windows: interrupt.LedgerData{NextID: 8, Windows: []interrupt.WindowData{{ID: 7, Audience: "member-a", Payload: []byte("opaque payload"), At: 12}}},
 	}
@@ -50,7 +49,6 @@ func (s *RedisReposTestSuite) TestPopulatedReadsAreDetached_AndSameIDNamespacesA
 	s.Require().NoError(err)
 	s.Equal(session, gotSession)
 	s.Equal(encounter, gotEncounter)
-	session.Streams["member-a"] = sdk.StreamCursor{Count: 999}
 	gotSession.Windows.Windows[0].Payload[0] = 'x'
 	gotSession.NPCs[0].HitPoints = 999
 	encounter.Clock.Budgets["member-a"] = 999
@@ -71,7 +69,6 @@ func (s *RedisReposTestSuite) TestSaveOverwritesOnlyAddressedKey() {
 	s.Require().NoError(s.encs.SaveEncounter(s.ctx, "shared-id", populatedStoredEncounter()))
 	s.Require().NoError(s.encs.SaveEncounter(s.ctx, "other-id", populatedStoredEncounter()))
 	first.Dungeon = "new-key"
-	first.Streams = nil
 	s.Require().NoError(s.sessions.SaveSession(s.ctx, first))
 	replacement := &tkencounter.EncounterData{Retention: 9}
 	s.Require().NoError(s.encs.SaveEncounter(s.ctx, "shared-id", replacement))

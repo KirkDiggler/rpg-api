@@ -7,10 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	sessionhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1"
@@ -29,6 +32,18 @@ var structuralPatchSource string
 
 type StructuralPatchAcceptanceSuite struct{ suite.Suite }
 
+// structuralAsAct carries a v1 snapshot message into its act-stream
+// counterpart by field name, so a reveal on the act stream can be compared
+// with the v1 GetKnowledge snapshot it must agree with. The act stream's
+// messages are a superset by name; a v1 field the counterpart lacks fails.
+func structuralAsAct[T proto.Message](t *testing.T, v1 proto.Message, into T) T {
+	t.Helper()
+	raw, err := protojson.Marshal(v1)
+	require.NoError(t, err)
+	require.NoError(t, protojson.Unmarshal(raw, into))
+	return into
+}
+
 func TestStructuralPatchAcceptanceSuite(t *testing.T) {
 	suite.Run(t, new(StructuralPatchAcceptanceSuite))
 }
@@ -42,9 +57,10 @@ func (s *StructuralPatchAcceptanceSuite) TestCompiledDoorDiscoveryReplacesOpenin
 	s.Require().NoError(err)
 	h.manager = automatic
 	h.handler, err = sessionhandler.New(&sessionhandler.HandlerConfig{
-		Manager: automatic.Manager, Broker: automatic.Broker, Characters: h.charRepo,
+		Manager: automatic.Manager, Characters: h.charRepo,
 	})
 	s.Require().NoError(err)
+	h.story = newStoryHandler(s.T(), automatic, h.charRepo)
 	ctx := auth.WithPlayerID(context.Background(), "player-alice")
 	_, err = h.charRepo.Create(ctx, characterrepo.CreateInput{
 		Character: &entities.Character{Data: armedFighter("alice", "player-alice")},
@@ -80,12 +96,13 @@ func (s *StructuralPatchAcceptanceSuite) TestCompiledDoorDiscoveryReplacesOpenin
 	moved, err := h.handler.Move(ctx, &sessionpb.MoveRequest{Session: "structural-patch-run", Member: "alice", Path: []*sessionpb.Position{pbAt(3, 0)}})
 	s.Require().NoError(err)
 	s.Require().Len(moved.Steps, 1, "the proximity-triggering step must actually complete")
-	story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: "structural-patch-run", Member: "alice"})
-	s.Require().NoError(err)
-	var reveal *sessionpb.ConcealmentRevealed
-	for _, entry := range story.Entries {
-		if body := entry.GetConcealmentRevealed(); body != nil {
+	story := storyOf(ctx, s.T(), h.story, "structural-patch-run", "alice")
+	var reveal *storypb.SecretRevealed
+	for _, act := range story {
+		if body := act.GetPerception().GetRevealed(); body != nil {
 			s.Nil(reveal, "exactly one concealment reveal")
+			s.Equal(storypb.Sense_SENSE_REVEAL, act.GetPerception().GetSense())
+			s.Equal("alice", act.GetPerception().GetObserver().GetId())
 			reveal = body
 		}
 	}
@@ -114,17 +131,21 @@ func (s *StructuralPatchAcceptanceSuite) TestCompiledDoorDiscoveryReplacesOpenin
 	s.Zero(door.Elevation)
 	after, err := h.handler.GetKnowledge(ctx, request)
 	s.Require().NoError(err)
-	patched := proto.Clone(before.Atlas.StructuralWalls[0]).(*sessionpb.AtlasStructuralWall)
+	// The snapshot is v1's; the patch is the act stream's. Both are carried
+	// into the act stream's geometry to compare them field for field.
+	patched := structuralAsAct(s.T(), before.Atlas.StructuralWalls[0], &storypb.AtlasStructuralWall{})
 	patched.Openings = patch.Openings
-	s.True(proto.Equal(patched, after.Atlas.StructuralWalls[0]))
-	s.True(proto.Equal(reveal.StructuralDoors[0], after.Atlas.StructuralDoors[0]))
+	s.True(proto.Equal(patched, structuralAsAct(s.T(), after.Atlas.StructuralWalls[0], &storypb.AtlasStructuralWall{})))
+	s.True(proto.Equal(reveal.StructuralDoors[0], structuralAsAct(s.T(), after.Atlas.StructuralDoors[0], &storypb.AtlasStructuralDoor{})))
 	s.Require().Len(after.Atlas.Cells, len(before.Atlas.Cells))
 	for i, cell := range before.Atlas.Cells {
 		s.True(proto.Equal(cell, after.Atlas.Cells[i]), "finding the closed door reveals no new floor")
 	}
-	replay, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: "structural-patch-run", Member: "alice"})
-	s.Require().NoError(err)
-	s.True(proto.Equal(story, replay), "repository replay must retain the original wire payload")
+	replay := storyOf(ctx, s.T(), h.story, "structural-patch-run", "alice")
+	s.Require().Len(replay, len(story))
+	for i := range story {
+		s.True(proto.Equal(story[i], replay[i]), "repository replay must retain the original wire payload")
+	}
 
 	s.Run("new playthrough resets discovery without resetting the first encounter", func() {
 		// Same authored key and character, with no profile deletion/workaround.

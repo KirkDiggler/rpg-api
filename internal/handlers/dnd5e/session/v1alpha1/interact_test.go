@@ -48,7 +48,6 @@ func TestInteract_HappyPath_ReturnsDescriptor(t *testing.T) {
 					},
 				},
 			},
-			Seq: 42,
 		}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
@@ -64,7 +63,6 @@ func TestInteract_HappyPath_ReturnsDescriptor(t *testing.T) {
 	require.Equal(t, "Demo Merchant", d.GetDisplayName())
 	require.Equal(t, []string{"vendor"}, d.GetCapabilities())
 	require.Equal(t, "non_combatant", d.GetCombatPolicy())
-	require.Equal(t, uint64(42), resp.GetSeq())
 	require.Len(t, d.GetInventory(), 2)
 	require.Equal(t, "longsword", d.GetInventory()[0].GetEquipmentId())
 	require.Equal(t, sessionpb.VendorStockMode_VENDOR_STOCK_MODE_LIMITED, d.GetInventory()[0].GetStockMode())

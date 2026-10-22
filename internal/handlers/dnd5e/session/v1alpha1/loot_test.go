@@ -62,7 +62,7 @@ func TestLoot_HappyPath_RoutesVerbatimAndAcksOnly(t *testing.T) {
 		Session: "sess-1", Member: "char-alice", Target: "skeleton-captain-1", Range: 2,
 	}).Return(&sdk.LootOutput{
 		Saved:    sdk.SaveReport{Written: []string{"encounter"}},
-		Delivery: sdk.DeliveryReport{Events: 2},
+		Delivery: sdk.DeliveryReport{},
 	}, nil)
 
 	h := &Handler{
@@ -77,7 +77,7 @@ func TestLoot_HappyPath_RoutesVerbatimAndAcksOnly(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{"encounter"}, resp.GetSaved().GetWritten())
-	require.Equal(t, int32(2), resp.GetDelivery().GetEvents())
+	require.False(t, resp.GetDelivery().GetFailed())
 }
 
 // TestLoot_AnEmptyBodyAnswersLikeTheCaptain is design P3 at the response
@@ -91,7 +91,7 @@ func TestLoot_AnEmptyBodyAnswersLikeTheCaptain(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	ack := &sdk.LootOutput{
 		Saved:    sdk.SaveReport{Written: []string{"encounter"}},
-		Delivery: sdk.DeliveryReport{Events: 1},
+		Delivery: sdk.DeliveryReport{},
 	}
 	mgr.EXPECT().Loot(gomock.Any(), gomock.Any()).Return(ack, nil).Times(2)
 

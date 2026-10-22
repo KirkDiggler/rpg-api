@@ -29,7 +29,7 @@ func TestAttack_HappyPath(t *testing.T) {
 	mgr.EXPECT().Attack(gomock.Any(), &sdk.AttackInput{
 		Session: "sess-1", Attacker: "char-1", Target: "goblin-1", DeclarationID: "decl-attack-1",
 	}).Return(&sdk.AttackOutput{
-		Roll: 18, Total: 21, Against: 13, Hit: true, Damage: 7, Seq: 9,
+		Roll: 18, Total: 21, Against: 13, Hit: true, Damage: 7,
 		Attack: sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
 		Calculation: &sdk.RollCalculation{Total: 21, Components: []sdk.RollComponent{{
 			Source:       sdk.RollSource{Ref: "dnd5e:spells:bane", Name: "Bane", SourceID: "bard-1"},
@@ -75,7 +75,7 @@ func TestAttack_Paused_ReturnsRollAndTotalOnly(t *testing.T) {
 	mgr.EXPECT().Attack(gomock.Any(), &sdk.AttackInput{
 		Session: "sess-1", Attacker: "char-1", Target: "goblin-1", DeclarationID: "decl-attack-1",
 	}).Return(&sdk.AttackOutput{
-		Paused: true, Roll: 14, Total: 17, Seq: 4,
+		Paused: true, Roll: 14, Total: 17,
 		Attack:         sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
 		PresentationID: "presentation_paused-1",
 	}, nil)

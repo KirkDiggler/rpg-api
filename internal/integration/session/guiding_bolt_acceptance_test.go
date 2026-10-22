@@ -10,7 +10,6 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
@@ -18,6 +17,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	sessionhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -45,7 +45,7 @@ func TestAcceptance_GuidingBoltNativeCastAndReplay(t *testing.T) {
 			useGuidingBoltDice(t, h, roll)
 			row := castRowFor(ctx, t, h, id, spells.GuidingBolt)
 			require.True(t, row.GetAvailable(), "%s", row.GetWhy())
-			live := watchCast(ctx, t, h, id, func() {
+			live := watchCastActs(ctx, t, h, id, func() {
 				_, castErr := h.handler.Cast(ctx, &sessionpb.CastRequest{Session: castSessionID, Member: id, DeclarationId: row.GetId(), Targets: []string{"skel-1"}})
 				require.NoError(t, castErr)
 			})
@@ -54,31 +54,34 @@ func TestAcceptance_GuidingBoltNativeCastAndReplay(t *testing.T) {
 			require.Zero(t, stored.Character.Data.ActionEconomy.ActionsRemaining)
 			require.Equal(t, 1, stored.Character.Data.Resources[resources.SpellSlotLevel1].Current)
 			attacks, lights := 0, 0
-			for _, event := range live {
-				if b := event.GetStruck(); b != nil {
-					require.True(t, hit)
+			for _, act := range live {
+				if b := act.GetAttack(); b != nil {
 					attacks++
 					require.Equal(t, refs.Spells.GuidingBolt().String(), b.GetAttack().GetRef())
-					require.Equal(t, int32(4), b.GetDamage())
-					require.NotNil(t, b.GetCalculation())
+					require.Equal(t, "skel-1", b.GetTo().GetId())
+					require.NotNil(t, b.GetRoll())
 					require.NotEmpty(t, b.GetPresentationId())
+					if hit {
+						require.Equal(t, storypb.AttackOutcome_ATTACK_OUTCOME_HIT, b.GetOutcome())
+						require.Equal(t, int32(4), b.GetDamage())
+					} else {
+						require.Equal(t, storypb.AttackOutcome_ATTACK_OUTCOME_MISS, b.GetOutcome())
+						require.Zero(t, b.GetDamage())
+					}
 				}
-				if b := event.GetMissed(); b != nil {
-					require.False(t, hit)
-					attacks++
-					require.Equal(t, refs.Spells.GuidingBolt().String(), b.GetAttack().GetRef())
-					require.NotNil(t, b.GetCalculation())
-					require.NotEmpty(t, b.GetPresentationId())
+				for _, result := range act.GetActivate().GetResults() {
+					require.NotEqual(t, "damage-applied", result.GetKind(), "the attack is the sole damage account")
+					if result.GetKind() == "condition-applied" {
+						lights++
+						require.True(t, hit)
+						require.Equal(t, "skel-1", result.GetTarget().GetId())
+						require.Equal(t, refs.Conditions.GuidingBolt().String(), result.GetRef())
+						require.Equal(t, id, result.GetSourceId())
+					}
 				}
-				if b := event.GetActivationResult().GetConditionApplied(); b != nil {
-					lights++
-					require.True(t, hit)
-					require.Equal(t, "skel-1", b.GetTarget())
-					require.Equal(t, refs.Conditions.GuidingBolt().String(), b.GetRef())
-					require.Equal(t, id, b.GetSourceId())
+				for _, result := range act.GetCast().GetResults() {
+					require.Nil(t, result.GetSave(), "Guiding Bolt makes an attack, not a saving throw")
 				}
-				require.Nil(t, event.GetSaved(), "Guiding Bolt makes an attack, not a saving throw")
-				require.Nil(t, event.GetActivationResult().GetDamageApplied(), "the attack is the sole damage account")
 			}
 			require.Equal(t, 1, attacks)
 			if hit {
@@ -86,14 +89,8 @@ func TestAcceptance_GuidingBoltNativeCastAndReplay(t *testing.T) {
 			} else {
 				require.Zero(t, lights)
 			}
-			require.NotEmpty(t, live)
 			reopenClericHost(t, h, sdk.StaleTargetRefuse)
-			story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: castSessionID, Member: id, FromSeq: live[0].GetSeq()})
-			require.NoError(t, err)
-			require.Len(t, story.GetEntries(), len(live))
-			for i, event := range live {
-				require.True(t, proto.Equal(event, story.Entries[i]))
-			}
+			requireLiveIsStory(ctx, t, h, castSessionID, id, live)
 			if hit {
 				require.True(t, hasGuidingBoltLight(t, h))
 				_, err = h.handler.EndTurn(ctx, &sessionpb.EndTurnRequest{Session: castSessionID, Member: id,
@@ -137,8 +134,9 @@ func useGuidingBoltDice(t *testing.T, h *acceptanceHarness, roll int) {
 	orch, err := sessionorch.New(sessionorch.Config{Redis: h.redis, Characters: h.charRepo, Dice: guidingBoltDice{attack: roll}, TurnDriver: sdk.Pass{}})
 	require.NoError(t, err)
 	h.manager = orch
-	h.handler, err = sessionhandler.New(&sessionhandler.HandlerConfig{Manager: orch.Manager, Broker: orch.Broker, Characters: h.charRepo})
+	h.handler, err = sessionhandler.New(&sessionhandler.HandlerConfig{Manager: orch.Manager, Characters: h.charRepo})
 	require.NoError(t, err)
+	h.story = newStoryHandler(t, orch, h.charRepo)
 }
 
 func TestAcceptance_GuidingBoltExpiresAfterNextCasterTurn(t *testing.T) {

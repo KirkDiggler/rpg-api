@@ -13,6 +13,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
@@ -146,11 +147,10 @@ func launchTheCampWith(t *testing.T, roller sdk.Roller) *campRun {
 	return &campRun{h: h, sess: out.EncounterID, alice: auth.WithPlayerID(context.Background(), "player-alice")}
 }
 
-func (r *campRun) story(t *testing.T) []*sessionpb.Event {
+// story is alice's whole act stream, through the real StoryService.
+func (r *campRun) story(t *testing.T) []*storypb.Act {
 	t.Helper()
-	out, err := r.h.handler.GetStory(r.alice, &sessionpb.GetStoryRequest{Session: r.sess, Member: "alice"})
-	require.NoError(t, err)
-	return out.GetEntries()
+	return storyOf(r.alice, t, r.h.story, r.sess, "alice")
 }
 
 // factions is the roster as id -> faction: who is in the run, and on which
@@ -226,7 +226,7 @@ func (r *campRun) endTurn(t *testing.T) *sessionpb.EndTurnResponse {
 
 func (r *campRun) ended(t *testing.T) bool {
 	t.Helper()
-	return beatIndex(r.story(t), sessionpb.EventKind_EVENT_KIND_ENDED) != -1
+	return holdoutActIndex(r.story(t), holdoutIsClock(storypb.ClockMark_CLOCK_MARK_ENDED)) != -1
 }
 
 // intoTheYard walks the gate leg on the world clock. The scout sees alice at
@@ -331,23 +331,49 @@ func shortestPath(
 	return path
 }
 
-// beatIndex is where a beat of one kind first appears in a story, or -1.
-func beatIndex(story []*sessionpb.Event, kind sessionpb.EventKind) int {
-	for i, e := range story {
-		if e.GetKind() == kind {
+// holdoutActIndex is where the first act matching is appears in a story, or -1.
+func holdoutActIndex(story []*storypb.Act, is func(*storypb.Act) bool) int {
+	for i, a := range story {
+		if is(a) {
 			return i
 		}
 	}
 	return -1
 }
 
-// arrivals is every ARRIVED beat in a story, by placement id.
-func arrivals(story []*sessionpb.Event) map[string]*sessionpb.Arrived {
-	out := map[string]*sessionpb.Arrived{}
-	for _, e := range story {
-		if e.GetKind() == sessionpb.EventKind_EVENT_KIND_ARRIVED {
-			out[e.GetArrived().GetId()] = e.GetArrived()
+// holdoutIsClock matches a clock act carrying mark.
+func holdoutIsClock(mark storypb.ClockMark) func(*storypb.Act) bool {
+	return func(a *storypb.Act) bool {
+		return a.GetFamily() == storypb.Family_FAMILY_CLOCK && a.GetClock().GetMark() == mark
+	}
+}
+
+// holdoutIsState matches a state act carrying change.
+func holdoutIsState(change storypb.StateKind) func(*storypb.Act) bool {
+	return func(a *storypb.Act) bool {
+		return a.GetFamily() == storypb.Family_FAMILY_STATE && a.GetState().GetChange() == change
+	}
+}
+
+// holdoutIsHold matches a hold act.
+func holdoutIsHold(a *storypb.Act) bool { return a.GetHold() != nil }
+
+// arrivals is every ARRIVED clock mark in a story, by placement id.
+func arrivals(story []*storypb.Act) map[string]*storypb.Arrival {
+	out := map[string]*storypb.Arrival{}
+	for _, a := range story {
+		if holdoutIsClock(storypb.ClockMark_CLOCK_MARK_ARRIVED)(a) {
+			out[a.GetClock().GetArrival().GetId()] = a.GetClock().GetArrival()
 		}
+	}
+	return out
+}
+
+// holdoutPartyIDs is the ids of a party list, in order.
+func holdoutPartyIDs(parties []*storypb.Party) []string {
+	out := make([]string, 0, len(parties))
+	for _, p := range parties {
+		out = append(out, p.GetId())
 	}
 	return out
 }
@@ -375,7 +401,7 @@ func TestAcceptance_TheLetterArrivesAtRoundSixAndNotBefore(t *testing.T) {
 	}
 	letter, arrived := arrivals(r.story(t))["letter"]
 	require.True(t, arrived, "the letter arrived at round 6")
-	require.Equal(t, sessionpb.PlacementKind_PLACEMENT_KIND_PROP, letter.GetKind())
+	require.Equal(t, "prop", letter.GetKind())
 	require.Equal(t, at(letterCell[0], letterCell[1]).X, letter.GetCell().GetX(), "where the author drew it")
 	require.Equal(t, at(letterCell[0], letterCell[1]).Y, letter.GetCell().GetY())
 	require.Contains(t, r.props(t), "letter", "and it is on the map now")
@@ -420,19 +446,20 @@ func TestAcceptance_TheLetterCarriedToTheChiefTurnsTheCamp(t *testing.T) {
 		Session: r.sess, Member: "alice", Target: "letter", Range: holdReach,
 	})
 	require.NoError(t, err)
-	require.Equal(t, -1, beatIndex(r.story(t), sessionpb.EventKind_EVENT_KIND_STANCE_CHANGED),
+	require.Equal(t, -1, holdoutActIndex(r.story(t), holdoutIsState(storypb.StateKind_STATE_KIND_STANCE)),
 		"the camp has not turned: the letter is in the wrong hands")
 
 	r.walkToTheHut(t)
 	require.True(t, r.ended(t), "the run ended when the letter reached the chief's hut")
 
 	entries := r.story(t)
-	fightStarted := beatIndex(entries, sessionpb.EventKind_EVENT_KIND_FIGHT_STARTED)
-	arrivedAt := beatIndex(entries, sessionpb.EventKind_EVENT_KIND_ARRIVED)
-	held := beatIndex(entries, sessionpb.EventKind_EVENT_KIND_HELD)
-	stanceChanged := beatIndex(entries, sessionpb.EventKind_EVENT_KIND_STANCE_CHANGED)
-	fightEnded := beatIndex(entries, sessionpb.EventKind_EVENT_KIND_FIGHT_ENDED)
-	endedAt := beatIndex(entries, sessionpb.EventKind_EVENT_KIND_ENDED)
+	fightStarted := holdoutActIndex(entries, holdoutIsClock(storypb.ClockMark_CLOCK_MARK_FIGHT_FORMED))
+	arrivedAt := holdoutActIndex(entries, holdoutIsClock(storypb.ClockMark_CLOCK_MARK_ARRIVED))
+	held := holdoutActIndex(entries, holdoutIsHold)
+	stanceChanged := holdoutActIndex(entries, holdoutIsState(storypb.StateKind_STATE_KIND_STANCE))
+	fightEnded := holdoutActIndex(entries, holdoutIsClock(storypb.ClockMark_CLOCK_MARK_FIGHT_DISSOLVED))
+	endedAt := holdoutActIndex(entries, holdoutIsClock(storypb.ClockMark_CLOCK_MARK_ENDED))
+	require.NotEqual(t, -1, fightStarted, "a fight formed")
 	require.NotEqual(t, -1, stanceChanged, "the camp turned")
 	require.Less(t, fightStarted, arrivedAt, "mid-fight: the letter arrived while the fight was on")
 	require.Less(t, arrivedAt, held, "and was picked up after it arrived")
@@ -440,24 +467,26 @@ func TestAcceptance_TheLetterCarriedToTheChiefTurnsTheCamp(t *testing.T) {
 	require.Less(t, stanceChanged, fightEnded, "the stance turns, THEN the fight dissolves")
 	require.Less(t, fightEnded, endedAt, "and then the hold-out ends the run")
 
-	stance := entries[stanceChanged].GetStanceChanged()
-	require.Equal(t, []string{"party", "raiders"}, stance.GetBetween(), "the pair, sorted, in the file's words")
+	require.Equal(t, "letter", entries[held].GetHold().GetProp().GetId(), "the held prop is the letter")
+	require.Equal(t, "alice", entries[held].GetHold().GetBy().GetId(), "and alice holds it")
+	stance := entries[stanceChanged].GetState().GetStance()
+	require.Equal(t, []string{"party", "raiders"}, holdoutPartyIDs(stance.GetBetween()), "the pair, sorted, in the file's words")
 	require.Equal(t, "neutral", stance.GetStance(), "not hostile -- design R2")
 	require.Empty(t, stance.GetCause(),
 		"a mind's knowledge turned this pair, so no sentence was ever written")
-	require.Equal(t, sessionpb.DissolveKind_DISSOLVE_KIND_BY_STANCE, entries[fightEnded].GetFightEnded().GetCause(),
+	require.Equal(t, "stance", entries[fightEnded].GetClock().GetDissolved().GetCause(),
 		"the fight ended because its sides stopped being sides, and the wire says so")
-	require.Equal(t, "hold-out", entries[endedAt].GetEnded().GetEnding(),
+	require.Equal(t, "hold-out", entries[endedAt].GetClock().GetEnding(),
 		"the scenario's own key, translated by nobody")
 
 	// Every recipient hears the stance turn, monsters included (design §6).
 	// The chief's story is read through the Manager: no player owns a
 	// monster's view.
-	chiefsStory, err := r.h.manager.Manager.Story(context.Background(), &sdk.StoryInput{Session: r.sess, Member: "chief"})
+	chiefsStory, err := r.h.manager.Manager.Acts(context.Background(), &sdk.ActsInput{Session: r.sess, Member: "chief"})
 	require.NoError(t, err)
 	chiefHeard := false
-	for _, e := range chiefsStory {
-		if e.Kind == sdk.EventStanceChanged {
+	for _, a := range chiefsStory.Acts {
+		if change, ok := a.Body.(sdk.StateChange); ok && change.Stance != nil {
 			chiefHeard = true
 		}
 	}
@@ -508,7 +537,7 @@ func TestAcceptance_TheChiefsFallBringsTheReinforcements(t *testing.T) {
 	for _, id := range []string{"reinforcement-1", "reinforcement-2", "reinforcement-3"} {
 		a, arrived := came[id]
 		require.True(t, arrived, "%s arrived", id)
-		require.Equal(t, sessionpb.PlacementKind_PLACEMENT_KIND_MONSTER, a.GetKind())
+		require.Equal(t, "monster", a.GetKind())
 		require.True(t, wantCells[spatial.Position{X: a.GetCell().GetX(), Y: a.GetCell().GetY()}],
 			"%s stands where the author drew it, at the gate", id)
 	}
@@ -519,7 +548,7 @@ func TestAcceptance_TheChiefsFallBringsTheReinforcements(t *testing.T) {
 		require.Equal(t, "raiders", factions[id], "%s arrived as a raider", id)
 	}
 
-	require.Equal(t, -1, beatIndex(r.story(t), sessionpb.EventKind_EVENT_KIND_FIGHT_ENDED),
+	require.Equal(t, -1, holdoutActIndex(r.story(t), holdoutIsClock(storypb.ClockMark_CLOCK_MARK_FIGHT_DISSOLVED)),
 		"the yard's fight goes on: a fall on the other side is not a stance")
 	status, err := r.h.handler.GetStatus(r.alice, &sessionpb.GetStatusRequest{Session: r.sess})
 	require.NoError(t, err)
@@ -576,7 +605,7 @@ func TestAcceptance_TheChiefFelledByThePartyBringsTheReinforcements(t *testing.T
 	for _, id := range []string{"reinforcement-1", "reinforcement-2", "reinforcement-3"} {
 		a, arrived := came[id]
 		require.True(t, arrived, "%s arrived", id)
-		require.Equal(t, sessionpb.PlacementKind_PLACEMENT_KIND_MONSTER, a.GetKind())
+		require.Equal(t, "monster", a.GetKind())
 		require.True(t, wantCells[spatial.Position{X: a.GetCell().GetX(), Y: a.GetCell().GetY()}],
 			"%s stands where the author drew it", id)
 	}
@@ -589,7 +618,7 @@ func TestAcceptance_TheChiefFelledByThePartyBringsTheReinforcements(t *testing.T
 	// And the world goes on: the scout is still up, the run is still open,
 	// and the next verb is accepted -- which is where the walk-4 defect
 	// used to surface.
-	require.Equal(t, -1, beatIndex(r.story(t), sessionpb.EventKind_EVENT_KIND_FIGHT_ENDED))
+	require.Equal(t, -1, holdoutActIndex(r.story(t), holdoutIsClock(storypb.ClockMark_CLOCK_MARK_FIGHT_DISSOLVED)))
 	status, err := r.h.handler.GetStatus(r.alice, &sessionpb.GetStatusRequest{Session: r.sess})
 	require.NoError(t, err)
 	require.True(t, status.GetOpen())
@@ -618,8 +647,8 @@ func (r *campRun) canAttack(t *testing.T, member string) bool {
 // isDown reports whether the story has told alice that member went down.
 func (r *campRun) isDown(t *testing.T, member string) bool {
 	t.Helper()
-	for _, e := range r.story(t) {
-		if e.GetKind() == sessionpb.EventKind_EVENT_KIND_DOWNED && e.GetDowned().GetMember() == member {
+	for _, a := range r.story(t) {
+		if holdoutIsState(storypb.StateKind_STATE_KIND_DOWNED)(a) && a.GetState().GetParty().GetId() == member {
 			return true
 		}
 	}

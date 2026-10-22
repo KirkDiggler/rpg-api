@@ -20,7 +20,7 @@ import (
 const (
 	rolloutWorld       = "123456789012345678"
 	rolloutCharacter   = "/dnd5e.api.v1alpha1.CharacterService/ListCharacters"
-	rolloutStream      = "/dnd5e.api.session.v1alpha1.SessionService/StreamEvents"
+	rolloutStream      = "/dnd5e.api.session.v1alpha2.StoryService/StreamEvents"
 	rolloutComposition = "/api.composition.v1alpha1.CompositionService/ListCompositions"
 )
 

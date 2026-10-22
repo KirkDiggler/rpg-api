@@ -28,7 +28,6 @@ func TestExit_HappyPath(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	mgr.EXPECT().Exit(gomock.Any(), &sdk.ExitInput{Session: "sess-1", Member: "char-1"}).Return(&sdk.ExitOutput{
 		Outcome: sdk.MemberOutcome{ID: "char-1", Position: spatial.Position{X: 1, Y: 1}},
-		Seq:     3,
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
@@ -36,7 +35,6 @@ func TestExit_HappyPath(t *testing.T) {
 	resp, err := h.Exit(ctx, &sessionpb.ExitRequest{Session: "sess-1", Member: "char-1"})
 	require.NoError(t, err)
 	require.Equal(t, "char-1", resp.GetOutcome().GetId())
-	require.Equal(t, uint64(3), resp.GetSeq())
 }
 
 func TestExit_ManagerError_TranslatesViaErrorTable(t *testing.T) {

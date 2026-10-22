@@ -12,7 +12,6 @@ import (
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionaccess "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sessionaccess"
-	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
 
@@ -40,7 +39,6 @@ type Manager interface {
 	Dissolve(ctx context.Context, in *sdk.DissolveInput) (*sdk.DissolveOutput, error)
 	End(ctx context.Context, in *sdk.EndInput) (*sdk.EndOutput, error)
 	Status(ctx context.Context, in *sdk.StatusInput) (*sdk.Status, error)
-	Story(ctx context.Context, in *sdk.StoryInput) ([]sdk.Event, error)
 	View(ctx context.Context, in *sdk.ViewInput) (*sdk.ViewOutput, error)
 	Knowledge(ctx context.Context, in *sdk.KnowledgeInput) (*sdk.KnowledgeOutput, error)
 	Areas(ctx context.Context, in *sdk.ViewInput) ([]sdk.SightArea, error)
@@ -70,12 +68,6 @@ type Handler struct {
 	sessionpb.UnimplementedSessionServiceServer
 
 	manager Manager
-	// broker is the concrete session orchestrator Broker rather than a local
-	// interface: StreamEvents already needs sessionorch.Subscription (its
-	// Subscribe return type) imported regardless, so a hand-rolled interface
-	// would buy no additional test isolation over using the real broker,
-	// which is cheap to construct in tests (see broker_test.go's own suite).
-	broker *sessionorch.Broker
 	// characters backs the entitlement check every member-taking verb runs
 	// (callerActingAs below). The SDK's sentinels answer whether a member is
 	// IN the session; they cannot answer whether this caller is allowed to be
@@ -90,7 +82,6 @@ type Handler struct {
 // required.
 type HandlerConfig struct {
 	Manager    Manager
-	Broker     *sessionorch.Broker
 	Characters characterrepo.Repository
 	// Access is the shared caller/member/session gate. Optional for legacy
 	// tests that construct HandlerConfig directly; production and the
@@ -107,9 +98,6 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 	if cfg.Manager == nil {
 		return nil, errors.New("session handler: HandlerConfig.Manager is required")
 	}
-	if cfg.Broker == nil {
-		return nil, errors.New("session handler: HandlerConfig.Broker is required")
-	}
 	if cfg.Characters == nil {
 		return nil, errors.New("session handler: HandlerConfig.Characters is required")
 	}
@@ -121,7 +109,7 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 			return nil, err
 		}
 	}
-	return &Handler{manager: cfg.Manager, broker: cfg.Broker, characters: cfg.Characters, access: access}, nil
+	return &Handler{manager: cfg.Manager, characters: cfg.Characters, access: access}, nil
 }
 
 // authenticatedPlayerID extracts the caller's player ID from ctx, or a

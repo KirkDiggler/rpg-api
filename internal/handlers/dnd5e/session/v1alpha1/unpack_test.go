@@ -62,7 +62,7 @@ func TestUnpack_HappyPath_RoutesVerbatimAndAcksOnly(t *testing.T) {
 		Session: "sess-1", Actor: "char-1", ItemID: "explorers-pack", Quantity: 2,
 	}).Return(&sdk.UnpackOutput{
 		Saved:    sdk.SaveReport{Written: []string{"character:char-1"}},
-		Delivery: sdk.DeliveryReport{Events: 1},
+		Delivery: sdk.DeliveryReport{},
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
@@ -72,7 +72,7 @@ func TestUnpack_HappyPath_RoutesVerbatimAndAcksOnly(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{"character:char-1"}, resp.GetSaved().GetWritten())
-	require.Equal(t, int32(1), resp.GetDelivery().GetEvents())
+	require.False(t, resp.GetDelivery().GetFailed())
 }
 
 func TestUnpack_ManagerError_TranslatesViaErrorTable(t *testing.T) {

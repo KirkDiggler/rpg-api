@@ -50,7 +50,8 @@ func (s *OrchestratorTestSuite) TestNew_WithEveryCapabilitySupplied_Succeeds() {
 	s.Require().NoError(err)
 	s.Require().NotNil(orch)
 	s.NotNil(orch.Manager, "construction is total (SDK law S8): a usable Manager or an error, never a nil one with no error")
-	s.NotNil(orch.Broker)
+	s.NotNil(orch.RecordBroker)
+	s.NotNil(orch.ActBroker)
 }
 
 func (s *OrchestratorTestSuite) TestNew_MissingRedis_Errors() {

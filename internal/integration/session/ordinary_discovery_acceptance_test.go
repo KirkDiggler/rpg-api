@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -47,8 +48,7 @@ func (s *StructuralPatchAcceptanceSuite) TestOrdinaryClosedDoorWithholdsFloorAnd
 	s.Equal(1.2, vase.HeightScale)
 	s.Require().Len(before.Atlas.StructuralWalls, 1)
 	s.Require().Len(before.Atlas.StructuralDoors, 1)
-	beforeStory, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: "ordinary-run", Member: "alice"})
-	s.Require().NoError(err)
+	beforeStory := storyOf(ctx, s.T(), h.story, "ordinary-run", "alice")
 	_, err = h.handler.OpenDoor(ctx, &sessionpb.OpenDoorRequest{Session: "ordinary-run", Member: "alice", Door: "ordinary-discovery/gate"})
 	s.Require().NoError(err)
 	after, err := h.handler.GetKnowledge(ctx, request)
@@ -64,21 +64,22 @@ func (s *StructuralPatchAcceptanceSuite) TestOrdinaryClosedDoorWithholdsFloorAnd
 		}
 	}
 	s.True(found)
-	story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: "ordinary-run", Member: "alice"})
-	s.Require().NoError(err)
-	var reveal *sessionpb.CellsRevealed
-	s.Require().GreaterOrEqual(len(story.Entries), len(beforeStory.Entries))
-	for _, entry := range story.Entries[len(beforeStory.Entries):] {
-		if body := entry.GetCellsRevealed(); body != nil {
+	story := storyOf(ctx, s.T(), h.story, "ordinary-run", "alice")
+	var reveal *storypb.CellsLearned
+	s.Require().GreaterOrEqual(len(story), len(beforeStory))
+	for _, act := range story[len(beforeStory):] {
+		if act.GetPerception().GetSense() == storypb.Sense_SENSE_CELLS {
 			s.Nil(reveal)
-			reveal = body
+			s.Equal("alice", act.GetPerception().GetObserver().GetId(), "her own learning")
+			reveal = act.GetPerception().GetCells()
 		}
 	}
 	s.Require().NotNil(reveal, "normal opening delivers the cells it newly permits (rpg-project#586)")
 	s.Require().Len(reveal.Regions, 1)
 	s.Len(reveal.Regions[0].Cells, 3)
 	s.Require().Len(reveal.PropPresentations, 1)
-	s.True(proto.Equal(after.Atlas.PropPresentations[1], reveal.PropPresentations[0]), "event-only appearance equals the fresh snapshot")
+	s.True(proto.Equal(structuralAsAct(s.T(), after.Atlas.PropPresentations[1], &storypb.PropPresentation{}), reveal.PropPresentations[0]),
+		"event-only appearance equals the fresh snapshot")
 	found = false
 	for _, prop := range reveal.Placed {
 		if prop.Id == "books" {
@@ -102,7 +103,7 @@ func (s *StructuralPatchAcceptanceSuite) TestOrdinaryClosedDoorWithholdsFloorAnd
 			prior = known.Cells
 		}
 		s.Len(region.Cells, len(prior)+len(reveal.Regions[0].Cells))
-		for _, cell := range append(append([]*sessionpb.Position{}, prior...), reveal.Regions[0].Cells...) {
+		for _, cell := range append(append([]*sessionpb.Position{}, prior...), v1Cells(reveal.Regions[0].Cells)...) {
 			s.True(containsCell(region.Cells, cell), "union by id: %v is in the fresh region", cell)
 		}
 	}
@@ -113,11 +114,21 @@ func (s *StructuralPatchAcceptanceSuite) TestOrdinaryClosedDoorWithholdsFloorAnd
 	remembered, err := h.handler.GetKnowledge(ctx, request)
 	s.Require().NoError(err)
 	s.True(proto.Equal(after.Atlas, remembered.Atlas))
-	replay, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: "ordinary-run", Member: "alice"})
-	s.Require().NoError(err)
-	for i, entry := range story.Entries {
-		s.True(proto.Equal(entry, replay.Entries[i]), "later knowledge must not rewrite delivered history")
+	replay := storyOf(ctx, s.T(), h.story, "ordinary-run", "alice")
+	s.Require().GreaterOrEqual(len(replay), len(story))
+	for i, act := range story {
+		s.True(proto.Equal(act, replay[i]), "later knowledge must not rewrite delivered history")
 	}
+}
+
+// v1Cells is act-stream cells in the v1 wire's Position, so they compare
+// against the v1 GetKnowledge snapshot.
+func v1Cells(cells []*storypb.Position) []*sessionpb.Position {
+	out := make([]*sessionpb.Position, 0, len(cells))
+	for _, c := range cells {
+		out = append(out, &sessionpb.Position{X: c.GetX(), Y: c.GetY()})
+	}
+	return out
 }
 
 func containsCell(cells []*sessionpb.Position, want *sessionpb.Position) bool {

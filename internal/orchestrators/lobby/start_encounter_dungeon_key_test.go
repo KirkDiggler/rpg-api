@@ -36,7 +36,7 @@ func (s *SessionStackSuite) TestStartEncounter_GetAtlasNamesTheDungeonTheLaunchR
 	s.Require().NoError(err)
 
 	handler, err := sessionv1alpha1.New(&sessionv1alpha1.HandlerConfig{
-		Manager: s.sessOrch.Manager, Broker: s.sessOrch.Broker, Characters: s.charRepo,
+		Manager: s.sessOrch.Manager, Characters: s.charRepo,
 	})
 	s.Require().NoError(err)
 	resp, err := handler.GetAtlas(auth.WithPlayerID(s.ctx, "alice"),

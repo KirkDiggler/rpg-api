@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
-	"google.golang.org/protobuf/proto"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	characterpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
@@ -44,7 +43,7 @@ func (s *ShieldOfFaithSuite) TestNativeProtectionPrivateSheetReplayAndReplacemen
 			before := ac()
 			row := castRowFor(ctx, t, h, id, spells.ShieldOfFaith)
 			s.Require().True(row.GetAvailable(), row.GetWhy())
-			live := watchCast(ctx, t, h, id, func() {
+			live := watchCastActs(ctx, t, h, id, func() {
 				_, castErr := h.handler.Cast(ctx, &sessionpb.CastRequest{Session: castSessionID, Member: id, DeclarationId: row.GetId(), Targets: []string{target}})
 				s.Require().NoError(castErr)
 			})
@@ -57,25 +56,24 @@ func (s *ShieldOfFaithSuite) TestNativeProtectionPrivateSheetReplayAndReplacemen
 			_, err = sheet.GetCharacterData(auth.WithPlayerID(context.Background(), "outsider"), &characterpb.GetCharacterDataRequest{CharacterId: target})
 			s.Error(err, "the AC refresh must not disclose a private sheet to another player")
 			applied := 0
-			for _, event := range live {
-				if b := event.GetActivationResult().GetConditionApplied(); b != nil {
-					applied++
-					s.Equal(target, b.GetTarget())
-					s.Equal(id, b.GetSourceId())
+			for _, act := range live {
+				for _, result := range act.GetActivate().GetResults() {
+					if result.GetKind() == "condition-applied" {
+						applied++
+						s.Equal(target, result.GetTarget().GetId())
+						s.Equal(id, result.GetSourceId())
+					}
+					s.NotEqual("healing-applied", result.GetKind())
 				}
-				s.Nil(event.GetStruck())
-				s.Nil(event.GetSaved())
-				s.Nil(event.GetActivationResult().GetHealingApplied())
+				s.Nil(act.GetAttack())
+				for _, result := range act.GetCast().GetResults() {
+					s.Nil(result.GetSave(), "Shield of Faith asks no save")
+				}
 			}
 			s.Equal(1, applied)
 			reopenClericHost(t, h, sdk.StaleTargetRefuse)
 			s.Equal(before+2, ac())
-			story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: castSessionID, Member: id, FromSeq: live[0].GetSeq()})
-			s.Require().NoError(err)
-			s.Require().Len(story.GetEntries(), len(live))
-			for i, event := range live {
-				s.True(proto.Equal(event, story.Entries[i]))
-			}
+			requireLiveIsStory(ctx, t, h, castSessionID, id, live)
 			// Guidance is an action cantrip: legal after a bonus-action spell, and
 			// replacing concentration must remove the target's AC bonus immediately.
 			guidance := castRowFor(ctx, t, h, id, spells.Guidance)

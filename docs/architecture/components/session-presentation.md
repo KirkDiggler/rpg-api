@@ -149,7 +149,7 @@ to end: two `TestServer` instances share one Redis container; server A launches
 Alice and Bob through the real `LobbyService` path; Alice and Bob open streams
 on servers A and B; Alice publishes one valid one-body draft through server A;
 both streams receive deterministic proto byte-equal plans; and Alice's
-`SessionService.GetStory` sequence list is identical before and after publish.
+`StoryService.GetStory` act ids are identical before and after publish.
 
 ## Verify
 

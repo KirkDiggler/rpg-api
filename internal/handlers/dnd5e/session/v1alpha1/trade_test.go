@@ -54,7 +54,6 @@ func TestTrade_HappyPath_ReturnsDecrementedDescriptor(t *testing.T) {
 					{Type: shared.EquipmentTypeWeapon, ID: "longbow", Name: "Longbow", Mode: npcs.StockModeLimited, Quantity: 1},
 				},
 			},
-			Seq: 7,
 		}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
@@ -70,7 +69,6 @@ func TestTrade_HappyPath_ReturnsDecrementedDescriptor(t *testing.T) {
 
 	d := resp.GetDescriptor_()
 	require.Equal(t, "demo-merchant-1", d.GetTargetId())
-	require.Equal(t, uint64(7), resp.GetSeq())
 	require.Len(t, d.GetInventory(), 1, "the bought longsword is gone, the longbow remains")
 	require.Equal(t, "longbow", d.GetInventory()[0].GetEquipmentId())
 }
@@ -142,7 +140,6 @@ func TestTrade_Sell_ForwardsGiveItemsAndReceiveCurrency(t *testing.T) {
 					{Type: shared.EquipmentTypeWeapon, ID: "longsword", Name: "Longsword", Mode: npcs.StockModeLimited, Quantity: 1, PlayerSold: true},
 				},
 			},
-			Seq: 8,
 		}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
@@ -157,7 +154,6 @@ func TestTrade_Sell_ForwardsGiveItemsAndReceiveCurrency(t *testing.T) {
 	require.NoError(t, err)
 
 	d := resp.GetDescriptor_()
-	require.Equal(t, uint64(8), resp.GetSeq())
 	require.Len(t, d.GetInventory(), 1)
 	require.Equal(t, "longsword", d.GetInventory()[0].GetEquipmentId())
 	require.True(t, d.GetInventory()[0].GetPlayerSold())

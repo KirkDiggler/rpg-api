@@ -66,9 +66,9 @@ Conversion remains field-for-field with no rules or invented vocabulary, includi
 nested declarations/candidates and selectors. `GetRoster` delegates once to the Session
 SDK and mechanically maps its public members and flat customization values, preserving
 optional presence and explicit zero while keeping the shelf present-and-empty for
-nil/default players and monsters; it projects no private sheet fields. `StreamEvents` is audience-filtered
-best-effort live delivery; `GetStory` is persisted catch-up, and both use the same
-typed-event converter. Unit and `internal/integration/session` suites cover ownership,
+nil/default players and monsters; it projects no private sheet fields. What happened is
+served as acts by v1alpha2 `StoryService` (`StreamEvents` live, `GetStory` catch-up)
+through one act converter; the v1alpha1 event stream is deleted (rpg-project#631). Unit and `internal/integration/session` suites cover ownership,
 selectors, live fan-out, replay, and production declaration shapes. Held below A pending
 production traffic.
 

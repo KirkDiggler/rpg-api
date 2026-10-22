@@ -8,8 +8,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -33,19 +35,29 @@ func TestAcceptance_DeliveredSightPayloadsCarryNoConditions(t *testing.T) {
 	row := castRowFor(ctx, t, h, id, spells.FaerieFire)
 	require.True(t, row.GetAvailable(), row.GetWhy())
 
-	live := watchCast(ctx, t, h, id, func() {
+	live := watchCastActs(ctx, t, h, id, func() {
 		_, err := h.handler.Cast(ctx, &sessionpb.CastRequest{
 			Session: castSessionID, Member: id, DeclarationId: row.GetId(), Cell: &sessionpb.Position{X: 8, Y: 2},
 		})
 		require.NoError(t, err)
 	})
-	applied := false
-	for _, event := range live {
-		if event.GetActivationResult().GetConditionApplied().GetTarget() == "skel-1" {
-			applied = true
+	applied, sighted := false, false
+	for _, act := range live {
+		for _, result := range act.GetActivate().GetResults() {
+			if result.GetKind() == "condition-applied" && result.GetTarget().GetId() == "skel-1" {
+				applied = true
+			}
 		}
-		requireNoConditionsKey(t, event.GetPayload(), "event seq %d payload", event.GetSeq())
+		if act.GetPerception().GetSense() == storypb.Sense_SENSE_SIGHT {
+			sighted = true
+		}
+		// An act carries no raw payload: its whole wire form is what is
+		// delivered, so a sighting that leaked conditions would fail here.
+		encoded, err := protojson.Marshal(act)
+		require.NoError(t, err)
+		requireNoConditionsKey(t, encoded, "act %s", act.GetId())
 	}
+	require.True(t, sighted, "the cast must deliver a sighting, or the live route is not walked")
 	require.True(t, applied, "the scene needs skel-1 to hold Faerie Fire, or nothing below can fail")
 
 	view, err := h.handler.GetView(ctx, &sessionpb.GetViewRequest{Session: castSessionID, Member: id})

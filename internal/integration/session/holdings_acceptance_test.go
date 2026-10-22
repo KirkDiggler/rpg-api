@@ -2,6 +2,7 @@ package session_test
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
@@ -223,26 +225,25 @@ func (r *heirloomRun) atlas(t *testing.T, member string) *sessionpb.GetAtlasResp
 	return renderedKnowledgeAtlas(r.ctxOf(member), t, r.h, heirloomSession, member)
 }
 
-// story is one member's own beats, from their story rather than a live
-// stream: catch-up and live are byte-equal for the same seq, so reading the
+// story is one member's own acts, from their StoryService story rather than
+// a live stream: live is the tail of the story act for act, so reading the
 // story keeps these scenes free of subscription timing.
-func (r *heirloomRun) story(t *testing.T, member string) []*sessionpb.Event {
+func (r *heirloomRun) story(t *testing.T, member string) []*storypb.Act {
 	t.Helper()
-	out, err := r.h.handler.GetStory(r.ctxOf(member), &sessionpb.GetStoryRequest{
-		Session: heirloomSession, Member: member,
-	})
-	require.NoError(t, err)
-	return out.GetEntries()
+	return storyOf(r.ctxOf(member), t, r.h.story, heirloomSession, member)
 }
 
-func (r *heirloomRun) kinds(t *testing.T, member string) []sessionpb.EventKind {
+// heard reports whether member's story holds an act matching is.
+func (r *heirloomRun) heard(t *testing.T, member string, is func(*storypb.Act) bool) bool {
 	t.Helper()
-	entries := r.story(t, member)
-	out := make([]sessionpb.EventKind, 0, len(entries))
-	for _, e := range entries {
-		out = append(out, e.GetKind())
-	}
-	return out
+	return holdoutActIndex(r.story(t, member), is) != -1
+}
+
+// holdingsIsReveal matches a perception act revealing a concealment: the
+// act-stream form of the v1 CONCEALMENT_REVEALED beat.
+func holdingsIsReveal(a *storypb.Act) bool {
+	return a.GetFamily() == storypb.Family_FAMILY_PERCEPTION &&
+		a.GetPerception().GetSense() == storypb.Sense_SENSE_REVEAL
 }
 
 // propIDs names the props on one member's map. A held prop is absent from
@@ -334,15 +335,15 @@ func TestAcceptance_HoldingRemovesThePropForEveryone(t *testing.T) {
 		"physical state folds on the truth grain: it left the floor for everybody")
 
 	for _, member := range []string{"alice", "bob"} {
-		var held *sessionpb.Held
-		for _, e := range run.story(t, member) {
-			if e.GetKind() == sessionpb.EventKind_EVENT_KIND_HELD {
-				held = e.GetHeld()
+		var held *storypb.HoldAct
+		for _, a := range run.story(t, member) {
+			if a.GetHold() != nil {
+				held = a.GetHold()
 			}
 		}
-		require.NotNil(t, held, "%s was present and hears the held beat", member)
-		require.Equal(t, "alice", held.GetHolder())
-		require.Equal(t, dungeonstest.ChalicePropID, held.GetProp())
+		require.NotNil(t, held, "%s was present and hears the hold act", member)
+		require.Equal(t, "alice", held.GetBy().GetId())
+		require.Equal(t, dungeonstest.ChalicePropID, held.GetProp().GetId())
 	}
 }
 
@@ -380,14 +381,14 @@ func TestAcceptance_LeavingThroughTheBoundExitEndsTheRun(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, exited.GetClosed(), "leaving the bound exit while holding ends the run")
 
-	var ended *sessionpb.Ended
-	var departure *sessionpb.Exited
-	for _, e := range run.story(t, "bob") {
-		switch e.GetKind() {
-		case sessionpb.EventKind_EVENT_KIND_ENDED:
-			ended = e.GetEnded()
-		case sessionpb.EventKind_EVENT_KIND_EXITED:
-			departure = e.GetExited()
+	var ended *storypb.ClockEntry
+	var departure *storypb.Departure
+	for _, a := range run.story(t, "bob") {
+		switch {
+		case holdoutIsClock(storypb.ClockMark_CLOCK_MARK_ENDED)(a):
+			ended = a.GetClock()
+		case holdoutIsClock(storypb.ClockMark_CLOCK_MARK_EXITED)(a):
+			departure = a.GetClock().GetDeparture()
 		default:
 		}
 	}
@@ -395,7 +396,7 @@ func TestAcceptance_LeavingThroughTheBoundExitEndsTheRun(t *testing.T) {
 	require.Equal(t, "recover-the-artifact", ended.GetEnding())
 
 	require.NotNil(t, departure, "and the departure that ended it is narratable")
-	require.Equal(t, "alice", departure.GetMember())
+	require.Equal(t, "alice", departure.GetMember().GetId())
 	require.Equal(t, []string{dungeonstest.HeirloomPropID}, departure.GetHolding(),
 		"the record says what she carried out")
 	require.Equal(t, dungeonstest.HeirloomBoundExitID, departure.GetExit(),
@@ -429,24 +430,25 @@ func TestAcceptance_LeavingFromAnywhereElseDropsWhatYouCarry(t *testing.T) {
 	require.Nil(t, exited.GetClosed(),
 		"leaving from a cell nobody authored as a way out is an ordinary departure")
 
-	var dropped *sessionpb.Dropped
-	var departure *sessionpb.Exited
-	for _, e := range run.story(t, "alice") {
-		switch e.GetKind() {
-		case sessionpb.EventKind_EVENT_KIND_DROPPED:
-			dropped = e.GetDropped()
-		case sessionpb.EventKind_EVENT_KIND_EXITED:
-			departure = e.GetExited()
+	var dropped *storypb.DropAct
+	var departure *storypb.Departure
+	for _, a := range run.story(t, "alice") {
+		switch {
+		case a.GetDrop() != nil:
+			dropped = a.GetDrop()
+		case holdoutIsClock(storypb.ClockMark_CLOCK_MARK_EXITED)(a):
+			departure = a.GetClock().GetDeparture()
 		default:
 		}
 	}
 	require.NotNil(t, dropped, "the chalice lands back on the map, and everyone present is told")
-	require.Equal(t, "bob", dropped.GetMember())
-	require.Equal(t, dungeonstest.ChalicePropID, dropped.GetProp())
-	require.Equal(t, pbAt(2, 2).GetX(), dropped.GetAt().GetX(), "where he stood on the way out")
-	require.Equal(t, pbAt(2, 2).GetY(), dropped.GetAt().GetY())
+	require.Equal(t, "bob", dropped.GetBy().GetId())
+	require.Equal(t, dungeonstest.ChalicePropID, dropped.GetProp().GetId())
+	require.Equal(t, pbAt(2, 2).GetX(), dropped.GetCell().GetX(), "where he stood on the way out")
+	require.Equal(t, pbAt(2, 2).GetY(), dropped.GetCell().GetY())
 
 	require.NotNil(t, departure)
+	require.Equal(t, "bob", departure.GetMember().GetId())
 	require.Empty(t, departure.GetExit(),
 		"he used no authored exit -- empty is the truth, not 'unknown'")
 
@@ -466,7 +468,7 @@ func TestAcceptance_LeavingFromAnywhereElseDropsWhatYouCarry(t *testing.T) {
 
 	require.Contains(t, propIDs(run.atlas(t, "alice")), dungeonstest.ChalicePropID,
 		"a refetch agrees with the beat: the chalice is on the map again")
-	require.NotContains(t, run.kinds(t, "alice"), sessionpb.EventKind_EVENT_KIND_ENDED,
+	require.False(t, run.heard(t, "alice", holdoutIsClock(storypb.ClockMark_CLOCK_MARK_ENDED)),
 		"and the run goes on for the member still in it")
 }
 
@@ -566,32 +568,32 @@ func lootTheCaptain(t *testing.T, captainHolds bool) {
 	if captainHolds {
 		require.Len(t, run.atlas(t, "alice").GetDoorways(), 1,
 			"looting the body that held the record puts what it reveals on the looter's map")
-		require.Contains(t, run.kinds(t, "alice"), sessionpb.EventKind_EVENT_KIND_CONCEALMENT_REVEALED,
-			"the looter hears the same beat a successful search produces")
+		require.True(t, run.heard(t, "alice", holdingsIsReveal),
+			"the looter hears the same reveal a successful search produces")
 	} else {
 		require.Empty(t, run.atlas(t, "alice").GetDoorways(),
 			"a body holding nothing transfers nothing")
-		require.NotContains(t, run.kinds(t, "alice"), sessionpb.EventKind_EVENT_KIND_CONCEALMENT_REVEALED)
+		require.False(t, run.heard(t, "alice", holdingsIsReveal))
 	}
 	require.Empty(t, run.atlas(t, "bob").GetDoorways(),
 		"and nobody else's map moves either way -- knowledge is audience-scoped, "+
 			"unlike where things physically are")
-	require.NotContains(t, run.kinds(t, "bob"), sessionpb.EventKind_EVENT_KIND_CONCEALMENT_REVEALED)
+	require.False(t, run.heard(t, "bob", holdingsIsReveal))
 
 	// EVERYONE PRESENT HEARS THE LOOT ITSELF, and it names looter and body
 	// and nothing of what moved (design P3): a beat that varied with what
 	// the body held would tell the party which corpse was worth looting.
 	// This runs in BOTH cases above, which is what makes it a claim.
 	for _, member := range []string{"alice", "bob"} {
-		var looted *sessionpb.Looted
-		for _, e := range run.story(t, member) {
-			if e.GetKind() == sessionpb.EventKind_EVENT_KIND_LOOTED {
-				looted = e.GetLooted()
+		var looted *storypb.LootAct
+		for _, a := range run.story(t, member) {
+			if a.GetLoot() != nil {
+				looted = a.GetLoot()
 			}
 		}
 		require.NotNil(t, looted, "%s was present", member)
-		require.Equal(t, "alice", looted.GetLooter())
-		require.Equal(t, dungeonstest.HeirloomCaptainMemberID, looted.GetBody())
+		require.Equal(t, "alice", looted.GetBy().GetId())
+		require.Equal(t, dungeonstest.HeirloomCaptainMemberID, looted.GetFrom().GetId())
 	}
 }
 
@@ -687,23 +689,45 @@ func heirloomWireBytes(t *testing.T, captainHolds bool) map[string]string {
 		require.NoError(t, err)
 		out[member+"/atlas"] = string(atlasBytes)
 
-		story, err := run.h.handler.GetStory(run.ctxOf(member), &sessionpb.GetStoryRequest{
-			Session: heirloomSession, Member: member,
-		})
-		require.NoError(t, err)
-		// THE WHOLE BEAT, rendered: session, seq, recipient, kind, the raw
-		// payload and the typed body. Measured rather than assumed to be
-		// stable — these beats carry no wall-clock time and no correlation
-		// id, so two runs of the same scene render identically and any
+		story := run.story(t, member)
+		// THE WHOLE ACT, rendered: session, act, verb, family and the typed
+		// body. Measured rather than assumed to be stable. The one thing two
+		// runs cannot share is the act ids themselves -- they are ULIDs,
+		// minted from the wall clock and entropy -- so each distinct id is
+		// renamed by order of first appearance: which acts share an id, and
+		// which share a correlation, is still compared, and any other
 		// difference is a real one.
-		require.NotEmpty(t, story.GetEntries(), "%s has been told something to compare", member)
-		said := make([]string, 0, len(story.GetEntries()))
-		for _, e := range story.GetEntries() {
-			said = append(said, e.GetKind().String()+"|"+protojson.Format(e))
+		require.NotEmpty(t, story, "%s has been told something to compare", member)
+		said := make([]string, 0, len(story))
+		for _, a := range holdingsOrdinalIDs(story) {
+			said = append(said, protojson.Format(a))
 		}
 		out[member+"/story"] = strings.Join(said, "\n")
 	}
 
+	return out
+}
+
+// holdingsOrdinalIDs is story with every act id, and the id half of every
+// `<verb>:<id>` correlation, replaced by its order of first appearance, so two
+// runs of one scene compare everything but the minted ids.
+func holdingsOrdinalIDs(story []*storypb.Act) []*storypb.Act {
+	seen := map[string]string{}
+	ordinal := func(id string) string {
+		if _, ok := seen[id]; !ok {
+			seen[id] = fmt.Sprintf("id-%d", len(seen))
+		}
+		return seen[id]
+	}
+	out := make([]*storypb.Act, 0, len(story))
+	for _, a := range story {
+		c := proto.Clone(a).(*storypb.Act)
+		c.Id = ordinal(c.GetId())
+		if verb, id, ok := strings.Cut(c.GetAct(), ":"); ok {
+			c.Act = verb + ":" + ordinal(id)
+		}
+		out = append(out, c)
+	}
 	return out
 }
 
@@ -813,15 +837,15 @@ func TestAcceptance_HoldingAScrollTeachesItsHolderAlone(t *testing.T) {
 
 	require.Len(t, run.atlas(t, "alice").GetDoorways(), 1,
 		"picking up the scroll put what its record reveals on her map")
-	require.Contains(t, run.kinds(t, "alice"), sessionpb.EventKind_EVENT_KIND_CONCEALMENT_REVEALED,
-		"as the same beat a search and a loot both produce -- one reveal shape, three ways in")
+	require.True(t, run.heard(t, "alice", holdingsIsReveal),
+		"as the same reveal a search and a loot both produce -- one reveal shape, three ways in")
 
 	// HER ALONE. Knowledge is audience-scoped even though where the scroll
 	// physically is folds on the truth grain: bob watched her pick it up and
 	// learned nothing from watching.
 	require.Empty(t, run.atlas(t, "bob").GetDoorways(),
 		"bob saw the scroll leave the floor and still does not know the way in")
-	require.NotContains(t, run.kinds(t, "bob"), sessionpb.EventKind_EVENT_KIND_CONCEALMENT_REVEALED)
+	require.False(t, run.heard(t, "bob", holdingsIsReveal))
 	require.NotContains(t, propIDs(run.atlas(t, "bob")), dungeonstest.ScrollPropID,
 		"though the scroll is gone from his map too, as every held prop is")
 

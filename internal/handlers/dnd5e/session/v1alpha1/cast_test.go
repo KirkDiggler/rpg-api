@@ -49,7 +49,7 @@ func TestCast_Posed_ReturnsRollAndTotalOnly(t *testing.T) {
 	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
 	roll, total := 11, 13
 	mgr.EXPECT().Cast(gomock.Any(), gomock.Any()).Return(&sdk.CastOutput{
-		Posed: true, Roll: &roll, Total: &total, Seqs: []uint64{3},
+		Posed: true, Roll: &roll, Total: &total,
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}

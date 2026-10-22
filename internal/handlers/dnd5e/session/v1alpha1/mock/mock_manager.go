@@ -461,21 +461,6 @@ func (mr *MockManagerMockRecorder) Status(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Status", reflect.TypeOf((*MockManager)(nil).Status), ctx, in)
 }
 
-// Story mocks base method.
-func (m *MockManager) Story(ctx context.Context, in *session.StoryInput) ([]session.Event, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Story", ctx, in)
-	ret0, _ := ret[0].([]session.Event)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Story indicates an expected call of Story.
-func (mr *MockManagerMockRecorder) Story(ctx, in any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Story", reflect.TypeOf((*MockManager)(nil).Story), ctx, in)
-}
-
 // Trade mocks base method.
 func (m *MockManager) Trade(ctx context.Context, in *session.TradeInput) (*session.TradeOutput, error) {
 	m.ctrl.T.Helper()

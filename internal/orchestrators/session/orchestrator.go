@@ -96,14 +96,13 @@ func newDefaultPresentationIDs() sdk.PresentationIDGenerator {
 	return idgen.NewUUID(presentationIDPrefix)
 }
 
-// Orchestrator owns the toolkit session.Manager and the three brokers its
+// Orchestrator owns the toolkit session.Manager and the two brokers its
 // streams subscribe against. All are exported for handlers to use directly:
-// Manager for every verb, Broker for v1alpha1 StreamEvents' subscription,
-// RecordBroker for StreamRecord's (v1alpha2, rpg-project#628), ActBroker for
-// v1alpha2 StreamEvents' (rpg-project#630).
+// Manager for every verb, RecordBroker for StreamRecord's (v1alpha2,
+// rpg-project#628), ActBroker for v1alpha2 StreamEvents' (rpg-project#630).
+// The v1alpha1 event Broker went with the v1 stream (rpg-project#631).
 type Orchestrator struct {
 	Manager      *sdk.Manager
-	Broker       *Broker
 	RecordBroker *RecordBroker
 	ActBroker    *ActBroker
 }
@@ -111,8 +110,8 @@ type Orchestrator struct {
 // New constructs an Orchestrator, wiring every session.Config capability
 // explicitly: Redis-backed SessionRepository, EncounterRepository and
 // SeatRepository, the
-// CharacterRepository adapter, this package's Broker as the EventStream, and
-// a crypto-secure dice.CryptoRoller as the SDK's Roller -- the host supplies
+// CharacterRepository adapter, session.DiscardEvents as the EventStream
+// (rpg-project#631), and a crypto-secure dice.CryptoRoller as the SDK's Roller -- the host supplies
 // entropy only, never turn order (session.Roller doc).
 func New(cfg Config) (*Orchestrator, error) {
 	if cfg.Redis == nil {
@@ -154,7 +153,6 @@ func New(cfg Config) (*Orchestrator, error) {
 	}
 	explorations := &redisExplorationRepository{client: cfg.Redis}
 
-	broker := NewBroker()
 	recordBroker := NewRecordBroker(0)
 	actBroker := NewActBroker(ActBufferFromEnv())
 	mgr, err := sdk.NewManager(&sdk.Config{
@@ -166,7 +164,6 @@ func New(cfg Config) (*Orchestrator, error) {
 		Encounters:        NewEncounterRepository(cfg.Redis, cfg.TTL),
 		Characters:        NewCharacterRepository(cfg.Characters),
 		Seats:             NewSeatRepository(cfg.Redis),
-		Events:            broker,
 		Record:            recordBroker,
 		Acts:              actBroker,
 		Dice:              roller,
@@ -176,5 +173,5 @@ func New(cfg Config) (*Orchestrator, error) {
 		return nil, fmt.Errorf("construct session manager: %w", err)
 	}
 
-	return &Orchestrator{Manager: mgr, Broker: broker, RecordBroker: recordBroker, ActBroker: actBroker}, nil
+	return &Orchestrator{Manager: mgr, RecordBroker: recordBroker, ActBroker: actBroker}, nil
 }

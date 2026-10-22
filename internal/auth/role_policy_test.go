@@ -12,6 +12,7 @@ import (
 	lobbypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
 	presentationpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/presentation/v1alpha1"
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	characterpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	characterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
@@ -21,15 +22,29 @@ type PolicySuite struct{ suite.Suite }
 
 func TestPolicySuite(t *testing.T) { suite.Run(t, new(PolicySuite)) }
 
+// retiredV1Stream is the v1alpha1 event stream, deleted from the server
+// (rpg-project#631) while its RPCs remain in the descriptor until the protos
+// drop them: no policy, so the gate denies them.
+var retiredV1Stream = map[string]bool{
+	"/dnd5e.api.session.v1alpha1.SessionService/StreamEvents": true,
+	"/dnd5e.api.session.v1alpha1.SessionService/GetStory":     true,
+}
+
 func (s *PolicySuite) TestEveryGameRPCIsExplicitlyClassified() {
 	for _, descriptor := range []*grpc.ServiceDesc{
 		&compositionpb.CompositionService_ServiceDesc, &apipb.DiceService_ServiceDesc,
 		&authoringpb.AuthoringService_ServiceDesc, &lobbypb.LobbyService_ServiceDesc,
 		&presentationpb.SessionPresentationService_ServiceDesc, &sessionpb.SessionService_ServiceDesc,
 		&characterpb.CharacterService_ServiceDesc, &characterv2pb.CharacterService_ServiceDesc,
+		&storypb.StoryService_ServiceDesc, &storypb.RecordService_ServiceDesc,
 	} {
 		check := func(name string) {
 			method := "/" + descriptor.ServiceName + "/" + name
+			if retiredV1Stream[method] {
+				_, known := auth.GameMethodPermission(method)
+				s.False(known, method+" is retired: no policy, denied")
+				return
+			}
 			permission, known := auth.GameMethodPermission(method)
 			s.True(known, method+" must have an explicit access policy")
 			s.NotZero(permission, method)
@@ -40,6 +55,19 @@ func (s *PolicySuite) TestEveryGameRPCIsExplicitlyClassified() {
 		for _, stream := range descriptor.Streams {
 			check(stream.StreamName)
 		}
+	}
+}
+
+func (s *PolicySuite) TestTheActStreamAndTheRecordRequirePlayPermission() {
+	for _, method := range []string{
+		"/dnd5e.api.session.v1alpha2.StoryService/StreamEvents",
+		"/dnd5e.api.session.v1alpha2.StoryService/GetStory",
+		"/dnd5e.api.session.v1alpha2.RecordService/StreamRecord",
+		"/dnd5e.api.session.v1alpha2.RecordService/GetRecord",
+	} {
+		permission, known := auth.GameMethodPermission(method)
+		s.True(known, method)
+		s.Equal(auth.PermissionPlay, permission, method)
 	}
 }
 
