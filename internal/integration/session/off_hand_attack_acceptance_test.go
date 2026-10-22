@@ -190,6 +190,10 @@ func TestAcceptance_OffHandAttackIsASecondServerDeclaration(t *testing.T) {
 				require.Equal(t, "Two-Weapon Fighting", feature.GetRoll().GetModifiers()[0].GetSource())
 				require.Equal(t, int32(3), feature.GetRoll().GetModifiers()[0].GetValue())
 				require.Empty(t, feature.GetRoll().GetDice(), "the restored modifier is flat")
+				twf := refs.Conditions.FightingStyleTwoWeaponFighting().String()
+				require.Equal(t, twf, feature.GetRoll().GetModifiers()[0].GetSourceRef(),
+					"the modifier names its provider (rpg-project#643 D)")
+				require.Equal(t, twf, feature.GetSourceRef(), "the component names its provider (rpg-project#643 C)")
 			}
 
 			stored := storedSheetOf(t, h.charRepo, "alice")

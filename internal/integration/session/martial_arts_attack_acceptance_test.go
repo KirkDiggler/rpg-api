@@ -114,11 +114,17 @@ func TestAcceptance_QuarterstaffAttackGrantsBonusUnarmedStrike(t *testing.T) {
 	require.Equal(t, "1d4", weaponComponent.GetRoll().GetExpression(),
 		"the roll records the physical level-1 Martial Arts die")
 	require.Len(t, weaponComponent.GetRoll().GetDice(), 1)
+	require.Equal(t, "dnd5e:weapons:unarmed-strike", weaponComponent.GetSourceRef(),
+		"the component names its provider (rpg-project#643 C)")
 	require.NotNil(t, abilityComponent)
 	require.NotNil(t, abilityComponent.GetRoll())
 	require.Len(t, abilityComponent.GetRoll().GetModifiers(), 1)
 	require.Equal(t, "Dexterity", abilityComponent.GetRoll().GetModifiers()[0].GetSource())
 	require.Equal(t, int32(4), abilityComponent.GetRoll().GetModifiers()[0].GetValue())
+	require.Equal(t, refs.Abilities.Dexterity().String(), abilityComponent.GetRoll().GetModifiers()[0].GetSourceRef(),
+		"the modifier names its provider (rpg-project#643 D)")
+	require.Equal(t, refs.Abilities.Dexterity().String(), abilityComponent.GetSourceRef(),
+		"the component names its provider (rpg-project#643 C)")
 
 	storedAfterBonus := storedSheetOf(t, h.charRepo, "alice")
 	require.NotNil(t, storedAfterBonus.ActionEconomy)
