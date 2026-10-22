@@ -28,6 +28,6 @@ func (h *Handler) GetKnowledge(ctx context.Context, req *sessionpb.GetKnowledgeR
 	return &sessionpb.GetKnowledgeResponse{
 		DiscoverySharing: out.DiscoverySharing,
 		Atlas:            AtlasToProto(&out.Atlas), View: viewToProto(&out.View), Where: whereToProto(&out.Where),
-		Roster: rosterToProto(&out.Roster), Holding: append([]string(nil), out.Holding...), Seq: out.Seq,
+		Roster: rosterToProto(&out.Roster), Holding: append([]string(nil), out.Holding...),
 	}, nil
 }

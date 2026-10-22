@@ -40,9 +40,9 @@ func TestDeathSave_MapsRequestAndResponseFieldForField(t *testing.T) {
 		Successes: 2, Failures: 1, SuccessesNeeded: 1, FailuresRemaining: 2,
 		Stabilized: false, Dead: false, Recovered: false, HPRestored: 0,
 		Continuation:   sdk.DeathSaveContinuationEndTurn,
-		PresentationID: "presentation_17", Seq: 41,
-		Saved:    sdk.SaveReport{Written: []string{"character", "encounter", "session"}},
-		Delivery: sdk.DeliveryReport{Events: 2, Failed: true},
+		PresentationID: "presentation_17",
+		Saved:          sdk.SaveReport{Written: []string{"character", "encounter", "session"}},
+		Delivery:       sdk.DeliveryReport{Failed: true},
 		Calculation: &sdk.RollCalculation{Total: 14, Components: []sdk.RollComponent{{
 			Source: sdk.RollSource{Ref: "dnd5e:saves:death", Name: "Death Save", SourceID: "char-1"},
 		}}},
@@ -68,9 +68,7 @@ func TestDeathSave_MapsRequestAndResponseFieldForField(t *testing.T) {
 	require.Zero(t, resp.GetHpRestored())
 	require.Equal(t, sessionpb.DeathSaveContinuation_DEATH_SAVE_CONTINUATION_END_TURN, resp.GetContinuation())
 	require.Equal(t, "presentation_17", resp.GetPresentationId())
-	require.Equal(t, uint64(41), resp.GetSeq(), "recipient-local sequence stays separate from the opaque token")
 	require.Equal(t, []string{"character", "encounter", "session"}, resp.GetSaved().GetWritten())
-	require.Equal(t, int32(2), resp.GetDelivery().GetEvents())
 	require.Equal(t, int32(14), resp.GetCalculation().GetTotal())
 	require.Equal(t, "char-1", resp.GetCalculation().GetComponents()[0].GetSource().GetSourceId())
 	require.True(t, resp.GetDelivery().GetFailed())

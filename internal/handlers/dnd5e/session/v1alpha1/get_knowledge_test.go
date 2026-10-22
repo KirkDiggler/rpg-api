@@ -31,13 +31,12 @@ func (s *KnowledgeHandlerSuite) SetupTest() {
 }
 func (s *KnowledgeHandlerSuite) TestSnapshotBindsIdentityAndCopiesTheProviderAnswers() {
 	s.manager.EXPECT().Knowledge(gomock.Any(), &sdk.KnowledgeInput{Session: "run", Member: "hero", Player: "alice"}).Return(&sdk.KnowledgeOutput{
-		Seq: 7, Holding: []string{"chest"}, Where: sdk.WhereOutput{Position: spatial.Position{X: 2, Y: 1}},
+		Holding: []string{"chest"}, Where: sdk.WhereOutput{Position: spatial.Position{X: 2, Y: 1}},
 		View: sdk.ViewOutput{Props: []sdk.PropSighting{{Prop: &sdk.AtlasProp{ID: "vase", At: spatial.Position{X: 9, Y: 2}}, ObservedEmpty: true, Status: "held"}},
 			Doors: []sdk.DoorSighting{{Door: sdk.Door{ID: "gate", State: "open"}, Status: "held"}}},
 	}, nil)
 	out, err := s.handler.GetKnowledge(s.ctx, &sessionpb.GetKnowledgeRequest{Session: "run", Member: "hero"})
 	s.Require().NoError(err)
-	s.Equal(uint64(7), out.Seq)
 	s.Equal([]string{"chest"}, out.Holding)
 	s.Equal(2.0, out.Where.Position.X)
 	s.Require().Len(out.View.Props, 1)

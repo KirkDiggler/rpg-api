@@ -30,7 +30,7 @@ func TestMove_HappyPath_TranslatesPath(t *testing.T) {
 		Session: "sess-1", Member: "char-1", DeclarationID: "decl-move-1",
 		Path: []spatial.Position{{X: 1, Y: 1}, {X: 2, Y: 1}},
 	}).Return(&sdk.MoveOutput{
-		Steps: []sdk.Step{{Position: spatial.Position{X: 1, Y: 1}, Seq: 1}, {Position: spatial.Position{X: 2, Y: 1}, Seq: 2}},
+		Steps: []sdk.Step{{Position: spatial.Position{X: 1, Y: 1}}, {Position: spatial.Position{X: 2, Y: 1}}},
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}

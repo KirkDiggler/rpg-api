@@ -557,7 +557,7 @@ func sightAreasToProto(areas []sdk.SightArea) []*sessionpb.SightArea {
 }
 
 func stepToProto(s sdk.Step) *sessionpb.Step {
-	return &sessionpb.Step{Position: positionToProto(s.Position), Seq: s.Seq}
+	return &sessionpb.Step{Position: positionToProto(s.Position)}
 }
 
 func stepsToProto(ss []sdk.Step) []*sessionpb.Step {
@@ -586,7 +586,6 @@ func formedToProto(f *sdk.Formed) *sessionpb.Formed {
 	return &sessionpb.Formed{
 		Order:     f.Order,
 		Surprised: f.Surprised,
-		Seq:       f.Seq,
 	}
 }
 
@@ -595,7 +594,7 @@ func saveReportToProto(r sdk.SaveReport) *sessionpb.SaveReport {
 }
 
 func deliveryReportToProto(r sdk.DeliveryReport) *sessionpb.DeliveryReport {
-	return &sessionpb.DeliveryReport{Events: int32(r.Events), Failed: r.Failed}
+	return &sessionpb.DeliveryReport{Failed: r.Failed}
 }
 
 func atlasBoundaryToProto(b sdk.AtlasBoundary) *sessionpb.AtlasBoundary {

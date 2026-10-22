@@ -146,25 +146,32 @@ func TestAcceptance_Stabilization(t *testing.T) {
 	}
 }
 
+// c1Stabilized is the stabilization a test expects an act to state.
+type c1Stabilized struct {
+	Target, SourceRef, SourceName string
+	Before, After                 sessionpb.LifeState
+	Progress                      *sessionpb.DeathSaveProgress
+}
+
 // c1WantStabilized is the stabilization Spare the Dying states for a patient
 // who was before.
-func c1WantStabilized(before sessionpb.LifeState) *sessionpb.Stabilized {
-	return &sessionpb.Stabilized{Target: "alice", SourceRef: refs.Spells.SpareTheDying().String(), SourceName: "Spare the Dying", Before: before, After: sessionpb.LifeState_LIFE_STATE_STABILIZED, Progress: &sessionpb.DeathSaveProgress{SuccessesNeeded: 3, FailuresRemaining: 3, Stabilized: true}}
+func c1WantStabilized(before sessionpb.LifeState) *c1Stabilized {
+	return &c1Stabilized{Target: "alice", SourceRef: refs.Spells.SpareTheDying().String(), SourceName: "Spare the Dying", Before: before, After: sessionpb.LifeState_LIFE_STATE_STABILIZED, Progress: &sessionpb.DeathSaveProgress{SuccessesNeeded: 3, FailuresRemaining: 3, Stabilized: true}}
 }
 
 // c1RequireStabilized fails unless the act's stabilized result states want.
-func c1RequireStabilized(t *testing.T, want *sessionpb.Stabilized, got *storypb.ActivationResult) {
+func c1RequireStabilized(t *testing.T, want *c1Stabilized, got *storypb.ActivationResult) {
 	t.Helper()
-	require.Equal(t, want.GetTarget(), got.GetTarget().GetId())
-	require.Equal(t, want.GetSourceRef(), got.GetRef())
-	require.Equal(t, want.GetSourceName(), got.GetName())
+	require.Equal(t, want.Target, got.GetTarget().GetId())
+	require.Equal(t, want.SourceRef, got.GetRef())
+	require.Equal(t, want.SourceName, got.GetName())
 	s := got.GetStabilization()
 	lifeState := func(state sessionpb.LifeState) string {
 		return strings.ToLower(strings.TrimPrefix(state.String(), "LIFE_STATE_"))
 	}
-	require.Equal(t, lifeState(want.GetBefore()), s.GetBefore())
-	require.Equal(t, lifeState(want.GetAfter()), s.GetAfter())
-	p := want.GetProgress()
+	require.Equal(t, lifeState(want.Before), s.GetBefore())
+	require.Equal(t, lifeState(want.After), s.GetAfter())
+	p := want.Progress
 	require.Equal(t, p.GetSuccesses(), s.GetSuccesses())
 	require.Equal(t, p.GetFailures(), s.GetFailures())
 	require.Equal(t, p.GetSuccessesNeeded(), s.GetSuccessesNeeded())

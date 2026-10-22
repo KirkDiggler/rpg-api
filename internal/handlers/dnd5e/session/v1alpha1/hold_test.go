@@ -59,7 +59,7 @@ func TestHold_HappyPath_RoutesVerbatimAndAcksOnly(t *testing.T) {
 		Session: "sess-1", Member: "char-alice", Target: "heirloom", Range: 1,
 	}).Return(&sdk.HoldOutput{
 		Saved:    sdk.SaveReport{Written: []string{"encounter"}},
-		Delivery: sdk.DeliveryReport{Events: 1},
+		Delivery: sdk.DeliveryReport{},
 	}, nil)
 
 	h := &Handler{
@@ -74,7 +74,7 @@ func TestHold_HappyPath_RoutesVerbatimAndAcksOnly(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{"encounter"}, resp.GetSaved().GetWritten())
-	require.Equal(t, int32(1), resp.GetDelivery().GetEvents())
+	require.False(t, resp.GetDelivery().GetFailed())
 }
 
 // TestHold_TheProbeLawSurvivesTranslation is the acceptance row this file
