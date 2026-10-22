@@ -17,6 +17,8 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
+	sessionrecord "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha2"
+	sessionaccess "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sessionaccess"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
@@ -358,6 +360,61 @@ func holdoutIsState(change storypb.StateKind) func(*storypb.Act) bool {
 // holdoutIsHold matches a hold act.
 func holdoutIsHold(a *storypb.Act) bool { return a.GetHold() != nil }
 
+// recordArrival is one ARRIVED beat as the record holds it.
+type recordArrival struct {
+	kind string
+	cell spatial.Position
+}
+
+// recordArrivals is every ARRIVED beat in the run's record, by placement id,
+// read through the real RecordService GetRecord. The record is unfiltered
+// (event-stream R35): an arrival nobody saw is on it, while only those who
+// saw it hold it on their act stream (rpg-project#631 E6).
+func (r *campRun) recordArrivals(t *testing.T) map[string]recordArrival {
+	t.Helper()
+	access, err := sessionaccess.New(r.h.charRepo, r.h.manager.Manager)
+	require.NoError(t, err)
+	records, err := sessionrecord.New(&sessionrecord.HandlerConfig{
+		Manager: r.h.manager.Manager, Broker: r.h.manager.RecordBroker, Gate: access,
+	})
+	require.NoError(t, err)
+	out := map[string]recordArrival{}
+	after := ""
+	for {
+		page, err := records.GetRecord(r.alice, &storypb.GetRecordRequest{Session: r.sess, Member: "alice", AfterId: after})
+		require.NoError(t, err)
+		for _, e := range page.GetEvents() {
+			if e.GetBeat() != tkencounter.BeatArrived {
+				continue
+			}
+			f := e.GetFields().GetFields()
+			cell := f["cell"].GetStructValue().GetFields()
+			out[f["id"].GetStringValue()] = recordArrival{
+				kind: f["kind"].GetStringValue(),
+				cell: spatial.Position{X: cell["x"].GetNumberValue(), Y: cell["y"].GetNumberValue()},
+			}
+			after = e.GetId()
+		}
+		if len(page.GetEvents()) > 0 {
+			after = page.GetEvents()[len(page.GetEvents())-1].GetId()
+		}
+		if !page.GetMore() {
+			return out
+		}
+	}
+}
+
+// sightedBy is every member alice's act stream says came into her sight.
+func sightedBy(story []*storypb.Act) map[string]bool {
+	out := map[string]bool{}
+	for _, a := range story {
+		for _, id := range a.GetPerception().GetSighted().GetGained() {
+			out[id] = true
+		}
+	}
+	return out
+}
+
 // arrivals is every ARRIVED clock mark in a story, by placement id.
 func arrivals(story []*storypb.Act) map[string]*storypb.Arrival {
 	out := map[string]*storypb.Arrival{}
@@ -524,22 +581,26 @@ func TestAcceptance_TheChiefsFallBringsTheReinforcements(t *testing.T) {
 	require.True(t, felled, "the chief's sheet is in the session under his authored id")
 	require.NoError(t, sessions.SaveSession(context.Background(), stored))
 
-	// Placed on the first verb after the fall is noticed.
-	for verbs := 0; verbs < 2 && len(arrivals(r.story(t))) < 3; verbs++ {
+	// Placed on the first verb after the fall is noticed. The ARRIVED beats
+	// are the record's: the gate is out of alice's sight from the yard, so
+	// her act stream holds none of them (rpg-project#631 E6, R35).
+	for verbs := 0; verbs < 2 && len(r.recordArrivals(t)) < 3; verbs++ {
 		r.endTurn(t)
 	}
-	came := arrivals(r.story(t))
+	came := r.recordArrivals(t)
 	require.Len(t, came, 3, "three reinforcements arrived, each with its own beat")
 	wantCells := map[spatial.Position]bool{}
 	for _, c := range arrivalCells {
 		wantCells[at(c[0], c[1])] = true
 	}
+	story := r.story(t)
 	for _, id := range []string{"reinforcement-1", "reinforcement-2", "reinforcement-3"} {
 		a, arrived := came[id]
 		require.True(t, arrived, "%s arrived", id)
-		require.Equal(t, "monster", a.GetKind())
-		require.True(t, wantCells[spatial.Position{X: a.GetCell().GetX(), Y: a.GetCell().GetY()}],
-			"%s stands where the author drew it, at the gate", id)
+		require.Equal(t, "monster", a.kind)
+		require.True(t, wantCells[a.cell], "%s stands where the author drew it, at the gate", id)
+		require.False(t, sightedBy(story)[id], "%s arrived out of alice's sight", id)
+		require.NotContains(t, arrivals(story), id, "so alice's act stream does not carry %s arriving", id)
 	}
 
 	factions := r.factions(t)
@@ -595,19 +656,23 @@ func TestAcceptance_TheChiefFelledByThePartyBringsTheReinforcements(t *testing.T
 	require.True(t, felled, "alice's own blow felled the chief")
 
 	// Inside that blow's record: three ARRIVED beats, as raiders, at the
-	// gate where the author drew them -- no further verb was needed.
-	came := arrivals(r.story(t))
+	// gate where the author drew them -- no further verb was needed. Alice
+	// is in the hut and the gate is out of her sight, so her act stream
+	// carries none of them (rpg-project#631 E6, R35).
+	came := r.recordArrivals(t)
 	require.Len(t, came, 3, "three reinforcements arrived in the same verb that felled the chief")
 	wantCells := map[spatial.Position]bool{}
 	for _, c := range arrivalCells {
 		wantCells[at(c[0], c[1])] = true
 	}
+	story := r.story(t)
 	for _, id := range []string{"reinforcement-1", "reinforcement-2", "reinforcement-3"} {
 		a, arrived := came[id]
 		require.True(t, arrived, "%s arrived", id)
-		require.Equal(t, "monster", a.GetKind())
-		require.True(t, wantCells[spatial.Position{X: a.GetCell().GetX(), Y: a.GetCell().GetY()}],
-			"%s stands where the author drew it", id)
+		require.Equal(t, "monster", a.kind)
+		require.True(t, wantCells[a.cell], "%s stands where the author drew it", id)
+		require.False(t, sightedBy(story)[id], "%s arrived out of alice's sight", id)
+		require.NotContains(t, arrivals(story), id, "so alice's act stream does not carry %s arriving", id)
 	}
 	factions := r.factions(t)
 	require.Len(t, factions, 6, "the roster grew by three")
