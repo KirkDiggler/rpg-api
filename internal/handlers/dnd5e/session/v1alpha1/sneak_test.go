@@ -68,7 +68,7 @@ func TestSetSneaking_ForwardsTheCallersOwnModeAndAnswersTheReports(t *testing.T)
 			Return(&sdk.SetSneakingOutput{
 				Sneaking: sneaking,
 				Saved:    sdk.SaveReport{Written: []string{"encounter"}, Failed: []string{"exploration"}},
-				Delivery: sdk.DeliveryReport{Failed: true},
+				Delivery: sdk.DeliveryReport{Failed: []string{sdk.DeliveryActs}},
 			}, nil)
 		h := &Handler{manager: mgr, characters: ownedBy(ctrl, map[string]string{"char-a": "alice"})}
 		ctx := auth.WithPlayerID(context.Background(), "alice")

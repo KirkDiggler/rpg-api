@@ -42,7 +42,7 @@ func TestDeathSave_MapsRequestAndResponseFieldForField(t *testing.T) {
 		Continuation:   sdk.DeathSaveContinuationEndTurn,
 		PresentationID: "presentation_17",
 		Saved:          sdk.SaveReport{Written: []string{"character", "encounter", "session"}},
-		Delivery:       sdk.DeliveryReport{Failed: true},
+		Delivery:       sdk.DeliveryReport{Failed: []string{sdk.DeliveryActs}},
 		Calculation: &sdk.RollCalculation{Total: 14, Components: []sdk.RollComponent{{
 			Source: sdk.RollSource{Ref: "dnd5e:saves:death", Name: "Death Save", SourceID: "char-1"},
 		}}},

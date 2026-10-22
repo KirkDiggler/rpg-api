@@ -622,8 +622,9 @@ func TestSaveReportToProto(t *testing.T) {
 }
 
 func TestDeliveryReportToProto(t *testing.T) {
-	got := deliveryReportToProto(sdk.DeliveryReport{Failed: true})
+	got := deliveryReportToProto(sdk.DeliveryReport{Failed: []string{sdk.DeliveryActs}})
 	require.True(t, got.GetFailed())
+	require.False(t, deliveryReportToProto(sdk.DeliveryReport{}).GetFailed(), "both streams landed")
 }
 
 // A CALCULATION IS OPTIONAL AND ITS ABSENCE IS THE ANSWER; a trace, a

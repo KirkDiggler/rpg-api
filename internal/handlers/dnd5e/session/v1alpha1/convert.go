@@ -593,8 +593,11 @@ func saveReportToProto(r sdk.SaveReport) *sessionpb.SaveReport {
 	return &sessionpb.SaveReport{Written: r.Written, Failed: r.Failed}
 }
 
+// deliveryReportToProto reports whether any stream refused the batch. The SDK
+// names the refusing streams; the v1 wire carries one bool until a protos
+// change carries the names (rpg-project#652).
 func deliveryReportToProto(r sdk.DeliveryReport) *sessionpb.DeliveryReport {
-	return &sessionpb.DeliveryReport{Failed: r.Failed}
+	return &sessionpb.DeliveryReport{Failed: len(r.Failed) > 0}
 }
 
 func atlasBoundaryToProto(b sdk.AtlasBoundary) *sessionpb.AtlasBoundary {
