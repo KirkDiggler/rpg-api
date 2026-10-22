@@ -43,6 +43,15 @@ import (
 // four rows north. Cells go from 1563 to 1447, structural walls from 19 to
 // 23, doors from 5 to 6, placed from 51 to 62, props from 3 to 4 and
 // regions from 6 to 7, and the cells block takes the id room-1-region.
+// It was recaptured for the QA castle (rpg-project#639): the corner wall off
+// the gate wall is its one change, a twenty-fourth structural wall and its
+// wall prop and span in placed (62 to 64). The stranger, the patrols and the
+// far room's new arrival are not in an atlas. It was recaptured again for
+// the operator's outside start (rpg-project#654): his open ground round the
+// gatehouse takes the cells from 1447 to 1586, its doorway in the
+// gatehouse's south wall is a seventh structural door with its wall prop and
+// span in placed (64 to 66), the outside is an eighth region, and the six
+// cells his ground paints under the gatehouse's side walls answer as sealed.
 func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBeforeTheWave() {
 	files, err := filepath.Glob(filepath.Join(dungeonstest.ContentDir(s.T()), "*.yaml"))
 	s.Require().NoError(err)
