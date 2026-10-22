@@ -9,6 +9,7 @@ import (
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells"
@@ -59,10 +60,9 @@ func (s *DivineFavorSuite) TestNativeWarGrantPaymentReloadDamageAndReplay() {
 				s.Zero(attacked.GetDamage())
 			} else {
 				s.Positive(attacked.GetDamage())
-				// The attack act's damage part does not yet carry the Divine Favor
-				// source ref or name (convert_act's damageRollToProto drops a traced
-				// component's Roll.Source; reported on rpg-project#631), so the part
-				// is found by the one radiant source in this scene.
+				// The Divine Favor part is the one radiant source in this scene, and
+				// it names the spell, on the component and on its dice
+				// (rpg-project#643 A, C).
 				var extra *storypb.DamageComponent
 				for _, act := range storyOf(ctx, t, h.story, castSessionID, id) {
 					if act.GetAttack().GetOutcome() != storypb.AttackOutcome_ATTACK_OUTCOME_HIT {
@@ -77,6 +77,10 @@ func (s *DivineFavorSuite) TestNativeWarGrantPaymentReloadDamageAndReplay() {
 				}
 				s.Require().NotNil(extra, "weapon strike must expose the Divine Favor component in persisted Story")
 				s.Equal("spell", extra.GetSource())
+				s.Equal(refs.Spells.DivineFavor().String(), extra.GetSourceRef())
+				s.Require().Len(extra.GetRoll().GetTerms(), 1)
+				s.Equal(refs.Spells.DivineFavor().String(), extra.GetRoll().GetTerms()[0].GetSourceRef())
+				s.Equal("Divine Favor", extra.GetRoll().GetTerms()[0].GetSourceName())
 				count := 1
 				if roll == 20 {
 					count = 2

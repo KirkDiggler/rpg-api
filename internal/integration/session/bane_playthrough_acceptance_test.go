@@ -237,6 +237,7 @@ func TestAcceptance_BaneCreationCastPaymentAndAffectedRoll(t *testing.T) {
 	story := storyOf(bardCtx, t, h.story, "bane-playthrough", bardID)
 	var castAct *storypb.CastAct
 	var baned *storypb.ActivationResult
+	var banedBy *storypb.ActivateAct
 	for _, act := range story {
 		if cast := act.GetCast(); cast != nil && cast.GetSpell().GetRef() == baneSpellRef {
 			castAct = cast
@@ -244,10 +245,15 @@ func TestAcceptance_BaneCreationCastPaymentAndAffectedRoll(t *testing.T) {
 		for _, result := range act.GetActivate().GetResults() {
 			if result.GetKind() == "condition-applied" && result.GetRef() == refs.Conditions.Baned().String() {
 				baned = result
+				banedBy = act.GetActivate()
 			}
 		}
 	}
 	require.NotNil(t, castAct, "the cast reaches the story as a cast act:\n%s", storyEventsJSON(story))
+	// The act that applies Baned names what applied it (rpg-project#643 F).
+	require.NotNil(t, banedBy, "Baned is applied by an activate act:\n%s", storyEventsJSON(story))
+	require.Equal(t, baneSpellRef, banedBy.GetAbility().GetRef())
+	require.Equal(t, "Bane", banedBy.GetAbility().GetName())
 	require.Equal(t, bardID, castAct.GetBy().GetId())
 	require.Len(t, castAct.GetTargets(), 1)
 	require.Equal(t, "fighter", castAct.GetTargets()[0].GetId())

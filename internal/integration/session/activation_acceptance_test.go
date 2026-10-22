@@ -377,6 +377,8 @@ func requireSecondWindActivationActs(t *testing.T, acts []*storypb.Act) {
 	level := roll.GetModifiers()[0]
 	require.Equal(t, "Fighter", level.GetSource())
 	require.Equal(t, int32(1), level.GetValue())
+	require.Equal(t, "dnd5e:classes:fighter", level.GetSourceRef(), "the modifier names its provider (rpg-project#643 D)")
+	require.Equal(t, "Fighter level", level.GetSourceLabel())
 }
 
 // Second Wind heals its own fighter and emits the ordered acknowledgement and

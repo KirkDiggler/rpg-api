@@ -90,11 +90,10 @@ func greatWeaponFighter(t *testing.T, id, playerID string) *tkcharacter.Data {
 }
 
 // requireGreatWeaponFightingAct asserts every fact of the GWF swing the act
-// stream states. The v1 Struck beat's damage trace also carried the original
-// faces, the reroll (die 0, 1 -> 4, sourced to Great Weapon Fighting), and each
-// component's provider ref; the attack act's damage roll carries only the
-// faces that counted and the modifier's source name (rpg-project#631 c1
-// report), so those facts are not asserted here.
+// stream states, as the v1 Struck beat's trace stated it: the faces that
+// counted, the pool as first rolled, the reroll (die 0, 1 -> 4, sourced to
+// Great Weapon Fighting) and each component's provider ref
+// (rpg-project#643 A, B, C).
 func requireGreatWeaponFightingAct(t *testing.T, act *storypb.Act) {
 	t.Helper()
 	require.Equal(t, storypb.Family_FAMILY_ACT, act.GetFamily())
@@ -119,6 +118,20 @@ func requireGreatWeaponFightingAct(t *testing.T, act *storypb.Act) {
 		"the faces that counted: Great Weapon Fighting's 4 replaced die 0's 1")
 	require.Equal(t, int32(9), weapon.GetRoll().GetTotal())
 	require.Empty(t, weapon.GetRoll().GetModifiers(), "the weapon die carries no flat part")
+	require.Equal(t, "dnd5e:weapons:greatsword", weapon.GetSourceRef())
+	require.Len(t, weapon.GetRoll().GetTerms(), 1)
+	pool := weapon.GetRoll().GetTerms()[0]
+	require.Equal(t, "dnd5e:weapons:greatsword", pool.GetSourceRef())
+	require.Equal(t, "Greatsword", pool.GetSourceName())
+	require.Equal(t, []int32{1, 5}, pool.GetRolled(), "the pool as first rolled")
+	require.Equal(t, []int32{4, 5}, pool.GetFaces())
+	require.Len(t, pool.GetRerolls(), 1)
+	reroll := pool.GetRerolls()[0]
+	require.Equal(t, int32(0), reroll.GetDieIndex())
+	require.Equal(t, int32(1), reroll.GetBefore())
+	require.Equal(t, int32(4), reroll.GetAfter())
+	require.Equal(t, refs.Conditions.FightingStyleGreatWeaponFighting().String(), reroll.GetSourceRef())
+	require.Equal(t, "Great Weapon Fighting", reroll.GetSourceName())
 
 	ability := attack.GetDamageComponents()[1]
 	require.Equal(t, "ability", ability.GetSource())
@@ -127,6 +140,8 @@ func requireGreatWeaponFightingAct(t *testing.T, act *storypb.Act) {
 	require.Empty(t, ability.GetRoll().GetDice())
 	require.Len(t, ability.GetRoll().GetModifiers(), 1)
 	require.Equal(t, "Strength", ability.GetRoll().GetModifiers()[0].GetSource())
+	require.Equal(t, refs.Abilities.Strength().String(), ability.GetRoll().GetModifiers()[0].GetSourceRef())
+	require.Equal(t, refs.Abilities.Strength().String(), ability.GetSourceRef())
 	require.Equal(t, int32(3), ability.GetRoll().GetModifiers()[0].GetValue())
 	require.Equal(t, int32(3), ability.GetRoll().GetTotal())
 }

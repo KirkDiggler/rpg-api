@@ -240,9 +240,8 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 	require.NoError(t, err)
 
 	// The crossing the reveal carried under the door is the crossing a refetch
-	// serves for that door, end for end. (The act's nested doorway does not
-	// carry its door's id, which the v1 beat's `connection` did: a gap in
-	// the act stream (rpg-project#631), deliberately not asserted here.)
+	// serves for that door, end for end, and the act's nested doorway names
+	// its door as the v1 beat's `connection` did (rpg-project#643 E).
 	var atlasCrossings []string
 	for _, d := range after.GetDoorways() {
 		if d.GetConnection() == "concealed-vault/vault-door" {
@@ -252,6 +251,11 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 	require.NotEmpty(t, atlasCrossings, "the refetched atlas serves the vault door's crossing")
 	require.Equal(t, atlasCrossings, revealedCrossingsOf(revealed.GetDoors()),
 		"the reveal's crossing is the atlas's crossing")
+	for _, door := range revealed.GetDoors() {
+		for _, doorway := range door.GetDoorways() {
+			require.Equal(t, "concealed-vault/vault-door", doorway.GetDoor(), "the revealed doorway names its door")
+		}
+	}
 
 	// The room is hers now, cell for cell.
 	afterOwned := make(cellSet)
