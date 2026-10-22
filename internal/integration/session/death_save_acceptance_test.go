@@ -2,7 +2,6 @@ package session_test
 
 import (
 	"context"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -274,12 +273,9 @@ func assertOrdinarySuccessResponse(t *testing.T, s *deathSaveScene, response *se
 	require.Zero(t, response.GetHpRestored())
 	require.Equal(t, sessionpb.DeathSaveContinuation_DEATH_SAVE_CONTINUATION_END_TURN, response.GetContinuation())
 	require.Equal(t, "presentation_1", response.GetPresentationId())
-	require.Positive(t, response.GetSeq())
-	require.NotEqual(t, strconv.FormatUint(response.GetSeq(), 10), response.GetPresentationId(),
-		"opaque token remains separate from numeric authority")
-	require.Equal(t, []string{"character:" + s.actor, "encounter:" + s.session, "session:" + s.session}, response.GetSaved().GetWritten())
+	require.Equal(t, []string{"character:" + s.actor, "encounter:" + s.session}, response.GetSaved().GetWritten())
 	require.Empty(t, response.GetSaved().GetFailed())
-	require.Equal(t, int32(8), response.GetDelivery().GetEvents(), "Death Save and Down reach the roster; two witnesses also receive refreshed sight testimony")
+	require.False(t, response.GetDelivery().GetFailed(), "the acts reached the stream")
 	require.False(t, response.GetDelivery().GetFailed())
 }
 

@@ -68,7 +68,7 @@ func TestSetSneaking_ForwardsTheCallersOwnModeAndAnswersTheReports(t *testing.T)
 			Return(&sdk.SetSneakingOutput{
 				Sneaking: sneaking,
 				Saved:    sdk.SaveReport{Written: []string{"encounter"}, Failed: []string{"exploration"}},
-				Delivery: sdk.DeliveryReport{Events: 2, Failed: true},
+				Delivery: sdk.DeliveryReport{Failed: []string{sdk.DeliveryActs}},
 			}, nil)
 		h := &Handler{manager: mgr, characters: ownedBy(ctrl, map[string]string{"char-a": "alice"})}
 		ctx := auth.WithPlayerID(context.Background(), "alice")
@@ -78,7 +78,6 @@ func TestSetSneaking_ForwardsTheCallersOwnModeAndAnswersTheReports(t *testing.T)
 		require.Equal(t, sneaking, resp.GetSneaking())
 		require.Equal(t, []string{"encounter"}, resp.GetSaved().GetWritten())
 		require.Equal(t, []string{"exploration"}, resp.GetSaved().GetFailed())
-		require.Equal(t, int32(2), resp.GetDelivery().GetEvents())
 		require.True(t, resp.GetDelivery().GetFailed())
 	}
 }

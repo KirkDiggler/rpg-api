@@ -32,7 +32,6 @@ func (h *Handler) Exit(ctx context.Context, req *sessionpb.ExitRequest) (*sessio
 	return &sessionpb.ExitResponse{
 		Outcome:  memberOutcomeToProto(out.Outcome),
 		Carry:    carry,
-		Seq:      out.Seq,
 		Closed:   outcomeToProto(out.Closed),
 		Saved:    saveReportToProto(out.Saved),
 		Delivery: deliveryReportToProto(out.Delivery),

@@ -39,7 +39,6 @@ type Manager interface {
 	Dissolve(ctx context.Context, in *sdk.DissolveInput) (*sdk.DissolveOutput, error)
 	End(ctx context.Context, in *sdk.EndInput) (*sdk.EndOutput, error)
 	Status(ctx context.Context, in *sdk.StatusInput) (*sdk.Status, error)
-	Story(ctx context.Context, in *sdk.StoryInput) ([]sdk.Event, error)
 	View(ctx context.Context, in *sdk.ViewInput) (*sdk.ViewOutput, error)
 	Knowledge(ctx context.Context, in *sdk.KnowledgeInput) (*sdk.KnowledgeOutput, error)
 	Areas(ctx context.Context, in *sdk.ViewInput) ([]sdk.SightArea, error)

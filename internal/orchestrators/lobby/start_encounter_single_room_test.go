@@ -361,23 +361,27 @@ func (s *SessionStackSuite) TestStartEncounter_TheGarrisonIsOnTheBoardBeforeTheP
 	})
 	s.Require().NoError(err)
 
-	story, err := s.sessOrch.Manager.Story(s.ctx, &sdk.StoryInput{Session: out.EncounterID, Member: "char-alice"})
+	story, err := s.sessOrch.Manager.Acts(s.ctx, &sdk.ActsInput{Session: out.EncounterID, Member: "char-alice"})
 	s.Require().NoError(err)
 
-	fights := make([]sdk.FightStartedBody, 0, 1)
-	for _, event := range story {
-		if event.Kind != sdk.EventFightStarted {
+	var fights [][]string
+	for _, act := range story.Acts {
+		entry, ok := act.Body.(sdk.ClockEntry)
+		if !ok || entry.Mark != sdk.ClockFightFormed {
 			continue
 		}
-		body, ok := event.Body.(sdk.FightStartedBody)
-		s.Require().Truef(ok, "a fight_started event carries a FightStartedBody, got %T", event.Body)
-		fights = append(fights, body)
+		s.Require().NotNil(entry.Fight, "a fight_formed clock entry carries its fight")
+		members := make([]string, 0, len(entry.Fight.Order))
+		for _, p := range entry.Fight.Order {
+			members = append(members, p.ID)
+		}
+		fights = append(fights, members)
 	}
 
 	// The workshop room seats the party two hexes from its garrison in plain
 	// sight, so a fight is certain -- which is what makes this room the one
 	// that catches the ordering at all.
 	s.Require().Len(fights, 1, "the launch forms exactly one fight, not one per monster placed")
-	s.ElementsMatch([]string{"char-alice", "skeleton-a", "skeleton-b"}, fights[0].Members,
+	s.ElementsMatch([]string{"char-alice", "skeleton-a", "skeleton-b"}, fights[0],
 		"every member of the run rolled initiative in it -- no monster was placed after the fight had already started")
 }

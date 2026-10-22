@@ -539,11 +539,11 @@ func TestAcceptance_TheLetterCarriedToTheChiefTurnsTheCamp(t *testing.T) {
 	// Every recipient hears the stance turn, monsters included (design §6).
 	// The chief's story is read through the Manager: no player owns a
 	// monster's view.
-	chiefsStory, err := r.h.manager.Manager.Story(context.Background(), &sdk.StoryInput{Session: r.sess, Member: "chief"})
+	chiefsStory, err := r.h.manager.Manager.Acts(context.Background(), &sdk.ActsInput{Session: r.sess, Member: "chief"})
 	require.NoError(t, err)
 	chiefHeard := false
-	for _, e := range chiefsStory {
-		if e.Kind == sdk.EventStanceChanged {
+	for _, a := range chiefsStory.Acts {
+		if change, ok := a.Body.(sdk.StateChange); ok && change.Stance != nil {
 			chiefHeard = true
 		}
 	}

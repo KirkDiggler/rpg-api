@@ -164,15 +164,10 @@ func New(cfg Config) (*Orchestrator, error) {
 		Encounters:        NewEncounterRepository(cfg.Redis, cfg.TTL),
 		Characters:        NewCharacterRepository(cfg.Characters),
 		Seats:             NewSeatRepository(cfg.Redis),
-		// THE V1 EVENT STREAM IS GONE (rpg-project#631, E5c c1): no RPC
-		// serves it, so its beats go nowhere. The SDK still requires an
-		// EventStream until the session module deletes Config.Events (c4),
-		// and this line goes with it (c5).
-		Events:     sdk.DiscardEvents{},
-		Record:     recordBroker,
-		Acts:       actBroker,
-		Dice:       roller,
-		TurnDriver: driverForSDK,
+		Record:            recordBroker,
+		Acts:              actBroker,
+		Dice:              roller,
+		TurnDriver:        driverForSDK,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("construct session manager: %w", err)

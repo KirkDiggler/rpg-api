@@ -39,7 +39,6 @@ func (h *Handler) Interact(ctx context.Context, req *sessionpb.InteractRequest) 
 
 	return &sessionpb.InteractResponse{
 		Descriptor_: descriptor,
-		Seq:         out.Seq,
 		Saved:       saveReportToProto(out.Saved),
 		Delivery:    deliveryReportToProto(out.Delivery),
 	}, nil

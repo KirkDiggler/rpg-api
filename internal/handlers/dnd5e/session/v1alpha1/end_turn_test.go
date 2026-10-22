@@ -28,7 +28,7 @@ func TestEndTurn_HappyPath(t *testing.T) {
 	mgr.EXPECT().EndTurn(gomock.Any(), &sdk.EndTurnInput{
 		Session: "sess-1", Member: "char-1", DeclarationID: "decl-end-1",
 	}).Return(&sdk.EndTurnOutput{
-		Next: "goblin-1", RoundWrapped: true, Seq: 6,
+		Next: "goblin-1", RoundWrapped: true,
 	}, nil)
 
 	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}

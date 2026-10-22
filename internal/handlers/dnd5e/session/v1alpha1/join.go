@@ -29,7 +29,6 @@ func (h *Handler) Join(ctx context.Context, req *sessionpb.JoinRequest) (*sessio
 		Member:     memberToProto(out.Member),
 		Character:  characterStateToProto(out.Character),
 		Discovered: discoveriesToProto(out.Discovered),
-		Seq:        out.Seq,
 		Outcome:    outcomeToProto(out.Outcome),
 		Formed:     formedToProto(out.Formed),
 		Saved:      saveReportToProto(out.Saved),

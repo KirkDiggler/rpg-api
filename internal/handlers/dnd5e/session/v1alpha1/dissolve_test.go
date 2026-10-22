@@ -30,7 +30,7 @@ func TestDissolve_HappyPath(t *testing.T) {
 			require.Equal(t, "sess-1", in.Session)
 			require.Equal(t, "char-1", in.Member)
 			require.Equal(t, sdk.DissolveByDecision, in.Cause.Kind())
-			return &sdk.DissolveOutput{Members: []string{"char-1", "goblin-1"}, Cause: sdk.DissolveByDecision, Seq: 11}, nil
+			return &sdk.DissolveOutput{Members: []string{"char-1", "goblin-1"}, Cause: sdk.DissolveByDecision}, nil
 		},
 	)
 
