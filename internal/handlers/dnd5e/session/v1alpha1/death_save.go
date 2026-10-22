@@ -56,7 +56,6 @@ func (h *Handler) DeathSave(
 		HpRestored:        int32(out.HPRestored),
 		Continuation:      deathSaveContinuationToProto(out.Continuation),
 		PresentationId:    out.PresentationID,
-		Seq:               out.Seq,
 		Saved:             saveReportToProto(out.Saved),
 		Delivery:          deliveryReportToProto(out.Delivery),
 		Calculation:       calculation,

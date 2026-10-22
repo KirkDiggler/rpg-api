@@ -458,11 +458,10 @@ func TestFormedToProto_Nil(t *testing.T) {
 }
 
 func TestFormedToProto_Populated(t *testing.T) {
-	f := &sdk.Formed{Order: []string{"alice", "goblin"}, Surprised: []string{"goblin"}, Seq: 7}
+	f := &sdk.Formed{Order: []string{"alice", "goblin"}, Surprised: []string{"goblin"}}
 	got := formedToProto(f)
 	require.Equal(t, []string{"alice", "goblin"}, got.GetOrder())
 	require.Equal(t, []string{"goblin"}, got.GetSurprised())
-	require.Equal(t, uint64(7), got.GetSeq())
 }
 
 func TestAtlasToProto_Nil(t *testing.T) {
@@ -623,9 +622,9 @@ func TestSaveReportToProto(t *testing.T) {
 }
 
 func TestDeliveryReportToProto(t *testing.T) {
-	got := deliveryReportToProto(sdk.DeliveryReport{Events: 3, Failed: true})
-	require.Equal(t, int32(3), got.GetEvents())
+	got := deliveryReportToProto(sdk.DeliveryReport{Failed: []string{sdk.DeliveryActs}})
 	require.True(t, got.GetFailed())
+	require.False(t, deliveryReportToProto(sdk.DeliveryReport{}).GetFailed(), "both streams landed")
 }
 
 // A CALCULATION IS OPTIONAL AND ITS ABSENCE IS THE ANSWER; a trace, a
@@ -646,34 +645,6 @@ func TestRollTraceConverters_NilHandling(t *testing.T) {
 	calculation, err := rollCalculationToProto(nil)
 	require.NoError(t, err)
 	require.Nil(t, calculation, "a body that recorded no arithmetic leaves the wire field unset")
-}
-
-// d20WithKeep is one settled d20 pool carrying a keep record, the shape every
-// scene below is about. The faces are the argument: a rule that kept one of
-// two is the whole reason the record exists.
-func d20WithKeep(faces []int, kept []int, keep *sdk.DiceKeep) *sdk.RollCalculation {
-	subtotal := 0
-	for _, index := range kept {
-		subtotal = faces[index]
-	}
-	if len(kept) == 0 {
-		subtotal = faces[0]
-	}
-	notation := "1d20"
-	if len(faces) > 1 {
-		notation = "2d20"
-	}
-	return &sdk.RollCalculation{
-		Total: subtotal,
-		Components: []sdk.RollComponent{{
-			Source: sdk.RollSource{Ref: "dnd5e:skills:intimidation", Name: "Intimidation", SourceID: "char-1"},
-			Dice: &sdk.DiceTrace{
-				Notation: notation, DieSize: 20,
-				OriginalRolls: faces, FinalRolls: faces, KeptIndices: kept,
-				Subtotal: subtotal, Keep: keep,
-			},
-		}},
-	}
 }
 
 // THE KEEP RECORD IS WHY A FACE COUNTED, and every field of it crosses: the
@@ -850,75 +821,9 @@ func TestRollCalculationToProto_FieldForFieldOrderPresenceAndIsolation(t *testin
 	require.Zero(t, *in.Components[0].Modifier, "the proto owns its optional scalar")
 }
 
-func richStruckEvent() sdk.Event {
-	immunity := 0.0
-	return sdk.Event{
-		Kind: sdk.EventStruck,
-		Body: sdk.StruckBody{
-			Attacker: "char-1", Target: "goblin-1", Roll: 18, Total: 21, Against: 13, Damage: 6,
-			Attack:   sdk.AttackRef{Ref: "dnd5e:weapons:longsword", Name: "Longsword", DamageType: sdk.DamageSlashing},
-			Critical: true,
-			// Roll-shaped facts live in Roll since session/v0.50.0
-			// (toolkit#1470); the scalars beside it are a legacy READ path a
-			// newly produced body never fills, so a fixture that used them
-			// would be testing a decode of old storage rather than the
-			// conversion this file is about.
-			DamageComponents: []sdk.DamageComponent{
-				{
-					Source: "weapon",
-					Roll: sdk.RollComponent{
-						Source: sdk.RollSource{Ref: "dnd5e:weapons:longsword", Name: "Longsword"},
-						Dice: &sdk.DiceTrace{
-							Notation: "1d8", DieSize: 8,
-							OriginalRolls: []int{4}, FinalRolls: []int{4}, Subtotal: 4,
-						},
-					},
-					DamageType: sdk.DamageSlashing,
-				},
-				{
-					Source: "monster_trait",
-					Roll: sdk.RollComponent{
-						Source: sdk.RollSource{Ref: "dnd5e:monster_traits:immunity", Name: "Immunity"},
-					},
-					DamageType: sdk.DamageSlashing, Multiplier: &immunity,
-				},
-			},
-			// THE ATTRIBUTION IS ON THE D20 IT DECIDED (rpg-project#462, R1).
-			// The body's parallel AdvantageSources/DisadvantageSources are
-			// gone from the SDK; the rules that met over this swing ride the
-			// first component's own keep record, naming both the rule and the
-			// entity that brought it. Hidden granted and Dodging imposed, so
-			// the pool was rolled straight and the record says why -- the one
-			// case the older lists could not represent at all.
-			Calculation: &sdk.RollCalculation{
-				Total: 21,
-				Components: []sdk.RollComponent{{
-					Source: sdk.RollSource{
-						Ref: "dnd5e:weapons:longsword", Name: "Longsword", SourceID: "char-1",
-					},
-					Dice: &sdk.DiceTrace{
-						Notation: "1d20", DieSize: 20,
-						OriginalRolls: []int{18}, FinalRolls: []int{18}, Subtotal: 18,
-						Keep: &sdk.DiceKeep{
-							Rule: sdk.KeepCancelled,
-							Granted: []sdk.RollSource{{
-								Ref: "dnd5e:conditions:hidden", Name: "Hidden", SourceID: "char-1",
-							}},
-							Imposed: []sdk.RollSource{{
-								Ref: "dnd5e:conditions:dodging", Name: "Dodging", SourceID: "goblin-1",
-							}},
-						},
-					},
-				}},
-			},
-		},
-	}
-}
-
 func TestStepsToProto(t *testing.T) {
-	got := stepsToProto([]sdk.Step{{Position: spatial.Position{X: 1, Y: 1}, Seq: 5}})
+	got := stepsToProto([]sdk.Step{{Position: spatial.Position{X: 1, Y: 1}}})
 	require.Len(t, got, 1)
-	require.Equal(t, uint64(5), got[0].GetSeq())
 	require.Equal(t, 1.0, got[0].GetPosition().GetX())
 }
 
@@ -1570,28 +1475,6 @@ func mustDeclarationsToProto(t *testing.T, ds []sdk.Declaration) []*sessionpb.De
 	require.NoError(t, err, "this scene pins a projection, not a refusal")
 	return out
 }
-
-// projected maps a wire list through one fact about each element, so a test
-// can assert a repeated field by what it carries -- ids, coordinates -- in one
-// comparison that pins CONTENT AND ORDER together. Asserting a length beside
-// the elements would be a second, weaker statement of the same thing, and the
-// kind that gets bumped rather than read when the list changes.
-func projected[T any, R any](in []T, fact func(T) R) []R {
-	out := make([]R, len(in))
-	for i, v := range in {
-		out[i] = fact(v)
-	}
-	return out
-}
-
-// wireXY and wireQR read one wire point as a comparable pair. Position is
-// dungeon-absolute cell space; AxialPoint is the fractional axial frame a wall
-// segment's ends live in. They are deliberately separate: the two frames are
-// not interchangeable and a test that mixed them would compare a cell against
-// a wall corner.
-func wireXY(p *sessionpb.Position) [2]float64 { return [2]float64{p.GetX(), p.GetY()} }
-
-func wireQR(p *sessionpb.AxialPoint) [2]float64 { return [2]float64{p.GetQ(), p.GetR()} }
 
 // TestAtlasToProto_APlacedFootprintCrossesTheSeamWhole is the wire half of
 // rpg-api-protos#351: every field of one placement reaches GetAtlasResponse,

@@ -70,9 +70,8 @@ func TestSpeak_HappyPath_ReturnsTheAckAndNotTheRoll(t *testing.T) {
 		Total:    13,
 		DC:       10,
 		Target:   "front-goblin",
-		Seq:      7,
 		Saved:    sdk.SaveReport{Written: []string{"encounter"}},
-		Delivery: sdk.DeliveryReport{Events: 2},
+		Delivery: sdk.DeliveryReport{},
 	}, nil)
 
 	h := &Handler{
@@ -87,8 +86,7 @@ func TestSpeak_HappyPath_ReturnsTheAckAndNotTheRoll(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{"encounter"}, resp.GetSaved().GetWritten())
-	require.Equal(t, int32(2), resp.GetDelivery().GetEvents(),
-		"the check beat and the creature's answer are two events, and the report counts both")
+	require.False(t, resp.GetDelivery().GetFailed())
 	require.False(t, resp.GetPaused(), "a settled attempt is not a question")
 	require.Nil(t, resp.Roll, "the settled roll rides the beat, not the response")
 }
@@ -124,7 +122,7 @@ func TestSpeak_BeatenAndMissed_AnswerIdentically(t *testing.T) {
 	}
 
 	ack := sdk.SaveReport{Written: []string{"encounter"}}
-	delivered := sdk.DeliveryReport{Events: 2}
+	delivered := sdk.DeliveryReport{}
 
 	beaten := respond(t, &sdk.SpeakOutput{
 		Beaten: true, Total: 13, DC: 10, Target: "front-goblin", Saved: ack, Delivery: delivered,
@@ -136,7 +134,7 @@ func TestSpeak_BeatenAndMissed_AnswerIdentically(t *testing.T) {
 	require.Equal(t, beaten.GetPaused(), missed.GetPaused())
 	require.Equal(t, beaten.Roll, missed.Roll)
 	require.Equal(t, beaten.GetSaved().GetWritten(), missed.GetSaved().GetWritten())
-	require.Equal(t, beaten.GetDelivery().GetEvents(), missed.GetDelivery().GetEvents())
+	require.Equal(t, beaten.GetDelivery().GetFailed(), missed.GetDelivery().GetFailed())
 }
 
 // TestSpeak_Paused_CarriesTheRollAndNothingElse pins the offer window: the
@@ -154,7 +152,7 @@ func TestSpeak_Paused_CarriesTheRollAndNothingElse(t *testing.T) {
 		Roll:     &roll,
 		Target:   "front-goblin",
 		Saved:    sdk.SaveReport{Written: []string{"encounter"}},
-		Delivery: sdk.DeliveryReport{Events: 1},
+		Delivery: sdk.DeliveryReport{},
 	}, nil)
 
 	h := &Handler{

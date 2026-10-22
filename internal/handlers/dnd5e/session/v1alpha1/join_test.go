@@ -34,7 +34,6 @@ func TestJoin_HappyPath_TranslatesRequestAndResponse(t *testing.T) {
 	}).Return(&sdk.JoinOutput{
 		Member:    sdk.Member{ID: "char-1", Kind: sdk.KindPlayer, Position: spatial.Position{X: 1, Y: 2}},
 		Character: &sdk.CharacterState{ID: "char-1", Name: "Alice"},
-		Seq:       5,
 		Saved:     sdk.SaveReport{Written: []string{"encounter"}},
 	}, nil)
 
@@ -48,7 +47,6 @@ func TestJoin_HappyPath_TranslatesRequestAndResponse(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "char-1", resp.GetMember().GetId())
 	require.Equal(t, "Alice", resp.GetCharacter().GetName())
-	require.Equal(t, uint64(5), resp.GetSeq())
 }
 
 func TestJoin_ManagerError_TranslatesViaErrorTable(t *testing.T) {

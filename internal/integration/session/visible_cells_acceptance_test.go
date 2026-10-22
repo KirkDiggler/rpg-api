@@ -110,7 +110,7 @@ func (s *StructuralPatchAcceptanceSuite) TestOpeningAGateStreamsEachLearnerItsOw
 			}
 		}
 		s.Require().Len(reveals, 1, "%s: one learning moment, one CELLS perception", member)
-		var got []*sessionpb.Position
+		got := make([]*sessionpb.Position, 0, len(want))
 		for _, region := range reveals[0].Regions {
 			s.NotEmpty(region.Id, "%s: a partial region still names the region it unions into", member)
 			got = append(got, v1Cells(region.Cells)...)
