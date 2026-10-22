@@ -132,7 +132,7 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysCompleteSingleRoom() {
 	// And the real GetAtlas handler serves the same key on the wire —
 	// AtlasToProto's one carriage, exercised end to end.
 	handler, err := sessionv1alpha1.New(&sessionv1alpha1.HandlerConfig{
-		Manager: s.sessOrch.Manager, Broker: s.sessOrch.Broker, Characters: s.charRepo,
+		Manager: s.sessOrch.Manager, Characters: s.charRepo,
 	})
 	s.Require().NoError(err)
 	resp, err := handler.GetAtlas(auth.WithPlayerID(s.ctx, "alice"),

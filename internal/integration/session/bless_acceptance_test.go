@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
@@ -19,6 +18,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/spells"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	sessionhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -49,8 +49,9 @@ func reopenClericHost(t *testing.T, h *acceptanceHarness, policy sdk.StaleTarget
 	})
 	require.NoError(t, err)
 	h.manager = orch
-	h.handler, err = sessionhandler.New(&sessionhandler.HandlerConfig{Manager: orch.Manager, Broker: orch.Broker, Characters: h.charRepo})
+	h.handler, err = sessionhandler.New(&sessionhandler.HandlerConfig{Manager: orch.Manager, Characters: h.charRepo})
 	require.NoError(t, err)
+	h.story = newStoryHandler(t, orch, h.charRepo)
 }
 
 func TestAcceptance_BlessHostPolicyAndPersistedMixedOutcomes(t *testing.T) {
@@ -87,7 +88,7 @@ func TestAcceptance_BlessHostPolicyAndPersistedMixedOutcomes(t *testing.T) {
 			if policy != sdk.StaleTargetAttempt {
 				require.NotEmpty(t, candidate.GetWhy().GetText())
 			}
-			live := watchCast(ctx, t, h, id, func() {
+			live := watchCastActs(ctx, t, h, id, func() {
 				_, castErr := h.handler.Cast(ctx, &sessionpb.CastRequest{
 					Session: castSessionID, Member: id, DeclarationId: row.GetId(), Targets: []string{"skel-1", "alice", id},
 				})
@@ -105,26 +106,24 @@ func TestAcceptance_BlessHostPolicyAndPersistedMixedOutcomes(t *testing.T) {
 			}
 			require.Equal(t, 1, stored.Character.Data.Resources[resources.SpellSlotLevel1].Current)
 			var targets []string
-			for _, event := range live {
-				if miss := event.GetCastMissed(); miss != nil {
-					require.Equal(t, id, miss.GetActor())
-					require.Equal(t, "dnd5e:spells:bless", miss.GetSpell().GetRef())
-					targets = append(targets, miss.GetTarget())
+			for _, act := range live {
+				for _, result := range act.GetCast().GetResults() {
+					if result.GetOutcome() == storypb.CastOutcome_CAST_OUTCOME_MISS {
+						require.Equal(t, id, act.GetCast().GetBy().GetId())
+						require.Equal(t, "dnd5e:spells:bless", act.GetCast().GetSpell().GetRef())
+						targets = append(targets, result.GetTarget().GetId())
+					}
 				}
-				if applied := event.GetActivationResult().GetConditionApplied(); applied != nil {
-					require.Equal(t, id, applied.GetSourceId())
-					targets = append(targets, applied.GetTarget())
+				for _, result := range act.GetActivate().GetResults() {
+					if result.GetKind() == "condition-applied" {
+						require.Equal(t, id, result.GetSourceId())
+						targets = append(targets, result.GetTarget().GetId())
+					}
 				}
 			}
 			require.Equal(t, []string{"skel-1", "alice", id}, targets)
-			require.NotEmpty(t, live)
 			reopenClericHost(t, h, policy)
-			story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: castSessionID, Member: id, FromSeq: live[0].GetSeq()})
-			require.NoError(t, err)
-			require.Len(t, story.GetEntries(), len(live))
-			for i, event := range live {
-				require.True(t, proto.Equal(event, story.Entries[i]), "live/story mismatch at %d", i)
-			}
+			requireLiveIsStory(ctx, t, h, castSessionID, id, live)
 		})
 	}
 }
@@ -140,23 +139,25 @@ func TestAcceptance_ClericHealingResults(t *testing.T) {
 			require.NoError(t, err)
 			row := castRowFor(ctx, t, h, "bella", spell)
 			require.True(t, row.GetAvailable())
-			live := watchCast(ctx, t, h, "bella", func() {
+			live := watchCastActs(ctx, t, h, "bella", func() {
 				_, err = h.handler.Cast(ctx, &sessionpb.CastRequest{Session: castSessionID, Member: "bella", DeclarationId: row.GetId(), Targets: []string{"alice"}})
 				require.NoError(t, err)
 			})
-			var healed *sessionpb.HealingApplied
-			for _, event := range live {
-				if body := event.GetActivationResult().GetHealingApplied(); body != nil {
-					healed = body
+			var healed *storypb.ActivationResult
+			for _, act := range live {
+				for _, result := range act.GetActivate().GetResults() {
+					if result.GetKind() == "healing-applied" {
+						healed = result
+					}
 				}
 			}
 			require.NotNil(t, healed)
-			require.Equal(t, "alice", healed.GetTarget())
-			require.Equal(t, row.GetSpell().GetRef(), healed.GetSourceRef())
-			require.Equal(t, int32(1), healed.GetHpBefore())
+			require.Equal(t, "alice", healed.GetTarget().GetId())
+			require.Equal(t, row.GetSpell().GetRef(), healed.GetRef())
+			require.Equal(t, int32(1), healed.GetBefore())
 			require.Positive(t, healed.GetAmount())
-			require.Equal(t, healed.GetHpBefore()+healed.GetAmount(), healed.GetHpAfter())
-			require.NotNil(t, healed.GetCalculation())
+			require.Equal(t, healed.GetBefore()+healed.GetAmount(), healed.GetAfter())
+			require.NotNil(t, healed.GetRoll())
 		})
 	}
 }

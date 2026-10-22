@@ -2,163 +2,51 @@ package session_test
 
 import (
 	"context"
-	"sync"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
-	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
 
-// recordingStream captures, in order, every *sessionpb.Event a real
-// StreamEvents call sends it -- a genuine subscriber all the way through
-// the real handler and the real Broker, not a mock of either. It always
-// drains promptly (matching a healthy client's own read loop); THIS suite's
-// own lagging half is played by a raw Broker.Subscribe handle instead (see
-// TestTwoStreamEventsSubscribers), because Broker.Publish makes no
-// distinction between a stalled client connection and a channel nobody
-// reads -- both are just an unread chan sdk.Event, keyed the same way.
-type recordingStream struct {
-	grpc.ServerStream
-	ctx context.Context
-
-	mu     sync.Mutex
-	events []*sessionpb.Event
-}
-
-func newRecordingStream(ctx context.Context) *recordingStream {
-	return &recordingStream{ctx: ctx}
-}
-
-func (s *recordingStream) Context() context.Context { return s.ctx }
-
-func (s *recordingStream) Send(evt *sessionpb.Event) error {
-	s.mu.Lock()
-	s.events = append(s.events, evt)
-	s.mu.Unlock()
-	return nil
-}
-
-func (s *recordingStream) snapshot() []*sessionpb.Event {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make([]*sessionpb.Event, len(s.events))
-	copy(out, s.events)
+// actKeys is each act as "<id> <family> <body>", in order: enough to say
+// two reads of the story are the same acts in the same order.
+func actKeys(acts []*storypb.Act) []string {
+	out := make([]string, len(acts))
+	for i, a := range acts {
+		out[i] = fmt.Sprintf("%s %s %T", a.GetId(), a.GetFamily(), a.GetBody())
+	}
 	return out
 }
 
-// waitForLive republishes a throwaway canary event directly on the broker
-// until it shows up on stream -- the same technique the handler's own
-// stream_events_test.go uses (waitForPublishedEvent), necessary because the
-// Subscribe call happens inside the goroutine StreamEvents runs on, with no
-// other signal for exactly when it has registered.
-func waitForLive(t *testing.T, broker *sessionorch.Broker, session, recipient string, stream *recordingStream) {
-	t.Helper()
-	deadline := time.After(2 * time.Second)
-	ticker := time.NewTicker(5 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		if len(stream.snapshot()) > 0 {
-			// The subscription is live. A tick that fired before this one
-			// was observed may still have a duplicate canary in flight --
-			// wait for real quiescence (not a fixed sleep, Copilot PR #821)
-			// so the caller's own baseline (captured right after this
-			// returns) is taken after every straggler has landed, not
-			// merely after a guessed-at delay.
-			waitForQuiescence(t, stream, 2*time.Second)
-			return
-		}
-		select {
-		case <-ticker.C:
-			_ = broker.Publish(context.Background(), []sdk.Event{
-				{Session: session, Recipient: recipient, Seq: 0, Kind: sdk.EventUnknown},
-			})
-		case <-deadline:
-			t.Fatalf("stream for %s never subscribed", recipient)
-		}
-	}
-}
-
-// waitForQuiescence polls stream's captured events until the count stops
-// growing for a short stable window, then returns the settled snapshot, or
-// fails the test after timeout. Publish itself is synchronous -- every
-// event is already sitting in a subscriber's own broker channel by the time
-// the driving verb call returns -- but delivery from there into a
-// recordingStream's captured slice happens on that subscriber's own
-// forwarding goroutine, which this test does not otherwise synchronize
-// with. A fixed sleep before reading a snapshot is exactly the "hope it was
-// long enough" flakiness Copilot flagged on PR #821 (a slow CI scheduler,
-// GC pause, or container contention can starve the forwarder past a fixed
-// delay without proving the batch actually finished arriving); this instead
-// waits for the real condition -- nothing new arriving -- with a bounded
-// timeout as the only failure mode.
-func waitForQuiescence(t *testing.T, stream *recordingStream, timeout time.Duration) []*sessionpb.Event {
-	t.Helper()
-	const stableRounds = 5
-	const pollInterval = 5 * time.Millisecond
-	deadline := time.Now().Add(timeout)
-	last := -1
-	stable := 0
-	for time.Now().Before(deadline) {
-		cur := len(stream.snapshot())
-		if cur == last {
-			stable++
-			if stable >= stableRounds {
-				return stream.snapshot()
-			}
-		} else {
-			stable = 0
-		}
-		last = cur
-		time.Sleep(pollInterval)
-	}
-	t.Fatalf("stream never reached quiescence within %s (stuck at %d events)", timeout, last)
-	return nil
-}
-
-// assertContiguousSeqs fails unless the events, in the order received, carry
-// strictly increasing, gapless Seq values -- the same "no gap, no
-// duplicate" contract the toolkit's own two_players_test.go pins at the SDK
-// level, checked here again one layer up, through the real handler and the
-// real Broker.
-func assertContiguousSeqs(t *testing.T, events []*sessionpb.Event, who string) {
-	t.Helper()
-	require.NotEmpty(t, events, "%s must have received something", who)
-	for i := 1; i < len(events); i++ {
-		require.Equal(t, events[i-1].GetSeq()+1, events[i].GetSeq(),
-			"%s: seq %d must immediately follow %d -- no gap, no duplicate", who, events[i].GetSeq(), events[i-1].GetSeq())
-	}
-}
-
-func containsKind(events []*sessionpb.Event, kind sessionpb.EventKind) bool {
-	for _, e := range events {
-		if e.GetKind() == kind {
+// struckBy reports whether acts hold an attack by attacker.
+func struckBy(acts []*storypb.Act, attacker string) bool {
+	for _, a := range acts {
+		if a.GetAttack().GetBy().GetId() == attacker {
 			return true
 		}
 	}
 	return false
 }
 
-// TestTwoStreamEventsSubscribers is rpg-project#257 slice 3 / rpg-api#819's
-// own acceptance proof, entirely through the real, wired stack (real
-// Manager, real Broker, real Handler.StreamEvents) rather than the toolkit's
-// own fake-EventStream two_players_test.go: two joined characters, each with
-// its own live StreamEvents call, prove they receive exactly their own
-// addressed copies with contiguous seqs across a driven monster turn --
-// then one of them stops being drained and the NEXT driven turn's Publish
-// reports the lag (DeliveryReport.Failed, surfaced on the verb's own
-// response -- convert.go's deliveryReportToProto, already wired) while the
-// other subscriber, still live, keeps receiving everything without a gap.
-func TestTwoStreamEventsSubscribers(t *testing.T) {
+// TestTwoStoryStreamSubscribers is rpg-project#257 slice 3 / rpg-api#819's
+// acceptance proof, carried onto the act stream when the v1 event stream was
+// deleted (rpg-project#631): two joined characters, each with its own live
+// StoryService StreamEvents call through the real handler and the real
+// ActBroker, receive exactly the acts their own GetStory reads, across a
+// driven monster turn. Then one of them stops being drained, the NEXT driven
+// turn closes that subscriber as lagged without failing the acting player's
+// verb, and the other subscriber keeps receiving everything.
+func TestTwoStoryStreamSubscribers(t *testing.T) {
 	h := newAcceptanceHarness(t)
 	ctxAlice := auth.WithPlayerID(context.Background(), "player-alice")
 	ctxBob := auth.WithPlayerID(context.Background(), "player-bob")
@@ -175,9 +63,7 @@ func TestTwoStreamEventsSubscribers(t *testing.T) {
 
 	// Both players seat on the tomb's clear sight row (matching
 	// buildThreeRoomTomb's own pillar-gap geometry) and the fight forms at
-	// launch, one formation holding all three. The cells are the authored
-	// columns of the axial cells (15,3), (17,3) and (19,3) this test used to
-	// join and spawn at.
+	// launch, one formation holding all three.
 	launched := h.launch(t, session,
 		withMonsters(buildThreeRoomTomb(t), monsterAt("skel-1", refs.Monsters.Skeleton().String(), 20, 3)),
 		seatAt("alice", 16, 3), seatAt("bob", 18, 3))
@@ -186,33 +72,34 @@ func TestTwoStreamEventsSubscribers(t *testing.T) {
 	// to the ID tie-break (alphabetical): "alice" < "bob" < "skel-1".
 	require.Equal(t, []string{"alice", "bob", "skel-1"}, launched.Formed[0].Order)
 
-	// -- both subscribe for real, through the actual handler --
+	// -- both subscribe for real, through the actual StoryService handler.
+	// The handler subscribes BEFORE it replays, so once the replay of the
+	// launch has arrived the subscription is live.
 	aliceCtx, cancelAlice := context.WithCancel(ctxAlice)
 	defer cancelAlice()
-	aliceStream := newRecordingStream(aliceCtx)
+	aliceSoFar := len(storyOf(ctxAlice, t, h.story, session, "alice"))
+	aliceStream := newActStream(aliceCtx)
 	go func() {
-		if streamErr := h.handler.StreamEvents(&sessionpb.StreamEventsRequest{Session: session, Member: "alice"}, aliceStream); streamErr != nil {
+		if streamErr := h.story.StreamEvents(&storypb.StreamEventsRequest{Session: session, Member: "alice"}, aliceStream); streamErr != nil {
 			t.Logf("alice's StreamEvents call returned an error: %v", streamErr)
 		}
 	}()
-	waitForLive(t, h.manager.Broker, session, "alice", aliceStream)
-	aliceBaseline := len(aliceStream.snapshot())
+	require.NotEmpty(t, aliceStream.settle(t, aliceSoFar, 2*time.Second), "alice's replay of the launch")
 
 	bobCtx, cancelBob := context.WithCancel(ctxBob)
 	bobDone := make(chan error, 1)
-	bobStream := newRecordingStream(bobCtx)
+	bobSoFar := len(storyOf(ctxBob, t, h.story, session, "bob"))
+	bobStream := newActStream(bobCtx)
 	go func() {
-		bobDone <- h.handler.StreamEvents(&sessionpb.StreamEventsRequest{Session: session, Member: "bob"}, bobStream)
+		bobDone <- h.story.StreamEvents(&storypb.StreamEventsRequest{Session: session, Member: "bob"}, bobStream)
 	}()
-	waitForLive(t, h.manager.Broker, session, "bob", bobStream)
+	require.NotEmpty(t, bobStream.settle(t, bobSoFar, 2*time.Second), "bob's replay of the launch")
 	bobBaseline := len(bobStream.snapshot())
 
 	// --- round 1: both real subscribers, a driven monster turn ---
 	//
-	// alice's own EndTurn passes (nothing to do yet, hands straight to bob --
-	// a real player, no drive). bob's own EndTurn drives skel-1's WHOLE turn:
-	// it is closer to bob (distance 2) than to alice (distance 4), so it
-	// closes and strikes her, then wraps the round back to alice.
+	// alice's EndTurn hands straight to bob; bob's EndTurn drives skel-1's
+	// WHOLE turn, which closes and strikes, then wraps the round to alice.
 	out1, err := h.handler.EndTurn(ctxAlice, &sessionpb.EndTurnRequest{
 		Session: session, Member: "alice",
 		DeclarationId: currentDeclarationID(ctxAlice, t, h.handler, session, "alice", sessionpb.Verb_VERB_END_TURN),
@@ -227,30 +114,24 @@ func TestTwoStreamEventsSubscribers(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "alice", out2.GetNext())
 	require.True(t, out2.GetRoundWrapped())
-	require.False(t, out2.GetDelivery().GetFailed(), "nobody has lagged yet -- round 1 must deliver cleanly")
-	waitForQuiescence(t, aliceStream, 2*time.Second)
-	waitForQuiescence(t, bobStream, 2*time.Second)
 
-	// Both real subscribers must have received their OWN addressed copies of
-	// the whole round, with contiguous seqs -- rpg-toolkit#940 today
-	// broadcasts every beat to the whole roster regardless of perception, so
-	// the two sets are the same length and each contains the strike.
-	round1Alice := aliceStream.snapshot()[aliceBaseline:]
-	round1Bob := bobStream.snapshot()[bobBaseline:]
-	assertContiguousSeqs(t, round1Alice, "alice")
-	assertContiguousSeqs(t, round1Bob, "bob")
-	require.Equal(t, len(round1Alice), len(round1Bob), "today's broadcast addresses every beat to the whole roster (rpg-toolkit#940)")
-	require.True(t, containsKind(round1Alice, sessionpb.EventKind_EVENT_KIND_STRUCK), "alice must see skel-1's round-1 strike")
-	require.True(t, containsKind(round1Bob, sessionpb.EventKind_EVENT_KIND_STRUCK), "bob must see skel-1's round-1 strike")
+	// Each live stream holds exactly the acts its own GetStory reads: no gap,
+	// no duplicate, in order.
+	aliceRound1 := aliceStream.settle(t, len(storyOf(ctxAlice, t, h.story, session, "alice")), 2*time.Second)
+	bobRound1 := bobStream.settle(t, len(storyOf(ctxBob, t, h.story, session, "bob")), 2*time.Second)
+	require.Equal(t, actKeys(storyOf(ctxAlice, t, h.story, session, "alice")), actKeys(aliceRound1))
+	require.Equal(t, actKeys(storyOf(ctxBob, t, h.story, session, "bob")), actKeys(bobRound1))
+	require.True(t, struckBy(bobRound1[bobBaseline:], "skel-1"), "bob must see skel-1's round-1 attack")
+	require.True(t, struckBy(aliceRound1, "skel-1"), "alice must see skel-1's round-1 attack")
+	require.Nil(t, aliceStream.laggedAt(), "nobody has lagged yet")
+	require.Nil(t, bobStream.laggedAt(), "nobody has lagged yet")
 
 	// --- bob stops draining ---
 	//
-	// End bob's real StreamEvents call and wait for it to actually return
-	// (its defer unsubscribes the old channel) before opening a fresh raw
-	// Broker.Subscribe handle in her place -- one nobody ever reads from.
-	// The Broker cannot tell this apart from a stalled client connection;
-	// both are just an unread chan sdk.Event under the same (session, "bob")
-	// key, which is exactly the point.
+	// End bob's real StreamEvents call, then hold a raw ActBroker
+	// subscription in its place that nobody reads. The broker cannot tell
+	// it from a stalled client: both are an unread channel under the same
+	// (session, "bob") key.
 	cancelBob()
 	select {
 	case doneErr := <-bobDone:
@@ -258,33 +139,28 @@ func TestTwoStreamEventsSubscribers(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("bob's StreamEvents call did not return after cancellation")
 	}
-
-	bobLag, err := h.manager.Broker.Subscribe(session, "bob")
+	bobLag, err := h.manager.ActBroker.Subscribe(session, "bob")
 	require.NoError(t, err)
 	defer func() { _ = bobLag.Close() }()
 
-	// Prime her buffer to exactly headroom -- filling it is not itself a
-	// drop, so this must report nothing.
-	fill := make([]sdk.Event, 0, 32)
-	for i := 0; i < 32; i++ {
-		fill = append(fill, sdk.Event{Session: session, Recipient: "bob", Seq: uint64(1000 + i), Kind: sdk.EventUnknown})
+	// Prime his buffer to exactly its capacity: filling it is not itself a
+	// lag, so this must close nothing.
+	capacity := cap(bobLag.Acts())
+	fill := make([]sdk.Act, 0, capacity)
+	for i := 0; i < capacity; i++ {
+		fill = append(fill, sdk.Act{Session: session, Recipient: "bob", ID: fmt.Sprintf("fill-%04d", i)})
 	}
-	require.NoError(t, h.manager.Broker.Publish(context.Background(), fill))
-	require.Equal(t, uint64(0), h.manager.Broker.Dropped(session, "bob"))
+	require.NoError(t, h.manager.ActBroker.PublishActs(context.Background(), fill))
+	lagged, _ := bobLag.Lagged()
+	require.False(t, lagged, "a full buffer is not a lag")
 
 	// --- round 2: the next driven turn, with bob now lagging ---
-	//
-	// alice passes again (hands to bob); bob's own EndTurn drives skel-1 a
-	// second time. Every beat this produces is still addressed to bob too
-	// (the same whole-roster broadcast round 1 relied on) -- and her
-	// primed-to-headroom subscriber now drops every one of them.
+	beforeRound2 := len(aliceStream.snapshot())
 	_, err = h.handler.EndTurn(ctxAlice, &sessionpb.EndTurnRequest{
 		Session: session, Member: "alice",
 		DeclarationId: currentDeclarationID(ctxAlice, t, h.handler, session, "alice", sessionpb.Verb_VERB_END_TURN),
 	})
 	require.NoError(t, err, "a lagging subscriber must never fail the acting player's own verb")
-
-	beforeRound2 := len(aliceStream.snapshot()[aliceBaseline:])
 	out3, err := h.handler.EndTurn(ctxBob, &sessionpb.EndTurnRequest{
 		Session: session, Member: "bob",
 		DeclarationId: currentDeclarationID(ctxBob, t, h.handler, session, "bob", sessionpb.Verb_VERB_END_TURN),
@@ -292,18 +168,15 @@ func TestTwoStreamEventsSubscribers(t *testing.T) {
 	require.NoError(t, err, "a lagging subscriber must never fail the acting player's own verb")
 	require.Equal(t, "alice", out3.GetNext())
 
-	require.True(t, out3.GetDelivery().GetFailed(),
-		"bob's own subscriber lagged during this driven turn -- DeliveryReport.Failed must surface it on the caller's own response")
-	require.Greater(t, h.manager.Broker.Dropped(session, "bob"), uint64(0),
-		"round 2's own beats must have dropped for bob now that her buffer is primed to headroom")
-	waitForQuiescence(t, aliceStream, 2*time.Second)
+	lagged, _ = bobLag.Lagged()
+	require.True(t, lagged, "round 2's acts could not fit bob's full buffer: the broker closes him as lagged")
 
-	// The OTHER subscriber -- alice, still live and draining -- must still
-	// get everything from this same driven turn, with no gap at all
-	// carried over from round 1.
-	allAlice := aliceStream.snapshot()[aliceBaseline:]
-	require.Greater(t, len(allAlice), beforeRound2, "alice must have received round 2's own beats too")
-	assertContiguousSeqs(t, allAlice, "alice")
-	require.True(t, containsKind(allAlice[beforeRound2:], sessionpb.EventKind_EVENT_KIND_STRUCK),
-		"alice must see skel-1's round-2 strike even though bob's own subscriber is the one lagging")
+	// The OTHER subscriber -- alice, still live and draining -- gets every
+	// act of this same turn, with no gap carried over from round 1.
+	allAlice := aliceStream.settle(t, len(storyOf(ctxAlice, t, h.story, session, "alice")), 2*time.Second)
+	require.Greater(t, len(allAlice), beforeRound2, "alice must have received round 2's acts too")
+	require.Equal(t, actKeys(storyOf(ctxAlice, t, h.story, session, "alice")), actKeys(allAlice))
+	require.True(t, struckBy(allAlice[beforeRound2:], "skel-1"),
+		"alice must see skel-1's round-2 attack even though bob's subscriber is the one lagging")
+	require.Nil(t, aliceStream.laggedAt())
 }

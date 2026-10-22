@@ -175,7 +175,7 @@ repo~~ / ~~Encounter log repo~~ — all DELETED (rpg-api#642, 2026-07-13).
 - ~~`EncounterData` (local type)~~ / ~~`Dungeon` (local entity)~~ / ~~`EncounterEvent` (local entity)~~ — all DELETED (rpg-api#642); these were the v1alpha1 encounter stack's storage types.
 
 **What rpg-api publishes:**
-- `SessionService.StreamEvents` fans out the toolkit session SDK's live per-recipient events; `GetStory` is the persisted catch-up read.
+- `StoryService.StreamEvents` (session v1alpha2) fans out the toolkit session SDK's per-recipient acts; `StoryService.GetStory` is the catch-up read. `RecordService` serves the record for the debug panel. The v1alpha1 `SessionService.StreamEvents`/`GetStory` are deleted (rpg-project#631) and answer `Unimplemented`.
 - `SessionPresentationService.StreamDiceThrows` fans out bounded decorative dice plans through Redis Pub/Sub only. It is live-only and does not write Story.
 - ~~Redis pub/sub channel `encounter:{id}:events`~~ — DELETED (rpg-api#642); this was the v1alpha1 `EncounterEvent` publisher.
 

@@ -2,6 +2,7 @@ package session_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -9,6 +10,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
@@ -21,7 +23,9 @@ import (
 type cellSet map[spatial.Position]bool
 
 // wireSegment is one atlas segment as the proto carries it, comparable so a
-// test can ask set questions of a repeated field.
+// test can ask set questions of a repeated field. The v1 atlas carries the
+// height as a float32 and the act stream as a float64; the key holds the
+// float32 both agree on.
 type wireSegment struct {
 	fromQ, fromR, toQ, toR float64
 	height                 float32
@@ -34,6 +38,20 @@ func segmentSet(ss []*sessionpb.AtlasSegment) map[wireSegment]bool {
 			fromQ: s.GetFrom().GetQ(), fromR: s.GetFrom().GetR(),
 			toQ: s.GetTo().GetQ(), toR: s.GetTo().GetR(),
 			height: s.GetHeight(),
+		}] = true
+	}
+
+	return out
+}
+
+// actSegmentSet is segmentSet over the act stream's segments.
+func actSegmentSet(ss []*storypb.AtlasSegment) map[wireSegment]bool {
+	out := make(map[wireSegment]bool, len(ss))
+	for _, s := range ss {
+		out[wireSegment{
+			fromQ: s.GetFrom().GetQ(), fromR: s.GetFrom().GetR(),
+			toQ: s.GetTo().GetQ(), toR: s.GetTo().GetR(),
+			height: float32(s.GetHeight()),
 		}] = true
 	}
 
@@ -77,6 +95,16 @@ func (c cellSet) union(b cellSet) cellSet {
 }
 
 func setOfPositions(ps []*sessionpb.Position) cellSet {
+	out := make(cellSet, len(ps))
+	for _, p := range ps {
+		out[spatial.Position{X: p.GetX(), Y: p.GetY()}] = true
+	}
+
+	return out
+}
+
+// setOfActPositions is setOfPositions over the act stream's cells.
+func setOfActPositions(ps []*storypb.Position) cellSet {
 	out := make(cellSet, len(ps))
 	for _, p := range ps {
 		out[spatial.Position{X: p.GetX(), Y: p.GetY()}] = true
@@ -170,22 +198,21 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// The beat, from her own story rather than a live stream: catch-up and
-	// live are byte-equal for the same seq, and reading the story keeps this
+	// The reveal, from her own StoryService story rather than a live stream:
+	// live is the story's tail act for act, and reading the story keeps this
 	// test free of subscription timing.
-	story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{
-		Session: "reveal-run", Member: "alice",
-	})
-	require.NoError(t, err)
+	story := storyOf(ctx, t, h.story, "reveal-run", "alice")
 
 	// ONE BEAT FOR ONE SECRET (design rpg-project#490, E4). What arrived as a
 	// region reveal, with the door's own reveal beside it, is one
 	// concealment_revealed now: the room, its floor, its walls and the door
 	// that guarded it, all on the beat that names the secret.
-	var revealed *sessionpb.ConcealmentRevealed
-	for _, e := range story.GetEntries() {
-		if e.GetKind() == sessionpb.EventKind_EVENT_KIND_CONCEALMENT_REVEALED {
-			revealed = e.GetConcealmentRevealed()
+	var revealed *storypb.SecretRevealed
+	for _, a := range story {
+		if a.GetPerception().GetSense() == storypb.Sense_SENSE_REVEAL {
+			require.Nil(t, revealed, "one reveal for one secret")
+			require.Equal(t, "alice", a.GetPerception().GetObserver().GetId(), "and it is hers")
+			revealed = a.GetPerception().GetRevealed()
 		}
 	}
 	require.NotNil(t, revealed, "opening the hidden door reveals the secret it guarded")
@@ -195,7 +222,7 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 	// The room arrives WHOLE, as the region entry a refetch would carry --
 	// and the door arrives with it, which is the whole difference from the
 	// two beats this replaced.
-	var vaultRegion *sessionpb.AtlasRegion
+	var vaultRegion *storypb.AtlasRegion
 	for _, r := range revealed.GetRegions() {
 		if r.GetId() == "vault" {
 			vaultRegion = r
@@ -204,13 +231,31 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 	require.NotNil(t, vaultRegion, "the touched region rides the reveal")
 	require.Equal(t, []string{"concealed-vault/vault-door"}, doorIDsOf(revealed.GetDoors()),
 		"the door it hid, on the same beat, in the shape GetDoors answers in")
-	require.Equal(t, []string{"concealed-vault/vault-door"}, doorwayConnectionsOf(revealed.GetDoorways()),
-		"and its crossing, for the cached atlas")
+	require.Len(t, revealed.GetDoors()[0].GetDoorways(), 1,
+		"and its crossing rides on the door, for the cached atlas")
 
 	after, err := h.handler.GetAtlas(ctx, &sessionpb.GetAtlasRequest{
 		Session: "reveal-run", Member: "alice",
 	})
 	require.NoError(t, err)
+
+	// The crossing the reveal carried under the door is the crossing a refetch
+	// serves for that door, end for end, and the act's nested doorway names
+	// its door as the v1 beat's `connection` did (rpg-project#643 E).
+	var atlasCrossings []string
+	for _, d := range after.GetDoorways() {
+		if d.GetConnection() == "concealed-vault/vault-door" {
+			atlasCrossings = append(atlasCrossings, crossingOf(d.GetFrom().GetX(), d.GetFrom().GetY(), d.GetTo().GetX(), d.GetTo().GetY()))
+		}
+	}
+	require.NotEmpty(t, atlasCrossings, "the refetched atlas serves the vault door's crossing")
+	require.Equal(t, atlasCrossings, revealedCrossingsOf(revealed.GetDoors()),
+		"the reveal's crossing is the atlas's crossing")
+	for _, door := range revealed.GetDoors() {
+		for _, doorway := range door.GetDoorways() {
+			require.Equal(t, "concealed-vault/vault-door", doorway.GetDoor(), "the revealed doorway names its door")
+		}
+	}
 
 	// The room is hers now, cell for cell.
 	afterOwned := make(cellSet)
@@ -222,10 +267,10 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 	require.Equal(t, offsetCells(dungeonstest.ConcealedVaultVaultCells), afterOwned,
 		"the vault's own cells, all twelve of them")
 	require.Equal(t, offsetCells(dungeonstest.ConcealedVaultVaultCells),
-		setOfPositions(vaultRegion.GetCells()),
+		setOfActPositions(vaultRegion.GetCells()),
 		"and the beat said the same twelve, which is what lets a client patch instead of refetch")
 	require.Equal(t, offsetCells(dungeonstest.ConcealedVaultVaultCells),
-		setOfPositions(revealed.GetCells()),
+		setOfActPositions(revealed.GetCells()),
 		"the concealment's own floor list says the same twelve, so the patch cannot disagree with itself")
 
 	// SEGMENTS ADD. The beat hands over the walls she did not have, nothing
@@ -234,7 +279,7 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 	// a revealed room draws with no walls at all -- which is precisely what
 	// happens to a client that has deleted its boundary fitter.
 	beforeSegments := segmentSet(before.GetSegments())
-	eventSegments := segmentSet(revealed.GetSegments())
+	eventSegments := actSegmentSet(revealed.GetSegments())
 	require.NotEmpty(t, eventSegments, "the beat has to hand over the room's walls")
 	require.Equal(t, unionOfSegments(beforeSegments, eventSegments),
 		segmentSet(after.GetSegments()),
@@ -251,7 +296,7 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 	vault := offsetCells(dungeonstest.ConcealedVaultVaultCells)
 	beforeSealed := setOfPositions(before.GetSealed())
 	afterSealed := setOfPositions(after.GetSealed())
-	require.Equal(t, beforeSealed.without(vault).union(setOfPositions(revealed.GetSealed())),
+	require.Equal(t, beforeSealed.without(vault).union(setOfActPositions(revealed.GetSealed())),
 		afterSealed,
 		"sealed after a reveal is sealed before it, less the revealed room's cells, plus the beat's")
 	// The vault's footing never arrived before the reveal (fog of war R9).
@@ -259,10 +304,10 @@ func TestAcceptance_OpeningAConcealedDoorRevealsTheRoomOnTheWire(t *testing.T) {
 		"the vault's footing is withheld until sight reaches it (fog of war R9)")
 }
 
-// doorIDsOf and doorwayConnectionsOf read a reveal's door and doorway lists by
-// the name each entry carries, so the assertion pins WHICH doors arrived and
-// in what order rather than how many -- a count would pass on the wrong door.
-func doorIDsOf(ds []*sessionpb.DoorInfo) []string {
+// doorIDsOf reads a reveal's door list by the name each entry carries, so the
+// assertion pins WHICH doors arrived and in what order rather than how many --
+// a count would pass on the wrong door.
+func doorIDsOf(ds []*storypb.RevealedDoor) []string {
 	out := make([]string, len(ds))
 	for i, d := range ds {
 		out[i] = d.GetDoor()
@@ -271,11 +316,20 @@ func doorIDsOf(ds []*sessionpb.DoorInfo) []string {
 	return out
 }
 
-func doorwayConnectionsOf(ds []*sessionpb.AtlasDoorway) []string {
-	out := make([]string, len(ds))
-	for i, d := range ds {
-		out[i] = d.GetConnection()
+// revealedCrossingsOf is every crossing the revealed doors carry, in order:
+// the act stream carries each door's doorways on the door.
+func revealedCrossingsOf(ds []*storypb.RevealedDoor) []string {
+	var out []string
+	for _, d := range ds {
+		for _, w := range d.GetDoorways() {
+			out = append(out, crossingOf(w.GetFrom().GetX(), w.GetFrom().GetY(), w.GetTo().GetX(), w.GetTo().GetY()))
+		}
 	}
 
 	return out
+}
+
+// crossingOf names one doorway by its two cells.
+func crossingOf(fromX, fromY, toX, toY float64) string {
+	return fmt.Sprintf("(%g,%g)->(%g,%g)", fromX, fromY, toX, toY)
 }

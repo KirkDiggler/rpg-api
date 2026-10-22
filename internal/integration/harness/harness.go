@@ -23,6 +23,7 @@ import (
 	lobbyv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
 	sessionpresentationpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/presentation/v1alpha1"
 	sessionv1alpha1pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	sessionv1alpha2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
 	characterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
@@ -31,6 +32,7 @@ import (
 	apiv1alpha1handler "github.com/KirkDiggler/rpg-api/internal/handlers/api/v1alpha1"
 	lobbyhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/lobby/v1alpha1"
 	sessionhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1"
+	sessionstoryhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha2"
 	sessionaccess "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sessionaccess"
 	sessionpresentationhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sessionpresentation/v1alpha1"
 	character2 "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/v1alpha1/character"
@@ -79,6 +81,7 @@ type TestServer struct {
 	DiceClient                apiv1alpha1.DiceServiceClient
 	LobbyClient               lobbyv1alpha1pb.LobbyServiceClient
 	SessionClient             sessionv1alpha1pb.SessionServiceClient
+	StoryClient               sessionv1alpha2pb.StoryServiceClient
 	SessionPresentationClient sessionpresentationpb.SessionPresentationServiceClient
 	HealthClient              grpc_health_v1.HealthClient
 
@@ -216,6 +219,7 @@ func newWithClientSource(ctx context.Context, cfg *Config, redisAddr string) (*T
 	ts.DiceClient = apiv1alpha1.NewDiceServiceClient(conn)
 	ts.LobbyClient = lobbyv1alpha1pb.NewLobbyServiceClient(conn)
 	ts.SessionClient = sessionv1alpha1pb.NewSessionServiceClient(conn)
+	ts.StoryClient = sessionv1alpha2pb.NewStoryServiceClient(conn)
 	ts.SessionPresentationClient = sessionpresentationpb.NewSessionPresentationServiceClient(conn)
 	ts.HealthClient = grpc_health_v1.NewHealthClient(conn)
 
@@ -375,7 +379,6 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	}
 	sessionHandlerImpl, err := sessionhandler.New(&sessionhandler.HandlerConfig{
 		Manager:    sessOrch.Manager,
-		Broker:     sessOrch.Broker,
 		Characters: charRepo,
 		Access:     access,
 	})
@@ -384,6 +387,20 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 	}
 	sessionv1alpha1pb.RegisterSessionServiceServer(ts.grpcServer, sessionHandlerImpl)
 	healthServer.SetServingStatus(sessionv1alpha1pb.SessionService_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
+
+	// StoryService, session v1alpha2: the act stream, as production wires it
+	// (cmd/server/server.go). The v1 event stream it replaced is deleted
+	// (rpg-project#631).
+	storyHandlerImpl, err := sessionstoryhandler.NewStory(&sessionstoryhandler.StoryHandlerConfig{
+		Manager: sessOrch.Manager,
+		Broker:  sessOrch.ActBroker,
+		Gate:    access,
+	})
+	if err != nil {
+		return fmt.Errorf("session story handler: %w", err)
+	}
+	sessionv1alpha2pb.RegisterStoryServiceServer(ts.grpcServer, storyHandlerImpl)
+	healthServer.SetServingStatus(sessionv1alpha2pb.StoryService_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
 
 	presentationService := sessionpresentationorch.New(sessionpresentationrepo.NewRedis(ts.redisClient))
 	presentationHandlerImpl, err := sessionpresentationhandler.New(&sessionpresentationhandler.HandlerConfig{

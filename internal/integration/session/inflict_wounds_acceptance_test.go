@@ -4,9 +4,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/suite"
-	"google.golang.org/protobuf/proto"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
@@ -30,7 +30,7 @@ func (s *InflictWoundsSuite) TestNativePaidAttackAndReplay() {
 			useGuidingBoltDice(t, h, tc.roll)
 			row := castRowFor(ctx, t, h, id, spells.InflictWounds)
 			s.Require().True(row.GetAvailable(), row.GetWhy())
-			live := watchCast(ctx, t, h, id, func() {
+			live := watchCastActs(ctx, t, h, id, func() {
 				_, err := h.handler.Cast(ctx, &sessionpb.CastRequest{Session: castSessionID, Member: id, DeclarationId: row.GetId(), Targets: []string{"skel-1"}})
 				s.Require().NoError(err)
 			})
@@ -39,34 +39,32 @@ func (s *InflictWoundsSuite) TestNativePaidAttackAndReplay() {
 			s.Zero(stored.Character.Data.ActionEconomy.ActionsRemaining)
 			s.Equal(1, stored.Character.Data.Resources[resources.SpellSlotLevel1].Current)
 			attacks := 0
-			for _, event := range live {
-				if b := event.GetStruck(); b != nil {
+			for _, act := range live {
+				if b := act.GetAttack(); b != nil {
 					attacks++
-					s.Positive(tc.damage)
+					if tc.damage > 0 {
+						s.Equal(storypb.AttackOutcome_ATTACK_OUTCOME_HIT, b.GetOutcome())
+					} else {
+						s.Equal(storypb.AttackOutcome_ATTACK_OUTCOME_MISS, b.GetOutcome())
+					}
+					s.Equal(tc.roll == 20, b.GetCritical())
 					s.Equal(tc.damage, b.GetDamage())
+					s.Equal("skel-1", b.GetTo().GetId())
 					s.Equal(refs.Spells.InflictWounds().String(), b.GetAttack().GetRef())
-					s.NotNil(b.GetCalculation())
+					s.NotNil(b.GetRoll())
 					s.NotEmpty(b.GetPresentationId())
 				}
-				if b := event.GetMissed(); b != nil {
-					attacks++
-					s.Zero(tc.damage)
-					s.Equal(refs.Spells.InflictWounds().String(), b.GetAttack().GetRef())
-					s.NotNil(b.GetCalculation())
-					s.NotEmpty(b.GetPresentationId())
+				for _, result := range act.GetCast().GetResults() {
+					s.Nil(result.GetSave(), "Inflict Wounds makes an attack, not a saving throw")
 				}
-				s.Nil(event.GetSaved())
-				s.Nil(event.GetActivationResult().GetConditionApplied())
-				s.Nil(event.GetActivationResult().GetDamageApplied())
+				for _, result := range act.GetActivate().GetResults() {
+					s.NotEqual("condition-applied", result.GetKind())
+					s.NotEqual("damage-applied", result.GetKind(), "the attack is the sole damage account")
+				}
 			}
 			s.Equal(1, attacks)
 			reopenClericHost(t, h, sdk.StaleTargetRefuse)
-			story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: castSessionID, Member: id, FromSeq: live[0].GetSeq()})
-			s.Require().NoError(err)
-			s.Require().Len(story.GetEntries(), len(live))
-			for i, event := range live {
-				s.True(proto.Equal(event, story.Entries[i]))
-			}
+			requireLiveIsStory(ctx, t, h, castSessionID, id, live)
 		})
 	}
 }

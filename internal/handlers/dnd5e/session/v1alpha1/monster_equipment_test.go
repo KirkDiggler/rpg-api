@@ -102,19 +102,3 @@ func (s *MonsterEquipmentTransportSuite) TestGetViewTranslatesOnlyTheCallingObse
 		s.Equal(len(tc.via), len(got.GetCurrentVia()))
 	}
 }
-
-func (s *MonsterEquipmentTransportSuite) TestSightedEventKeepsRecipientScopedInvalidationForLiveAndCatchUp() {
-	e := sdk.Event{
-		Session: "sess", Recipient: "observer", Kind: sdk.EventSighted,
-		Body: sdk.SightedBody{Changed: []string{"monster"}},
-	}
-	live, err := eventToProto(e)
-	s.Require().NoError(err)
-	s.Equal("observer", live.GetRecipient())
-	s.Require().NotNil(live.GetSighted())
-	s.Equal([]string{"monster"}, live.GetSighted().GetChanged(), "event names subjects, not a second equipment answer")
-	catchUp, err := eventsToProto([]sdk.Event{e})
-	s.Require().NoError(err)
-	s.Require().Len(catchUp, 1)
-	s.True(proto.Equal(live, catchUp[0]))
-}

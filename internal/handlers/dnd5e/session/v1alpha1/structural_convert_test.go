@@ -91,59 +91,6 @@ func (s *StructuralConversionSuite) TestWallCarriesItsFootprintCellsInLineOrder(
 	}
 }
 
-func (s *StructuralConversionSuite) TestBothRevealKindsCarryTheSameProviderRows() {
-	in := structuralAtlasFixture()
-	room, err := eventToProto(sdk.Event{Kind: sdk.EventRoomRevealed, Body: sdk.RoomRevealedBody{
-		Region: sdk.AtlasRegion{ID: "room"}, StructuralWalls: in.StructuralWalls, StructuralDoors: in.StructuralDoors,
-	}})
-	s.Require().NoError(err)
-	s.Require().NotNil(room.GetRoomRevealed())
-	s.checkRows(room.GetRoomRevealed().StructuralWalls, room.GetRoomRevealed().StructuralDoors)
-	secret, err := eventToProto(sdk.Event{Kind: sdk.EventConcealmentRevealed, Body: sdk.ConcealmentRevealedBody{
-		Concealment: "keep/secret", StructuralWalls: in.StructuralWalls, StructuralDoors: in.StructuralDoors,
-	}})
-	s.Require().NoError(err)
-	s.Require().NotNil(secret.GetConcealmentRevealed())
-	s.checkRows(secret.GetConcealmentRevealed().StructuralWalls, secret.GetConcealmentRevealed().StructuralDoors)
-}
-
-func (s *StructuralConversionSuite) TestBothRevealKindsPreserveOpeningReplacementsAndClears() {
-	patches := []sdk.StructuralWallOpeningsReplacement{
-		{WallID: "wall-a", Openings: structuralAtlasFixture().StructuralWalls[0].Openings},
-		{WallID: "wall-b", Openings: []sdk.AtlasStructuralOpening{}},
-		{WallID: "wall-c"},
-	}
-	for _, event := range []sdk.Event{
-		{Kind: sdk.EventRoomRevealed, Body: sdk.RoomRevealedBody{
-			Region: sdk.AtlasRegion{ID: "room"}, StructuralWallOpeningsReplacements: patches,
-		}},
-		{Kind: sdk.EventConcealmentRevealed, Body: sdk.ConcealmentRevealedBody{
-			Concealment: "secret", StructuralWallOpeningsReplacements: patches,
-		}},
-	} {
-		s.Run(string(event.Kind), func() {
-			out, err := eventToProto(event)
-			s.Require().NoError(err)
-			got := out.GetRoomRevealed().GetStructuralWallOpeningsReplacements()
-			if event.Kind == sdk.EventConcealmentRevealed {
-				got = out.GetConcealmentRevealed().GetStructuralWallOpeningsReplacements()
-			}
-			s.Require().Len(got, 3, "present empty/default replacements must not be dropped")
-			s.True(proto.Equal(&sessionpb.StructuralWallOpeningsReplacement{
-				WallId: "wall-a", Openings: expectedStructuralWall().Openings,
-			}, got[0]))
-			s.Equal("wall-b", got[1].WallId)
-			s.Empty(got[1].Openings)
-			s.Equal("wall-c", got[2].WallId)
-			s.Empty(got[2].Openings)
-			// Contract documentation: protobuf rows are independently allocated
-			// from SDK value rows; the SDK input remains untouched.
-			got[0].Openings[0].Width = 999
-			s.Equal(2.75, patches[0].Openings[0].Width)
-		})
-	}
-}
-
 func (s *StructuralConversionSuite) TestTheHostDoesNotRebuildAWithheldCutOrParent() {
 	in := structuralAtlasFixture()
 	in.StructuralWalls[0].Openings = nil

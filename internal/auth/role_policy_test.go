@@ -22,6 +22,14 @@ type PolicySuite struct{ suite.Suite }
 
 func TestPolicySuite(t *testing.T) { suite.Run(t, new(PolicySuite)) }
 
+// retiredV1Stream is the v1alpha1 event stream, deleted from the server
+// (rpg-project#631) while its RPCs remain in the descriptor until the protos
+// drop them: no policy, so the gate denies them.
+var retiredV1Stream = map[string]bool{
+	"/dnd5e.api.session.v1alpha1.SessionService/StreamEvents": true,
+	"/dnd5e.api.session.v1alpha1.SessionService/GetStory":     true,
+}
+
 func (s *PolicySuite) TestEveryGameRPCIsExplicitlyClassified() {
 	for _, descriptor := range []*grpc.ServiceDesc{
 		&compositionpb.CompositionService_ServiceDesc, &apipb.DiceService_ServiceDesc,
@@ -32,6 +40,11 @@ func (s *PolicySuite) TestEveryGameRPCIsExplicitlyClassified() {
 	} {
 		check := func(name string) {
 			method := "/" + descriptor.ServiceName + "/" + name
+			if retiredV1Stream[method] {
+				_, known := auth.GameMethodPermission(method)
+				s.False(known, method+" is retired: no policy, denied")
+				return
+			}
 			permission, known := auth.GameMethodPermission(method)
 			s.True(known, method+" must have an explicit access policy")
 			s.NotZero(permission, method)

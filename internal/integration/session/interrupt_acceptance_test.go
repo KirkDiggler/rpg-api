@@ -16,6 +16,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -124,13 +125,23 @@ func reactRow(
 	return nil
 }
 
-// windowOpenedIn returns every WINDOW_OPENED event in a captured slice.
-func windowOpenedIn(events []*sessionpb.Event) []*sessionpb.WindowOpened {
-	var out []*sessionpb.WindowOpened
-	for _, evt := range events {
-		if evt.GetKind() == sessionpb.EventKind_EVENT_KIND_WINDOW_OPENED {
-			out = append(out, evt.GetWindowOpened())
+// windowOpenedIn returns every window-opened clock act's window in a
+// captured slice of acts.
+func windowOpenedIn(acts []*storypb.Act) []*storypb.WindowOpened {
+	var out []*storypb.WindowOpened
+	for _, act := range acts {
+		if act.GetClock().GetMark() == storypb.ClockMark_CLOCK_MARK_WINDOW_OPENED {
+			out = append(out, act.GetClock().GetWindow())
 		}
+	}
+	return out
+}
+
+// windowAudience is who a window asks, one id per offer, in offer order.
+func windowAudience(window *storypb.WindowOpened) []string {
+	out := make([]string, 0, len(window.GetWindows()))
+	for _, offer := range window.GetWindows() {
+		out = append(out, offer.GetAudience().GetId())
 	}
 	return out
 }
@@ -194,13 +205,15 @@ func TestAcceptance_ReactionWindowCrossesTheWire(t *testing.T) {
 
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stream := newRecordingStream(streamCtx)
+	sofar := len(storyOf(ctx, t, h.story, sessionID, "alice"))
+	stream := newActStream(streamCtx)
 	done := make(chan error, 1)
 	go func() {
-		done <- h.handler.StreamEvents(&sessionpb.StreamEventsRequest{Session: sessionID, Member: "alice"}, stream)
+		done <- h.story.StreamEvents(&storypb.StreamEventsRequest{Session: sessionID, Member: "alice"}, stream)
 	}()
-	waitForLive(t, h.manager.Broker, sessionID, "alice", stream)
-	baseline := len(stream.snapshot())
+	// The handler subscribes before it replays, so a stream holding the
+	// whole replay is live.
+	baseline := len(stream.settle(t, sofar, 2*time.Second))
 
 	// -- alice passes her turn, and the first skeleton's driven walk stops to
 	// ask her, on the live stream, before it takes the step --
@@ -210,13 +223,13 @@ func TestAcceptance_ReactionWindowCrossesTheWire(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	firstPass := waitForQuiescence(t, stream, 2*time.Second)[baseline:]
+	firstPass := stream.settle(t, baseline, 2*time.Second)[baseline:]
 	opened := windowOpenedIn(firstPass)
 	require.Len(t, opened, 1, "the first skeleton's first step leaves reach and asks")
-	require.Equal(t, "skel-1", opened[0].GetMover())
-	require.Equal(t, []string{"alice"}, opened[0].GetAudience())
-	require.Equal(t, oaRef, opened[0].GetReaction().GetRef())
-	require.Equal(t, "Opportunity Attack", opened[0].GetReaction().GetName())
+	require.Equal(t, "skel-1", opened[0].GetMember().GetId())
+	require.Equal(t, []string{"alice"}, windowAudience(opened[0]))
+	require.Equal(t, oaRef, opened[0].GetWindows()[0].GetReaction().GetRef())
+	require.Equal(t, "Opportunity Attack", opened[0].GetWindows()[0].GetReaction().GetName())
 	// The step is ANNOUNCED and NOT TAKEN: the skeleton still stands on
 	// `from`, which is the whole reason reach can still be checked against it.
 	require.Equal(t, at(4, 0).X, opened[0].GetFrom().GetX())
@@ -270,7 +283,7 @@ func TestAcceptance_ReactionWindowCrossesTheWire(t *testing.T) {
 
 	// -- HOLD. The skeleton finishes the walk it announced, and the reaction
 	// is still in her hand for the next one. --
-	baseline = len(stream.snapshot())
+	baseline = len(stream.settle(t, baseline, 2*time.Second))
 	holdResp, err := h.handler.React(ctx, &sessionpb.ReactRequest{
 		Session: sessionID, Member: "alice", DeclarationId: row.GetId(),
 		Choice: sessionpb.ReactChoice_REACT_CHOICE_HOLD,
@@ -278,19 +291,19 @@ func TestAcceptance_ReactionWindowCrossesTheWire(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, holdResp.GetSaved().GetWritten(), "answering a window is a write")
 
-	afterHold := waitForQuiescence(t, stream, 2*time.Second)[baseline:]
+	afterHold := stream.settle(t, baseline, 2*time.Second)[baseline:]
 	require.Contains(t, movedCellsOf(afterHold, "skel-1"), at(6, 0),
 		"the resumed turn walks the rest of the path it had announced")
 	require.Equal(t, at(6, 0), whereIs(t, h, sessionID, "skel-1"))
-	require.Empty(t, struckWithReaction(afterHold), "holding swings at nobody")
+	require.Empty(t, struckWithReaction(t, afterHold), "holding swings at nobody")
 	require.Equal(t, 1, reactionsLeft(t, h.charRepo, "alice"), "a reaction nobody took costs nothing")
 
 	// -- THE SECOND PASS ASKS AGAIN, posed during the resume that finished
 	// the first skeleton's turn, with nobody calling a verb for it --
 	second := windowOpenedIn(afterHold)
 	require.Len(t, second, 1, "the second skeleton's own turn asks in its own right")
-	require.Equal(t, "skel-2", second[0].GetMover())
-	require.Equal(t, []string{"alice"}, second[0].GetAudience())
+	require.Equal(t, "skel-2", second[0].GetMember().GetId())
+	require.Equal(t, []string{"alice"}, windowAudience(second[0]))
 
 	secondRow := reactRow(ctx, t, h, sessionID, "alice")
 	require.NotNil(t, secondRow)
@@ -300,18 +313,18 @@ func TestAcceptance_ReactionWindowCrossesTheWire(t *testing.T) {
 
 	// -- STRIKE. The swing reaches the story saying WHAT it was taken as,
 	// which is the half of the done-when the window alone does not meet. --
-	baseline = len(stream.snapshot())
+	baseline = len(stream.settle(t, baseline, 2*time.Second))
 	_, err = h.handler.React(ctx, &sessionpb.ReactRequest{
 		Session: sessionID, Member: "alice", DeclarationId: secondRow.GetId(),
 		Choice: sessionpb.ReactChoice_REACT_CHOICE_STRIKE,
 	})
 	require.NoError(t, err)
 
-	afterStrike := waitForQuiescence(t, stream, 2*time.Second)[baseline:]
-	swings := struckWithReaction(afterStrike)
+	afterStrike := stream.settle(t, baseline, 2*time.Second)[baseline:]
+	swings := struckWithReaction(t, afterStrike)
 	require.Len(t, swings, 1, "one swing, at the skeleton she chose")
-	require.Equal(t, "alice", swings[0].GetAttacker())
-	require.Equal(t, "skel-2", swings[0].GetTarget())
+	require.Equal(t, "alice", swings[0].GetBy().GetId())
+	require.Equal(t, "skel-2", swings[0].GetTo().GetId())
 	require.Equal(t, oaRef, swings[0].GetReaction().GetRef())
 	require.Equal(t, "Opportunity Attack", swings[0].GetReaction().GetName())
 
@@ -363,28 +376,37 @@ func requireFrozenRows(ctx context.Context, t *testing.T, h *acceptanceHarness, 
 	require.NotZero(t, others, "the frozen panel must still carry the verbs it is refusing")
 }
 
-// movedCellsOf is every cell one member was seen stepping onto.
-func movedCellsOf(events []*sessionpb.Event, member string) []spatial.Position {
-	out := make([]spatial.Position, 0, len(events))
-	for _, evt := range events {
-		moved := evt.GetMoved()
-		if evt.GetKind() != sessionpb.EventKind_EVENT_KIND_MOVED || moved.GetMember() != member {
+// movedCellsOf is every cell one member was seen stepping onto: the path
+// cells of every walk act the member is the mover of.
+func movedCellsOf(acts []*storypb.Act, member string) []spatial.Position {
+	out := make([]spatial.Position, 0, len(acts))
+	for _, act := range acts {
+		walk := act.GetWalk()
+		if walk == nil || walk.GetMover().GetId() != member {
 			continue
 		}
-		out = append(out, spatial.Position{X: moved.GetTo().GetX(), Y: moved.GetTo().GetY()})
+		for _, step := range walk.GetPath() {
+			out = append(out, spatial.Position{X: step.GetCell().GetX(), Y: step.GetCell().GetY()})
+		}
 	}
 	return out
 }
 
 // struckWithReaction is every landed blow that names what it was taken AS.
 // An ordinary swing carries no reaction, so this is not merely "every
-// struck": it is the false-vs-absent half of the field.
-func struckWithReaction(events []*sessionpb.Event) []*sessionpb.Struck {
-	var out []*sessionpb.Struck
-	for _, evt := range events {
-		if struck := evt.GetStruck(); struck != nil && struck.GetReaction() != nil {
-			out = append(out, struck)
+// attack": it is the false-vs-absent half of the field. A blow taken as a
+// reaction is an act of the REACTION family, and this fails the test when
+// one is filed anywhere else.
+func struckWithReaction(t *testing.T, acts []*storypb.Act) []*storypb.AttackAct {
+	t.Helper()
+	var out []*storypb.AttackAct
+	for _, act := range acts {
+		attack := act.GetAttack()
+		if attack == nil || attack.GetReaction() == nil || attack.GetOutcome() != storypb.AttackOutcome_ATTACK_OUTCOME_HIT {
+			continue
 		}
+		require.Equal(t, storypb.Family_FAMILY_REACTION, act.GetFamily(), "a reaction swing is a REACTION act")
+		out = append(out, attack)
 	}
 	return out
 }

@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resources"
@@ -82,7 +81,7 @@ func TestAcceptance_NativeClericWorldToCombatCasts(t *testing.T) {
 			if spell == spells.Bless {
 				targets = []string{"alice", id, "skel-1"}
 			}
-			live := watchCast(ctx, t, h, id, func() {
+			live := watchCastActs(ctx, t, h, id, func() {
 				_, err := h.handler.Cast(ctx, &sessionpb.CastRequest{Session: castSessionID, Member: id, DeclarationId: row.GetId(), Targets: targets})
 				require.NoError(t, err)
 			})
@@ -95,26 +94,22 @@ func TestAcceptance_NativeClericWorldToCombatCasts(t *testing.T) {
 				require.Zero(t, stored.Character.Data.ActionEconomy.ActionsRemaining)
 			}
 			var affected []string
-			for _, event := range live {
-				if condition := event.GetActivationResult().GetConditionApplied(); condition != nil {
-					require.Equal(t, id, condition.GetSourceId())
-					affected = append(affected, condition.GetTarget())
-				}
-				if heal := event.GetActivationResult().GetHealingApplied(); heal != nil {
-					require.Positive(t, heal.GetAmount())
-					require.Equal(t, row.GetSpell().GetRef(), heal.GetSourceRef())
-					affected = append(affected, heal.GetTarget())
+			for _, act := range live {
+				for _, result := range act.GetActivate().GetResults() {
+					switch result.GetKind() {
+					case "condition-applied":
+						require.Equal(t, id, result.GetSourceId())
+						affected = append(affected, result.GetTarget().GetId())
+					case "healing-applied":
+						require.Positive(t, result.GetAmount())
+						require.Equal(t, row.GetSpell().GetRef(), result.GetRef())
+						affected = append(affected, result.GetTarget().GetId())
+					}
 				}
 			}
 			require.Equal(t, targets, affected)
-			require.NotEmpty(t, live)
 			reopenClericHost(t, h, sdk.StaleTargetRefuse)
-			story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: castSessionID, Member: id, FromSeq: live[0].GetSeq()})
-			require.NoError(t, err)
-			require.Len(t, story.GetEntries(), len(live))
-			for i, event := range live {
-				require.True(t, proto.Equal(event, story.Entries[i]))
-			}
+			requireLiveIsStory(ctx, t, h, castSessionID, id, live)
 		})
 	}
 }

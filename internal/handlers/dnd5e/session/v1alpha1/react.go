@@ -73,8 +73,8 @@ func (h *Handler) React(ctx context.Context, req *sessionpb.ReactRequest) (*sess
 // declines a swing on the player's behalf. Refused here rather than at the
 // SDK, which answers the zero Answer with ErrNotOffered -- true, but
 // FAILED_PRECONDITION, which blames the window for a request that never named
-// a choice at all. This is stream_events.go's shape: a wire-only refusal the
-// SDK has no counterpart for, stated by the handler that owns the field.
+// a choice at all: a wire-only refusal the SDK has no counterpart for, stated
+// by the handler that owns the field.
 //
 // A future value this build does not recognize lands here too.
 func reactAnswerFromProto(c sessionpb.ReactChoice, option string) (sdk.Answer, error) {

@@ -7,6 +7,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
@@ -75,10 +76,10 @@ func (s *StructuralPatchAcceptanceSuite) TestGetViewAWalledInSeatStillCarriesIts
 }
 
 // TestOpeningAGateStreamsEachLearnerItsOwnCellsRevealed: one learning moment,
-// one CELLS_REVEALED per learner on that learner's own story, each carrying
-// only the cells that recipient newly learned -- and no ROOM_REVEALED at all.
-// The story is the stream's own projection (the SDK's Story contract), so
-// this is what each member's StreamEvents delivered.
+// one CELLS perception per learner on that learner's own story, each carrying
+// only the cells that recipient newly learned. The story is the stream's own
+// projection (StoryService's GetStory is the live stream's catch-up), so this
+// is what each member's StreamEvents delivered.
 func (s *StructuralPatchAcceptanceSuite) TestOpeningAGateStreamsEachLearnerItsOwnCellsRevealed() {
 	h := newAcceptanceHarness(s.T())
 	ctx := s.seatPlayers(h, "alice", "bob")
@@ -88,9 +89,7 @@ func (s *StructuralPatchAcceptanceSuite) TestOpeningAGateStreamsEachLearnerItsOw
 
 	before := map[string]int{}
 	for _, member := range []string{"alice", "bob"} {
-		story, storyErr := h.handler.GetStory(ctx[member], &sessionpb.GetStoryRequest{Session: "learn-run", Member: member})
-		s.Require().NoError(storyErr)
-		before[member] = len(story.Entries)
+		before[member] = len(storyOf(ctx[member], s.T(), h.story, "learn-run", member))
 	}
 	_, err = h.handler.OpenDoor(ctx["alice"], &sessionpb.OpenDoorRequest{Session: "learn-run", Member: "alice", Door: "ordinary-discovery/gate"})
 	s.Require().NoError(err)
@@ -100,21 +99,21 @@ func (s *StructuralPatchAcceptanceSuite) TestOpeningAGateStreamsEachLearnerItsOw
 		"bob":   {pbAt(0, 0), pbAt(1, 0)},
 	}
 	for member, want := range learned {
-		story, storyErr := h.handler.GetStory(ctx[member], &sessionpb.GetStoryRequest{Session: "learn-run", Member: member})
-		s.Require().NoError(storyErr)
-		var reveals []*sessionpb.CellsRevealed
-		for _, entry := range story.Entries[before[member]:] {
-			s.NotEqual(sessionpb.EventKind_EVENT_KIND_ROOM_REVEALED, entry.Kind, "%s: nothing streams ROOM_REVEALED", member) //nolint:staticcheck // SA1019: asserting the deprecated kind is absent
-			if body := entry.GetCellsRevealed(); body != nil {
-				s.Equal(sessionpb.EventKind_EVENT_KIND_CELLS_REVEALED, entry.Kind)
-				reveals = append(reveals, body)
+		story := storyOf(ctx[member], s.T(), h.story, "learn-run", member)
+		var reveals []*storypb.CellsLearned
+		for _, act := range story[before[member]:] {
+			if cells := act.GetPerception().GetCells(); cells != nil {
+				s.Equal(storypb.Family_FAMILY_PERCEPTION, act.GetFamily())
+				s.Equal(storypb.Sense_SENSE_CELLS, act.GetPerception().GetSense())
+				s.Equal(member, act.GetPerception().GetObserver().GetId(), "%s: the learner's own perception", member)
+				reveals = append(reveals, cells)
 			}
 		}
-		s.Require().Len(reveals, 1, "%s: one learning moment, one CELLS_REVEALED", member)
+		s.Require().Len(reveals, 1, "%s: one learning moment, one CELLS perception", member)
 		var got []*sessionpb.Position
 		for _, region := range reveals[0].Regions {
 			s.NotEmpty(region.Id, "%s: a partial region still names the region it unions into", member)
-			got = append(got, region.Cells...)
+			got = append(got, v1Cells(region.Cells)...)
 		}
 		s.Require().Len(got, len(want), "%s receives only the cells it newly learned: %v", member, got)
 		for _, cell := range want {

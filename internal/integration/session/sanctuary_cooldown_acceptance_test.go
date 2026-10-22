@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	characterpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
@@ -22,14 +21,17 @@ import (
 func TestAcceptance_SanctuaryRecipientCooldown(t *testing.T) {
 	h, ctx, id := nativeClericCombatScene(t)
 	row := castRowFor(ctx, t, h, id, spells.Sanctuary)
-	live := watchCast(ctx, t, h, id, func() {
+	live := watchCastActs(ctx, t, h, id, func() {
 		_, err := h.handler.Cast(ctx, &sessionpb.CastRequest{Session: castSessionID, Member: id, DeclarationId: row.GetId(), Targets: []string{id}})
 		require.NoError(t, err)
 	})
 	applied := map[string]bool{}
-	for _, event := range live {
-		if condition := event.GetActivationResult().GetConditionApplied(); condition != nil {
-			require.Equal(t, id, condition.GetTarget())
+	for _, act := range live {
+		for _, condition := range act.GetActivate().GetResults() {
+			if condition.GetKind() != "condition-applied" {
+				continue
+			}
+			require.Equal(t, id, condition.GetTarget().GetId())
 			require.Equal(t, id, condition.GetSourceId())
 			applied[condition.GetRef()] = true
 		}
@@ -37,12 +39,7 @@ func TestAcceptance_SanctuaryRecipientCooldown(t *testing.T) {
 	require.True(t, applied[refs.Conditions.Sanctuary().String()])
 	require.True(t, applied[refs.Conditions.SanctuaryImmune().String()])
 	reopenClericHost(t, h, sdk.StaleTargetRefuse)
-	story, err := h.handler.GetStory(ctx, &sessionpb.GetStoryRequest{Session: castSessionID, Member: id, FromSeq: live[0].GetSeq()})
-	require.NoError(t, err)
-	require.Len(t, story.GetEntries(), len(live))
-	for i, event := range live {
-		require.True(t, proto.Equal(event, story.Entries[i]))
-	}
+	requireLiveIsStory(ctx, t, h, castSessionID, id, live)
 	owner, err := characterhandler.New(&characterhandler.HandlerConfig{CharacterService: newAcceptanceCharacterService(t, h)})
 	require.NoError(t, err)
 	private, err := owner.GetCharacterData(ctx, &characterpb.GetCharacterDataRequest{CharacterId: id})
