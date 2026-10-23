@@ -338,6 +338,9 @@ place:
         - { when: { enemy: reach },            attack: enemy }
         - { when: { enemy: seen },             toward: enemy }
         - { when: { enemy: remembered },       toward: enemy }
+        # `lost` (rpg-project#668): it stands where it lost you, as it did
+        # before the band existed.
+        - { when: { enemy: lost },             hold: {} }
         - { when: { enemy: none },             toward: { at: [3, 3] } }
   - id: bandit-2
     ref: "dnd5e:monsters:bandit"
@@ -353,6 +356,9 @@ place:
         - { when: { enemy: reach },            attack: enemy }
         - { when: { enemy: seen },             toward: enemy }
         - { when: { enemy: remembered },       toward: enemy }
+        # `lost` (rpg-project#668): it stands where it lost you, as it did
+        # before the band existed.
+        - { when: { enemy: lost },             hold: {} }
         - { when: { enemy: none },             toward: { at: [3, 3] } }
 
 exits:
