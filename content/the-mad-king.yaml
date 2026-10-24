@@ -201,7 +201,7 @@ tables:
       - when: { enemy: remembered }
         toward: enemy
       - when: { enemy: lost }
-        search: { distance: 6 }
+        search: { distance: 6, heading: went }
       - when:
           heard:
             kind: clang
@@ -242,7 +242,7 @@ tables:
       - when: { enemy: remembered }
         toward: enemy
       - when: { enemy: lost }
-        search: { distance: 6 }
+        search: { distance: 6, heading: went }
       - when:
           heard:
             kind: clang

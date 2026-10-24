@@ -144,6 +144,43 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysCompleteSingleRoom() {
 		"and carries no scene: the engine stopped holding one, so the deprecated field is empty end to end")
 }
 
+// TestStartEncounter_ActionAugmentsReachSpawn proves the authoring document
+// crosses the API's registry-to-Launch seam unchanged. The human base arms
+// itself with an unarmed strike; toolkit session resolution applies this
+// placement's add/drop layer, leaving only the authored light crossbow.
+func (s *SessionStackSuite) TestStartEncounter_ActionAugmentsReachSpawn() {
+	const (
+		dungeonKey = "action-augment-walk"
+		monsterID  = "augmented-human"
+	)
+
+	s.seedCharacter("char-alice", "alice", "Alice")
+	s.seedReadyLobby("lobby-1", "alice")
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID: testWorldID, PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: dungeonKey,
+	})
+	s.Require().NoError(err)
+
+	sessions := sessionorch.NewSessionRepository(s.redisClient, time.Hour)
+	stored, err := sessions.GetSession(s.ctx, out.EncounterID)
+	s.Require().NoError(err)
+
+	var augmented *monster.Data
+	for i := range stored.NPCs {
+		if stored.NPCs[i].ID == monsterID {
+			augmented = &stored.NPCs[i]
+			break
+		}
+	}
+	s.Require().NotNil(augmented, "the authored human is spawned by Launch")
+	s.Require().Len(augmented.Actions, 1, "base plus additions minus drops leaves one action")
+	s.True(augmented.Actions[0].Ref.Equals(refs.Weapons.LightCrossbow()),
+		"the added weapon survives the API seam")
+	s.False(augmented.Actions[0].Ref.Equals(refs.Weapons.UnarmedStrike()),
+		"the dropped Human-base action never reaches the spawned sheet")
+}
+
 // TestStartEncounter_SingleRoomGeometrySurvivesReloadAndAuthorEdit pins what
 // a running session still owns after the presentation left it
 // (rpg-project#479): the COMPILED GEOMETRY. Each run persists the field it
