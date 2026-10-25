@@ -106,6 +106,25 @@ func (s *ValidateOnlyWireSuite) TestAGoodFileGradesOnAReadOnlyRegistry() {
 		"the preview names its dungeon the way a session's atlas does")
 }
 
+// TestActionAugmentsGradeThroughPutDungeon proves the new single-room keys
+// need no new transport: PutDungeon carries the authored bytes verbatim to
+// the toolkit compiler and returns its existing validate-only answer.
+func (s *ValidateOnlyWireSuite) TestActionAugmentsGradeThroughPutDungeon() {
+	const fixtureKey = "action-augment-walk"
+	const authorKey = "my-action-augment"
+
+	raw, err := os.ReadFile(filepath.Join(dungeonstest.ContentDir(s.T()), fixtureKey+".yaml")) //nolint:gosec // fixture path is under the repository content directory
+	s.Require().NoError(err)
+
+	resp, err := s.handler.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{
+		Key: authorKey, Yaml: string(dungeonstest.AsKey(s.T(), raw, fixtureKey, authorKey)), ValidateOnly: true,
+	})
+	s.Require().NoError(err)
+	s.Require().Empty(resp.GetErrors(), "addActions and dropActions compile through PutDungeon validate-only")
+	s.Require().NotNil(resp.GetAtlas())
+	s.Equal(authorKey, resp.GetAtlas().GetDungeonKey())
+}
+
 // TestMissingFactionNamesThePlacement is the design's first probe: a
 // placement standing in a faction nobody declared. The engine names the
 // placement by index and the word the author typed.

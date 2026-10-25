@@ -1,0 +1,33 @@
+# A small walk fixture for rpg-api#1139: the human base starts with an
+# unarmed strike, then this placement adds a light crossbow and drops that
+# base action. The action meaning remains wholly in rpg-toolkit.
+version: 4
+key: action-augment-walk
+play: {void: transparent, lighting: bright, standing: centre-covered}
+
+templates:
+  human-sentry:
+    base: dnd5e:monsters:human
+
+room:
+  version: 3
+  id: action-augment-room
+  name: Action Augment Room
+  coordinateFrame: {horizontalPlane: world-xz, verticalAxis: world-y-up,
+    distanceUnit: world-scene-unit, hexRadius: 1,
+    footprintFrame: owner-local-xz}
+  workspace: {hexRadius: 2, horizontalLimit: 4}
+  scene: {version: 1, id: action-augment-scene, name: Action Augment Scene, items: [], groups: []}
+  room:
+    implicitRegionId: action-augment-region
+    walkableHexes: [{q: 0, r: 0}, {q: 1, r: 0}, {q: 0, r: 1}]
+    propDeclarations: {}
+    arrangementDeclarations: {}
+    partyStart: {q: 0, r: 0}
+    monsterDeclarations:
+      - {id: augmented-human, ref: dnd5e:monsters:human-sentry,
+         startingCell: {location: {q: 1, r: 0}}}
+    monsterBindings:
+      augmented-human:
+        addActions: [dnd5e:weapons:light-crossbow]
+        dropActions: [dnd5e:weapons:unarmed-strike]
