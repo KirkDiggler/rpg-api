@@ -34,12 +34,12 @@ github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2 h1:B7IrROe3GcPrzMeV0EQryA194Y7Y
 github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2/go.mod h1:wsyJmmf1X0iLFGy5Iyy5sUoZhXZQvuYVsKdXfc4b/T4=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.213.0 h1:r9JOL6U89wnUs7klDEhWNkxbsIfJrYeb4yWhIQugejo=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.213.0/go.mod h1:qjCtaPjI/BvOCj9JId2GpTQqIkJPnhRMB2ZYKbkX5u4=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.143.1-0.20261024205150-d4ac8841167b h1:bGNce4LTzjxK37Dd2co+lw2UQkoRWe19MCEhaQI2sBU=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.143.1-0.20261024205150-d4ac8841167b/go.mod h1:7rEBqPyZSWhSt+jpu9Xlw80WxBmlZcdIfL8BWhjkTAs=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.144.0 h1:YUvEIc7fnWhYA2Ji8lhTDjc8WToJSTYElHIxJRx4kCo=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.144.0/go.mod h1:7rEBqPyZSWhSt+jpu9Xlw80WxBmlZcdIfL8BWhjkTAs=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.73.0 h1:oFtrDy5EnZeCvmJP6SL1zkC6O9I/ZYy0fTBFRR9jfWc=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.73.0/go.mod h1:7IeKxM4IICLTSHOCY94X/Cg5jxdlXGtMMUQAmX0Fhcc=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.146.2-0.20261024210139-86d59a3a6960 h1:xJiE60iBgbWEPNCKIfb4s93CRvH43FFZCapP9PDaFa4=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.146.2-0.20261024210139-86d59a3a6960/go.mod h1:yVT3IXdBuzq8GmRPkC3k6HQkqyvbcCGwyM3ZrTPW+AA=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.147.0 h1:EnqrsSiK26WzJ0Pn1/HmOBSL+0tFBayvP89GhXm4mco=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.147.0/go.mod h1:/Vp1EL7aSsieZSf+gKKj6cQqzp8XZwcB8W8Iv86LLsk=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.16.1 h1:bN6QuGWZTOzk6bLDFgJ0vKol6NpY/MZ1y+ERJ7CF3lY=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.16.1/go.mod h1:3SZFDKtQWXwplGyRfUDSsdrGH25Etkm62BdZig0Q3rY=
 github.com/KirkDiggler/rpg-toolkit/world v0.4.1 h1:YiVCVlOfG+7YJzZQtaME9QUpktv0ks/myMDiFsII/HA=
