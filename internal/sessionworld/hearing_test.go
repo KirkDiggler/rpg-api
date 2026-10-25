@@ -103,7 +103,10 @@ func (s *HearingSuite) TestTheGuardWalksASquareAndListensForAClang() {
 	s.Require().NotNil(listen, "a clang heard: walk toward it")
 	s.Equal(4, listen.Weight, "a heard clang wins the roll against the square four times in five")
 	s.Require().Len(listen.When, 2, "a clang heard AND nobody in sight: both must hold")
-	s.Equal(&tkencounter.HeardWhen{Kind: tkencounter.SoundClang, Within: 2}, listen.When[0].Heard)
+	s.Require().NotNil(listen.When[0].Heard)
+	s.Equal(tkencounter.SoundClang, listen.When[0].Heard.Kind.Literal, "a clang, by name")
+	s.Empty(listen.When[0].Heard.Kind.Pattern, "a literal kind, not a pattern")
+	s.Equal(2, listen.When[0].Heard.Within)
 	s.Equal(tkencounter.EnemyNone, listen.When[1].Enemy,
 		"the sound row leaves the roll once an enemy is in sight, so it never out-rolls the shout or the strike")
 	s.Require().NotNil(listen.Toward)
@@ -112,7 +115,7 @@ func (s *HearingSuite) TestTheGuardWalksASquareAndListensForAClang() {
 	s.Require().NotNil(shout, "an enemy in sight: shout")
 	s.Require().Len(shout.When, 2, "an enemy in sight AND the alarm not yet held: both must hold")
 	s.Require().NotNil(shout.When[1].Not, "the second entry is a negation")
-	s.Equal("alarm-raised", shout.When[1].Not.Fact,
+	s.Equal("alarm-raised", shout.When[1].Not.Fact.Literal,
 		"a crier that holds the alarm does not cry it again after every swing")
 	s.Equal("To arms!", shout.Say)
 	s.Equal(tkencounter.FactID("alarm-raised"), shout.Fact, "the shout teaches the alarm")
@@ -179,7 +182,7 @@ func (s *HearingSuite) TestTheSecondGuardMakesForTheDoorOnTheAlarm() {
 		row := &rows[i]
 		s.Require().NotEmptyf(row.When, "row %d names a condition", i)
 		switch {
-		case row.When[0].Fact == "alarm-raised":
+		case row.When[0].Fact.Literal == "alarm-raised":
 			alarm = row
 		case row.When[0].Enemy == tkencounter.EnemyNone:
 			hold = row
@@ -191,7 +194,7 @@ func (s *HearingSuite) TestTheSecondGuardMakesForTheDoorOnTheAlarm() {
 	s.NotNil(hold.Hold)
 	s.Require().Len(hold.When, 2, "nobody in sight AND no alarm held: both must hold")
 	s.Require().NotNil(hold.When[1].Not, "the second entry is a negation")
-	s.Equal("alarm-raised", hold.When[1].Not.Fact,
+	s.Equal("alarm-raised", hold.When[1].Not.Fact.Literal,
 		"once the alarm is held the hold leaves the roll, so it never ties with the walk")
 	s.Require().Len(alarm.When, 2, "the alarm held AND no enemy in reach: both must hold")
 	s.Require().NotNil(alarm.When[1].Not, "the second entry is a negation")
