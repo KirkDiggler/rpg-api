@@ -13,9 +13,10 @@
 #
 # THE BUNDLES ARE THE CASTLE'S, COPIED. `pursuer` and `revenger` below are
 # content/the-mad-king.yaml's rows, verbatim. A `use:` line names a bundle
-# declared in the same file's `bundles:` block (rpg-project#670); the server
-# keeps no library of them, so a site carries the bundles it uses. Both are
-# here so the Try-it's swap needs no bundle authored by hand.
+# declared in the same file's `bundles:` block (rpg-project#670;
+# rpg-project#683 D7); the server keeps no library of them, so a site
+# carries the bundles it uses. Both are here so the Try-it's swap needs no
+# bundle authored by hand.
 #
 # TRY IT (web client; lobby: "The Pursuit Hall (reference)").
 #   1. Start the run. You stand at the corridor's east end, out of his sight.
