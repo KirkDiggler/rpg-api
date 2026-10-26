@@ -52,6 +52,10 @@ import (
 // gatehouse's south wall is a seventh structural door with its wall prop and
 // span in placed (64 to 66), the outside is an eighth region, and the six
 // cells his ground paints under the gatehouse's side walls answer as sealed.
+//
+// AND reference-pursuit.atlas.json (smarter monsters S5, rpg-project#672) was
+// captured at the commit that added it, for the castle's reason: no earlier
+// build carries the file. A change detector from that commit on.
 func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBeforeTheWave() {
 	files, err := filepath.Glob(filepath.Join(dungeonstest.ContentDir(s.T()), "*.yaml"))
 	s.Require().NoError(err)
