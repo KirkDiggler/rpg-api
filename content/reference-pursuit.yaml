@@ -11,6 +11,12 @@
 # corridor outside runs east and west, so his search runs down open floor;
 # the passage at its west end is behind a wall from every cell he searches.
 #
+# THE BUNDLES ARE THE CASTLE'S, COPIED. `pursuer` and `revenger` below are
+# content/the-mad-king.yaml's rows, verbatim. A `use:` line names a bundle
+# declared in the same file's `bundles:` block (rpg-project#670); the server
+# keeps no library of them, so a site carries the bundles it uses. Both are
+# here so the Try-it's swap needs no bundle authored by hand.
+#
 # TRY IT (web client; lobby: "The Pursuit Hall (reference)").
 #   1. Start the run. You stand at the corridor's east end, out of his sight.
 #   2. Walk west along the corridor. As you cross the hall's doorway the
@@ -39,8 +45,6 @@ play:
   void: transparent
   lighting: bright
   standing: centre-covered
-# The castle's two bundles (content/the-mad-king.yaml), copied: a bundle is
-# declared in the file that uses it.
 bundles:
   # Walk to where you last saw them; when that cell is empty, search on the
   # way they went.
