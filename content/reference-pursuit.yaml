@@ -12,7 +12,16 @@
 # down the stair, the landing's walls stand between you and every cell he
 # reaches before he searches, so he walks to where he last saw you, finds
 # nobody, and searches the way you were going: west along the landing to
-# its dead end. A search runs in a straight line and never turns a corner.
+# its dead end, short of the six cells it would walk on open floor. A search
+# runs in a straight line and never turns a corner.
+#
+# EVERY STEP A CLICK PLANS IS ONE THE SERVER TAKES. The web client plans a
+# walk over floor cells alone and does not see these walls, so no two
+# neighbouring floor cells outside the hall are split by a wall: the
+# landing has no cell beside the stair's top corner, and the stair's foot
+# opens onto the passage on the diagonal. Each wall is also drawn so the
+# floor cell nearest its middle, which the client treats as occupied, is a
+# cell no route needs.
 #
 # THE BUNDLES ARE THE CASTLE'S, COPIED. `pursuer` and `revenger` below are
 # content/the-mad-king.yaml's rows, verbatim. A `use:` line names a bundle
@@ -29,8 +38,8 @@
 #   3. Go back down the stair the way you came, and end turn. Keep ending
 #      turns.
 #   4. Read the encounter history (the map keeps him where you last saw him):
-#      he walks to the doorway, searches six cells the way you were going,
-#      and walks back to his post.
+#      he walks to the doorway, searches west along the landing (the way you
+#      were going) to its dead end, and walks back to his post.
 #   5. Play the difference: open this file in the encounter studio, change
 #      the guard's `use: pursuer` line to `use: revenger`, save, and play
 #      again without striking him. He never leaves his post.
