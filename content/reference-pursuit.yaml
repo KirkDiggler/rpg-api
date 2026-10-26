@@ -11,18 +11,23 @@
 # corridor outside runs east and west, so his search runs down open floor;
 # the passage at its west end is behind a wall from every cell he searches.
 #
-# TRY IT (web client, lobby: "The Pursuit Hall").
+# TRY IT (web client; lobby: "The Pursuit Hall (reference)").
 #   1. Start the run. You stand at the corridor's east end, out of his sight.
-#   2. Walk west along the corridor past the hall's doorway. The guard at the
-#      far end sees you and the fight forms.
-#   3. On your turn keep walking west, out of the doorway's line; end turn.
-#   4. Next turn walk up the passage at the corridor's west end, to its
-#      top-right corner, and end turn. Keep ending turns.
-#   5. Watch the guard walk to the doorway where he last saw you, search six
-#      cells west along the corridor, then walk back to his post.
+#   2. Walk west along the corridor. As you cross the hall's doorway the
+#      guard at the far end sees you, and the fight begins.
+#   3. On your turn walk five or six cells further west, past the doorway's
+#      line, and end turn.
+#   4. Next turns: walk to the corridor's west end, then up the passage to
+#      its top corner, ending turn each time. Click one leg at a time; one
+#      click round the passage's corner does not move you.
+#   5. Keep ending turns with the encounter history open. He is out of your
+#      sight, so the map keeps him where you last saw him, but the history
+#      reads it: he walks to the doorway cell he last saw you on, (0, 6);
+#      then "Bandit: search" and six cells west to (-6, 6); then back to his
+#      post.
 #   6. Play the difference: open this file in the encounter studio, change
-#      the guard's `use: pursuer` line to `use: revenger`, save, play again
-#      without striking him. He stops where he loses you.
+#      the guard's `use: pursuer` line to `use: revenger`, save, and play
+#      again without striking him. He never leaves his post.
 #
 # The guard is a bandit with his light crossbow dropped: a ranged weapon puts
 # you "in reach" across the hall, and he would shoot instead of walking. A
