@@ -24,8 +24,10 @@
 #      the guard's `use: pursuer` line to `use: revenger`, save, play again
 #      without striking him. He stops where he loses you.
 #
-# The guard is a thug with his heavy crossbow dropped: a ranged weapon puts
-# you "in reach" across the hall, and he would shoot instead of walking.
+# The guard is a bandit with his light crossbow dropped: a ranged weapon puts
+# you "in reach" across the hall, and he would shoot instead of walking. A
+# bandit, not a thug: dropping an action re-arms the sheet with every action
+# it has, and the thug's multiattack is not a weapon, so the launch refuses it.
 version: 4
 key: reference-pursuit
 play:
@@ -181,7 +183,7 @@ room:
     partyStart: { q: 6, r: 6 }
     monsterDeclarations:
       - id: guard
-        ref: dnd5e:monsters:thug
+        ref: dnd5e:monsters:bandit
         startingCell:
           location: { q: 7, r: -8 }
           facing: s
@@ -190,4 +192,4 @@ room:
       guard:
         faction: hall
         table: hall-guard
-        dropActions: [dnd5e:weapons:heavy-crossbow]
+        dropActions: [dnd5e:weapons:light-crossbow]
