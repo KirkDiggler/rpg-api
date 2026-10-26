@@ -83,12 +83,12 @@ room:
     footprintFrame: owner-local-xz
   workspace:
     kind: centered-odd-r
-    widthHexes: 22
+    widthHexes: 20
     heightHexes: 18
     hexRadius: 14
-    horizontalLimit: 20
+    horizontalLimit: 19
   scene:
-    version: 1
+    version: 3
     id: scene-1
     name: The Pursuit Hall
     items: []
@@ -191,5 +191,3 @@ room:
         faction: hall
         table: hall-guard
         dropActions: [dnd5e:weapons:heavy-crossbow]
-    doorBindings: {}
-    propBindings: {}
