@@ -1,0 +1,286 @@
+# THE PURSUIT HALL (smarter monsters S5, rpg-project#672): the small
+# reference site for PURSUIT, authored only from bundles. It proves one
+# mechanic and is built so it fires on the first try: a guard who loses sight
+# of you walks to where he last saw you, then searches the way you went,
+# gives up, and walks back to his post.
+#
+# WHY IT FIRES EVERY TIME. The hall is fourteen rows deep and the guard stands
+# at its far end, facing its doorway, so once he loses you he needs two turns
+# to reach where he saw you. Outside is a landing with a stair down at its
+# east end to a passage under the landing; the landing's west end is a dead
+# end. Every way from the stair to the doorway crosses the doorway's view a
+# cell before the door, so walking to the door gets you seen. Back down the
+# stair, the landing's walls stand between you and every cell he reaches
+# before he searches, so he walks to where he last saw you, finds nobody,
+# and searches the way you were going in a straight line that never turns a
+# corner. You cannot see him and he cannot see you, so he says it aloud:
+# the encounter history carries "Where did you go?" as he comes and "Come
+# out. I know you're here." as he searches.
+#
+# EVERY STEP A CLICK PLANS IS ONE THE SERVER TAKES. The web client plans a
+# walk over floor cells alone and does not see these walls, so no two
+# neighbouring floor cells outside the hall are split by a wall: the
+# landing has no cell beside the stair's top corner, and the stair's foot
+# opens onto the passage on the diagonal. Each wall is also drawn so the
+# floor cell nearest its middle, which the client treats as occupied, is a
+# cell no route needs.
+#
+# THE BUNDLES ARE THE CASTLE'S. `pursuer` and `revenger` below are
+# content/the-mad-king.yaml's rows; `pursuer` here also says two lines,
+# passed as parameters. A `use:` line names a bundle declared in the same
+# file's `bundles:` block (rpg-project#670; rpg-project#683 D7); the server
+# keeps no library of them, so a site carries the bundles it uses, and its
+# copy may differ. Both are here so the Try-it's swap needs no bundle
+# authored by hand.
+#
+# TRY IT (web client; lobby: "The Pursuit Hall (reference)").
+#   1. Start the run, in the passage under the landing.
+#   2. Walk to the hall's doorway: along the passage, up the stair, along the
+#      landing. The guard sees you before you reach it; the fight begins.
+#   3. Go back down the stair the way you came and along the passage. End
+#      turn, and keep ending turns with the encounter history open.
+#   4. Read him come: "Where did you go?" as he walks to where he last saw
+#      you, "Come out. I know you're here." as he searches the way you were
+#      going, then his walk back to his post.
+#   5. Play the difference: open this file in the encounter studio, change
+#      the guard's `use: pursuer` line to `use: revenger`, save, and play
+#      again without striking him. He never leaves his post.
+#
+# The guard is a bandit with his light crossbow dropped: a ranged weapon puts
+# you "in reach" across the hall, and he would shoot instead of walking. A
+# bandit, not a thug: dropping an action re-arms the sheet with every action
+# it has, and the thug's multiattack is not a weapon, so the launch refuses it.
+version: 4
+key: reference-pursuit
+play:
+  void: transparent
+  lighting: bright
+  standing: centre-covered
+bundles:
+  # Walk to where you last saw them; when that cell is empty, search on the
+  # way they went. Each step says its line aloud, so a hero hiding out of
+  # sight hears the hunt in the encounter history.
+  pursuer:
+    params: { distance: 6, heading: went, calling: "Where did you go?", searching: "Come out. I know you're here." }
+    rows:
+      - when: { enemy: remembered }
+        say: $calling
+        toward: enemy
+      - when: { enemy: lost }
+        say: $searching
+        search: { distance: $distance, heading: $heading }
+  # Go for whoever hit you in the last two rounds: strike them in reach, walk
+  # to them in sight or memory.
+  revenger:
+    rows:
+      - when: { attacked: { within: 2 } }
+        attack: attacker
+      - when: { attacked: { within: 2 } }
+        toward: attacker
+tables:
+  hall-guard:
+    time:
+      - when: { enemy: reach }
+        attack: enemy
+      - when: { enemy: seen }
+        toward: enemy
+      # The one line this file is about. Swap it for `use: revenger`.
+      - use: pursuer
+      # With nobody to chase, back to his post at the hall's far end.
+      - when: { enemy: none }
+        toward: { at: { q: 7, r: -8 } }
+dispositions:
+  - between:
+      - hall
+      - party
+    stance: hostile
+factions:
+  - id: hall
+room:
+  version: 3
+  id: room-1
+  name: The Pursuit Hall
+  coordinateFrame:
+    horizontalPlane: world-xz
+    verticalAxis: world-y-up
+    distanceUnit: world-scene-unit
+    hexRadius: 1
+    footprintFrame: owner-local-xz
+  workspace:
+    kind: centered-odd-r
+    widthHexes: 20
+    heightHexes: 26
+    hexRadius: 16
+    horizontalLimit: 21
+  scene:
+    version: 3
+    id: scene-1
+    name: The Pursuit Hall
+    items: []
+    groups: []
+  room:
+    implicitRegionId: room-1-region
+    walls:
+      - id: hall-north-wall
+        label: hall-north-wall
+        line:
+          start: { x: 0.866025403784, z: -12.75 }
+          end: { x: 10.392304845413, z: -12.75 }
+        appearance: { assetRef: dnd5e:env:dark-fortress:45_wall_01, height: 3, thickness: 0.3, elevation: 0 }
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint: { width: 9.526279441629, depth: 0.5, offsetX: 0, offsetZ: 0 }
+        openings: []
+      - id: hall-west-wall
+        label: hall-west-wall
+        line:
+          start: { x: 0.866025403784, z: -12.75 }
+          end: { x: 0.866025403784, z: 8.25 }
+        appearance: { assetRef: dnd5e:env:dark-fortress:45_wall_01, height: 3, thickness: 0.3, elevation: 0 }
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint: { width: 21, depth: 0.5, offsetX: 0, offsetZ: 0 }
+        openings: []
+      - id: hall-east-wall
+        label: hall-east-wall
+        line:
+          start: { x: 10.392304845413, z: -12.75 }
+          end: { x: 10.392304845413, z: 8.25 }
+        appearance: { assetRef: dnd5e:env:dark-fortress:45_wall_01, height: 3, thickness: 0.3, elevation: 0 }
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint: { width: 21, depth: 0.5, offsetX: 0, offsetZ: 0 }
+        openings: []
+      - id: landing-north-wall
+        label: landing-north-wall
+        line:
+          start: { x: -0.433012701892, z: 8.25 }
+          end: { x: 16.021469970012, z: 8.25 }
+        appearance: { assetRef: dnd5e:env:dark-fortress:45_wall_01, height: 3, thickness: 0.3, elevation: 0 }
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint: { width: 16.454482671904, depth: 0.5, offsetX: 0, offsetZ: 0 }
+        openings:
+          - id: hall-doorway
+            position: 6.062177826491
+            width: 2.598076211353
+      - id: landing-west-wall
+        label: landing-west-wall
+        line:
+          start: { x: -0.433012701892, z: 8.25 }
+          end: { x: -0.433012701892, z: 11.25 }
+        appearance: { assetRef: dnd5e:env:dark-fortress:45_wall_01, height: 3, thickness: 0.3, elevation: 0 }
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint: { width: 3, depth: 0.5, offsetX: 0, offsetZ: 0 }
+        openings: []
+      - id: landing-south-wall
+        label: landing-south-wall
+        line:
+          start: { x: -0.433012701892, z: 11.25 }
+          end: { x: 8.79881810245, z: 11.25 }
+        appearance: { assetRef: dnd5e:env:dark-fortress:45_wall_01, height: 3, thickness: 0.3, elevation: 0 }
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint: { width: 9.231830804342, depth: 0.5, offsetX: 0, offsetZ: 0 }
+        openings: []
+      - id: stair-west-wall
+        label: stair-west-wall
+        line:
+          start: { x: 8.227241335952, z: 11.25 }
+          end: { x: 8.227241335952, z: 13.6 }
+        appearance: { assetRef: dnd5e:env:dark-fortress:45_wall_01, height: 3, thickness: 0.3, elevation: 0 }
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint: { width: 2.35, depth: 0.5, offsetX: 0, offsetZ: 0 }
+        openings: []
+      - id: passage-north-wall
+        label: passage-north-wall
+        line:
+          start: { x: -3.89711431703, z: 14.25 }
+          end: { x: 7.6, z: 14.25 }
+        appearance: { assetRef: dnd5e:env:dark-fortress:45_wall_01, height: 3, thickness: 0.3, elevation: 0 }
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint: { width: 11.49711431703, depth: 0.5, offsetX: 0, offsetZ: 0 }
+        openings: []
+      - id: passage-west-wall
+        label: passage-west-wall
+        line:
+          start: { x: 1.299038105677, z: 11.25 }
+          end: { x: 1.299038105677, z: 17.25 }
+        appearance: { assetRef: dnd5e:env:dark-fortress:45_wall_01, height: 3, thickness: 0.3, elevation: 0 }
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint: { width: 6, depth: 0.5, offsetX: 0, offsetZ: 0 }
+        openings: []
+      - id: passage-south-wall
+        label: passage-south-wall
+        line:
+          start: { x: 1.299038105677, z: 17.25 }
+          end: { x: 16.021469970012, z: 17.25 }
+        appearance: { assetRef: dnd5e:env:dark-fortress:45_wall_01, height: 3, thickness: 0.3, elevation: 0 }
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint: { width: 14.722431864335, depth: 0.5, offsetX: 0, offsetZ: 0 }
+        openings: []
+      - id: east-wall
+        label: east-wall
+        line:
+          start: { x: 11.69134295109, z: -12.75 }
+          end: { x: 11.69134295109, z: 17.25 }
+        appearance: { assetRef: dnd5e:env:dark-fortress:45_wall_01, height: 3, thickness: 0.3, elevation: 0 }
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint: { width: 30, depth: 0.5, offsetX: 0, offsetZ: 0 }
+        openings: []
+    # The hall (rows -8..5), the landing outside its doorway (rows 6..7), the
+    # stair at the landing's east end (rows 8..9) and the passage under the
+    # landing (rows 10..11).
+    walkableHexes: [
+      {q: 5, r: -8}, {q: 6, r: -8}, {q: 7, r: -8}, {q: 8, r: -8}, {q: 9, r: -8},
+      {q: 5, r: -7}, {q: 6, r: -7}, {q: 7, r: -7}, {q: 8, r: -7}, {q: 9, r: -7},
+      {q: 4, r: -6}, {q: 5, r: -6}, {q: 6, r: -6}, {q: 7, r: -6}, {q: 8, r: -6},
+      {q: 4, r: -5}, {q: 5, r: -5}, {q: 6, r: -5}, {q: 7, r: -5}, {q: 8, r: -5},
+      {q: 3, r: -4}, {q: 4, r: -4}, {q: 5, r: -4}, {q: 6, r: -4}, {q: 7, r: -4},
+      {q: 3, r: -3}, {q: 4, r: -3}, {q: 5, r: -3}, {q: 6, r: -3}, {q: 7, r: -3},
+      {q: 2, r: -2}, {q: 3, r: -2}, {q: 4, r: -2}, {q: 5, r: -2}, {q: 6, r: -2},
+      {q: 2, r: -1}, {q: 3, r: -1}, {q: 4, r: -1}, {q: 5, r: -1}, {q: 6, r: -1},
+      {q: 1, r: 0}, {q: 2, r: 0}, {q: 3, r: 0}, {q: 4, r: 0}, {q: 5, r: 0},
+      {q: 1, r: 1}, {q: 2, r: 1}, {q: 3, r: 1}, {q: 4, r: 1}, {q: 5, r: 1},
+      {q: 0, r: 2}, {q: 1, r: 2}, {q: 2, r: 2}, {q: 3, r: 2}, {q: 4, r: 2},
+      {q: 0, r: 3}, {q: 1, r: 3}, {q: 2, r: 3}, {q: 3, r: 3}, {q: 4, r: 3},
+      {q: -1, r: 4}, {q: 0, r: 4}, {q: 1, r: 4}, {q: 2, r: 4}, {q: 3, r: 4},
+      {q: -1, r: 5}, {q: 0, r: 5}, {q: 1, r: 5}, {q: 2, r: 5}, {q: 3, r: 5},
+      {q: -3, r: 6}, {q: -2, r: 6}, {q: -1, r: 6}, {q: 0, r: 6}, {q: 1, r: 6}, {q: 2, r: 6}, {q: 3, r: 6},
+      {q: -3, r: 7}, {q: -2, r: 7}, {q: -1, r: 7}, {q: 0, r: 7}, {q: 2, r: 7}, {q: 3, r: 7},
+      {q: 1, r: 8}, {q: 2, r: 8},
+      {q: 1, r: 9}, {q: 2, r: 9},
+      {q: -4, r: 10}, {q: -3, r: 10}, {q: -2, r: 10}, {q: -1, r: 10}, {q: 0, r: 10}, {q: 1, r: 10},
+      {q: -4, r: 11}, {q: -3, r: 11}, {q: -2, r: 11}, {q: -1, r: 11}, {q: 0, r: 11}, {q: 1, r: 11}]
+    propDeclarations: {}
+    arrangementDeclarations: {}
+    partyStart: { q: -4, r: 11 }
+    monsterDeclarations:
+      - id: guard
+        ref: dnd5e:monsters:bandit
+        startingCell:
+          location: { q: 7, r: -8 }
+          facing: s
+        appearanceRef: dnd5e:npcs:kingdom:soldier-male-01
+    monsterBindings:
+      guard:
+        faction: hall
+        table: hall-guard
+        dropActions: [dnd5e:weapons:light-crossbow]
