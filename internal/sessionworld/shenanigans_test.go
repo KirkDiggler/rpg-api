@@ -357,6 +357,12 @@ func (s *ShenanigansSuite) TestTheBanditsWalkToTheFrontRoom() {
 // exactly one of them holds at any moment. An entry list that drifted in order
 // still passes; one that lost a band does not, which is the failure this
 // exists to catch.
+//
+// THE FIVE BANDS, NAMED HERE, not the whole `enemy:` vocabulary. Since the
+// dash slice (rpg-project#671) that vocabulary also carries the move words
+// `walk`, `dash` and `far`, which split an enemy already seen by how far one
+// turn's move reaches; they overlap the bands rather than partition them, so
+// a table needs no row for them to answer every moment.
 func (s *ShenanigansSuite) TestTheBanditsCanStillFight() {
 	for _, id := range []string{"bandit-1", "bandit-2"} {
 		answered := map[tkencounter.EnemyWord]bool{}
@@ -367,7 +373,10 @@ func (s *ShenanigansSuite) TestTheBanditsCanStillFight() {
 				}
 			}
 		}
-		for _, band := range tkencounter.EnemyWords {
+		for _, band := range []tkencounter.EnemyWord{
+			tkencounter.EnemyReach, tkencounter.EnemySeen, tkencounter.EnemyRemembered,
+			tkencounter.EnemyLost, tkencounter.EnemyNone,
+		} {
 			s.Truef(answered[band], "%s has an answer for `enemy: %s`", id, band)
 		}
 	}

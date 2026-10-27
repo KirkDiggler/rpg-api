@@ -208,6 +208,21 @@ bundles:
         attack: attacker
       - when: { attacked: { within: 2 } }
         toward: attacker
+  # Hand edit (rpg-project#671, S4 dash; lane #683 D6, D8): close at the
+  # pace the gap needs. Strike them in reach; walk when a walk gets you there
+  # and still swings. Run only while the run gains a round: inside one run of
+  # reach, walk up and swing next round rather than arrive winded beside him.
+  # A run spends the swing, so only a guard more than a run away runs.
+  dasher:
+    rows:
+      - when: { enemy: reach }
+        attack: enemy
+      - when: { enemy: walk }
+        toward: enemy
+      - when: { enemy: dash }
+        toward: enemy
+      - when: { enemy: far }
+        dash: enemy
   # With nobody to chase, walk the route.
   patrol:
     params: { path: ~ }
@@ -217,10 +232,12 @@ bundles:
   # Hand edit (rpg-project#670, N2): the base every gate guard starts from,
   # a bundle of bundles. Pursuit, the clang, and the guard's own loop, whose
   # route each guard passes in; `$path` crosses into the patrol one level
-  # down.
+  # down. Hand edit (rpg-project#671): the dasher first, so a guard more than
+  # a run from you runs, before he walks after a memory.
   guard-base:
     params: { path: ~ }
     rows:
+      - use: dasher
       - use: pursuer
       - use: alarm-reactor
       - use: patrol
@@ -400,6 +417,10 @@ tables:
         toward: enemy
   answer-the-gate:
     time:
+      # Hand edit (rpg-project#671): the reserves run to the gate. First, so
+      # a reserve more than a run from the hero runs, one nearer walks up, and
+      # one in reach strikes.
+      - use: dasher
       - when:
           enemy: reach
         attack: enemy
