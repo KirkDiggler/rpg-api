@@ -1,19 +1,21 @@
 # THE PURSUIT HALL (smarter monsters S5, rpg-project#672): the small
 # reference site for PURSUIT, authored only from bundles. It proves one
 # mechanic and is built so it fires on the first try: a guard who loses sight
-# of you walks to where he last saw you, then searches six cells the way you
-# went, gives up, and walks back to his post.
+# of you walks to where he last saw you, then searches the way you went,
+# gives up, and walks back to his post.
 #
 # WHY IT FIRES EVERY TIME. The hall is fourteen rows deep and the guard stands
-# at its far end, facing its one narrow doorway, so he needs two turns to
-# reach it. Outside is a landing with a stair down at its east end to a
-# passage under the landing, and the landing's west end is a dead end. You
-# come up the stair and walk west to the doorway; he sees you there. Back
-# down the stair, the landing's walls stand between you and every cell he
-# reaches before he searches, so he walks to where he last saw you, finds
-# nobody, and searches the way you were going: west along the landing to
-# its dead end, short of the six cells it would walk on open floor. A search
-# runs in a straight line and never turns a corner.
+# at its far end, facing its doorway, so once he loses you he needs two turns
+# to reach where he saw you. Outside is a landing with a stair down at its
+# east end to a passage under the landing; the landing's west end is a dead
+# end. Every way from the stair to the doorway crosses the doorway's view a
+# cell before the door, so walking to the door gets you seen. Back down the
+# stair, the landing's walls stand between you and every cell he reaches
+# before he searches, so he walks to where he last saw you, finds nobody,
+# and searches the way you were going in a straight line that never turns a
+# corner. You cannot see him and he cannot see you, so he says it aloud:
+# the encounter history carries "Where did you go?" as he comes and "Come
+# out. I know you're here." as he searches.
 #
 # EVERY STEP A CLICK PLANS IS ONE THE SERVER TAKES. The web client plans a
 # walk over floor cells alone and does not see these walls, so no two
@@ -23,23 +25,23 @@
 # floor cell nearest its middle, which the client treats as occupied, is a
 # cell no route needs.
 #
-# THE BUNDLES ARE THE CASTLE'S, COPIED. `pursuer` and `revenger` below are
-# content/the-mad-king.yaml's rows, verbatim. A `use:` line names a bundle
-# declared in the same file's `bundles:` block (rpg-project#670;
-# rpg-project#683 D7); the server keeps no library of them, so a site
-# carries the bundles it uses. Both are here so the Try-it's swap needs no
-# bundle authored by hand.
+# THE BUNDLES ARE THE CASTLE'S. `pursuer` and `revenger` below are
+# content/the-mad-king.yaml's rows; `pursuer` here also says two lines,
+# passed as parameters. A `use:` line names a bundle declared in the same
+# file's `bundles:` block (rpg-project#670; rpg-project#683 D7); the server
+# keeps no library of them, so a site carries the bundles it uses, and its
+# copy may differ. Both are here so the Try-it's swap needs no bundle
+# authored by hand.
 #
 # TRY IT (web client; lobby: "The Pursuit Hall (reference)").
-#   1. Start the run. You stand in the passage under the landing.
+#   1. Start the run, in the passage under the landing.
 #   2. Walk to the hall's doorway: along the passage, up the stair, along the
-#      landing. As you step in front of it the guard sees you; the fight
-#      begins.
-#   3. Go back down the stair the way you came, and end turn. Keep ending
-#      turns.
-#   4. Read the encounter history (the map keeps him where you last saw him):
-#      he walks to the doorway, searches west along the landing (the way you
-#      were going) to its dead end, and walks back to his post.
+#      landing. The guard sees you before you reach it; the fight begins.
+#   3. Go back down the stair the way you came and along the passage. End
+#      turn, and keep ending turns with the encounter history open.
+#   4. Read him come: "Where did you go?" as he walks to where he last saw
+#      you, "Come out. I know you're here." as he searches the way you were
+#      going, then his walk back to his post.
 #   5. Play the difference: open this file in the encounter studio, change
 #      the guard's `use: pursuer` line to `use: revenger`, save, and play
 #      again without striking him. He never leaves his post.
@@ -56,13 +58,16 @@ play:
   standing: centre-covered
 bundles:
   # Walk to where you last saw them; when that cell is empty, search on the
-  # way they went.
+  # way they went. Each step says its line aloud, so a hero hiding out of
+  # sight hears the hunt in the encounter history.
   pursuer:
-    params: { distance: 6, heading: went }
+    params: { distance: 6, heading: went, calling: "Where did you go?", searching: "Come out. I know you're here." }
     rows:
       - when: { enemy: remembered }
+        say: $calling
         toward: enemy
       - when: { enemy: lost }
+        say: $searching
         search: { distance: $distance, heading: $heading }
   # Go for whoever hit you in the last two rounds: strike them in reach, walk
   # to them in sight or memory.
@@ -162,7 +167,7 @@ room:
         openings:
           - id: hall-doorway
             position: 6.062177826491
-            width: 1
+            width: 2.598076211353
       - id: landing-west-wall
         label: landing-west-wall
         line:
