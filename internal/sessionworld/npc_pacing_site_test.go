@@ -31,6 +31,12 @@ func (s *NpcPacingSiteSuite) TestSiteHasTwoVisibleWalkersAndAResultIndependentSt
 	other := dungeon.Spec.Monsters[1]
 	s.Equal("walker-a", leader.ID)
 	s.Equal("walker-b", other.ID)
+	leaderCell := cellOf(dungeon.Spec.Field.Canvas.Orientation, leader.At)
+	otherCell := cellOf(dungeon.Spec.Field.Canvas.Orientation, other.At)
+	s.Equal(5.0, leaderCell.X)
+	s.Equal(0.0, leaderCell.Y)
+	s.Equal(0.0, otherCell.X)
+	s.Equal(5.0, otherCell.Y)
 	s.Equal("dnd5e:npcs:goblin:knight-01", leader.AppearanceRef)
 	s.Equal("dnd5e:npcs:goblin:prisoner-02", other.AppearanceRef)
 	s.Equal("drill", leader.Faction)
