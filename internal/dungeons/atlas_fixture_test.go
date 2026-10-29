@@ -52,6 +52,9 @@ import (
 // gatehouse's south wall is a seventh structural door with its wall prop and
 // span in placed (64 to 66), the outside is an eighth region, and the six
 // cells his ground paints under the gatehouse's side walls answer as sealed.
+// It was recaptured for Frank's list S2 (rpg-project#716): the party's way in
+// becomes its way out, and the `front-door` exit at the party start is the
+// one change, a second exit in the atlas.
 //
 // AND reference-pursuit.atlas.json (smarter monsters S5, rpg-project#672) was
 // captured at the commit that added it, for the castle's reason: no earlier
