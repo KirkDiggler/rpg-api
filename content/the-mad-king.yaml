@@ -49,7 +49,8 @@
 # THE CASTLE. The garrison keeps the gate and the hall, and its mind is the
 # captain: it is civil to the party until the party is recognized, and civil
 # to the loyalists until the guards turn. The loyalists (the king and his
-# knights) are hostile to the party always.
+# knights) are hostile to the party until the king falls; then they stand
+# down and can be spoken to.
 # The kitchen is civil and stays civil. One fact is learned in the kitchen
 # and spent at the gate — the cook's gossip opens the troupe, and Ashford
 # opens the turn. The captain's orders on the kitchen floor say the party is
@@ -57,13 +58,12 @@
 # knows it (`party-recognized`, the garrison's `until`). The prisoners are
 # neutral to everybody. Every door is shut, the throne room's too, and one
 # is locked: the cell door, thieves' tools at DC 13, whose opening teaches
-# `cells-opened`, and walking out of the front door after it ends the run
-# `freed`. A shut throne door stops a turned
-# garrison's march at it, because a driven walk routes only through open
-# doors and no creature opens one (rpg-toolkit#2069); the party opens it. A
-# turned garrison storms the keep; a garrison told to hold the castle, and
-# the party walking out of the front door, ends the run with the king still
-# breathing.
+# `cells-opened`; the run then ends `freed` when the party walks out the
+# front door. A driven walk opens a shut,
+# unlocked door it steps onto (rpg-project#715), so a turned garrison's march
+# opens the shut throne door on its way in; a locked door still stops it. A
+# turned garrison storms the keep; a garrison told to hold the castle ends
+# the run with the king still breathing.
 #
 # STATED FACINGS (rpg-project#623). A watcher's cone points where it faces,
 # and an unstated facing is south (180), so every creature that stands still
@@ -420,13 +420,16 @@ tables:
       # whoever hit him, past a nearer enemy, as one line. Otherwise the rows
       # below are the fallback, through the roll.
       - use: revenger
-      # Hand edit: a turned garrison marches on the throne room until it sees
-      # a loyalist (use case R8's list form). `enemy: none`, not `not: { enemy:
-      # seen }`: the bands are exclusive (R11), so an enemy in reach is not
-      # "seen", and the negation would march a captain past the knight
+      # Hand edit (Frank's list S3, rpg-project#717): a turned captain comes
+      # with the party. With no foe in sight he follows the nearest ally, a
+      # member of the party once the garrison is the party's side; his own
+      # garrison are kin, not allies. The rest of the garrison still marches
+      # on the throne room on its own tables. `enemy: none`, not `not: {
+      # enemy: seen }`: the bands are exclusive (R11), so an enemy in reach is
+      # not "seen", and the negation would walk a captain past the knight
       # swinging at him.
       - when: [{ fact: guards-turned }, { enemy: none }]
-        toward: { at: { q: 10, r: -19 } }
+        toward: ally
       - when:
           enemy: reach
         attack: enemy
@@ -490,12 +493,15 @@ factions:
   - id: prisoners
   - id: townsfolk
 dispositions:
+  # The captain's word outranks recognition: the first step that holds wins
+  # (rpg-project#717), whichever fact the captain learned first.
   - between:
       - garrison
       - party
     stance: neutral
     until:
-      fact: party-recognized
+      - { fact: guards-turned, then: allied }
+      - { fact: party-recognized, then: hostile }
   - between:
       - loyalists
       - party
@@ -1711,14 +1717,35 @@ room:
                 fact: throne-taken
             failure:
               - say: We’ll hold what we can.
+      # A FAILED THEFT CLOSES THE KITCHEN, NOT THE KEEP (rpg-project#719):
+      # the pilfer's failure teaches `caught-in-kitchen` to whoever saw it,
+      # and the cook's theft and gossip are withheld from a speaker who knows
+      # it (D3: the speaker's knowledge). Ashford and the bribe already have
+      # a requirement each, and a requires is one predicate, so they stay.
       cook:
         faction: kitchen
         options:
+          - id: pilfer
+            say: (lift a pie from the sill)
+            check:
+              - ability: sleight-of-hand
+                dc: 13
+            requires:
+              not:
+                fact: caught-in-kitchen
+            success:
+              - say: The cook never looks round.
+            failure:
+              - say: Thief!
+                fact: caught-in-kitchen
           - id: gossip
             say: Busy night?
             check:
               - ability: persuasion
                 dc: 10
+            requires:
+              not:
+                fact: caught-in-kitchen
             success:
               - say: Feast for the whole court, and him sitting there grinning after what he did
                   to Ashford.
