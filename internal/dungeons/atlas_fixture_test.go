@@ -64,6 +64,10 @@ import (
 // AND reference-pursuit.atlas.json (smarter monsters S5, rpg-project#672) was
 // captured at the commit that added it, for the castle's reason: no earlier
 // build carries the file. A change detector from that commit on.
+//
+// reference-npc-pacing.atlas.json is captured using the new site with the
+// pre-fixture API projector at d4a85ae. It pins the new layout without deriving
+// expected output from changes to the projection under test.
 func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBeforeTheWave() {
 	files, err := filepath.Glob(filepath.Join(dungeonstest.ContentDir(s.T()), "*.yaml"))
 	s.Require().NoError(err)

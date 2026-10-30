@@ -161,8 +161,9 @@ func (s *TemplatesSuite) TestCompile_ReferenceDungeonsDeclareNoTemplates() {
 	s.Require().NotEmpty(paths)
 
 	templated := map[string]bool{
-		filepath.Join("..", "..", "content", "action-augment-walk.yaml"): true,
-		filepath.Join("..", "..", "content", "the-mad-king.yaml"):        true,
+		filepath.Join("..", "..", "content", "action-augment-walk.yaml"):  true,
+		filepath.Join("..", "..", "content", "the-mad-king.yaml"):         true,
+		filepath.Join("..", "..", "content", "reference-npc-pacing.yaml"): true,
 	}
 
 	for _, path := range paths {
