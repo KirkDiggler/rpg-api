@@ -245,7 +245,7 @@ func everyBody() map[string]bodyCase {
 				Fight:     &sdk.FightFormed{Order: []sdk.Party{alice, gate1}, Surprised: []sdk.Party{gate1}},
 				Dissolved: &sdk.FightDissolved{Members: []sdk.Party{alice}, Cause: "fled"},
 				Member:    alice, Departure: &sdk.Departure{Member: alice, Holding: []string{"crown"}, Exit: "postern"},
-				Arrival: &sdk.Arrival{ID: "guard-3", Kind: "creature", Cell: cell}, Ending: "escaped",
+				Arrival: &sdk.Arrival{ID: "guard-3", Kind: "creature", Cell: cell}, Ending: "escaped", Outcome: sdk.ResultFailure,
 				Window: &sdk.WindowOpened{Member: alice, From: cell, To: spatial.Position{X: 4, Y: -2},
 					Windows: []sdk.WindowOffer{{Audience: gate1, Reaction: oa}}},
 				RollWindow: &sdk.RollWindowOpened{PresentationID: "p", Audience: alice, Offer: oa, Roll: d20},
@@ -256,6 +256,7 @@ func everyBody() map[string]bodyCase {
 				Dissolved: &sessionpb.FightDissolved{Members: []*sessionpb.Party{aliceP}, Cause: "fled"},
 				Member:    aliceP, Departure: &sessionpb.Departure{Member: aliceP, Holding: []string{"crown"}, Exit: "postern"},
 				Arrival: &sessionpb.Arrival{Id: "guard-3", Kind: "creature", Cell: cellP}, Ending: "escaped",
+				Outcome: sessionpb.EndingResult_ENDING_RESULT_FAILURE,
 				Window: &sessionpb.WindowOpened{Member: aliceP, From: cellP, To: &sessionpb.Position{X: 4, Y: -2},
 					Windows: []*sessionpb.WindowOffer{{Audience: gate1P, Reaction: oaP}}},
 				RollWindow: &sessionpb.RollWindowOpened{PresentationId: "p", Audience: aliceP, Offer: oaP, Roll: d20P},
@@ -386,6 +387,35 @@ func (s *ConvertActSuite) TestConvertUnknownValueRefuses() {
 	s.Require().ErrorIs(err, errUnknownValue)
 	s.True(got.GetRefused())
 	s.Equal("id-2", got.GetId())
+}
+
+// TestConvertEndedCarriesTheDeclaredResult (rpg-project#733): the ended entry
+// carries the ending's declared result as given; an ending that declares none,
+// as every run recorded before results existed, crosses as unspecified, and a
+// result this build cannot spell refuses the act.
+func (s *ConvertActSuite) TestConvertEndedCarriesTheDeclaredResult() {
+	ended := func(ending string, result sdk.EndingResult) (*sessionpb.Act, error) {
+		return actToProto(sdk.Act{ID: "id-1", Family: sdk.FamilyClock,
+			Body: sdk.ClockEntry{Mark: sdk.ClockEnded, Ending: ending, Outcome: result}})
+	}
+
+	got, err := ended("captain-slain", sdk.ResultSuccess)
+	s.Require().NoError(err)
+	s.Equal("captain-slain", got.GetClock().GetEnding())
+	s.Equal(sessionpb.EndingResult_ENDING_RESULT_SUCCESS, got.GetClock().GetOutcome())
+
+	got, err = ended("captain-lives", sdk.ResultFailure)
+	s.Require().NoError(err)
+	s.Equal(sessionpb.EndingResult_ENDING_RESULT_FAILURE, got.GetClock().GetOutcome())
+
+	got, err = ended("withdrawn", "")
+	s.Require().NoError(err)
+	s.Equal("withdrawn", got.GetClock().GetEnding())
+	s.Equal(sessionpb.EndingResult_ENDING_RESULT_UNSPECIFIED, got.GetClock().GetOutcome())
+
+	got, err = ended("captain-slain", "draw")
+	s.Require().ErrorIs(err, errUnknownValue)
+	s.True(got.GetRefused())
 }
 
 // TestConvertLegacyDamageComponent: a damage component persisted before roll
