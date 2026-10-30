@@ -38,7 +38,7 @@
 # And Loot, the one verb that takes holdings off a member, needs the member
 # down, at which point a downed mind can no longer learn. A holdable prop left
 # on the kitchen table is the spelling the live dialect turns.
-version: 4
+version: 5
 key: castle-kitchen
 play: { void: transparent, lighting: bright, standing: centre-covered }
 
@@ -87,7 +87,6 @@ room:
   coordinateFrame: {horizontalPlane: world-xz, verticalAxis: world-y-up,
     distanceUnit: world-scene-unit, hexRadius: 1,
     footprintFrame: owner-local-xz}
-  workspace: { hexRadius: 6, horizontalLimit: 12 }
   scene:
     version: 1
     id: scene-1
@@ -101,11 +100,21 @@ room:
     groups: []
   room:
     implicitRegionId: room-1-region
-    walkableHexes: [{q: -2, r: 0}, {q: -2, r: 1}, {q: -2, r: 2},
-      {q: -1, r: -1}, {q: -1, r: 0}, {q: -1, r: 1}, {q: -1, r: 2},
-      {q: 0, r: -2}, {q: 0, r: -1}, {q: 0, r: 0}, {q: 0, r: 1}, {q: 0, r: 2},
-      {q: 1, r: -2}, {q: 1, r: -1}, {q: 1, r: 0}, {q: 1, r: 1},
-      {q: 2, r: -2}, {q: 2, r: -1}, {q: 2, r: 0}]
+    regions:
+      - id: room-1-region
+        name: The Castle Kitchen
+        lighting: { intensity: 1 }
+        cells:
+          - r: -2
+            q: [[0, 2]]
+          - r: -1
+            q: [[-1, 2]]
+          - r: 0
+            q: [[-2, 2]]
+          - r: 1
+            q: [[-2, 1]]
+          - r: 2
+            q: [[-2, 0]]
     # A HOLDABLE PROP IS WALKED ONTO TO BE TAKEN, so it blocks nothing.
     propDeclarations:
       orders:

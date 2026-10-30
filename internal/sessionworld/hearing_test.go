@@ -235,7 +235,7 @@ func (s *HearingSuite) TestTheWatchTurnsOnTheAlarm() {
 	watchParty, ok := stances[pair{"watch", "party"}]
 	s.Require().True(ok, "the watch has a stance toward the party")
 	s.Equal(tkencounter.StanceNeutral, watchParty.Stance)
-	s.Equal(tkencounter.TriggerFact{Fact: "alarm-raised"}, watchParty.Until)
+	s.Equal([]tkencounter.UntilStep{{When: tkencounter.TriggerFact{Fact: "alarm-raised"}}}, watchParty.Until)
 
 	s.Equal(tkencounter.StanceHostile, stances[pair{"thugs", "party"}].Stance)
 	s.Equal(tkencounter.StanceHostile, stances[pair{"watch", "thugs"}].Stance)
