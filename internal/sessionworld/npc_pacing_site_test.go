@@ -39,6 +39,8 @@ func (s *NpcPacingSiteSuite) TestSiteHasTwoVisibleWalkersAndAResultIndependentSt
 	s.Equal(5.0, otherCell.Y)
 	s.Equal("dnd5e:npcs:goblin:knight-01", leader.AppearanceRef)
 	s.Equal("dnd5e:npcs:goblin:prisoner-02", other.AppearanceRef)
+	s.Empty(leader.DefaultActivityRef, "the knight uses the provider default")
+	s.Equal("dnd5e:activities:thoughtful", other.DefaultActivityRef)
 	s.Equal("drill", leader.Faction)
 	s.Equal("drill", other.Faction)
 	s.Require().Len(leader.Options, 1)

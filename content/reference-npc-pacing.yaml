@@ -21,9 +21,9 @@
 # ranged weapon, dash, patrol, door, hidden cell, or random table alternative
 # competes with the approach. Do not attack them: the trigger is the Speak line.
 #
-# Current stage: ordinary idle/walk and completion-driven presentation only.
-# Thoughtful default selection and Enter/Exit clips are added to this same
-# site when their production provider/identity integration is available.
+# Walker B starts Thoughtful: it must finish its exit before travelling and
+# re-enter Thoughtful after arrival. Walker A retains the provider default.
+# The studio may edit the default independently of appearance and orders.
 version: 5
 key: reference-npc-pacing
 play: {void: transparent, lighting: bright, standing: centre-covered}
@@ -100,6 +100,7 @@ room:
         ref: dnd5e:monsters:pacing-prisoner
         startingCell: {location: {q: 0, r: 5}, facing: nw}
         appearanceRef: dnd5e:npcs:goblin:prisoner-02
+        defaultActivityRef: dnd5e:activities:thoughtful
     monsterBindings:
       walker-a:
         faction: drill
