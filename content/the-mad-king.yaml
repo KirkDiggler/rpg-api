@@ -49,7 +49,8 @@
 # THE CASTLE. The garrison keeps the gate and the hall, and its mind is the
 # captain: it is civil to the party until the party is recognized, and civil
 # to the loyalists until the guards turn. The loyalists (the king and his
-# knights) are hostile to the party always.
+# knights) are hostile to the party until the king falls; then they stand
+# down and can be spoken to.
 # The kitchen is civil and stays civil. One fact is learned in the kitchen
 # and spent at the gate — the cook's gossip opens the troupe, and Ashford
 # opens the turn. The captain's orders on the kitchen floor say the party is
@@ -57,7 +58,8 @@
 # knows it (`party-recognized`, the garrison's `until`). The prisoners are
 # neutral to everybody. Every door is shut, the throne room's too, and one
 # is locked: the cell door, thieves' tools at DC 13, whose opening teaches
-# `cells-opened` and ends the run `freed`. A driven walk opens a shut,
+# `cells-opened`; the run then ends `freed` when the party walks out the
+# front door. A driven walk opens a shut,
 # unlocked door it steps onto (rpg-project#715), so a turned garrison's march
 # opens the shut throne door on its way in; a locked door still stops it. A
 # turned garrison storms the keep; a garrison told to hold the castle ends
