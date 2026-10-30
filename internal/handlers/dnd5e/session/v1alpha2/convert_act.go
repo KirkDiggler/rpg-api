@@ -187,6 +187,14 @@ var senseToProto = map[sdk.Sense]sessionpb.Sense{
 	sdk.SenseCells:     sessionpb.Sense_SENSE_CELLS,
 }
 
+// endingResultToProto is the declared result of the ending reached
+// (rpg-project#733). "" is not in the table: it is an ending that declares
+// none, carried as unspecified by endingResult, never an error.
+var endingResultToProto = map[sdk.EndingResult]sessionpb.EndingResult{
+	sdk.ResultSuccess: sessionpb.EndingResult_ENDING_RESULT_SUCCESS,
+	sdk.ResultFailure: sessionpb.EndingResult_ENDING_RESULT_FAILURE,
+}
+
 var clockMarkToProto = map[sdk.ClockMark]sessionpb.ClockMark{
 	sdk.ClockTick:             sessionpb.ClockMark_CLOCK_MARK_TICK,
 	sdk.ClockTurnEnded:        sessionpb.ClockMark_CLOCK_MARK_TURN_ENDED,
@@ -230,6 +238,16 @@ func lookup[K ~string, V any](table map[K]V, k K, what string) (V, error) {
 		return zero, fmt.Errorf("%s %q: %w", what, string(k), errUnknownValue)
 	}
 	return v, nil
+}
+
+// endingResult maps an ending's declared result; "" is unspecified, because
+// an ending may declare none and an ended beat written before results existed
+// carries none, so an old run reads no result rather than a wrong one.
+func endingResult(r sdk.EndingResult) (sessionpb.EndingResult, error) {
+	if r == "" {
+		return sessionpb.EndingResult_ENDING_RESULT_UNSPECIFIED, nil
+	}
+	return lookup(endingResultToProto, r, "ending result")
 }
 
 // damageType maps a damage type; "" is the unspecified type, not an error,
@@ -811,7 +829,11 @@ func clockToProto(b sdk.ClockEntry) (*sessionpb.ClockEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := &sessionpb.ClockEntry{Mark: mark, Tick: b.Tick, Member: p.one(b.Member), Ending: b.Ending}
+	outcome, err := endingResult(b.Outcome)
+	if err != nil {
+		return nil, err
+	}
+	out := &sessionpb.ClockEntry{Mark: mark, Tick: b.Tick, Member: p.one(b.Member), Ending: b.Ending, Outcome: outcome}
 	if t := b.Turn; t != nil {
 		out.Turn = &sessionpb.TurnPassed{Member: p.one(t.Member), Next: p.one(t.Next)}
 	}
