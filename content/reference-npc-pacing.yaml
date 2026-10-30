@@ -1,0 +1,111 @@
+# NPC PACING YARD — the focused presentation check for rpg-project#711 and
+# rpg-dnd5e-web#1346. This is a verification site, not a dungeon adventure.
+#
+# START: one player at (0,0), Walker A (knight) at (5,0), Walker B (prisoner)
+# at (0,5), all in open sight. Both walkers are neutral and hold still until
+# the operator explicitly starts the drill. This lets their models load before
+# the first live walk; loading an already hostile fight can miss that motion.
+#
+# TRY IT — lobby reference "NPC Pacing Yard":
+#   1. Stay on the starting cell. Use Speak on Walker A and choose
+#      "Begin the pacing drill." Either check result starts the same drill.
+#   2. If the player wins initiative, End Turn without moving or attacking.
+#      Either NPC may win initiative; A-before-B is NOT an assertion.
+#   3. Watch the highlighted walker approach, then strike unarmed. Its body
+#      must reach the adjacent cell before the next attack/story row or turn
+#      marker advances. The other walker waits for its own presented turn.
+#   4. Start a fresh run to repeat the long approach. After the first approach
+#      both actors are adjacent, so subsequent turns intentionally have no walk.
+#
+# Both NPCs use the human base with only its low-damage unarmed strike. No
+# ranged weapon, dash, patrol, door, hidden cell, or random table alternative
+# competes with the approach. Do not attack them: the trigger is the Speak line.
+#
+# Current stage: ordinary idle/walk and completion-driven presentation only.
+# Thoughtful default selection and Enter/Exit clips are added to this same
+# site when their production provider/identity integration is available.
+version: 4
+key: reference-npc-pacing
+play: {void: transparent, lighting: bright, standing: centre-covered}
+
+templates:
+  pacing-knight:
+    base: dnd5e:monsters:human
+    name: Walker A - Knight
+    hitDice: 10d8
+    abilities: {str: 10, dex: 10, con: 10}
+    actions: [dnd5e:weapons:unarmed-strike]
+  pacing-prisoner:
+    base: dnd5e:monsters:human
+    name: Walker B - Prisoner
+    hitDice: 10d8
+    abilities: {str: 10, dex: 10, con: 10}
+    actions: [dnd5e:weapons:unarmed-strike]
+
+factions:
+  - {id: drill, mind: walker-a}
+dispositions:
+  - {between: [drill, party], stance: neutral, until: {fact: drill-started}}
+tables:
+  pacing-walker:
+    time:
+      - {when: {enemy: reach}, attack: enemy}
+      - {when: {enemy: seen}, toward: enemy}
+      - {when: {enemy: none}, hold: {}}
+
+room:
+  version: 3
+  id: npc-pacing-room
+  name: NPC Pacing Yard
+  coordinateFrame:
+    horizontalPlane: world-xz
+    verticalAxis: world-y-up
+    distanceUnit: world-scene-unit
+    hexRadius: 1
+    footprintFrame: owner-local-xz
+  workspace:
+    kind: centered-odd-r
+    widthHexes: 20
+    heightHexes: 16
+    hexRadius: 12
+    horizontalLimit: 14
+  scene: {version: 3, id: npc-pacing-scene, name: NPC Pacing Yard, items: [], groups: []}
+  room:
+    implicitRegionId: npc-pacing-region
+    walls: []
+    walkableHexes: [
+      {q: -1, r: -1}, {q: 0, r: -1}, {q: 1, r: -1}, {q: 2, r: -1}, {q: 3, r: -1}, {q: 4, r: -1}, {q: 5, r: -1}, {q: 6, r: -1},
+      {q: -1, r: 0}, {q: 0, r: 0}, {q: 1, r: 0}, {q: 2, r: 0}, {q: 3, r: 0}, {q: 4, r: 0}, {q: 5, r: 0}, {q: 6, r: 0},
+      {q: -1, r: 1}, {q: 0, r: 1}, {q: 1, r: 1}, {q: 2, r: 1}, {q: 3, r: 1}, {q: 4, r: 1}, {q: 5, r: 1}, {q: 6, r: 1},
+      {q: -1, r: 2}, {q: 0, r: 2}, {q: 1, r: 2}, {q: 2, r: 2}, {q: 3, r: 2}, {q: 4, r: 2}, {q: 5, r: 2}, {q: 6, r: 2},
+      {q: -1, r: 3}, {q: 0, r: 3}, {q: 1, r: 3}, {q: 2, r: 3}, {q: 3, r: 3}, {q: 4, r: 3}, {q: 5, r: 3}, {q: 6, r: 3},
+      {q: -1, r: 4}, {q: 0, r: 4}, {q: 1, r: 4}, {q: 2, r: 4}, {q: 3, r: 4}, {q: 4, r: 4}, {q: 5, r: 4}, {q: 6, r: 4},
+      {q: -1, r: 5}, {q: 0, r: 5}, {q: 1, r: 5}, {q: 2, r: 5}, {q: 3, r: 5}, {q: 4, r: 5}, {q: 5, r: 5}, {q: 6, r: 5},
+      {q: -1, r: 6}, {q: 0, r: 6}, {q: 1, r: 6}, {q: 2, r: 6}, {q: 3, r: 6}, {q: 4, r: 6}, {q: 5, r: 6}, {q: 6, r: 6}]
+    propDeclarations: {}
+    arrangementDeclarations: {}
+    partyStart: {q: 0, r: 0}
+    monsterDeclarations:
+      - id: walker-a
+        ref: dnd5e:monsters:pacing-knight
+        startingCell: {location: {q: 5, r: 0}, facing: w}
+        appearanceRef: dnd5e:npcs:goblin:knight-01
+      - id: walker-b
+        ref: dnd5e:monsters:pacing-prisoner
+        startingCell: {location: {q: 0, r: 5}, facing: nw}
+        appearanceRef: dnd5e:npcs:goblin:prisoner-02
+    monsterBindings:
+      walker-a:
+        faction: drill
+        table: pacing-walker
+        options:
+          - id: begin-drill
+            say: Begin the pacing drill.
+            check: [{ability: perception, dc: 1}]
+            success:
+              - {say: "Drill begins. Stay on the start mark and end your turn.", fact: drill-started}
+            failure:
+              - {say: "Drill begins. Stay on the start mark and end your turn.", fact: drill-started}
+      walker-b:
+        faction: drill
+        table: pacing-walker
