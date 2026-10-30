@@ -233,9 +233,10 @@ func (s *SessionStackSuite) TestStartEncounter_SingleRoomGeometrySurvivesReloadA
 		"the key is on the RECORD, so a reload reads it back rather than deriving it")
 
 	// The author publishes a room whose GEOMETRY differs under the same key
-	// after the launch: one authored hex is gone, so the floor is smaller.
-	edited := bytes.Replace(raw, []byte("{q: -1, r: 1}, "), nil, 1)
-	s.Require().NotEqual(raw, edited, "the fixture's walkable hexes must be where this test expects it")
+	// after the launch: one authored hex is gone, so the floor is smaller. The
+	// row r=1 runs q -1..0; starting it at 0 erases {q: -1, r: 1}.
+	edited := bytes.Replace(raw, []byte("- r: 1\n            q: [[-1, 0]]"), []byte("- r: 1\n            q: [[0, 0]]"), 1)
+	s.Require().NotEqual(raw, edited, "the fixture's r=1 row must be where this test expects it")
 	republished, err := registry.Put(s.ctx, &dungeons.PutInput{Caller: dungeonstest.Caller, Key: dungeonstest.WorkshopRoomKey, YAML: edited})
 	s.Require().NoError(err)
 	s.Require().Empty(republished.Errors)
