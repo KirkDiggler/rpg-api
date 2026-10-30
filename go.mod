@@ -1,6 +1,6 @@
 module github.com/KirkDiggler/rpg-api
 
-go 1.26.0
+go 1.27.0
 
 require (
 	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20261030193927-ddcedcfdd342

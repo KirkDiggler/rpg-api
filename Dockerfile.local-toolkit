@@ -18,7 +18,7 @@
 # Harmless without an active override: with no `replace` in go.mod, this
 # produces the exact same image as Dockerfile, just without the go.mod/
 # go.sum layer-cache split.
-FROM golang:1.26-alpine AS builder
+FROM golang:1.27-alpine AS builder
 
 WORKDIR /app
 
