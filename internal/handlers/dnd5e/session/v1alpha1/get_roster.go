@@ -57,14 +57,15 @@ func rosterToProto(in *sdk.RosterOutput) *sessionpb.GetRosterResponse {
 
 func publicMemberToProto(member sdk.PublicMember) *sessionpb.PublicMemberInfo {
 	return &sessionpb.PublicMemberInfo{
-		Id:            member.ID,
-		Kind:          memberKindToProto(member.Kind),
-		Name:          member.Name,
-		ClassRef:      member.ClassRef,
-		RaceRef:       member.RaceRef,
-		MonsterRef:    member.MonsterRef,
-		AppearanceRef: member.AppearanceRef,
-		Customization: customizationToProto(member.Customization),
+		Id:                 member.ID,
+		Kind:               memberKindToProto(member.Kind),
+		Name:               member.Name,
+		ClassRef:           member.ClassRef,
+		RaceRef:            member.RaceRef,
+		MonsterRef:         member.MonsterRef,
+		AppearanceRef:      member.AppearanceRef,
+		DefaultActivityRef: member.DefaultActivityRef,
+		Customization:      customizationToProto(member.Customization),
 		// The side this member is on (rpg-project#375, design §6): the
 		// dungeon file's own faction id, or the reserved `party` /
 		// `monsters`, as the session resolved it. Free-form on both sides
