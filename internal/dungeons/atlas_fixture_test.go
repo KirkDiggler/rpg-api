@@ -52,6 +52,14 @@ import (
 // gatehouse's south wall is a seventh structural door with its wall prop and
 // span in placed (64 to 66), the outside is an eighth region, and the six
 // cells his ground paints under the gatehouse's side walls answer as sealed.
+// It was recaptured for site format v5 (rpg-project#725), where regions are
+// the floor: the eight wall-bounded partitions become the ten authored
+// regions (the nine named rooms and the implicit room-1-region for the open
+// ground), each with its authored name and intensity 1, over the same 1580
+// cells. The castle copy at that pin also carries rpg-toolkit 93b323e6
+// (rpg-project#716), whose front-door exit is the atlas's second exit. Every
+// other field is unchanged, and the other four converted files answer their
+// fixtures unchanged.
 //
 // AND reference-pursuit.atlas.json (smarter monsters S5, rpg-project#672) was
 // captured at the commit that added it, for the castle's reason: no earlier
