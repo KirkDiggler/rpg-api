@@ -58,7 +58,7 @@ import (
 // ground), each with its authored name and intensity 1, over the same 1580
 // cells. The castle copy at that pin also carries rpg-toolkit 93b323e6
 // (rpg-project#716), whose front-door exit is the atlas's second exit. Every
-// other field is unchanged, and the other four converted files answer their
+// other field is unchanged, and the other five converted files answer their
 // fixtures unchanged.
 //
 // AND reference-pursuit.atlas.json (smarter monsters S5, rpg-project#672) was
