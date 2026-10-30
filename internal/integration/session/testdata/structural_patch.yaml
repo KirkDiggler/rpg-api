@@ -1,4 +1,4 @@
-version: 4
+version: 5
 key: structural-patch-acceptance
 play: {void: transparent, lighting: bright, standing: centre-covered}
 concealments:
@@ -10,11 +10,16 @@ room:
   id: room
   name: Structural patch room
   coordinateFrame: {horizontalPlane: world-xz, verticalAxis: world-y-up, distanceUnit: world-scene-unit, hexRadius: 1, footprintFrame: owner-local-xz}
-  workspace: {hexRadius: 6, horizontalLimit: 12}
   scene: {version: 1, id: scene, name: Structural patch room, items: [], groups: []}
   room:
     implicitRegionId: region
-    walkableHexes: [{q: 0, r: 0}, {q: 1, r: 0}, {q: 2, r: 0}, {q: 3, r: 0}, {q: 4, r: 0}]
+    regions:
+      - id: region
+        name: Structural patch room
+        lighting: { intensity: 1 }
+        cells:
+          - r: 0
+            q: [[0, 4]]
     propDeclarations: {}
     arrangementDeclarations: {}
     monsterDeclarations: []

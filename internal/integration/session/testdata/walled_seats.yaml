@@ -1,4 +1,4 @@
-version: 4
+version: 5
 key: walled-seats
 play: {void: transparent, lighting: bright, standing: centre-covered}
 room:
@@ -6,7 +6,6 @@ room:
   id: room
   name: Walled seats
   coordinateFrame: {horizontalPlane: world-xz, verticalAxis: world-y-up, distanceUnit: world-scene-unit, hexRadius: 1, footprintFrame: owner-local-xz}
-  workspace: {hexRadius: 6, horizontalLimit: 12}
   scene:
     version: 1
     id: scene
@@ -15,7 +14,13 @@ room:
     groups: []
   room:
     implicitRegionId: region
-    walkableHexes: [{q: 1, r: 0}, {q: 2, r: 0}]
+    regions:
+      - id: region
+        name: Walled seats
+        lighting: { intensity: 1 }
+        cells:
+          - r: 0
+            q: [[1, 2]]
     propDeclarations: {}
     arrangementDeclarations: {}
     monsterDeclarations: []

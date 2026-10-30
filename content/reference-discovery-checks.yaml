@@ -1,6 +1,6 @@
 # Optional discoveries only. The ordinary floor and entrance remain usable
 # even when every roll fails. Choose "Discovery Check Walk" in the lobby.
-version: 4
+version: 5
 key: reference-discovery-checks
 play: {void: transparent, lighting: bright, standing: centre-covered}
 concealments:
@@ -25,7 +25,6 @@ room:
   id: discovery-room
   name: Discovery Check Walk
   coordinateFrame: {horizontalPlane: world-xz, verticalAxis: world-y-up, distanceUnit: world-scene-unit, hexRadius: 1, footprintFrame: owner-local-xz}
-  workspace: {hexRadius: 9, horizontalLimit: 20}
   scene:
     version: 1
     id: discovery-scene
@@ -54,12 +53,21 @@ room:
     groups: []
   room:
     implicitRegionId: discovery-room
-    walkableHexes: [
-      {q: -5, r: -2}, {q: -4, r: -2}, {q: -3, r: -2}, {q: -2, r: -2}, {q: -1, r: -2}, {q: 0, r: -2}, {q: 1, r: -2}, {q: 2, r: -2}, {q: 3, r: -2}, {q: 4, r: -2}, {q: 5, r: -2},
-      {q: -5, r: -1}, {q: -4, r: -1}, {q: -3, r: -1}, {q: -2, r: -1}, {q: -1, r: -1}, {q: 0, r: -1}, {q: 1, r: -1}, {q: 2, r: -1}, {q: 3, r: -1}, {q: 4, r: -1}, {q: 5, r: -1},
-      {q: -5, r: 0}, {q: -4, r: 0}, {q: -3, r: 0}, {q: -2, r: 0}, {q: -1, r: 0}, {q: 0, r: 0}, {q: 1, r: 0}, {q: 2, r: 0}, {q: 3, r: 0}, {q: 4, r: 0}, {q: 5, r: 0},
-      {q: -5, r: 1}, {q: -4, r: 1}, {q: -3, r: 1}, {q: -2, r: 1}, {q: -1, r: 1}, {q: 0, r: 1}, {q: 1, r: 1}, {q: 2, r: 1}, {q: 3, r: 1}, {q: 4, r: 1}, {q: 5, r: 1},
-      {q: -5, r: 2}, {q: -4, r: 2}, {q: -3, r: 2}, {q: -2, r: 2}, {q: -1, r: 2}, {q: 0, r: 2}, {q: 1, r: 2}, {q: 2, r: 2}, {q: 3, r: 2}, {q: 4, r: 2}, {q: 5, r: 2}]
+    regions:
+      - id: discovery-room
+        name: Discovery Check Walk
+        lighting: { intensity: 1 }
+        cells:
+          - r: -2
+            q: [[-5, 5]]
+          - r: -1
+            q: [[-5, 5]]
+          - r: 0
+            q: [[-5, 5]]
+          - r: 1
+            q: [[-5, 5]]
+          - r: 2
+            q: [[-5, 5]]
     propDeclarations:
       perception-idol:
         blocksMovement: true

@@ -58,8 +58,8 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysCompleteSingleRoom() {
 	s.Equal(put.Entry.Atlas.DungeonKey, atlas.DungeonKey,
 		"PutDungeon's atlas and the started session's GetAtlas name the same entry -- one producer")
 
-	// The floor: one implicit region owning exactly the authored walkable
-	// hexes, in dungeon-absolute axial space.
+	// The floor: one authored region whose row runs are exactly the floor's
+	// cells, in dungeon-absolute axial space.
 	s.Require().Len(atlas.Regions, 1)
 	s.Equal("room-1-region", atlas.Regions[0].ID)
 	s.Equal("Workshop", atlas.Regions[0].Name)
@@ -70,7 +70,7 @@ func (s *SessionStackSuite) TestStartEncounter_PlaysCompleteSingleRoom() {
 	s.ElementsMatch([]spatial.Position{
 		{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 2, Y: 0}, {X: 0, Y: 1},
 		{X: -1, Y: 1}, {X: -1, Y: 0}, {X: 0, Y: -1}, {X: 1, Y: -1},
-	}, atlas.Cells, "the floor is the authored walkable hexes, axial, negatives included")
+	}, atlas.Cells, "the floor is the authored region's cells, axial, negatives included")
 	s.Require().NotNil(atlas.Start)
 	s.Equal(spatial.Position{X: 0, Y: 0}, atlas.Start.At, "the way in is the authored party start")
 
@@ -215,7 +215,7 @@ func (s *SessionStackSuite) TestStartEncounter_SingleRoomGeometrySurvivesReloadA
 	s.Require().NoError(err)
 	s.Equal(dungeonstest.WorkshopRoomKey, atlas.DungeonKey)
 	originalCells := atlas.Cells
-	s.Require().Len(originalCells, 8, "the eight authored walkable hexes")
+	s.Require().Len(originalCells, 8, "the eight cells of the authored region's rows")
 
 	// A FRESH read path: a new orchestrator over the same stored records —
 	// nothing in memory — reconstitutes the session and serves the same
@@ -233,9 +233,10 @@ func (s *SessionStackSuite) TestStartEncounter_SingleRoomGeometrySurvivesReloadA
 		"the key is on the RECORD, so a reload reads it back rather than deriving it")
 
 	// The author publishes a room whose GEOMETRY differs under the same key
-	// after the launch: one authored hex is gone, so the floor is smaller.
-	edited := bytes.Replace(raw, []byte("{q: -1, r: 1}, "), nil, 1)
-	s.Require().NotEqual(raw, edited, "the fixture's walkable hexes must be where this test expects it")
+	// after the launch: one authored hex is gone, so the floor is smaller. The
+	// row r=1 runs q -1..0; starting it at 0 erases {q: -1, r: 1}.
+	edited := bytes.Replace(raw, []byte("- r: 1\n            q: [[-1, 0]]"), []byte("- r: 1\n            q: [[0, 0]]"), 1)
+	s.Require().NotEqual(raw, edited, "the fixture's r=1 row must be where this test expects it")
 	republished, err := registry.Put(s.ctx, &dungeons.PutInput{Caller: dungeonstest.Caller, Key: dungeonstest.WorkshopRoomKey, YAML: edited})
 	s.Require().NoError(err)
 	s.Require().Empty(republished.Errors)

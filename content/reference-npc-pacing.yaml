@@ -24,7 +24,7 @@
 # Current stage: ordinary idle/walk and completion-driven presentation only.
 # Thoughtful default selection and Enter/Exit clips are added to this same
 # site when their production provider/identity integration is available.
-version: 4
+version: 5
 key: reference-npc-pacing
 play: {void: transparent, lighting: bright, standing: centre-covered}
 
@@ -63,25 +63,31 @@ room:
     distanceUnit: world-scene-unit
     hexRadius: 1
     footprintFrame: owner-local-xz
-  workspace:
-    kind: centered-odd-r
-    widthHexes: 20
-    heightHexes: 16
-    hexRadius: 12
-    horizontalLimit: 14
   scene: {version: 3, id: npc-pacing-scene, name: NPC Pacing Yard, items: [], groups: []}
   room:
     implicitRegionId: npc-pacing-region
     walls: []
-    walkableHexes: [
-      {q: -1, r: -1}, {q: 0, r: -1}, {q: 1, r: -1}, {q: 2, r: -1}, {q: 3, r: -1}, {q: 4, r: -1}, {q: 5, r: -1}, {q: 6, r: -1},
-      {q: -1, r: 0}, {q: 0, r: 0}, {q: 1, r: 0}, {q: 2, r: 0}, {q: 3, r: 0}, {q: 4, r: 0}, {q: 5, r: 0}, {q: 6, r: 0},
-      {q: -1, r: 1}, {q: 0, r: 1}, {q: 1, r: 1}, {q: 2, r: 1}, {q: 3, r: 1}, {q: 4, r: 1}, {q: 5, r: 1}, {q: 6, r: 1},
-      {q: -1, r: 2}, {q: 0, r: 2}, {q: 1, r: 2}, {q: 2, r: 2}, {q: 3, r: 2}, {q: 4, r: 2}, {q: 5, r: 2}, {q: 6, r: 2},
-      {q: -1, r: 3}, {q: 0, r: 3}, {q: 1, r: 3}, {q: 2, r: 3}, {q: 3, r: 3}, {q: 4, r: 3}, {q: 5, r: 3}, {q: 6, r: 3},
-      {q: -1, r: 4}, {q: 0, r: 4}, {q: 1, r: 4}, {q: 2, r: 4}, {q: 3, r: 4}, {q: 4, r: 4}, {q: 5, r: 4}, {q: 6, r: 4},
-      {q: -1, r: 5}, {q: 0, r: 5}, {q: 1, r: 5}, {q: 2, r: 5}, {q: 3, r: 5}, {q: 4, r: 5}, {q: 5, r: 5}, {q: 6, r: 5},
-      {q: -1, r: 6}, {q: 0, r: 6}, {q: 1, r: 6}, {q: 2, r: 6}, {q: 3, r: 6}, {q: 4, r: 6}, {q: 5, r: 6}, {q: 6, r: 6}]
+    regions:
+      - id: npc-pacing-region
+        name: NPC Pacing Yard
+        lighting: { intensity: 1 }
+        cells:
+          - r: -1
+            q: [[-1, 6]]
+          - r: 0
+            q: [[-1, 6]]
+          - r: 1
+            q: [[-1, 6]]
+          - r: 2
+            q: [[-1, 6]]
+          - r: 3
+            q: [[-1, 6]]
+          - r: 4
+            q: [[-1, 6]]
+          - r: 5
+            q: [[-1, 6]]
+          - r: 6
+            q: [[-1, 6]]
     propDeclarations: {}
     arrangementDeclarations: {}
     partyStart: {q: 0, r: 0}
