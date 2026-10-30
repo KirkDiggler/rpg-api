@@ -170,7 +170,7 @@ repo~~ / ~~Encounter log repo~~ — all DELETED (rpg-api#642, 2026-07-13).
 - Thin `entities.Character`/`CharacterDraft` wrappers serialized to Redis; toolkit `Data`/`DraftData`, including nested Appearance, own character state.
 - Toolkit session/encounter state owned by `rulebooks/dnd5e/session.Manager` — Redis-backed through `internal/orchestrators/session`, 24h TTL.
 - Lobby state — Redis-backed via `internal/repositories/lobby`.
-- Session roster — owned and projected by the toolkit `session.Manager`; SessionService and the shared access gate read it through the SDK.
+- Session roster — owned and projected by the toolkit `session.Manager`; SessionService and the shared access gate read it through the SDK. `GetRoster` and `GetKnowledge` share `publicMemberToProto`, which copies the observer-captured `AppearanceRef` and `DefaultActivityRef` unchanged. Missing legacy activity stays empty; this layer never looks up live identity, resolves activity support or chooses animation clips.
 - Session presentation plans — Redis-backed ephemeral duplicate/conflict keys (2-minute TTL) plus live Pub/Sub; not replayable Story.
 - ~~`EncounterData` (local type)~~ / ~~`Dungeon` (local entity)~~ / ~~`EncounterEvent` (local entity)~~ — all DELETED (rpg-api#642); these were the v1alpha1 encounter stack's storage types.
 
