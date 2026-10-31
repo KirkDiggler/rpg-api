@@ -182,6 +182,7 @@ repo~~ / ~~Encounter log repo~~ — all DELETED (rpg-api#642, 2026-07-13).
 
 **What rpg-api publishes:**
 - `StoryService.StreamEvents` (session v1alpha2) fans out the toolkit session SDK's per-recipient acts; `StoryService.GetStory` is the catch-up read. `RecordService` serves the record for the debug panel. The v1alpha1 `SessionService.StreamEvents`/`GetStory` are deleted (rpg-project#631) and answer `Unimplemented`.
+- Spoken `TableAnswer.Activity` cues, including nested `SpeakAct.Answer`, are copied literally by `tableAnswerToProto` into the act stream and catch-up data. Absence remains absent; reference support, cycle completion, live-only execution and movement cancellation belong to the presentation consumer, not the API.
 - `SessionPresentationService.StreamDiceThrows` fans out bounded decorative dice plans through Redis Pub/Sub only. It is live-only and does not write Story.
 - ~~Redis pub/sub channel `encounter:{id}:events`~~ — DELETED (rpg-api#642); this was the v1alpha1 `EncounterEvent` publisher.
 
