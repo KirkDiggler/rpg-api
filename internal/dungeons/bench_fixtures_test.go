@@ -18,7 +18,10 @@ import (
 // benchKeys are the benchmark keep's two fixtures (rpg-project#740, plan
 // G6): keep scale and the 30k ceiling. They are the only fixtures these
 // tests name; no count of shelf files is pinned.
-var benchKeys = []string{"bench-keep", "bench-keep-30k"}
+var benchKeys = []string{benchKeep, "bench-keep-30k"}
+
+// benchKeep is the keep-scale fixture.
+const benchKeep = "bench-keep"
 
 // benchDir is where the fixtures are kept: a subdirectory of the content
 // directory, which NewFileRegistry does not read, so a default boot does not
@@ -59,10 +62,14 @@ func TestBenchFixtures_MatchGenerator(t *testing.T) {
 	}
 }
 
-// TestBenchFixtures_ListOnAShelf is the other half of B9: copied onto a shelf
-// beside the default dungeon, as the harness does, both fixtures compile and
-// project, are served as single-room sites (so ListDungeons carries them),
-// and the registry's load report counts them.
+// TestBenchFixtures_ListOnAShelf is the unit half of B9 at keep scale: copied
+// onto a shelf beside the default dungeon, as the harness does, bench-keep
+// compiles and projects, is served as a single-room site (so ListDungeons
+// carries it), and the registry's load report counts it. Only the 10k keep is
+// staged: projecting the 30k ceiling costs about 5 s (about 55 s under
+// -race) on every run, the cost option B moved off the shelf. The ceiling's
+// compile is proven by the generator's own proof in
+// TestBenchFixtures_MatchGenerator, and its listing by the harness (T9).
 func TestBenchFixtures_ListOnAShelf(t *testing.T) {
 	shelf := t.TempDir()
 	stage := func(src string) {
@@ -71,9 +78,7 @@ func TestBenchFixtures_ListOnAShelf(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(shelf, filepath.Base(src)), raw, 0o600))
 	}
 	stage(filepath.Join(dungeonstest.ContentDir(t), dungeons.DefaultKey+".yaml"))
-	for _, key := range benchKeys {
-		stage(filepath.Join(benchDir(t), key+".yaml"))
-	}
+	stage(filepath.Join(benchDir(t), benchKeep+".yaml"))
 
 	r, err := dungeons.NewFileRegistry(shelf, dungeonstest.Projector(t))
 	require.NoError(t, err)
@@ -84,15 +89,13 @@ func TestBenchFixtures_ListOnAShelf(t *testing.T) {
 	for _, s := range list {
 		listed[s.Key] = true
 	}
-	for _, key := range benchKeys {
-		require.Truef(t, listed[key], "%s is on the shelf", key)
-		e, err := r.Get(context.Background(), key)
-		require.NoError(t, err)
-		require.Truef(t, e.SingleRoom, "%s is a single-room site, so the lobby lists it", key)
-	}
+	require.True(t, listed[benchKeep], "bench-keep is on the shelf")
+	e, err := r.Get(context.Background(), benchKeep)
+	require.NoError(t, err)
+	require.True(t, e.SingleRoom, "bench-keep is a single-room site, so the lobby lists it")
 
 	load := r.LoadReport()
 	require.Equal(t, len(list), load.Files, "the load report counts every file the registry holds")
 	require.Positive(t, load.Elapsed)
-	t.Logf("content registry: compiled %d files in %.2fms", load.Files, float64(load.Elapsed.Microseconds())/1000)
+	t.Logf("content registry: %s", load)
 }

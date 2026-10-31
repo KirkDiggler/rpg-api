@@ -65,3 +65,28 @@ func (s *LogFuncSuite) TestFailedLine_StringTimeMsIsPrinted() {
 		"grpc.method", "GetDungeon", "grpc.code", codes.NotFound, "grpc.time_ms", "3.2", "grpc.error", "nope")
 	s.Equal("✗ GetDungeon failed (NotFound) in 3.20ms: nope\n", s.out.String())
 }
+
+// A duration the line cannot read prints `?ms` and the raw field, never a
+// measurement: the harness refuses the line instead of recording a zero.
+func (s *LogFuncSuite) TestCompletedLine_UnreadableTimeMsIsUnavailable() {
+	for _, tc := range []struct {
+		raw  any
+		want string
+	}{
+		{"abc", "✓ ListDungeons completed in ?ms (grpc.time_ms=abc)\n"},
+		{"", "✓ ListDungeons completed in ?ms (grpc.time_ms=)\n"},
+		{"NaN", "✓ ListDungeons completed in ?ms (grpc.time_ms=NaN)\n"},
+		{"+Inf", "✓ ListDungeons completed in ?ms (grpc.time_ms=+Inf)\n"},
+		{int64(5), "✓ ListDungeons completed in ?ms (grpc.time_ms=5)\n"},
+		{nil, "✓ ListDungeons completed in ?ms (grpc.time_ms=<nil>)\n"},
+	} {
+		s.Equalf(tc.want, s.finished(tc.raw), "grpc.time_ms=%#v", tc.raw)
+	}
+}
+
+func (s *LogFuncSuite) TestCompletedLine_AbsentTimeMsIsUnavailable() {
+	s.out.Reset()
+	logFunc(context.Background(), grpc_logging.LevelInfo, "finished call",
+		"grpc.method", "ListDungeons", "grpc.code", codes.OK)
+	s.Equal("✓ ListDungeons completed in ?ms (grpc.time_ms=<nil>)\n", s.out.String())
+}

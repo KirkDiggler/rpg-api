@@ -280,7 +280,9 @@ type LoadReport struct {
 	Elapsed time.Duration
 }
 
-// NewFileRegistry loads every *.yaml under dir and compiles each once.
+// NewFileRegistry loads every *.yaml directly in dir and compiles each once.
+// Subdirectories are skipped: content/bench (the benchmark keep's fixtures,
+// rpg-project#740) sits beside the shelf without being loaded.
 //
 // It fails, naming the file, when a file does not compile, when a file's
 // `key:` line disagrees with its filename, when two files claim one key, or
@@ -342,6 +344,14 @@ func NewFileRegistry(dir string, projector AtlasProjector) (*FileRegistry, error
 	}
 
 	return r, nil
+}
+
+// String is the load as the server's boot line prints it after
+// "content registry: ": `compiled <n> files in <ms>ms`, milliseconds to two
+// decimals. The benchmark harness parses that line (rpg-project#740), so the
+// format has this one home and a test.
+func (l LoadReport) String() string {
+	return fmt.Sprintf("compiled %d files in %.2fms", l.Files, float64(l.Elapsed.Microseconds())/1000)
 }
 
 // LoadReport returns what construction measured: files compiled and the
