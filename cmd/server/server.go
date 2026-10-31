@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -548,6 +549,28 @@ func runServer(_ *cobra.Command, _ []string) error {
 	}
 }
 
+// fieldMillis reads the middleware's `grpc.time_ms` field. go-grpc-middleware
+// v2 sends it as a STRING (DurationToTimeMillisFields formats a float32 with
+// %v); a float form is accepted too, so a middleware change cannot silently
+// turn every call's duration back into 0.00ms. The harness reads this
+// duration off the "completed in" line (rpg-project#740).
+func fieldMillis(v any) float64 {
+	switch t := v.(type) {
+	case string:
+		ms, err := strconv.ParseFloat(t, 64)
+		if err != nil {
+			return 0
+		}
+		return ms
+	case float64:
+		return t
+	case float32:
+		return float64(t)
+	default:
+		return 0
+	}
+}
+
 func logFunc(_ context.Context, level grpc_logging.Level, msg string, fields ...any) {
 	// Extract useful information from fields
 	var method, code, errorMsg string
@@ -576,7 +599,7 @@ func logFunc(_ context.Context, level grpc_logging.Level, msg string, fields ...
 				errorMsg = errStr
 			}
 		case "grpc.time_ms":
-			timeMs, _ = fields[i+1].(float64)
+			timeMs = fieldMillis(fields[i+1])
 		}
 	}
 
