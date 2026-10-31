@@ -14,9 +14,9 @@ import (
 //
 // SESSIONS AND CHARACTERS ARE TWO KEY SPACES. The SDK takes a session's guard
 // and then the guards of the characters it seats or releases (Launch, Join,
-// Exit), so a character key that could collide with a session key — or a
-// store-wide session key (sharedStoreLocker) — would deadlock the verb on its
-// own non-reentrant guard. The two maps can never share an entry.
+// Exit), so a character key that could collide with a session key would
+// deadlock the verb on its own non-reentrant guard. The two maps can never
+// share an entry. No key is wider than one session (rpg-project#753 R2).
 //
 // Share one instance among Managers accessing the same sessions. This protects
 // only one process, not uncoordinated API replicas. A multi-process host must

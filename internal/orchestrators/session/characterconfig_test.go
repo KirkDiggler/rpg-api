@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -129,4 +130,101 @@ func (s *CharacterConfigSuite) TestReader_LegacyRecordReadOnce() {
 			}
 		})
 	}
+}
+
+// TestSetPreference_NeverDeadlocksWithASessionVerb is the lock order R2 relies
+// on: Launch, Join and Exit hold a session guard and then take character
+// guards; SetPreference takes a character guard alone and never a session
+// guard. A preference write on a character the verb holds waits for the verb
+// and then runs; one on any other character, or while only the session guard
+// is held, runs at once. No cycle exists, so neither side waits forever.
+func (s *CharacterConfigSuite) TestSetPreference_NeverDeadlocksWithASessionVerb() {
+	ctx, cancel := context.WithTimeout(s.ctx, 2*time.Second)
+	defer cancel()
+
+	// The verb: session guard first, then its party's character guards.
+	session, err := s.locker.LockSession(ctx, &sdk.LockSessionInput{Session: "run"})
+	s.Require().NoError(err)
+	_, err = s.preferences.SetPreference(ctx, &SetPreferenceInput{CharacterID: "alice", DiscoverySharing: boolValue(true)})
+	s.Require().NoError(err, "a held session guard alone never blocks a preference write")
+	alice, err := s.locker.LockCharacter(ctx, &sdk.LockCharacterInput{Character: "alice"})
+	s.Require().NoError(err)
+
+	written := make(chan error, 1)
+	go func() {
+		_, setErr := s.preferences.SetPreference(ctx, &SetPreferenceInput{CharacterID: "alice", DiscoverySharing: boolValue(false)})
+		written <- setErr
+	}()
+	_, err = s.preferences.SetPreference(ctx, &SetPreferenceInput{CharacterID: "bob", DiscoverySharing: boolValue(true)})
+	s.Require().NoError(err, "a character the verb does not hold is free")
+	select {
+	case early := <-written:
+		s.FailNow("the write on a held character ran inside the verb", "%v", early)
+	case <-time.After(30 * time.Millisecond):
+	}
+
+	alice.Release()
+	session.Release()
+	select {
+	case setErr := <-written:
+		s.Require().NoError(setErr, "the waiting write runs once the verb releases")
+	case <-ctx.Done():
+		s.FailNow("the preference write deadlocked behind the session verb")
+	}
+	got, err := s.reader.DiscoverySharing(ctx, "alice")
+	s.Require().NoError(err)
+	s.Equal(boolValue(false), got)
+	s.Empty(s.locker.entries)
+	s.Empty(s.locker.characters)
+}
+
+// TestSetPreference_InterleavesWithSessionVerbsUnderLoad races many session
+// verbs, each holding its session guard and then two character guards, with
+// preference writes on the same characters. Everything finishes.
+func (s *CharacterConfigSuite) TestSetPreference_InterleavesWithSessionVerbsUnderLoad() {
+	ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
+	defer cancel()
+	const rounds = 50
+	var wg sync.WaitGroup
+	failures := make(chan error, 4*rounds)
+	for i := 0; i < rounds; i++ {
+		wg.Add(2)
+		go func(i int) {
+			defer wg.Done()
+			session, err := s.locker.LockSession(ctx, &sdk.LockSessionInput{Session: []string{"keep", "castle"}[i%2]})
+			if err != nil {
+				failures <- err
+				return
+			}
+			defer session.Release()
+			held := make([]func(), 0, 2)
+			defer func() {
+				for _, release := range held {
+					release()
+				}
+			}()
+			for _, id := range []string{"alice", "bob"} {
+				guard, err := s.locker.LockCharacter(ctx, &sdk.LockCharacterInput{Character: id})
+				if err != nil {
+					failures <- err
+					return
+				}
+				held = append(held, guard.Release)
+			}
+		}(i)
+		go func(i int) {
+			defer wg.Done()
+			id := []string{"alice", "bob"}[i%2]
+			if _, err := s.preferences.SetPreference(ctx, &SetPreferenceInput{CharacterID: id, DiscoverySharing: boolValue(i%3 == 0)}); err != nil {
+				failures <- err
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(failures)
+	for err := range failures {
+		s.Require().NoError(err)
+	}
+	s.Empty(s.locker.entries)
+	s.Empty(s.locker.characters)
 }

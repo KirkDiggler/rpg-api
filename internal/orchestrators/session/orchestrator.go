@@ -51,10 +51,9 @@ type Config struct {
 	CharacterConfig characterconfig.Repository
 
 	// Locker coordinates full SDK operations. Nil selects process-local
-	// exclusion, widened to store-wide because discovery profiles are shared
-	// across sessions. All handlers/lobby calls
-	// share it. Multiple Orchestrators/processes must inject a coordinator
-	// covering every shared resource; independent local lockers are insufficient.
+	// exclusion keyed by session, and separately by character. All
+	// handlers/lobby calls share it. Multiple Orchestrators/processes must
+	// inject one shared coordinator; independent local lockers are insufficient.
 	Locker sdk.SessionLocker
 
 	// Dice is the SDK's source of randomness. Optional: nil selects a
@@ -156,9 +155,12 @@ func New(cfg Config) (*Orchestrator, error) {
 		policy = sdk.StaleTargetRefuse
 	}
 
+	// SESSIONS LOCK BY SESSION (rpg-project#753 R2): a verb holds its own
+	// session's guard and nothing wider, so a slow verb stalls its own table
+	// only. No session verb writes a record shared across sessions.
 	locker := cfg.Locker
 	if locker == nil {
-		locker = sharedStoreLocker{inner: NewInProcessSessionLocker()}
+		locker = NewInProcessSessionLocker()
 	}
 	configs := cfg.CharacterConfig
 	if configs == nil {

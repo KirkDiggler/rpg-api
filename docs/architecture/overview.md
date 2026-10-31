@@ -53,11 +53,14 @@ The session orchestrator supplies `sdk.Config.Locker` alongside repositories.
 `InProcessSessionLocker` supplies cancellable keyed exclusion; the SDK owns
 acquisition before repository access and release after save/delivery, including
 reads and creation. Waiting cancellation does not release an acquired guard;
-idle entries are removed. Legacy hosts use session-keyed exclusion. The game
-server enables automatic discovery and uses a store-wide coordinator because
-retained character profiles can be written from different session IDs. This
-trades parallelism for consistency without host-owned counter-merging rules.
-Handlers, lobby and notifiers keep calling the same SDK manager.
+idle entries are removed. Sessions lock by session and nothing wider
+(rpg-project#753 R2), so a slow verb stalls only its own table. Character
+guards are a separate key space: Launch, Join and Exit hold a session guard
+and then take character guards, while character verbs, including
+`SetPreference`, take a character guard alone and never a session guard, so
+the order has no cycle. No session verb writes a record shared across
+sessions; the discovery preference is character configuration. Handlers,
+lobby and notifiers keep calling the same SDK manager.
 
 This default protects callers sharing one orchestrator in one process. Multiple
 managers sharing sessions must receive the same coordinator through
