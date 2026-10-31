@@ -53,11 +53,14 @@ The session orchestrator supplies `sdk.Config.Locker` alongside repositories.
 `InProcessSessionLocker` supplies cancellable keyed exclusion; the SDK owns
 acquisition before repository access and release after save/delivery, including
 reads and creation. Waiting cancellation does not release an acquired guard;
-idle entries are removed. Legacy hosts use session-keyed exclusion. The game
-server enables automatic discovery and uses a store-wide coordinator because
-retained character profiles can be written from different session IDs. This
-trades parallelism for consistency without host-owned counter-merging rules.
-Handlers, lobby and notifiers keep calling the same SDK manager.
+idle entries are removed. Sessions lock by session and nothing wider
+(rpg-project#753 R2), so a slow verb stalls only its own table. Character
+guards are a separate key space: Launch, Join and Exit hold a session guard
+and then take character guards, while character verbs, including
+`SetPreference`, take a character guard alone and never a session guard, so
+the order has no cycle. No session verb writes a record shared across
+sessions; the discovery preference is character configuration. Handlers,
+lobby and notifiers keep calling the same SDK manager.
 
 This default protects callers sharing one orchestrator in one process. Multiple
 managers sharing sessions must receive the same coordinator through
@@ -67,12 +70,15 @@ for character-only writes outside the session SDK. Custom coordinators must also
 cover profiles shared across runs when discovery is enabled. Event-stream
 subscriptions do not hold a session guard open.
 
-Automatic discovery uses the SDK's exploration repository port. The adapter
-stores opaque, non-expiring profiles by the canonical character identity; it
-neither interprets attempt counts nor creates a second player/world identity.
-The SDK supplies audienced `discovery_checked` beats and a sharing preference in
-`GetKnowledge`. `SetDiscoverySharing` binds the exact owned member seat. Search
-is an unimplemented wire tombstone; there is no host search handler to roll.
+Automatic discovery reads each player's sharing choice through the SDK's
+`CharacterConfigReader` port, backed by the character configuration store
+(`repositories/characterconfig`, rpg-project#753 R2). The store is keyed by the
+canonical character identity, does not expire, and is written only under the
+character's guard; no session verb writes it. The SDK supplies audienced
+`discovery_checked` beats, and its knowledge read answers the sharing choice
+from the same reader, so `GetKnowledge` passes it through unchanged. The deprecated
+`SetDiscoverySharing` binds the exact owned member seat and writes the store.
+Search is an unimplemented wire tombstone; there is no host search handler to roll.
 
 ## Layer rules
 

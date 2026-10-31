@@ -43,6 +43,12 @@ type HandlerConfig struct {
 	// and answers the two advancement ones with a panic, which is a worse
 	// failure than refusing to build.
 	Sessions Sessions
+
+	// Preferences writes character configuration for SetPreference
+	// (rpg-project#753 R2). Optional for tests that build HandlerConfig
+	// directly; production and the integration harness pass the session
+	// orchestrator's. Without it SetPreference fails closed (Unimplemented).
+	Preferences Preferences
 }
 
 // Validate ensures all required dependencies are present
@@ -61,6 +67,7 @@ type Handler struct {
 	dnd5ev1alpha1.UnimplementedCharacterServiceServer
 	characterService character.Service
 	sessions         Sessions
+	preferences      Preferences
 }
 
 // NewHandler creates a new handler with the given configuration
@@ -72,6 +79,7 @@ func NewHandler(cfg *HandlerConfig) (*Handler, error) {
 	return &Handler{
 		characterService: cfg.CharacterService,
 		sessions:         cfg.Sessions,
+		preferences:      cfg.Preferences,
 	}, nil
 }
 
