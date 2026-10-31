@@ -88,7 +88,9 @@ func (s *RegistrySuite) TestSeed_AnEmptyMountGetsEveryShippedDungeon() {
 	s.Contains(seeded, heirloomKey)
 	s.Contains(seeded, raiderCampKey, "the hold-out's fixture ships too (rpg-project#375)")
 
-	onDisk, err := os.ReadDir(shipped)
+	// Every *.yaml directly in the shipped directory, the seed's own rule; a
+	// subdirectory (content/bench, the benchmark fixtures) is not a dungeon.
+	onDisk, err := filepath.Glob(filepath.Join(shipped, "*.yaml"))
 	s.Require().NoError(err)
 	s.Len(seeded, len(onDisk), "every shipped dungeon, not a curated subset")
 

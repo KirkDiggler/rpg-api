@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"math"
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -414,6 +416,11 @@ func runServer(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("content registry: %w", err)
 	}
+	// The benchmark keep's server row "registry compile ms" (rpg-project#740):
+	// one line, read by the harness, so its shape is fixed.
+	load := shippedStore.LoadReport()
+	//nolint:gosec // LoadReport.String prints only a file count and a duration
+	log.Printf("content registry: %s", load)
 	worldDungeons, err := worlddungeons.NewRedis(&worlddungeons.RedisConfig{Client: redisClient})
 	if err != nil {
 		return fmt.Errorf("world dungeon store: %w", err)
@@ -543,10 +550,48 @@ func runServer(_ *cobra.Command, _ []string) error {
 	}
 }
 
+// fieldMillis reads the middleware's `grpc.time_ms` field. go-grpc-middleware
+// v2 sends it as a STRING (DurationToTimeMillisFields formats a float32 with
+// %v); a float form is accepted too. Anything else (absent, unparseable, NaN,
+// infinite, another type) reports false, and logFunc prints `?ms` with the
+// raw value rather than a measurement: the harness reads the duration off the
+// "completed in" line (rpg-project#740), and a silent 0.00ms would be recorded
+// as a real row. Fail closed.
+func fieldMillis(v any) (float64, bool) {
+	var ms float64
+	switch t := v.(type) {
+	case string:
+		parsed, err := strconv.ParseFloat(t, 64)
+		if err != nil {
+			return 0, false
+		}
+		ms = parsed
+	case float64:
+		ms = t
+	case float32:
+		ms = float64(t)
+	default:
+		return 0, false
+	}
+	if math.IsNaN(ms) || math.IsInf(ms, 0) {
+		return 0, false
+	}
+	return ms, true
+}
+
+// callMillis is the duration as the call lines print it: two decimals, or
+// `?` with the raw field when fieldMillis could not read it.
+func callMillis(raw any) string {
+	if ms, ok := fieldMillis(raw); ok {
+		return strconv.FormatFloat(ms, 'f', 2, 64) + "ms"
+	}
+	return fmt.Sprintf("?ms (grpc.time_ms=%v)", raw)
+}
+
 func logFunc(_ context.Context, level grpc_logging.Level, msg string, fields ...any) {
 	// Extract useful information from fields
 	var method, code, errorMsg string
-	var timeMs float64
+	var timeMs any
 
 	// Parse fields (they come in pairs: key, value)
 	for i := 0; i < len(fields)-1; i += 2 {
@@ -571,7 +616,7 @@ func logFunc(_ context.Context, level grpc_logging.Level, msg string, fields ...
 				errorMsg = errStr
 			}
 		case "grpc.time_ms":
-			timeMs, _ = fields[i+1].(float64)
+			timeMs = fields[i+1]
 		}
 	}
 
@@ -581,9 +626,9 @@ func logFunc(_ context.Context, level grpc_logging.Level, msg string, fields ...
 		log.Printf("→ %s started", method)
 	case "finished call":
 		if code == "OK" || code == "0" {
-			log.Printf("✓ %s completed in %.2fms", method, timeMs)
+			log.Printf("✓ %s completed in %s", method, callMillis(timeMs))
 		} else {
-			log.Printf("✗ %s failed (%s) in %.2fms: %s", method, code, timeMs, errorMsg)
+			log.Printf("✗ %s failed (%s) in %s: %s", method, code, callMillis(timeMs), errorMsg)
 		}
 	default:
 		// Fallback to original format for other messages
