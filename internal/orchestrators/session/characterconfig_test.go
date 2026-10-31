@@ -70,9 +70,9 @@ func (s *CharacterConfigSuite) TestSetPreference_AnAbsentPreferenceIsLeftAsItIs(
 	out, err := s.preferences.SetPreference(s.ctx, &SetPreferenceInput{CharacterID: "alice"})
 	s.Require().NoError(err)
 	s.Equal(boolValue(false), out.DiscoverySharing)
-	got, err := s.preferences.GetPreference(s.ctx, &GetPreferenceInput{CharacterID: "alice"})
+	got, err := s.reader.DiscoverySharing(s.ctx, "alice")
 	s.Require().NoError(err)
-	s.Equal(boolValue(false), got.DiscoverySharing)
+	s.Equal(boolValue(false), got)
 }
 
 func (s *CharacterConfigSuite) TestSetPreference_RefusesNoCharacter() {
@@ -80,8 +80,6 @@ func (s *CharacterConfigSuite) TestSetPreference_RefusesNoCharacter() {
 	s.ErrorIs(err, ErrCharacterRequired)
 	_, err = s.preferences.SetPreference(s.ctx, nil)
 	s.ErrorIs(err, sdk.ErrNilInput)
-	_, err = s.preferences.GetPreference(s.ctx, &GetPreferenceInput{})
-	s.ErrorIs(err, ErrCharacterRequired)
 }
 
 // The reader is what the session SDK sees: not chosen is sdk.ErrNotFound, a

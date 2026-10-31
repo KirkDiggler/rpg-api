@@ -41,21 +41,6 @@ func (m *MockPreferences) EXPECT() *MockPreferencesMockRecorder {
 	return m.recorder
 }
 
-// GetPreference mocks base method.
-func (m *MockPreferences) GetPreference(ctx context.Context, in *session.GetPreferenceInput) (*session.GetPreferenceOutput, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetPreference", ctx, in)
-	ret0, _ := ret[0].(*session.GetPreferenceOutput)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetPreference indicates an expected call of GetPreference.
-func (mr *MockPreferencesMockRecorder) GetPreference(ctx, in any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPreference", reflect.TypeOf((*MockPreferences)(nil).GetPreference), ctx, in)
-}
-
 // SetPreference mocks base method.
 func (m *MockPreferences) SetPreference(ctx context.Context, in *session.SetPreferenceInput) (*session.SetPreferenceOutput, error) {
 	m.ctrl.T.Helper()

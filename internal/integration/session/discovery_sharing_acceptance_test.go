@@ -16,7 +16,8 @@ import (
 
 // DiscoverySharingAcceptanceSuite is the web's switch through the real stack
 // (rpg-project#753 R2): the deprecated session SetDiscoverySharing writes
-// character configuration, GetKnowledge reports it at once, and a later
+// character configuration, GetKnowledge reports it at once (the session SDK
+// answers from the configuration), and a later
 // session for the same character starts from it.
 type DiscoverySharingAcceptanceSuite struct{ suite.Suite }
 

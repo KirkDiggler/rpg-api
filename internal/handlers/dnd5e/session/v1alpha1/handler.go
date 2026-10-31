@@ -62,15 +62,13 @@ type Manager interface {
 
 //go:generate mockgen -destination=mock/mock_preferences.go -package=sessionv1alpha1mock github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1 Preferences
 
-// Preferences is the character configuration (rpg-project#753 R2), which a
-// session reads and never writes. This service touches it in two places: the
-// deprecated SetDiscoverySharing writes it for the caller's seated character,
-// and GetKnowledge reports the configured choice, which the encounter's own
-// copy takes up only at that character's next write verb.
+// Preferences writes the character configuration (rpg-project#753 R2), which
+// a session reads and never writes. Only the deprecated SetDiscoverySharing
+// uses it here, writing for the caller's seated character; GetKnowledge
+// reports what the session SDK answers from the same configuration.
 // *sessionorch.Preferences satisfies it.
 type Preferences interface {
 	SetPreference(ctx context.Context, in *sessionorch.SetPreferenceInput) (*sessionorch.SetPreferenceOutput, error)
-	GetPreference(ctx context.Context, in *sessionorch.GetPreferenceInput) (*sessionorch.GetPreferenceOutput, error)
 }
 
 // Handler is the wire form of the toolkit's rulebooks/dnd5e/session SDK.
@@ -107,8 +105,7 @@ type HandlerConfig struct {
 	// Preferences is the character configuration. Optional for legacy tests
 	// that construct HandlerConfig directly; production and the integration
 	// harness pass the session orchestrator's. Without it the deprecated
-	// SetDiscoverySharing fails closed (Unimplemented) and GetKnowledge
-	// reports the encounter's copy.
+	// SetDiscoverySharing fails closed (Unimplemented).
 	Preferences Preferences
 }
 

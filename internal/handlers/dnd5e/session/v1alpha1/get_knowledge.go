@@ -7,7 +7,6 @@ import (
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sdkerr"
-	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
 
@@ -26,35 +25,9 @@ func (h *Handler) GetKnowledge(ctx context.Context, req *sessionpb.GetKnowledgeR
 	if out == nil {
 		return nil, sdkerr.StatusError(errKnowledgeOutputRequired)
 	}
-	sharing, err := h.configuredSharing(ctx, req.GetMember(), out.DiscoverySharing)
-	if err != nil {
-		return nil, sdkerr.StatusError(err)
-	}
 	return &sessionpb.GetKnowledgeResponse{
-		DiscoverySharing: sharing,
+		DiscoverySharing: out.DiscoverySharing,
 		Atlas:            AtlasToProto(&out.Atlas), View: viewToProto(&out.View), Where: whereToProto(&out.Where),
 		Roster: rosterToProto(&out.Roster), Holding: append([]string(nil), out.Holding...),
 	}, nil
-}
-
-// configuredSharing is the discovery-sharing value GetKnowledge reports. The
-// encounter's copy is restored from character configuration only at the
-// member's next write verb (rpg-project#753 R2), so right after a change the
-// configuration is ahead of it: a choice the character made is reported as
-// made. A character who never chose keeps the encounter's resolved default,
-// so the default stays the session's to decide. A producer without the
-// capability (nil) stays absent.
-func (h *Handler) configuredSharing(ctx context.Context, member string, encounterSharing *bool) (*bool, error) {
-	if encounterSharing == nil || h.preferences == nil {
-		return encounterSharing, nil
-	}
-	configured, err := h.preferences.GetPreference(ctx, &sessionorch.GetPreferenceInput{CharacterID: member})
-	if err != nil {
-		return nil, err
-	}
-	if configured.DiscoverySharing == nil {
-		return encounterSharing, nil
-	}
-	chosen := *configured.DiscoverySharing
-	return &chosen, nil
 }

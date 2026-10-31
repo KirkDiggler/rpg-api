@@ -72,8 +72,8 @@ Automatic discovery reads each player's sharing choice through the SDK's
 (`repositories/characterconfig`, rpg-project#753 R2). The store is keyed by the
 canonical character identity, does not expire, and is written only under the
 character's guard; no session verb writes it. The SDK supplies audienced
-`discovery_checked` beats; `GetKnowledge` reports the character's configured
-choice, or the encounter's resolved default when none was made. The deprecated
+`discovery_checked` beats, and its knowledge read answers the sharing choice
+from the same reader, so `GetKnowledge` passes it through unchanged. The deprecated
 `SetDiscoverySharing` binds the exact owned member seat and writes the store.
 Search is an unimplemented wire tombstone; there is no host search handler to roll.
 

@@ -14,12 +14,11 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionv1alpha1mock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1/mock"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
-	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
 
 // DiscoverySharingSuite: the deprecated session SetDiscoverySharing writes
 // character configuration for the caller's seated character
-// (rpg-project#753 R2), and GetKnowledge reports what the character chose.
+// (rpg-project#753 R2) and answers from the stored value.
 type DiscoverySharingSuite struct {
 	suite.Suite
 	ctx         context.Context
@@ -79,32 +78,4 @@ func (s *DiscoverySharingSuite) TestWithoutPreferencesItFailsClosed() {
 		Session: "sess-1", Member: "char-a", Sharing: proto.Bool(true),
 	})
 	s.Equal(codes.Unimplemented, status.Code(err))
-}
-
-func (s *DiscoverySharingSuite) knowledge(encounterSharing *bool) *sessionpb.GetKnowledgeResponse {
-	s.manager.EXPECT().Knowledge(gomock.Any(), gomock.Any()).Return(&sdk.KnowledgeOutput{DiscoverySharing: encounterSharing}, nil)
-	out, err := s.handler.GetKnowledge(s.ctx, &sessionpb.GetKnowledgeRequest{Session: "sess-1", Member: "char-a"})
-	s.Require().NoError(err)
-	return out
-}
-
-func (s *DiscoverySharingSuite) TestGetKnowledgeReportsTheConfiguredChoice() {
-	s.preferences.EXPECT().GetPreference(gomock.Any(), &sessionorch.GetPreferenceInput{CharacterID: "char-a"}).
-		Return(&sessionorch.GetPreferenceOutput{DiscoverySharing: proto.Bool(true)}, nil)
-	out := s.knowledge(proto.Bool(false))
-	s.Require().NotNil(out.DiscoverySharing)
-	s.True(*out.DiscoverySharing, "the choice is reported before the encounter's copy takes it up")
-}
-
-func (s *DiscoverySharingSuite) TestGetKnowledgeKeepsTheSessionDefaultWhenNotChosen() {
-	s.preferences.EXPECT().GetPreference(gomock.Any(), gomock.Any()).
-		Return(&sessionorch.GetPreferenceOutput{}, nil)
-	out := s.knowledge(proto.Bool(false))
-	s.Require().NotNil(out.DiscoverySharing)
-	s.False(*out.DiscoverySharing)
-}
-
-func (s *DiscoverySharingSuite) TestGetKnowledgeLeavesAnAbsentCapabilityAbsent() {
-	out := s.knowledge(nil)
-	s.Nil(out.DiscoverySharing, "absent does not mean private, and the store is not asked")
 }

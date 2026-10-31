@@ -294,6 +294,9 @@ func runServer(_ *cobra.Command, _ []string) error {
 		// the answer; the same Manager already flows into the character
 		// service's Equipment above, so it is built by here.
 		Sessions: sessionOrch.Manager,
+		// Character configuration (rpg-project#753 R2): SetPreference writes
+		// it under the character guard of the Manager's own locker.
+		Preferences: sessionOrch.Preferences,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create character handler: %w", err)

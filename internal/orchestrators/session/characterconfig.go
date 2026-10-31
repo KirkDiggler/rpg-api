@@ -58,17 +58,6 @@ type SetPreferenceOutput struct {
 	DiscoverySharing *bool
 }
 
-// GetPreferenceInput names the character whose configuration is read.
-type GetPreferenceInput struct {
-	CharacterID string
-}
-
-// GetPreferenceOutput is the character's configuration. A nil preference has
-// never been chosen.
-type GetPreferenceOutput struct {
-	DiscoverySharing *bool
-}
-
 // SetPreference applies the input under the character's guard: read, change,
 // write. A session sees the change at that character's next write verb.
 func (p *Preferences) SetPreference(ctx context.Context, in *SetPreferenceInput) (*SetPreferenceOutput, error) {
@@ -97,20 +86,4 @@ func (p *Preferences) SetPreference(ctx context.Context, in *SetPreferenceInput)
 		return nil, err
 	}
 	return &SetPreferenceOutput{DiscoverySharing: stored.Data.DiscoverySharing}, nil
-}
-
-// GetPreference reads the character's configuration. It takes no guard: a
-// read sees the last completed write.
-func (p *Preferences) GetPreference(ctx context.Context, in *GetPreferenceInput) (*GetPreferenceOutput, error) {
-	if in == nil {
-		return nil, sdk.ErrNilInput
-	}
-	if in.CharacterID == "" {
-		return nil, ErrCharacterRequired
-	}
-	out, err := p.repo.Get(ctx, &characterconfig.GetInput{CharacterID: in.CharacterID})
-	if err != nil {
-		return nil, err
-	}
-	return &GetPreferenceOutput{DiscoverySharing: out.Data.DiscoverySharing}, nil
 }
