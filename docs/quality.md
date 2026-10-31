@@ -216,10 +216,11 @@ session-shaped reads and writes, including creation: miniredis regression pauses
 a Move before save and proves that another read/write waits for committed state,
 both within one manager and across two managers sharing a coordinator. Unit
 coverage includes wait cancellation, independent keys, contention and idle-entry
-cleanup. With automatic discovery enabled, the game host broadens its default
-coordinator to the shared SDK store so cross-run exploration profiles are not
-raced by different session IDs. Profile round-trip/no-TTL and that broader guard
-have focused coverage. Coordination is process-local; cross-process exclusion,
+cleanup. The default coordinator is still broadened to one store-wide session
+key, a guard that dates from session verbs writing the cross-run exploration
+profile. That preference is now character configuration (rpg-project#753 R2),
+written only under the character's guard and read by sessions, so the
+store-wide key has no remaining reason and the locker slice removes it. Coordination is process-local; cross-process exclusion,
 character-only writes and crash-atomic multi-repository saves remain outside
 that guarantee. Local rendered discovery smoke is not comprehensive party or
 authoring acceptance. No broader grade increase.

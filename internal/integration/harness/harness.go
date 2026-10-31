@@ -293,6 +293,9 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 		// The real Manager, so the harness exercises the SDK's own
 		// advancement verbs rather than a fake of them.
 		Sessions: sessOrch.Manager,
+		// Character configuration (rpg-project#753 R2): SetPreference writes
+		// it under the character guard of the Manager's own locker.
+		Preferences: sessOrch.Preferences,
 	})
 	if err != nil {
 		return fmt.Errorf("character handler: %w", err)
@@ -381,6 +384,9 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 		Manager:    sessOrch.Manager,
 		Characters: charRepo,
 		Access:     access,
+		// The deprecated SetDiscoverySharing writes character configuration
+		// (rpg-project#753 R2); GetKnowledge reports it.
+		Preferences: sessOrch.Preferences,
 	})
 	if err != nil {
 		return fmt.Errorf("session handler: %w", err)

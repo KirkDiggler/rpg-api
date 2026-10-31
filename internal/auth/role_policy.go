@@ -32,7 +32,7 @@ func GameMethodPermission(method string) (Permissions, bool) {
 		switch name {
 		case "CreateDraft", "GetDraft", "ListDrafts", "DeleteDraft", "UpdateName", "UpdateRace", "UpdateClass", "UpdateBackground",
 			"UpdateAbilityScores", "UpdateSkills", "UpdateAppearance", "ValidateDraft", "GetDraftPreview", "FinalizeDraft", "GetCharacter",
-			"ListCharacters", "DeleteCharacter", "GetNextLevel", "LevelUp", "ListRaces", "ListClasses", "ListBackgrounds", "GetRaceDetails",
+			"ListCharacters", "DeleteCharacter", "SetPreference", "GetNextLevel", "LevelUp", "ListRaces", "ListClasses", "ListBackgrounds", "GetRaceDetails",
 			"GetClassDetails", "GetBackgroundDetails", "GetFeature", "RollAbilityScores", "GetRequirements", "SubmitChoices",
 			"ListEquipmentByType", "ListSpellsByLevel", "GetCharacterInventory", "EquipItem", "UnequipItem", "AddToInventory", "RemoveFromInventory":
 			return PermissionPlay, true
