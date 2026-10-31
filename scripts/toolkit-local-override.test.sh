@@ -4,7 +4,15 @@ set -euo pipefail
 
 SCRIPT_SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/toolkit-local-override.sh"
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+trap '[ -n "${KEEP_WORK:-}" ] || { chmod -R u+w "$WORK" 2>/dev/null; rm -rf "$WORK"; }' EXIT
+
+# Hermetic Go environment: published fixture versions come from a file proxy
+# under $WORK, never the network or the developer's module cache.
+PROXY="$WORK/proxy"
+mkdir -p "$PROXY"
+export GOPROXY="file://$PROXY" GOSUMDB=off GOFLAGS=-modcacherw GOWORK=off \
+	GOMODCACHE="$WORK/modcache" GOTOOLCHAIN=local \
+	GOPRIVATE=example.invalid GONOPROXY=example.invalid GONOSUMDB=example.invalid
 
 fail() {
 	echo "FAIL: $*" >&2
@@ -286,5 +294,163 @@ snapshot_fixture "$api" "$WORK/switch-from-encounter-before"
 expect_failure switch-from-encounter run_override "$api" on --target rulebooks/dnd5e --src "$toolkit"
 assert_snapshot_unchanged "$api" "$WORK/switch-from-encounter-before"
 run_override "$api" off
+
+# --- Nested dnd5e modules -------------------------------------------------
+# rulebooks/dnd5e/session and rulebooks/dnd5e/encounter are separate Go
+# modules under the umbrella.  The dnd5e target must replace each one go.mod
+# requires, leave unrequired ones alone, and fail loudly on a required one the
+# source does not provide.
+
+# write_pkg <dir> <module> <package> <value>: a go.mod plus one exported const.
+write_pkg() {
+	mkdir -p "$1"
+	printf 'module %s\n\ngo 1.22\n' "$2" >"$1/go.mod"
+	printf 'package %s\n\nconst Name = "%s"\n' "$3" "$4" >"$1/$3.go"
+}
+
+# publish_module <module> <version> <dir>: serve <dir>'s top-level files as a
+# published version from the file proxy.
+publish_module() {
+	local module="$1" version="$2" src="$3"
+	local escaped dir stage
+	escaped="$(sed 's/[A-Z]/!\L&/g' <<<"$module")"
+	dir="$PROXY/$escaped/@v"
+	mkdir -p "$dir"
+	printf '%s\n' "$version" >>"$dir/list"
+	printf '{"Version":"%s","Time":"2026-01-01T00:00:00Z"}\n' "$version" >"$dir/$version.info"
+	cp "$src/go.mod" "$dir/$version.mod"
+	stage="$(mktemp -d "$WORK/stage.XXXXXX")"
+	mkdir -p "$stage/$module@$version"
+	find "$src" -maxdepth 1 -type f -exec cp {} "$stage/$module@$version/" \;
+	(cd "$stage" && zip -qr "$dir/$version.zip" "$module@$version")
+}
+
+TK=github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e
+published="$WORK/published"
+write_pkg "$published/dnd5e" "$TK" dnd5e published
+write_pkg "$published/session" "$TK/session" session published
+write_pkg "$published/encounter" "$TK/encounter" encounter published
+write_pkg "$published/resolution" "$TK/resolution" resolution published
+for m in dnd5e session encounter resolution; do
+	if [ "$m" = dnd5e ]; then
+		publish_module "$TK" v0.1.0 "$published/$m"
+	else
+		publish_module "$TK/$m" v0.1.0 "$published/$m"
+	fi
+done
+
+nested_toolkit="$WORK/nested-toolkit"
+write_pkg "$nested_toolkit/rulebooks/dnd5e" "$TK" dnd5e local
+write_pkg "$nested_toolkit/rulebooks/dnd5e/session" "$TK/session" session local
+write_pkg "$nested_toolkit/rulebooks/dnd5e/encounter" "$TK/encounter" encounter local
+write_pkg "$nested_toolkit/rulebooks/dnd5e/unused" "$TK/unused" unused local
+git -C "$nested_toolkit" init -q
+git -C "$nested_toolkit" -c user.email=t@example.com -c user.name=t add .
+git -C "$nested_toolkit" -c user.email=t@example.com -c user.name=t commit -qm fixture
+
+# make_nested_api <root> <pkg>...: an api importing the umbrella plus the
+# named nested packages at their published v0.1.0, tidied against the proxy.
+make_nested_api() {
+	local root="$1"
+	shift
+	local imports="	\"$TK\"" uses='dnd5e.Name' p
+	for p in "$@"; do
+		imports+=$'\n'"	\"$TK/$p\""
+		uses+=" + \" \" + $p.Name"
+	done
+	mkdir -p "$root/scripts"
+	cp "$SCRIPT_SOURCE" "$root/scripts/toolkit-local-override.sh"
+	chmod +x "$root/scripts/toolkit-local-override.sh"
+	printf 'module example.com/api\n\ngo 1.22\n' >"$root/go.mod"
+	cat >"$root/main.go" <<EOF
+package main
+
+import (
+	"fmt"
+
+$imports
+)
+
+func main() { fmt.Println($uses) }
+EOF
+	local -a requires=("-require=$TK@v0.1.0")
+	for p in "$@"; do
+		requires+=("-require=$TK/$p@v0.1.0")
+	done
+	(cd "$root" && go mod edit "${requires[@]}" && go mod tidy 2>/dev/null)
+	git -C "$root" init -q
+	git -C "$root" -c user.email=t@example.com -c user.name=t add .
+	git -C "$root" -c user.email=t@example.com -c user.name=t commit -qm fixture
+}
+
+api_run() {
+	(cd "$1" && go run .)
+}
+
+api="$WORK/api-nested"
+make_nested_api "$api" session encounter
+[ "$(api_run "$api")" = 'published published published' ] || fail 'fixture does not start on published versions'
+run_override "$api" on --target rulebooks/dnd5e --src "$nested_toolkit" >"$WORK/nested-on.txt"
+for m in "$TK" "$TK/session" "$TK/encounter"; do
+	assert_file_contains "$m => ./local-toolkit/rulebooks/dnd5e${m#"$TK"}" "$api/go.mod"
+	assert_file_contains "$m => ./local-toolkit/rulebooks/dnd5e${m#"$TK"}" "$WORK/nested-on.txt"
+done
+assert_file_not_contains "$TK/unused" "$api/go.mod"
+assert_file_contains "nested=$TK/encounter,$TK/session" "$api/local-toolkit/.toolkit-local-override-state"
+[ "$(api_run "$api")" = 'local local local' ] || fail 'binary does not run the local nested modules'
+(cd "$api" && go build -o "$WORK/nested-bin" . && go version -m "$WORK/nested-bin") >"$WORK/nested-version.txt"
+for m in "$TK/session" "$TK/encounter"; do
+	grep -Eq "^[[:space:]]*=>[[:space:]]+\./local-toolkit/rulebooks/dnd5e${m#"$TK"}[[:space:]]" "$WORK/nested-version.txt" ||
+		fail "go version -m does not show $m => ./local-toolkit"
+done
+run_override "$api" status >"$WORK/nested-status.txt"
+assert_file_contains "$TK/session => ./local-toolkit/rulebooks/dnd5e/session" "$WORK/nested-status.txt"
+printf '\nconst Refreshed = true\n' >>"$nested_toolkit/rulebooks/dnd5e/session/session.go"
+run_override "$api" refresh --src "$nested_toolkit" >/dev/null
+grep -Fq 'const Refreshed = true' "$api/local-toolkit/rulebooks/dnd5e/session/session.go" || fail 'refresh did not sync nested module changes'
+run_override "$api" off >/dev/null
+test "$(cd "$api" && go mod edit -json | jq -r '(.Replace // []) | length')" -eq 0 || fail 'nested replacement remained after off'
+test ! -e "$api/local-toolkit" || fail 'local-toolkit remained after off'
+[ "$(api_run "$api")" = 'published published published' ] || fail 'off did not restore published versions'
+git -C "$api" diff --quiet -- go.mod go.sum || fail 'off did not restore go.mod/go.sum exactly'
+
+# A nested replacement the state does not record, or one with a wrong path,
+# is refused without mutation.
+api="$WORK/api-nested-tamper"
+make_nested_api "$api" session
+run_override "$api" on --target rulebooks/dnd5e --src "$nested_toolkit" >/dev/null
+(cd "$api" && go mod edit -replace "$TK/unused=./local-toolkit/rulebooks/dnd5e/unused")
+snapshot_fixture "$api" "$WORK/nested-unrecorded-before"
+expect_failure nested-unrecorded run_override "$api" status
+expect_failure nested-unrecorded-off run_override "$api" off
+assert_snapshot_unchanged "$api" "$WORK/nested-unrecorded-before"
+(cd "$api" && go mod edit -dropreplace "$TK/unused" -replace "$TK/session=./local-toolkit/elsewhere")
+snapshot_fixture "$api" "$WORK/nested-badrhs-before"
+expect_failure nested-bad-rhs run_override "$api" off
+assert_snapshot_unchanged "$api" "$WORK/nested-badrhs-before"
+(cd "$api" && go mod edit -replace "$TK/session=./local-toolkit/rulebooks/dnd5e/session")
+run_override "$api" off >/dev/null
+
+# The legacy encounter target never takes nested replacements.
+api="$WORK/api-encounter-nested"
+make_api "$api" encounter
+run_override "$api" on --src "$toolkit" >/dev/null
+(cd "$api" && go mod edit -replace "github.com/KirkDiggler/rpg-toolkit/encounter/sub=./local-toolkit/encounter/sub")
+expect_failure encounter-nested run_override "$api" status
+(cd "$api" && go mod edit -dropreplace "github.com/KirkDiggler/rpg-toolkit/encounter/sub")
+run_override "$api" off >/dev/null
+
+# A required nested module the source does not provide fails loudly and names
+# it; the override stays owned so off still cleans up.
+api="$WORK/api-nested-missing"
+make_nested_api "$api" session resolution
+if run_override "$api" on --target rulebooks/dnd5e --src "$nested_toolkit" >"$WORK/nested-missing.txt" 2>&1; then
+	fail 'on succeeded although a required nested module was not replaced'
+fi
+assert_file_contains "$TK/resolution" "$WORK/nested-missing.txt"
+assert_file_contains 'NOT replaced' "$WORK/nested-missing.txt"
+expect_failure nested-missing-status run_override "$api" status
+run_override "$api" off >/dev/null
+test "$(cd "$api" && go mod edit -json | jq -r '(.Replace // []) | length')" -eq 0 || fail 'replacement remained after off'
 
 echo 'toolkit-local-override contract tests passed'
