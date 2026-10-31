@@ -381,6 +381,9 @@ func (ts *TestServer) wireServices(cfg *Config) error {
 		Manager:    sessOrch.Manager,
 		Characters: charRepo,
 		Access:     access,
+		// The deprecated SetDiscoverySharing writes character configuration
+		// (rpg-project#753 R2); GetKnowledge reports it.
+		Preferences: sessOrch.Preferences,
 	})
 	if err != nil {
 		return fmt.Errorf("session handler: %w", err)

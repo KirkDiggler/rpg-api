@@ -391,7 +391,7 @@ func newAcceptanceHarnessWith(t *testing.T, roller sdk.Roller, driver sdk.TurnDr
 	require.NoError(t, err)
 
 	h, err := sessionhandler.New(&sessionhandler.HandlerConfig{
-		Manager: orch.Manager, Characters: charRepo,
+		Manager: orch.Manager, Characters: charRepo, Preferences: orch.Preferences,
 	})
 	require.NoError(t, err)
 

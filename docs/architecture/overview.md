@@ -67,12 +67,15 @@ for character-only writes outside the session SDK. Custom coordinators must also
 cover profiles shared across runs when discovery is enabled. Event-stream
 subscriptions do not hold a session guard open.
 
-Automatic discovery uses the SDK's exploration repository port. The adapter
-stores opaque, non-expiring profiles by the canonical character identity; it
-neither interprets attempt counts nor creates a second player/world identity.
-The SDK supplies audienced `discovery_checked` beats and a sharing preference in
-`GetKnowledge`. `SetDiscoverySharing` binds the exact owned member seat. Search
-is an unimplemented wire tombstone; there is no host search handler to roll.
+Automatic discovery reads each player's sharing choice through the SDK's
+`CharacterConfigReader` port, backed by the character configuration store
+(`repositories/characterconfig`, rpg-project#753 R2). The store is keyed by the
+canonical character identity, does not expire, and is written only under the
+character's guard; no session verb writes it. The SDK supplies audienced
+`discovery_checked` beats; `GetKnowledge` reports the character's configured
+choice, or the encounter's resolved default when none was made. The deprecated
+`SetDiscoverySharing` binds the exact owned member seat and writes the store.
+Search is an unimplemented wire tombstone; there is no host search handler to roll.
 
 ## Layer rules
 

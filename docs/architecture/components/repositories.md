@@ -18,6 +18,7 @@ served. The later v2 encounter repository is also deleted with rpg-project#227.
 |---|---|---|---|---|
 | `character` | `repository.go` | `redis.go` | Redis | B |
 | `character_draft` | `repository.go` | `redis.go` | Redis | B- |
+| `characterconfig` | `repository.go` | `redis.go` | Redis | B |
 | `composition` | `repository.go` | `redis.go` | Redis | B |
 | `dice_session` | `repository.go` | `redis.go` | Redis | B- |
 | ~~`encounters/v2`~~ | DELETED | DELETED | DELETED | n/a |
@@ -82,6 +83,22 @@ The local-dev `CompositionService` now calls this repository through a thin serv
 orchestrator. The orchestrator supplies newly generated IDs; the handler supplies the
 configured dev WorldID only after existing player-auth and requested-world checks. The
 repository itself remains authorization-agnostic and unchanged.
+
+## Character configuration repository
+
+**Path:** `repositories/characterconfig/`
+
+What a player chooses for a character across every session (rpg-project#753 R2),
+keyed by character at `character-config:<id>` as JSON `{discovery_sharing: bool|null}`,
+with no expiry. Today it holds discovery sharing only. `Get` never answers not-found: a
+character with nothing stored has every preference unchosen. When the record is absent,
+`Get` reads the old `character-exploration:v1:<id>` profile once as the initial value
+(an explicit choice wins, a record with no choice reads `!private`, no record is not
+chosen), seeds the new key with `SETNX` so a concurrent `Put` wins, and never writes the
+old key. Writers hold the character's guard: `internal/orchestrators/session`'s
+`Preferences` is the one writer, for `CharacterService.SetPreference` and the deprecated
+`SessionService.SetDiscoverySharing`. The session SDK reads it through
+`CharacterConfigReader` at every write verb and never writes it.
 
 ## Dice session repository
 

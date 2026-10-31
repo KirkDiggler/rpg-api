@@ -401,21 +401,6 @@ func (mr *MockManagerMockRecorder) Seat(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Seat", reflect.TypeOf((*MockManager)(nil).Seat), ctx, in)
 }
 
-// SetDiscoverySharing mocks base method.
-func (m *MockManager) SetDiscoverySharing(ctx context.Context, in *session.SetDiscoverySharingInput) (*session.SetDiscoverySharingOutput, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetDiscoverySharing", ctx, in)
-	ret0, _ := ret[0].(*session.SetDiscoverySharingOutput)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// SetDiscoverySharing indicates an expected call of SetDiscoverySharing.
-func (mr *MockManagerMockRecorder) SetDiscoverySharing(ctx, in any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetDiscoverySharing", reflect.TypeOf((*MockManager)(nil).SetDiscoverySharing), ctx, in)
-}
-
 // SetSneaking mocks base method.
 func (m *MockManager) SetSneaking(ctx context.Context, in *session.SetSneakingInput) (*session.SetSneakingOutput, error) {
 	m.ctrl.T.Helper()

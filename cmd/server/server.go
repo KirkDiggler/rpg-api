@@ -336,6 +336,9 @@ func runServer(_ *cobra.Command, _ []string) error {
 		Manager:    sessionOrch.Manager,
 		Characters: charRepo,
 		Access:     access,
+		// The deprecated SetDiscoverySharing writes character configuration
+		// (rpg-project#753 R2); GetKnowledge reports it.
+		Preferences: sessionOrch.Preferences,
 	})
 	if err != nil {
 		return fmt.Errorf("session handler: %w", err)
