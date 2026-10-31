@@ -22,6 +22,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	"github.com/KirkDiggler/rpg-api/internal/repositories/characterconfig"
 )
 
 // Config carries what New needs to build an Orchestrator. Redis and Characters
@@ -44,11 +45,15 @@ type Config struct {
 	// keys. Pass 0 to disable expiration.
 	TTL time.Duration
 
+	// CharacterConfig is the character configuration store the SDK reads and
+	// Preferences writes (rpg-project#753 R2). Optional: nil selects the
+	// Redis store on Redis.
+	CharacterConfig characterconfig.Repository
+
 	// Locker coordinates full SDK operations. Nil selects process-local
-	// exclusion, widened to store-wide because discovery profiles are shared
-	// across sessions. All handlers/lobby calls
-	// share it. Multiple Orchestrators/processes must inject a coordinator
-	// covering every shared resource; independent local lockers are insufficient.
+	// exclusion keyed by session, and separately by character. All
+	// handlers/lobby calls share it. Multiple Orchestrators/processes must
+	// inject one shared coordinator; independent local lockers are insufficient.
 	Locker sdk.SessionLocker
 
 	// Dice is the SDK's source of randomness. Optional: nil selects a
@@ -105,6 +110,9 @@ type Orchestrator struct {
 	Manager      *sdk.Manager
 	RecordBroker *RecordBroker
 	ActBroker    *ActBroker
+	// Preferences writes character configuration under the character guard
+	// of the same locker Manager uses.
+	Preferences *Preferences
 }
 
 // New constructs an Orchestrator, wiring every session.Config capability
@@ -147,17 +155,27 @@ func New(cfg Config) (*Orchestrator, error) {
 		policy = sdk.StaleTargetRefuse
 	}
 
+	// SESSIONS LOCK BY SESSION (rpg-project#753 R2): a verb holds its own
+	// session's guard and nothing wider, so a slow verb stalls its own table
+	// only. No session verb writes a record shared across sessions.
 	locker := cfg.Locker
 	if locker == nil {
-		locker = sharedStoreLocker{inner: NewInProcessSessionLocker()}
+		locker = NewInProcessSessionLocker()
 	}
-	explorations := &redisExplorationRepository{client: cfg.Redis}
+	configs := cfg.CharacterConfig
+	if configs == nil {
+		var err error
+		configs, err = characterconfig.NewRedis(&characterconfig.RedisConfig{Client: cfg.Redis})
+		if err != nil {
+			return nil, fmt.Errorf("character config: %w", err)
+		}
+	}
 
 	recordBroker := NewRecordBroker(0)
 	actBroker := NewActBroker(ActBufferFromEnv())
 	mgr, err := sdk.NewManager(&sdk.Config{
 		Locker:            locker,
-		Explorations:      explorations,
+		CharacterConfig:   &characterConfigReader{repo: configs},
 		StaleTargetPolicy: policy,
 		PresentationIDs:   presentationIDs,
 		Sessions:          NewSessionRepository(cfg.Redis, cfg.TTL),
@@ -173,5 +191,8 @@ func New(cfg Config) (*Orchestrator, error) {
 		return nil, fmt.Errorf("construct session manager: %w", err)
 	}
 
-	return &Orchestrator{Manager: mgr, RecordBroker: recordBroker, ActBroker: actBroker}, nil
+	return &Orchestrator{
+		Manager: mgr, RecordBroker: recordBroker, ActBroker: actBroker,
+		Preferences: &Preferences{locker: locker, repo: configs},
+	}, nil
 }

@@ -284,6 +284,11 @@ Character draft repository (`repositories/character_draft/redis.go`):
 - `draft:{draftID}` — JSON-serialized `entities.CharacterDraft` wrapping toolkit `character.DraftData`
 - `character_drafts:{playerID}` — set of draft IDs per player
 
+Character configuration repository (`repositories/characterconfig/redis.go`):
+- `character-config:{characterID}` — JSON `{discovery_sharing: bool|null}`; no TTL
+- `character-exploration:v1:{characterID}` — the legacy exploration profile, read
+  once as the initial configuration and never written
+
 Dice session repository (`repositories/dice_session/redis.go`):
 - `dice_session:{playerID}:{sessionID}` — JSON-serialized session state
 

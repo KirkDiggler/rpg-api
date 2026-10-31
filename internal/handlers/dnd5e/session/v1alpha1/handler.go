@@ -12,6 +12,7 @@ import (
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionaccess "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sessionaccess"
+	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
 
@@ -50,7 +51,6 @@ type Manager interface {
 	CloseDoor(ctx context.Context, in *sdk.CloseDoorInput) (*sdk.CloseDoorOutput, error)
 	Unlock(ctx context.Context, in *sdk.UnlockInput) (*sdk.UnlockOutput, error)
 	Speak(ctx context.Context, in *sdk.SpeakInput) (*sdk.SpeakOutput, error)
-	SetDiscoverySharing(ctx context.Context, in *sdk.SetDiscoverySharingInput) (*sdk.SetDiscoverySharingOutput, error)
 	SetSneaking(ctx context.Context, in *sdk.SetSneakingInput) (*sdk.SetSneakingOutput, error)
 	Interact(ctx context.Context, in *sdk.InteractInput) (*sdk.InteractOutput, error)
 	Loot(ctx context.Context, in *sdk.LootInput) (*sdk.LootOutput, error)
@@ -58,6 +58,17 @@ type Manager interface {
 	Trade(ctx context.Context, in *sdk.TradeInput) (*sdk.TradeOutput, error)
 	Unpack(ctx context.Context, in *sdk.UnpackInput) (*sdk.UnpackOutput, error)
 	Rest(ctx context.Context, in *sdk.RestInput) (*sdk.RestOutput, error)
+}
+
+//go:generate mockgen -destination=mock/mock_preferences.go -package=sessionv1alpha1mock github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1 Preferences
+
+// Preferences writes the character configuration (rpg-project#753 R2), which
+// a session reads and never writes. Only the deprecated SetDiscoverySharing
+// uses it here, writing for the caller's seated character; GetKnowledge
+// reports what the session SDK answers from the same configuration.
+// *sessionorch.Preferences satisfies it.
+type Preferences interface {
+	SetPreference(ctx context.Context, in *sessionorch.SetPreferenceInput) (*sessionorch.SetPreferenceOutput, error)
 }
 
 // Handler is the wire form of the toolkit's rulebooks/dnd5e/session SDK.
@@ -76,6 +87,9 @@ type Handler struct {
 	// access centralizes the member/seat entitlement checks shared across the
 	// session presentation handlers.
 	access *sessionaccess.Access
+	// preferences is the character configuration; nil refuses the
+	// deprecated SetDiscoverySharing as unimplemented.
+	preferences Preferences
 }
 
 // HandlerConfig carries what New needs to build a Handler. Every field is
@@ -88,6 +102,11 @@ type HandlerConfig struct {
 	// integration harness pass one shared instance to SessionService and
 	// SessionPresentationService.
 	Access *sessionaccess.Access
+	// Preferences is the character configuration. Optional for legacy tests
+	// that construct HandlerConfig directly; production and the integration
+	// harness pass the session orchestrator's. Without it the deprecated
+	// SetDiscoverySharing fails closed (Unimplemented).
+	Preferences Preferences
 }
 
 // New constructs a Handler. Returns an error on any missing dependency.
@@ -109,7 +128,7 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 			return nil, err
 		}
 	}
-	return &Handler{manager: cfg.Manager, characters: cfg.Characters, access: access}, nil
+	return &Handler{manager: cfg.Manager, characters: cfg.Characters, access: access, preferences: cfg.Preferences}, nil
 }
 
 // authenticatedPlayerID extracts the caller's player ID from ctx, or a

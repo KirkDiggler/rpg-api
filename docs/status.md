@@ -69,7 +69,9 @@ protos v0.1.220, released encounter v0.112.0 and session v0.114.1 from
 toolkit#1931/#1930/#1936. The real
 server enables automatic discovery, persists opaque character-owned profiles
 without a run TTL, and supplies store-wide SDK coordination for those shared
-records. Result beats, snapshot sharing presence and the exact-seat preference
+records. (Superseded by rpg-project#753 R2: the preference is character
+configuration written under the character's guard, and sessions lock by
+session; see rpg-api#1164 and #1165.) Result beats, snapshot sharing presence and the exact-seat preference
 RPC cross the handler unchanged. Search no longer has an implementation.
 `reference-discovery-checks.yaml` provides four optional discoveries and an
 unblocked entrance. Local browser smoke shows an automatic failed Perception
