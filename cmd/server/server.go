@@ -414,6 +414,11 @@ func runServer(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("content registry: %w", err)
 	}
+	// The benchmark keep's server row "registry compile ms" (rpg-project#740):
+	// one line, read by the harness, so its shape is fixed.
+	load := shippedStore.LoadReport()
+	log.Printf("content registry: compiled %d files in %.2fms",
+		load.Files, float64(load.Elapsed.Microseconds())/1000)
 	worldDungeons, err := worlddungeons.NewRedis(&worlddungeons.RedisConfig{Client: redisClient})
 	if err != nil {
 		return fmt.Errorf("world dungeon store: %w", err)

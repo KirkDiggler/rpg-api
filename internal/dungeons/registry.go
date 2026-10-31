@@ -36,6 +36,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -265,6 +266,18 @@ type FileRegistry struct {
 	dir       string
 	projector AtlasProjector
 	entries   map[string]*Entry
+	load      LoadReport
+}
+
+// LoadReport is what NewFileRegistry measured while it loaded the shelf:
+// how many files it compiled and how long the read, compile and atlas
+// projection loop took, end to end. The server logs it at boot as the
+// benchmark keep's "registry compile ms" row (rpg-project#740, plan B13).
+type LoadReport struct {
+	// Files is the number of *.yaml files compiled.
+	Files int
+	// Elapsed is the wall time of the whole load loop.
+	Elapsed time.Duration
 }
 
 // NewFileRegistry loads every *.yaml under dir and compiles each once.
@@ -293,6 +306,7 @@ func NewFileRegistry(dir string, projector AtlasProjector) (*FileRegistry, error
 		entries:   make(map[string]*Entry),
 	}
 
+	start := time.Now()
 	for _, d := range names {
 		if d.IsDir() || filepath.Ext(d.Name()) != yamlExt {
 			continue
@@ -320,6 +334,7 @@ func NewFileRegistry(dir string, projector AtlasProjector) (*FileRegistry, error
 		entry.Source = SourceShipped
 		r.entries[entry.Key] = entry
 	}
+	r.load = LoadReport{Files: len(r.entries), Elapsed: time.Since(start)}
 
 	if _, ok := r.entries[DefaultKey]; !ok {
 		return nil, fmt.Errorf("dungeons: %s: no %s%s — the default dungeon must be present",
@@ -327,6 +342,12 @@ func NewFileRegistry(dir string, projector AtlasProjector) (*FileRegistry, error
 	}
 
 	return r, nil
+}
+
+// LoadReport returns what construction measured: files compiled and the
+// time the load loop took.
+func (r *FileRegistry) LoadReport() LoadReport {
+	return r.load
 }
 
 // List returns every shipped dungeon, both dialects, sorted by key. The
