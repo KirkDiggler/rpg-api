@@ -45,29 +45,3 @@ func (r *redisExplorationRepository) SaveExploration(ctx context.Context, data *
 	}
 	return r.client.Set(ctx, explorationPrefix+data.Character, raw, 0).Err()
 }
-
-// Discovery operations share character preferences across session IDs, never
-// encounter knowledge or attempt history. This host
-// therefore uses one store-wide coordinator for SDK operations when that
-// capability is enabled. It trades parallelism for correct shared-record writes
-// without teaching the host how counters merge. It is still process-local;
-// distributed hosts must inject a coordinator covering their shared store.
-type sharedStoreLocker struct{ inner *InProcessSessionLocker }
-
-func (l sharedStoreLocker) LockSession(ctx context.Context, in *sdk.LockSessionInput) (*sdk.LockSessionOutput, error) {
-	if in == nil {
-		return nil, sdk.ErrNilInput
-	}
-	if in.Session == "" {
-		return nil, sdk.ErrNoSessionID
-	}
-	return l.inner.LockSession(ctx, &sdk.LockSessionInput{Session: "shared-sdk-store"})
-}
-
-// LockCharacter takes the character's own guard, per character id. It never
-// shares the store-wide session key: Launch, Join and Exit hold that key and
-// then take character guards, so routing a character onto it would deadlock
-// the verb on its own guard.
-func (l sharedStoreLocker) LockCharacter(ctx context.Context, in *sdk.LockCharacterInput) (*sdk.LockCharacterOutput, error) {
-	return l.inner.LockCharacter(ctx, in)
-}

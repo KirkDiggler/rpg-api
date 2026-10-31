@@ -141,3 +141,80 @@ func (s *SessionSerializationSuite) proveSerialization(locker sdk.SessionLocker)
 	s.Require().NoError(err)
 	s.Equal(at(3, 1), where.Position)
 }
+
+// TestLocker_SessionsDoNotShareAKey is server at scale R2 (rpg-project#753):
+// a verb on one session holds that session's guard and nothing wider. One
+// session's Move is paused inside its guard, at its encounter save; a Move on
+// another session runs to completion meanwhile, while a read on the paused
+// session still waits for its committed state.
+func TestLocker_SessionsDoNotShareAKey(t *testing.T) {
+	suite.Run(t, new(SessionsDoNotShareAKeySuite))
+}
+
+type SessionsDoNotShareAKeySuite struct{ suite.Suite }
+
+func (s *SessionsDoNotShareAKeySuite) TestTwoSessionsVerbsInterleave() {
+	h := newAcceptanceHarness(s.T())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for id, player := range map[string]string{"alice": "player-alice", "bob": "player-bob"} {
+		_, err := h.charRepo.Create(ctx, characterrepo.CreateInput{
+			Character: &entities.Character{Data: armedFighter(id, player)},
+		})
+		s.Require().NoError(err)
+	}
+	const slow, fast = "slow-run", "fast-run"
+	h.launch(s.T(), slow, buildThreeRoomTomb(s.T()), seatAt("alice", 1, 1))
+	h.launch(s.T(), fast, buildThreeRoomTomb(s.T()), seatAt("bob", 1, 1))
+
+	hook := &pausedEncounterSave{
+		key: "session-enc:v1alpha1:" + slow, entered: make(chan struct{}), resume: make(chan struct{}),
+	}
+	var resumeOnce sync.Once
+	resume := func() { resumeOnce.Do(func() { close(hook.resume) }) }
+	defer resume()
+	h.redis.AddHook(hook)
+
+	paused := make(chan error, 1)
+	go func() {
+		_, moveErr := h.manager.Manager.Move(ctx, &sdk.MoveInput{
+			Session: slow, Member: "alice", Path: []spatial.Position{at(2, 1)},
+		})
+		paused <- moveErr
+	}()
+	select {
+	case <-hook.entered:
+	case early := <-paused:
+		s.FailNow("move returned before its encounter save", "%v", early)
+	case <-ctx.Done():
+		s.FailNow("move never reached its encounter save")
+	}
+
+	// The other session's verb is not behind the paused one.
+	other, stopOther := context.WithTimeout(ctx, 2*time.Second)
+	defer stopOther()
+	_, err := h.manager.Manager.Move(other, &sdk.MoveInput{
+		Session: fast, Member: "bob", Path: []spatial.Position{at(2, 1)},
+	})
+	s.Require().NoError(err, "a verb on another session runs while this one holds its guard")
+	where, err := h.manager.Manager.Where(other, &sdk.WhereInput{Session: fast, Member: "bob"})
+	s.Require().NoError(err)
+	s.Equal(at(2, 1), where.Position)
+
+	// The paused session itself is still guarded.
+	waiting, stopWaiting := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer stopWaiting()
+	_, err = h.manager.Manager.Where(waiting, &sdk.WhereInput{Session: slow, Member: "alice"})
+	s.ErrorIs(err, context.DeadlineExceeded, "the paused session's own read still waits")
+
+	resume()
+	select {
+	case moveErr := <-paused:
+		s.Require().NoError(moveErr)
+	case <-ctx.Done():
+		s.FailNow("guard was not released")
+	}
+	where, err = h.manager.Manager.Where(ctx, &sdk.WhereInput{Session: slow, Member: "alice"})
+	s.Require().NoError(err)
+	s.Equal(at(2, 1), where.Position)
+}
