@@ -218,7 +218,9 @@ func StatusError(err error) error {
 	//   ErrOutOfRange / ErrNotVisible (rpg-toolkit#1404, Interact) -- the
 	//   host-seam twins of encounter's ErrOutOfRange/ErrNotVisible: the named
 	//   world NPC exists and the actor is real, the reach or the sightline
-	//   just doesn't hold right now. Same shape as ErrOutOfReach above -- a
+	//   just doesn't hold right now. Speak returns ErrOutOfRange too, for a
+	//   creature beyond its three-hex reach (rpg-project#753 R4), and
+	//   ErrStaleDeclaration for a prop no longer on the speaker's menu. Same shape as ErrOutOfReach above -- a
 	//   well-formed call the current world state refuses, not a caller
 	//   naming something that doesn't exist.
 	case errors.Is(err, sdk.ErrInBubble),
@@ -244,10 +246,12 @@ func StatusError(err error) error {
 		// NOT ErrOutOfReach, AND THE DISTINCTION IS THE VERB'S WHOLE SHAPE.
 		// Reach is a distance, and a client that mapped this to the reach
 		// refusal would tell the player to get closer -- which is exactly
-		// the wrong instruction. A threat has no distance cap at all; it
-		// carries as far as the threatened can see who is making it, so the
-		// remedy is a SIGHTLINE (step out from behind the pillar, open the
-		// door, put down the light) and never a step. The toolkit split this
+		// the wrong instruction. Within Speak's reach (three hexes,
+		// rpg-project#753 R4; beyond it the line is refused ErrOutOfRange,
+		// above) a threat carries as far as the threatened can see who is
+		// making it, so the remedy for THIS refusal is a SIGHTLINE (step out
+		// from behind the pillar, open the door, put down the light) and
+		// never a step. The toolkit split this
 		// off its own sentinel for that reason rather than reusing
 		// ErrOutOfReach, and collapsing them here would undo the split one
 		// seam out.
