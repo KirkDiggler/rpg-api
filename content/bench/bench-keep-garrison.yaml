@@ -2,7 +2,7 @@
 # (rpg-toolkit rulebooks/dnd5e/encounter/cmd/keepgen). Measurement content:
 # regenerate it, never edit it by hand.
 # keepgen-command: keepgen -hexes 10000 -seed 1 -garrison 99 -patrols 20 -key bench-keep-garrison -out content/bench/bench-keep-garrison.yaml
-# keepgen-options: hexes=10000 seed=1 props=12.5 grounds-props=2.5 monsters=1 key=bench-keep-garrison garrison=99 patrols=20
+# keepgen-options: hexes=10000 seed=1 props=12.5 grounds-props=2.5 monsters=1 key=bench-keep-garrison garrison=99 patrols=20 posts-listen=true
 version: 5
 key: bench-keep-garrison
 play: { void: transparent, lighting: bright, standing: centre-covered }
@@ -2437,85 +2437,85 @@ room:
       mausoleum-monster-00: { faction: garrison, table: patrol-17 }
       cemetery-monster-00: { faction: garrison, table: patrol-18 }
       servants-quarters-monster-00: { faction: garrison, table: patrol-19 }
-      jailer-monster-00: { faction: garrison, table: post }
-      prison-monster-00: { faction: garrison, table: post }
-      prison-monster-01: { faction: garrison, table: post }
-      larder-monster-00: { faction: garrison, table: post }
-      kitchen-monster-00: { faction: garrison, table: post }
-      kitchen-monster-01: { faction: garrison, table: post }
-      stables-monster-00: { faction: garrison, table: post }
-      stables-monster-01: { faction: garrison, table: post }
-      training-yard-monster-00: { faction: garrison, table: post }
-      training-yard-monster-01: { faction: garrison, table: post }
-      armory-monster-00: { faction: garrison, table: post }
-      gatehouse-monster-00: { faction: garrison, table: post }
-      gatehouse-monster-01: { faction: garrison, table: post }
-      forecourt-monster-00: { faction: garrison, table: post }
-      forecourt-monster-01: { faction: garrison, table: post }
-      barracks-monster-00: { faction: garrison, table: post }
-      barracks-monster-01: { faction: garrison, table: post }
-      tower-monster-00: { faction: garrison, table: post }
-      mess-hall-monster-00: { faction: garrison, table: post }
-      mess-hall-monster-01: { faction: garrison, table: post }
-      courtyard-monster-00: { faction: garrison, table: post }
-      courtyard-monster-01: { faction: garrison, table: post }
-      courtyard-monster-02: { faction: garrison, table: post }
-      courtyard-monster-03: { faction: garrison, table: post }
-      courtyard-monster-04: { faction: garrison, table: post }
-      courtyard-monster-05: { faction: garrison, table: post }
-      courtyard-monster-06: { faction: garrison, table: post }
-      courtyard-monster-07: { faction: garrison, table: post }
-      courtyard-monster-08: { faction: garrison, table: post }
-      courtyard-monster-09: { faction: garrison, table: post }
-      courtyard-monster-10: { faction: garrison, table: post }
-      courtyard-monster-11: { faction: garrison, table: post }
-      courtyard-monster-12: { faction: garrison, table: post }
-      courtyard-monster-13: { faction: garrison, table: post }
-      courtyard-monster-14: { faction: garrison, table: post }
-      courtyard-monster-15: { faction: garrison, table: post }
-      courtyard-monster-16: { faction: garrison, table: post }
-      courtyard-monster-17: { faction: garrison, table: post }
-      courtyard-monster-18: { faction: garrison, table: post }
-      courtyard-monster-19: { faction: garrison, table: post }
-      courtyard-monster-20: { faction: garrison, table: post }
-      courtyard-monster-21: { faction: garrison, table: post }
-      courtyard-monster-22: { faction: garrison, table: post }
-      west-grounds-monster-00: { faction: garrison, table: post }
-      west-grounds-monster-01: { faction: garrison, table: post }
-      west-grounds-monster-02: { faction: garrison, table: post }
-      west-grounds-monster-03: { faction: garrison, table: post }
-      west-grounds-monster-04: { faction: garrison, table: post }
-      west-grounds-monster-05: { faction: garrison, table: post }
-      west-grounds-monster-06: { faction: garrison, table: post }
-      west-grounds-monster-07: { faction: garrison, table: post }
-      west-grounds-monster-08: { faction: garrison, table: post }
-      west-grounds-monster-09: { faction: garrison, table: post }
-      west-grounds-monster-10: { faction: garrison, table: post }
-      west-grounds-monster-11: { faction: garrison, table: post }
-      west-grounds-monster-12: { faction: garrison, table: post }
-      west-grounds-monster-13: { faction: garrison, table: post }
-      west-grounds-monster-14: { faction: garrison, table: post }
-      west-grounds-monster-15: { faction: garrison, table: post }
-      south-grounds-monster-00: { faction: garrison, table: post }
-      south-grounds-monster-01: { faction: garrison, table: post }
-      south-grounds-monster-02: { faction: garrison, table: post }
-      south-grounds-monster-03: { faction: garrison, table: post }
-      south-grounds-monster-04: { faction: garrison, table: post }
-      south-grounds-monster-05: { faction: garrison, table: post }
-      south-grounds-monster-06: { faction: garrison, table: post }
-      south-grounds-monster-07: { faction: garrison, table: post }
-      south-grounds-monster-08: { faction: garrison, table: post }
-      south-grounds-monster-09: { faction: garrison, table: post }
-      south-grounds-monster-10: { faction: garrison, table: post }
-      south-grounds-monster-11: { faction: garrison, table: post }
-      south-grounds-monster-12: { faction: garrison, table: post }
-      south-grounds-monster-13: { faction: garrison, table: post }
-      south-grounds-monster-14: { faction: garrison, table: post }
-      south-grounds-monster-15: { faction: garrison, table: post }
-      south-grounds-monster-16: { faction: garrison, table: post }
-      south-grounds-monster-17: { faction: garrison, table: post }
-      south-grounds-monster-18: { faction: garrison, table: post }
-      south-grounds-monster-19: { faction: garrison, table: post }
+      jailer-monster-00: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      prison-monster-00: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      prison-monster-01: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      larder-monster-00: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      kitchen-monster-00: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      kitchen-monster-01: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      stables-monster-00: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      stables-monster-01: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      training-yard-monster-00: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      training-yard-monster-01: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      armory-monster-00: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      gatehouse-monster-00: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      gatehouse-monster-01: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      forecourt-monster-00: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      forecourt-monster-01: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      barracks-monster-00: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      barracks-monster-01: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      tower-monster-00: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      mess-hall-monster-00: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      mess-hall-monster-01: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-00: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-01: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-02: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-03: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-04: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-05: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-06: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-07: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-08: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-09: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-10: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-11: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-12: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-13: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-14: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-15: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-16: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-17: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-18: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-19: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-20: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-21: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      courtyard-monster-22: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      west-grounds-monster-00: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      west-grounds-monster-01: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      west-grounds-monster-02: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      west-grounds-monster-03: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      west-grounds-monster-04: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      west-grounds-monster-05: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      west-grounds-monster-06: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      west-grounds-monster-07: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      west-grounds-monster-08: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      west-grounds-monster-09: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      west-grounds-monster-10: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      west-grounds-monster-11: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      west-grounds-monster-12: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      west-grounds-monster-13: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      west-grounds-monster-14: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      west-grounds-monster-15: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      south-grounds-monster-00: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      south-grounds-monster-01: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      south-grounds-monster-02: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      south-grounds-monster-03: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      south-grounds-monster-04: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      south-grounds-monster-05: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      south-grounds-monster-06: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      south-grounds-monster-07: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      south-grounds-monster-08: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      south-grounds-monster-09: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      south-grounds-monster-10: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      south-grounds-monster-11: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      south-grounds-monster-12: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      south-grounds-monster-13: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      south-grounds-monster-14: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      south-grounds-monster-15: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      south-grounds-monster-16: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      south-grounds-monster-17: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      south-grounds-monster-18: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
+      south-grounds-monster-19: { faction: garrison, table: post, states: { initial: posted, posted: { transitions: [{ on: heard, within: 6, to: alert, do: [{ anchor: true }] }] }, alert: { transitions: [{ on: time, rounds: 3, to: posted }, { on: time, do: [{ pick: time }] }] } } }
     doorBindings:
       door-bedrooms-treasury: {}
       door-library-bedrooms: {}
