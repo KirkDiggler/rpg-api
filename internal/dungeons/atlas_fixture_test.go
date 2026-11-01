@@ -68,6 +68,8 @@ import (
 // reference-npc-pacing.atlas.json is captured using the new site with the
 // pre-fixture API projector at d4a85ae. It pins the new layout without deriving
 // expected output from changes to the projection under test.
+// reference-keep.atlas.json was captured from the API projector at 7e3f2676
+// with the newly published keep file; no projection code changed in that capture.
 func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBeforeTheWave() {
 	files, err := filepath.Glob(filepath.Join(dungeonstest.ContentDir(s.T()), "*.yaml"))
 	s.Require().NoError(err)
