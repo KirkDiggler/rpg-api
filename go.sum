@@ -6,8 +6,8 @@ github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 h1:UQHMgLO+TxOEl
 github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1/go.mod h1:xomTg63KZ2rFqZQzSB4Vz2SUXa1BpHTVz9L5PTmPC4E=
 github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20261031051936-4717a4416c26 h1:g7HZQQaz5pLv57wSTdk7y8OfGVguw8FjNDR6Lhmsf1E=
 github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20261031051936-4717a4416c26/go.mod h1:RCN4hOMw7kYiOmIDBeka/286JGOCG/nczakkKqTWJVU=
-github.com/KirkDiggler/rpg-toolkit/core v0.12.0 h1:y7oZe6225FON9ymVPoAC6n8GLj19ASy4RJR5HZTs/HM=
-github.com/KirkDiggler/rpg-toolkit/core v0.12.0/go.mod h1:XFQXYViPZUTYu/a8jdRadI3rGnKk4r7tRtPm++vSUV0=
+github.com/KirkDiggler/rpg-toolkit/core v0.12.1 h1:Ld8Lc0LOY590qcqRDAeW8zFmoqoQ8DEQmhcewS8hcO4=
+github.com/KirkDiggler/rpg-toolkit/core v0.12.1/go.mod h1:ZU1HJN0wTXiPdgahMb8TsEwDnE5YUg0+k4glLlFxx8U=
 github.com/KirkDiggler/rpg-toolkit/dice v0.3.2 h1:cLLP4Z+4VYSxeRkNbmI5gym6dC/xBOw6kDIylWDK/z0=
 github.com/KirkDiggler/rpg-toolkit/dice v0.3.2/go.mod h1:JEWKuYBi+h9f8jFAcE2MI2yVDFV6ldOVx36y5fbc6p4=
 github.com/KirkDiggler/rpg-toolkit/events v0.6.3 h1:F5bbCJLHjhfiwUHngnkEtj/ZoXFzDW4BBMZZJ6c3CMc=
@@ -18,6 +18,8 @@ github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1 h1:wRshHQZfLnEh03/
 github.com/KirkDiggler/rpg-toolkit/mechanics/resources v0.3.1/go.mod h1:LzyZd5OAAic1UnyPwCx6HnmWcOQ/jZvqMSc+Q0k7fH8=
 github.com/KirkDiggler/rpg-toolkit/mind/behavior v0.17.0 h1:aqx65Y+O97ewps1l+ldDM00a2uIYtbMwCWaQuk4q6Pc=
 github.com/KirkDiggler/rpg-toolkit/mind/behavior v0.17.0/go.mod h1:Hx9+c1KAjPeno3m5XpKjp7VyUvnyG17tdsyC7yq80dA=
+github.com/KirkDiggler/rpg-toolkit/mind/machine v0.1.0 h1:YYuFSq/vhazOqv20wax+1H+GOPo7BVHDExd8GaJnsXM=
+github.com/KirkDiggler/rpg-toolkit/mind/machine v0.1.0/go.mod h1:7Q7d5co2WThTngjfpVf8NJWgV0iodpvkpFEcIxoLcA4=
 github.com/KirkDiggler/rpg-toolkit/mind/perception v0.3.0 h1:6gQDtn+xaS/APEL9goWd+pWwUXeVrK1iAnqyQSbcM6A=
 github.com/KirkDiggler/rpg-toolkit/mind/perception v0.3.0/go.mod h1:oSmM7omgDmbPZNO3zPblmPQXbceVMQWxIcDJjm8EBqw=
 github.com/KirkDiggler/rpg-toolkit/npc v0.2.0 h1:B1N01TGvp3FvolPsFGKnIsVb0GPUZVrE1s0dXZXcDGA=
@@ -34,12 +36,12 @@ github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2 h1:B7IrROe3GcPrzMeV0EQryA194Y7Y
 github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2/go.mod h1:wsyJmmf1X0iLFGy5Iyy5sUoZhXZQvuYVsKdXfc4b/T4=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.213.0 h1:r9JOL6U89wnUs7klDEhWNkxbsIfJrYeb4yWhIQugejo=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.213.0/go.mod h1:qjCtaPjI/BvOCj9JId2GpTQqIkJPnhRMB2ZYKbkX5u4=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.162.0 h1:9qIr3Qr0jVYmFiSmkWwd9i+YadFeBQTFBvgmC5RTnb0=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.162.0/go.mod h1:yomE9We0+OyXCapiNZUZW8VyJ8onewF05qPUoHX+Mdg=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.163.0 h1:rQMUX1cT/Igesg1dPY4rtUL9U709rEjWHE6R3cmonJ4=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.163.0/go.mod h1:eeBIrzJb2BZLhEAVutaOD3JBRwNB2LuCZHmXg5piz5Q=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.73.0 h1:oFtrDy5EnZeCvmJP6SL1zkC6O9I/ZYy0fTBFRR9jfWc=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.73.0/go.mod h1:7IeKxM4IICLTSHOCY94X/Cg5jxdlXGtMMUQAmX0Fhcc=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.151.0 h1:rFPJhVpv9zbgK7mdIEQFD9D4hr7UMQaQ0Bn0OZ3Vdww=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.151.0/go.mod h1:bC5/kUpCuUAkiS59NulaUI3dZ/64UqNC5TvRNYIHU8s=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.151.1 h1:deUChel3AcTQxtK1pSJiT4ngEqYs6l9O78gwAKkhmkc=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.151.1/go.mod h1:GiUZfCKjhdYa6bSn5wrzSFyq8zgnU1ocXsoMrn6w5Ho=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.16.1 h1:bN6QuGWZTOzk6bLDFgJ0vKol6NpY/MZ1y+ERJ7CF3lY=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.16.1/go.mod h1:3SZFDKtQWXwplGyRfUDSsdrGH25Etkm62BdZig0Q3rY=
 github.com/KirkDiggler/rpg-toolkit/world v0.4.1 h1:YiVCVlOfG+7YJzZQtaME9QUpktv0ks/myMDiFsII/HA=
