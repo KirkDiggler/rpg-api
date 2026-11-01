@@ -164,6 +164,7 @@ func (s *TemplatesSuite) TestCompile_ReferenceDungeonsDeclareNoTemplates() {
 		filepath.Join("..", "..", "content", "action-augment-walk.yaml"):  true,
 		filepath.Join("..", "..", "content", "the-mad-king.yaml"):         true,
 		filepath.Join("..", "..", "content", "reference-npc-pacing.yaml"): true,
+		filepath.Join("..", "..", "content", "reference-keep.yaml"):       true,
 	}
 
 	for _, path := range paths {

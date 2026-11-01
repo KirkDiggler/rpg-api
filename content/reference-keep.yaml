@@ -1,0 +1,5097 @@
+# Large editable keep reference: layout, placement markers and a gate dialogue POC.
+# Save a copy under your own key before editing. See docs/how-to/reference-keep.md.
+# Markers describe planned furnishing/occupants; they are not collision or live actors.
+# Gate checks record replies/facts only: no admission barrier, arrest or guard rotation.
+version: 5
+key: reference-keep
+play:
+  void: transparent
+  lighting: bright
+  standing: centre-covered
+templates:
+  guard:
+    base: dnd5e:monsters:human
+    name: Gate guard
+    hitDice: 2d8
+    armor: dnd5e:armor:chain-shirt
+    abilities:
+      str: 13
+      con: 12
+      wis: 11
+    skills:
+      - perception
+    actions:
+      - dnd5e:weapons:spear
+tables:
+  gate-watch-idle:
+    time:
+      - when:
+          enemy: reach
+        attack: enemy
+      - when:
+          enemy: seen
+        toward: enemy
+      - when:
+          enemy: none
+        hold: {}
+factions:
+  - id: gate-watch
+    mind: gate-guard-1
+dispositions:
+  - between:
+      - gate-watch
+      - party
+    stance: neutral
+room:
+  version: 3
+  id: keep-near-limit-v5
+  name: Reference Keep — Layout and Gatehouse POC
+  coordinateFrame:
+    horizontalPlane: world-xz
+    verticalAxis: world-y-up
+    distanceUnit: world-scene-unit
+    hexRadius: 1
+    footprintFrame: owner-local-xz
+  scene:
+    version: 3
+    id: keep-near-limit-v5-scene
+    name: Reference Keep — Layout and Gatehouse POC
+    items: []
+    groups: []
+    mapLabels:
+      - id: obstacle-1
+        text: "OBSTACLE: Counter / pantry"
+        location:
+          x: -136.8320137979413
+          z: -92.25
+      - id: obstacle-2
+        text: "OBSTACLE: Counter / pantry"
+        location:
+          x: -96.99484522385713
+          z: -92.25
+      - id: obstacle-3
+        text: "OBSTACLE: Counter / pantry"
+        location:
+          x: -136.8320137979413
+          z: -84.75
+      - id: obstacle-4
+        text: "OBSTACLE: Counter / pantry"
+        location:
+          x: -96.99484522385713
+          z: -83.25
+      - id: obstacle-5
+        text: "OBSTACLE: Counter / pantry"
+        location:
+          x: -136.8320137979413
+          z: -66.75
+      - id: obstacle-6
+        text: "OBSTACLE: Counter / pantry"
+        location:
+          x: -96.99484522385713
+          z: -66.75
+      - id: obstacle-7
+        text: "OBSTACLE: Preparation island"
+        location:
+          x: -125.5736835487436
+          z: -72.75
+      - id: obstacle-8
+        text: "OBSTACLE: Preparation island"
+        location:
+          x: -104.78907385791707
+          z: -71.25
+      - id: npc-11
+        text: "NPC: Stressed cook"
+        location:
+          x: -110.85125168440814
+          z: -90
+      - id: npc-12
+        text: "NPC: Kitchen servant"
+        location:
+          x: -128.1717597600969
+          z: -66
+      - id: npc-13
+        text: "NPC: Larder rat"
+        location:
+          x: -100.45894683899488
+          z: -91.5
+      - id: zone-9
+        text: "AREA: Cooking tasks"
+        location:
+          x: -116.04740410711477
+          z: -86.25
+      - id: zone-10
+        text: "AREA: Feast sampling"
+        location:
+          x: -104.78907385791707
+          z: -62.25
+      - id: obstacle-14
+        text: "OBSTACLE: Bed / trunk"
+        location:
+          x: -84.00446416709055
+          z: -90.75
+      - id: obstacle-15
+        text: "OBSTACLE: Bed / trunk"
+        location:
+          x: -84.00446416709055
+          z: -63.75
+      - id: obstacle-16
+        text: "OBSTACLE: Bed / trunk"
+        location:
+          x: -75.34421012924616
+          z: -90.75
+      - id: obstacle-17
+        text: "OBSTACLE: Bed / trunk"
+        location:
+          x: -75.34421012924616
+          z: -63.75
+      - id: obstacle-18
+        text: "OBSTACLE: Bed / trunk"
+        location:
+          x: -64.9519052838329
+          z: -90.75
+      - id: obstacle-19
+        text: "OBSTACLE: Bed / trunk"
+        location:
+          x: -64.9519052838329
+          z: -63.75
+      - id: obstacle-20
+        text: "OBSTACLE: Bed / trunk"
+        location:
+          x: -56.29165124598851
+          z: -90.75
+      - id: obstacle-21
+        text: "OBSTACLE: Bed / trunk"
+        location:
+          x: -56.29165124598851
+          z: -63.75
+      - id: npc-23
+        text: "NPC: Servant rest spot"
+        location:
+          x: -79.67433714816835
+          z: -81
+      - id: zone-22
+        text: "AREA: Secret travel hex"
+        location:
+          x: -63.21985447626402
+          z: -78.75
+      - id: obstacle-24
+        text: "OBSTACLE: Dining table + seats"
+        location:
+          x: -124.70765814495915
+          z: -45.75
+      - id: obstacle-25
+        text: "OBSTACLE: Dining table + seats"
+        location:
+          x: -107.38715006927039
+          z: -45.75
+      - id: obstacle-26
+        text: "OBSTACLE: Dining table + seats"
+        location:
+          x: -83.13843876330611
+          z: -45.75
+      - id: obstacle-27
+        text: "OBSTACLE: Dining table + seats"
+        location:
+          x: -65.81793068761733
+          z: -45.75
+      - id: obstacle-28
+        text: "OBSTACLE: Dining table + seats"
+        location:
+          x: -124.70765814495915
+          z: -29.25
+      - id: obstacle-29
+        text: "OBSTACLE: Dining table + seats"
+        location:
+          x: -107.38715006927039
+          z: -30.75
+      - id: obstacle-30
+        text: "OBSTACLE: Dining table + seats"
+        location:
+          x: -83.13843876330611
+          z: -33.75
+      - id: obstacle-31
+        text: "OBSTACLE: Dining table + seats"
+        location:
+          x: -65.81793068761733
+          z: -33.75
+      - id: npc-33
+        text: "NPC: Off-duty gambler"
+        location:
+          x: -129.9038105676658
+          z: -51
+      - id: npc-34
+        text: "NPC: Off-duty gambler"
+        location:
+          x: -114.31535329954589
+          z: -51
+      - id: npc-35
+        text: "NPC: Off-duty gambler"
+        location:
+          x: -129.9038105676658
+          z: -42
+      - id: npc-36
+        text: "NPC: Off-duty gambler"
+        location:
+          x: -114.31535329954589
+          z: -42
+      - id: zone-32
+        text: "AREA: Gambling table"
+        location:
+          x: -121.2435565298214
+          z: -45.75
+      - id: zone-37
+        text: "MOVE: Passing / wake-up route"
+        location:
+          x: -92.66471820493493
+          z: -38.25
+      - id: obstacle-38
+        text: "OBSTACLE: Bunk / footlocker"
+        location:
+          x: -129.9038105676658
+          z: -12.75
+      - id: obstacle-39
+        text: "OBSTACLE: Bunk / footlocker"
+        location:
+          x: -129.9038105676658
+          z: 20.25
+      - id: obstacle-40
+        text: "OBSTACLE: Bunk / footlocker"
+        location:
+          x: -117.77945491468365
+          z: -12.75
+      - id: obstacle-41
+        text: "OBSTACLE: Bunk / footlocker"
+        location:
+          x: -122.97560733739029
+          z: 20.25
+      - id: obstacle-42
+        text: "OBSTACLE: Bunk / footlocker"
+        location:
+          x: -98.726896031426
+          z: -12.75
+      - id: obstacle-43
+        text: "OBSTACLE: Bunk / footlocker"
+        location:
+          x: -102.19099764656376
+          z: 20.25
+      - id: obstacle-44
+        text: "OBSTACLE: Bunk / footlocker"
+        location:
+          x: -90.06664199358161
+          z: -12.75
+      - id: obstacle-45
+        text: "OBSTACLE: Bunk / footlocker"
+        location:
+          x: -90.06664199358161
+          z: 20.25
+      - id: npc-47
+        text: "NPC: Captain"
+        location:
+          x: -121.2435565298214
+          z: -1.5
+      - id: npc-48
+        text: "NPC: Captain ranger"
+        location:
+          x: -128.1717597600969
+          z: 1.5
+      - id: npc-49
+        text: "NPC: Barracks LT"
+        location:
+          x: -98.726896031426
+          z: 0
+      - id: npc-50
+        text: "NPC: LT melee guard"
+        location:
+          x: -91.7986928011505
+          z: 1.5
+      - id: zone-46
+        text: "COMBAT: Faction confrontation"
+        location:
+          x: -108.25317547305482
+          z: 4.5
+      - id: obstacle-51
+        text: "OBSTACLE: Weapon rack"
+        location:
+          x: -76.2102355330306
+          z: -10.5
+      - id: obstacle-52
+        text: "OBSTACLE: Armor rack"
+        location:
+          x: -55.42562584220407
+          z: -10.5
+      - id: obstacle-53
+        text: "OBSTACLE: Weapon rack"
+        location:
+          x: -76.2102355330306
+          z: -1.5
+      - id: obstacle-54
+        text: "OBSTACLE: Armor rack"
+        location:
+          x: -55.42562584220407
+          z: 0
+      - id: obstacle-55
+        text: "OBSTACLE: Weapon rack"
+        location:
+          x: -76.2102355330306
+          z: 18
+      - id: obstacle-56
+        text: "OBSTACLE: Armor rack"
+        location:
+          x: -55.42562584220407
+          z: 18
+      - id: zone-57
+        text: "AREA: Gear lockbox"
+        location:
+          x: -64.08587988004845
+          z: 17.25
+      - id: obstacle-59
+        text: "OBSTACLE: Training equipment"
+        location:
+          x: -125.5736835487436
+          z: 36.75
+      - id: obstacle-60
+        text: "OBSTACLE: Training equipment"
+        location:
+          x: -111.71727708819257
+          z: 36.75
+      - id: obstacle-61
+        text: "OBSTACLE: Training equipment"
+        location:
+          x: -77.07626093681503
+          z: 36.75
+      - id: obstacle-62
+        text: "OBSTACLE: Training equipment"
+        location:
+          x: -61.48780366869514
+          z: 36.75
+      - id: obstacle-63
+        text: "OBSTACLE: Practice rack"
+        location:
+          x: -131.63586137523467
+          z: 66.75
+      - id: npc-64
+        text: "NPC: LT melee guard"
+        location:
+          x: -109.11920087683926
+          z: 48
+      - id: npc-65
+        text: "NPC: LT melee guard"
+        location:
+          x: -102.19099764656376
+          z: 49.5
+      - id: zone-58
+        text: "COMBAT: Open fight / drill floor"
+        location:
+          x: -93.53074360871936
+          z: 56.25
+      - id: obstacle-67
+        text: "OBSTACLE: Cell furnishing"
+        location:
+          x: -131.63586137523467
+          z: 112.5
+      - id: obstacle-68
+        text: "OBSTACLE: Cell furnishing"
+        location:
+          x: -98.726896031426
+          z: 112.5
+      - id: npc-69
+        text: "NPC: Prince"
+        location:
+          x: -105.65509926170151
+          z: 105
+      - id: npc-70
+        text: "NPC: Prison rat"
+        location:
+          x: -95.26279441628824
+          z: 108
+      - id: npc-72
+        text: "NPC: Party arrest start"
+        location:
+          x: -124.70765814495915
+          z: 106.5
+      - id: npc-73
+        text: "NPC: Party arrest start"
+        location:
+          x: -119.51150572225252
+          z: 106.5
+      - id: npc-74
+        text: "NPC: Party arrest start"
+        location:
+          x: -114.31535329954589
+          z: 106.5
+      - id: npc-75
+        text: "NPC: Party arrest start"
+        location:
+          x: -107.38715006927039
+          z: 106.5
+      - id: zone-66
+        text: "AREA: Shared cell"
+        location:
+          x: -116.04740410711477
+          z: 106.5
+      - id: zone-71
+        text: "AREA: Weak door interaction"
+        location:
+          x: -124.70765814495915
+          z: 95.25
+      - id: obstacle-76
+        text: "OBSTACLE: Stall partitions / feed"
+        location:
+          x: -74.47818472546172
+          z: 93
+      - id: obstacle-77
+        text: "OBSTACLE: Stall partitions / feed"
+        location:
+          x: -74.47818472546172
+          z: 99
+      - id: obstacle-78
+        text: "OBSTACLE: Stall partitions / feed"
+        location:
+          x: -74.47818472546172
+          z: 109.5
+      - id: npc-79
+        text: "NPC: Horse / clue"
+        location:
+          x: -67.54998149518622
+          z: 91.5
+      - id: npc-80
+        text: "NPC: Horse / clue"
+        location:
+          x: -71.01408311032397
+          z: 108
+      - id: zone-81
+        text: "MOVE: Service through-route"
+        location:
+          x: -59.75575286112626
+          z: 99.75
+      - id: obstacle-82
+        text: "OBSTACLE: Bed + bedside furniture"
+        location:
+          x: -38.97114317029974
+          z: -122.25
+      - id: obstacle-83
+        text: "OBSTACLE: Bed + bedside furniture"
+        location:
+          x: -16.454482671904334
+          z: -122.25
+      - id: obstacle-84
+        text: "OBSTACLE: Wardrobe"
+        location:
+          x: -42.43524478543749
+          z: -106.5
+      - id: obstacle-85
+        text: "OBSTACLE: Wardrobe"
+        location:
+          x: -14.722431864335457
+          z: -106.5
+      - id: zone-86
+        text: "AREA: Searchable belongings"
+        location:
+          x: -16.454482671904334
+          z: -112.5
+      - id: obstacle-88
+        text: "OBSTACLE: Reward chest"
+        location:
+          x: 18.186533479473212
+          z: -127.5
+      - id: npc-90
+        text: "NPC: Animated armor"
+        location:
+          x: 3.4641016151377544
+          z: -123
+      - id: npc-91
+        text: "NPC: Animated armor"
+        location:
+          x: 29.444863728670914
+          z: -123
+      - id: npc-92
+        text: "NPC: Animated armor"
+        location:
+          x: 3.4641016151377544
+          z: -109.5
+      - id: npc-93
+        text: "NPC: Animated armor"
+        location:
+          x: 29.444863728670914
+          z: -109.5
+      - id: zone-87
+        text: "COMBAT: Guardian combat floor"
+        location:
+          x: 17.32050807568877
+          z: -116.25
+      - id: zone-89
+        text: "AREA: Defense switch"
+        location:
+          x: 32.042939940024226
+          z: -107.25
+      - id: obstacle-95
+        text: "OBSTACLE: Raised throne / dais"
+        location:
+          x: -5.196152422706632
+          z: -90.75
+      - id: obstacle-96
+        text: "OBSTACLE: Pillar / cover"
+        location:
+          x: -29.444863728670914
+          z: -79.5
+      - id: obstacle-97
+        text: "OBSTACLE: Pillar / cover"
+        location:
+          x: -29.444863728670914
+          z: -58.5
+      - id: obstacle-98
+        text: "OBSTACLE: Pillar / cover"
+        location:
+          x: 17.32050807568877
+          z: -79.5
+      - id: obstacle-99
+        text: "OBSTACLE: Pillar / cover"
+        location:
+          x: 17.32050807568877
+          z: -58.5
+      - id: npc-104
+        text: "NPC: Usurper"
+        location:
+          x: -5.196152422706632
+          z: -82.5
+      - id: zone-94
+        text: "COMBAT: Boss engagement / maneuver"
+        location:
+          x: -5.196152422706632
+          z: -65.25
+      - id: zone-100
+        text: "HAZARD: Active hazard candidate"
+        location:
+          x: -22.516660498395403
+          z: -73.5
+      - id: zone-101
+        text: "HAZARD: Active hazard candidate"
+        location:
+          x: 10.392304845413264
+          z: -73.5
+      - id: zone-102
+        text: "HAZARD: Active hazard candidate"
+        location:
+          x: -22.516660498395403
+          z: -55.5
+      - id: zone-103
+        text: "HAZARD: Active hazard candidate"
+        location:
+          x: 10.392304845413264
+          z: -55.5
+      - id: zone-105
+        text: "MOVE: Party approach / regroup"
+        location:
+          x: -5.196152422706632
+          z: -45.75
+      - id: npc-107
+        text: "NPC: Audience guard placeholder"
+        location:
+          x: -24.24871130596428
+          z: -34.5
+      - id: npc-108
+        text: "NPC: Audience guard placeholder"
+        location:
+          x: 12.12435565298214
+          z: -34.5
+      - id: npc-109
+        text: "LATER NPC: Retreating LT slot"
+        location:
+          x: 22.516660498395403
+          z: -27
+      - id: zone-106
+        text: "COMBAT: Passage / confrontation"
+        location:
+          x: -4.330127018922193
+          z: -29.25
+      - id: obstacle-111
+        text: "OBSTACLE: Planter / seating"
+        location:
+          x: -36.373066958946424
+          z: -3.75
+      - id: obstacle-112
+        text: "OBSTACLE: Planter / seating"
+        location:
+          x: -36.373066958946424
+          z: 39.75
+      - id: obstacle-113
+        text: "OBSTACLE: Planter / seating"
+        location:
+          x: 24.24871130596428
+          z: -3.75
+      - id: obstacle-114
+        text: "OBSTACLE: Planter / seating"
+        location:
+          x: 24.24871130596428
+          z: 39.75
+      - id: npc-115
+        text: "NPC: Noble conversation"
+        location:
+          x: -32.90896534380867
+          z: 1.5
+      - id: npc-116
+        text: "NPC: Noble conversation"
+        location:
+          x: -27.712812921102035
+          z: 9
+      - id: npc-117
+        text: "NPC: Noble conversation"
+        location:
+          x: 19.05255888325765
+          z: 3
+      - id: npc-118
+        text: "NPC: Noble conversation"
+        location:
+          x: 22.516660498395403
+          z: 7.5
+      - id: npc-119
+        text: "NPC: Noble conversation"
+        location:
+          x: -32.90896534380867
+          z: 33
+      - id: npc-120
+        text: "NPC: Noble conversation"
+        location:
+          x: 17.32050807568877
+          z: 31.5
+      - id: zone-110
+        text: "MOVE: Open crossroads"
+        location:
+          x: -4.330127018922193
+          z: 18.75
+      - id: zone-121
+        text: "MOVE: Patrol passing / gathering"
+        location:
+          x: -5.196152422706632
+          z: 1.5
+      - id: obstacle-123
+        text: "OBSTACLE: Gatehouse storage"
+        location:
+          x: -39.837168574084174
+          z: 65.25
+      - id: obstacle-124
+        text: "OBSTACLE: Gatehouse storage"
+        location:
+          x: 24.24871130596428
+          z: 74.25
+      - id: zone-122
+        text: "MOVE: Unblocked gate circulation"
+        location:
+          x: -5.196152422706632
+          z: 69.75
+      - id: npc-126
+        text: "NPC: Gate guard"
+        location:
+          x: -20.784609690826528
+          z: 88.5
+      - id: npc-127
+        text: "NPC: Gate guard"
+        location:
+          x: -10.392304845413264
+          z: 88.5
+      - id: npc-128
+        text: "NPC: Gate guard"
+        location:
+          x: 8.660254037844386
+          z: 88.5
+      - id: npc-129
+        text: "NPC: Gate LT"
+        location:
+          x: -3.4641016151377544
+          z: 90
+      - id: zone-125
+        text: "COMBAT: Gate approach / fight"
+        location:
+          x: -5.196152422706632
+          z: 93
+      - id: obstacle-130
+        text: "OBSTACLE: Altar"
+        location:
+          x: 70.14805770653953
+          z: -92.25
+      - id: obstacle-131
+        text: "OBSTACLE: Pews"
+        location:
+          x: 53.693575034635195
+          z: -81
+      - id: obstacle-132
+        text: "OBSTACLE: Pews"
+        location:
+          x: 83.13843876330611
+          z: -81
+      - id: obstacle-133
+        text: "OBSTACLE: Pews"
+        location:
+          x: 53.693575034635195
+          z: -69
+      - id: obstacle-134
+        text: "OBSTACLE: Pews"
+        location:
+          x: 83.13843876330611
+          z: -69
+      - id: obstacle-135
+        text: "OBSTACLE: Pews"
+        location:
+          x: 53.693575034635195
+          z: -58.5
+      - id: obstacle-136
+        text: "OBSTACLE: Pews"
+        location:
+          x: 83.13843876330611
+          z: -58.5
+      - id: npc-138
+        text: "NPC: Priest"
+        location:
+          x: 62.35382907247958
+          z: -88.5
+      - id: npc-139
+        text: "NPC: Priest"
+        location:
+          x: 79.67433714816835
+          z: -88.5
+      - id: zone-137
+        text: "AREA: Prayer interaction"
+        location:
+          x: 70.14805770653953
+          z: -87.75
+      - id: zone-140
+        text: "AREA: Prayer plaque"
+        location:
+          x: 45.033320996790806
+          z: -84
+      - id: zone-141
+        text: "AREA: Prayer plaque"
+        location:
+          x: 91.7986928011505
+          z: -78
+      - id: zone-142
+        text: "AREA: Prayer plaque"
+        location:
+          x: 45.033320996790806
+          z: -63
+      - id: obstacle-143
+        text: "OBSTACLE: Shelves"
+        location:
+          x: 43.30127018922193
+          z: -41.25
+      - id: obstacle-144
+        text: "OBSTACLE: Shelves"
+        location:
+          x: 93.53074360871936
+          z: -41.25
+      - id: obstacle-145
+        text: "OBSTACLE: Shelves"
+        location:
+          x: 46.76537180435968
+          z: -35.25
+      - id: obstacle-146
+        text: "OBSTACLE: Shelves"
+        location:
+          x: 93.53074360871936
+          z: -33.75
+      - id: obstacle-147
+        text: "OBSTACLE: Shelves"
+        location:
+          x: 45.033320996790806
+          z: -23.25
+      - id: obstacle-148
+        text: "OBSTACLE: Shelves"
+        location:
+          x: 93.53074360871936
+          z: -24.75
+      - id: obstacle-149
+        text: "OBSTACLE: Shelves"
+        location:
+          x: 48.49742261192856
+          z: -17.25
+      - id: obstacle-150
+        text: "OBSTACLE: Shelves"
+        location:
+          x: 93.53074360871936
+          z: -17.25
+      - id: obstacle-151
+        text: "OBSTACLE: Desk"
+        location:
+          x: 54.55960043841963
+          z: -42
+      - id: obstacle-152
+        text: "OBSTACLE: Desk"
+        location:
+          x: 80.5403625519528
+          z: -42
+      - id: obstacle-153
+        text: "OBSTACLE: Table + occupied chairs"
+        location:
+          x: 57.157676649772945
+          z: -24
+      - id: obstacle-154
+        text: "OBSTACLE: Table + occupied chairs"
+        location:
+          x: 79.67433714816835
+          z: -25.5
+      - id: npc-156
+        text: "NPC: Reader"
+        location:
+          x: 53.693575034635195
+          z: -34.5
+      - id: npc-157
+        text: "NPC: Reader"
+        location:
+          x: 83.13843876330611
+          z: -19.5
+      - id: npc-158
+        text: "NPC: Librarian"
+        location:
+          x: 81.40638795573723
+          z: -36
+      - id: zone-155
+        text: "AREA: Arcane map / puzzle"
+        location:
+          x: 81.40638795573723
+          z: -33.75
+      - id: obstacle-159
+        text: "OBSTACLE: Potion shelves"
+        location:
+          x: 46.76537180435968
+          z: -5.25
+      - id: obstacle-160
+        text: "OBSTACLE: Potion shelves"
+        location:
+          x: 90.06664199358161
+          z: 3.75
+      - id: obstacle-161
+        text: "OBSTACLE: Worktable"
+        location:
+          x: 77.07626093681503
+          z: -6
+      - id: zone-162
+        text: "AREA: Potion / draught cache"
+        location:
+          x: 81.40638795573723
+          z: 8.25
+      - id: obstacle-166
+        text: "OBSTACLE: Pillar"
+        location:
+          x: 50.22947341949744
+          z: 31.5
+      - id: obstacle-167
+        text: "OBSTACLE: Pillar"
+        location:
+          x: 50.22947341949744
+          z: 60
+      - id: obstacle-168
+        text: "OBSTACLE: Pillar"
+        location:
+          x: 86.60254037844386
+          z: 34.5
+      - id: obstacle-169
+        text: "OBSTACLE: Pillar"
+        location:
+          x: 86.60254037844386
+          z: 60
+      - id: obstacle-170
+        text: "OBSTACLE: Punch table"
+        location:
+          x: 90.06664199358161
+          z: 69
+      - id: npc-171
+        text: "NPC: Guest"
+        location:
+          x: 55.42562584220407
+          z: 31.5
+      - id: npc-172
+        text: "NPC: Guest"
+        location:
+          x: 60.6217782649107
+          z: 40.5
+      - id: npc-173
+        text: "NPC: Guest"
+        location:
+          x: 77.94228634059948
+          z: 34.5
+      - id: npc-174
+        text: "NPC: Guest"
+        location:
+          x: 81.40638795573723
+          z: 40.5
+      - id: npc-175
+        text: "NPC: Guest"
+        location:
+          x: 55.42562584220407
+          z: 55.5
+      - id: npc-176
+        text: "NPC: Guest"
+        location:
+          x: 58.88972745734183
+          z: 60
+      - id: npc-177
+        text: "NPC: Guest"
+        location:
+          x: 76.2102355330306
+          z: 55.5
+      - id: npc-178
+        text: "NPC: Guest"
+        location:
+          x: 83.13843876330611
+          z: 60
+      - id: npc-179
+        text: "LATER NPC: Gate guard rotation slot"
+        location:
+          x: 46.76537180435968
+          z: 28.5
+      - id: npc-180
+        text: "LATER NPC: Gate guard rotation slot"
+        location:
+          x: 90.06664199358161
+          z: 30
+      - id: npc-181
+        text: "LATER NPC: Gate guard rotation slot"
+        location:
+          x: 88.33459118601273
+          z: 60
+      - id: npc-182
+        text: "LATER NPC: Gate LT mingling slot"
+        location:
+          x: 74.47818472546172
+          z: 46.5
+      - id: zone-163
+        text: "AREA: Stage / performance"
+        location:
+          x: 69.28203230275508
+          z: 21
+      - id: zone-164
+        text: "AREA: Audience / mingle floor"
+        location:
+          x: 70.14805770653953
+          z: 48
+      - id: zone-165
+        text: "AREA: Punch interaction"
+        location:
+          x: 88.33459118601273
+          z: 66.75
+      - id: obstacle-183
+        text: "OBSTACLE: Stored table"
+        location:
+          x: 51.96152422706631
+          z: 89.25
+      - id: obstacle-184
+        text: "OBSTACLE: Stored table"
+        location:
+          x: 84.87048957087498
+          z: 110.25
+      - id: zone-185
+        text: "MOVE: Quiet / unused; retain or cut"
+        location:
+          x: 69.28203230275508
+          z: 99
+      - id: obstacle-186
+        text: "OBSTACLE: Ring chest"
+        location:
+          x: 129.03778516388135
+          z: -123
+      - id: zone-187
+        text: "AREA: Hidden reward interaction"
+        location:
+          x: 129.03778516388135
+          z: -114.75
+      - id: obstacle-188
+        text: "OBSTACLE: Sarcophagus"
+        location:
+          x: 115.18137870333034
+          z: -83.25
+      - id: obstacle-189
+        text: "OBSTACLE: Sarcophagus"
+        location:
+          x: 115.18137870333034
+          z: -62.25
+      - id: obstacle-190
+        text: "OBSTACLE: Sarcophagus"
+        location:
+          x: 144.62624243200125
+          z: -83.25
+      - id: obstacle-191
+        text: "OBSTACLE: Sarcophagus"
+        location:
+          x: 144.62624243200125
+          z: -62.25
+      - id: npc-193
+        text: "NPC: Skeleton melee"
+        location:
+          x: 119.51150572225252
+          z: -78
+      - id: npc-194
+        text: "NPC: Skeleton melee"
+        location:
+          x: 135.09996299037243
+          z: -75
+      - id: npc-195
+        text: "NPC: Skeleton ranged"
+        location:
+          x: 110.85125168440814
+          z: -55.5
+      - id: npc-196
+        text: "NPC: Skeleton ranged"
+        location:
+          x: 145.4922678357857
+          z: -55.5
+      - id: zone-192
+        text: "COMBAT: Four-skeleton encounter"
+        location:
+          x: 129.03778516388135
+          z: -72.75
+      - id: zone-197
+        text: "AREA: Hidden entrance control"
+        location:
+          x: 141.16214081686348
+          z: -92.25
+      - id: zone-198
+        text: "MOVE: Clear crypt-route passage"
+        location:
+          x: 109.11920087683926
+          z: 4.5
+      - id: obstacle-199
+        text: "OBSTACLE: Memorial tomb"
+        location:
+          x: 135.96598839415685
+          z: 69.75
+      - id: zone-200
+        text: "AREA: Bell"
+        location:
+          x: 109.9852262806237
+          z: 65.25
+      - id: zone-201
+        text: "AREA: Candle"
+        location:
+          x: 129.03778516388135
+          z: 62.25
+      - id: zone-202
+        text: "AREA: Flower"
+        location:
+          x: 148.090344047139
+          z: 65.25
+      - id: obstacle-203
+        text: "OBSTACLE: Lootable grave"
+        location:
+          x: 111.71727708819257
+          z: 96
+      - id: obstacle-204
+        text: "OBSTACLE: Lootable grave"
+        location:
+          x: 125.5736835487436
+          z: 94.5
+      - id: obstacle-205
+        text: "OBSTACLE: Lootable grave"
+        location:
+          x: 146.35829323957012
+          z: 96
+      - id: npc-207
+        text: "LATER NPC: Optional undead spawn"
+        location:
+          x: 112.58330249197702
+          z: 106.5
+      - id: npc-208
+        text: "LATER NPC: Optional undead spawn"
+        location:
+          x: 129.9038105676658
+          z: 106.5
+      - id: npc-209
+        text: "LATER NPC: Optional undead spawn"
+        location:
+          x: 145.4922678357857
+          z: 106.5
+      - id: zone-206
+        text: "COMBAT: Grouped undead encounter"
+        location:
+          x: 129.03778516388135
+          z: 105.75
+      - id: npc-210
+        text: "NPC: Captain ranger at barracks door"
+        location:
+          x: -148.95636945092343
+          z: 0
+      - id: npc-211
+        text: "NPC: Captain ranger at barracks door"
+        location:
+          x: -148.95636945092343
+          z: 9
+      - id: zone-212
+        text: "AREA: Servant + toy route"
+        location:
+          x: -149.82239485470788
+          z: -64.5
+      - id: zone-213
+        text: "MOVE: Exterior movement"
+        location:
+          x: -149.82239485470788
+          z: 63
+      - id: zone-214
+        text: "MOVE: Woods / exit approaches"
+        location:
+          x: 8.660254037844386
+          z: 125.25
+      - id: obstacle-215
+        text: "OBSTACLE: Service clutter"
+        location:
+          x: -89.20061658979718
+          z: 84.75
+      - id: zone-216
+        text: "MOVE: Screened breakout route"
+        location:
+          x: -110.85125168440814
+          z: 87.75
+  room:
+    implicitRegionId: region-kitchen
+    walls:
+      - id: wall-v-0-0-29
+        label: wall-v-0-0-29
+        line:
+          start:
+            x: -140.72912811497127
+            z: -99.75
+          end:
+            x: -140.72912811497127
+            z: -56.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 43.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-01-opening
+            position: 21
+            width: 3
+            door:
+              id: connection-01-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-v-0-29-52
+        label: wall-v-0-29-52
+        line:
+          start:
+            x: -140.72912811497127
+            z: -56.25
+          end:
+            x: -140.72912811497127
+            z: -21.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 34.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-0-52-86
+        label: wall-v-0-52-86
+        line:
+          start:
+            x: -140.72912811497127
+            z: -21.75
+          end:
+            x: -140.72912811497127
+            z: 29.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 51
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-06-opening
+            position: 25.5
+            width: 3
+            door:
+              id: connection-06-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-v-0-86-121
+        label: wall-v-0-86-121
+        line:
+          start:
+            x: -140.72912811497127
+            z: 29.25
+          end:
+            x: -140.72912811497127
+            z: 81.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 52.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-0-121-127
+        label: wall-v-0-121-127
+        line:
+          start:
+            x: -140.72912811497127
+            z: 81.75
+          end:
+            x: -140.72912811497127
+            z: 90.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 9
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-0-127-144
+        label: wall-v-0-127-144
+        line:
+          start:
+            x: -140.72912811497127
+            z: 90.75
+          end:
+            x: -140.72912811497127
+            z: 116.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 25.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-29-0-29
+        label: wall-v-29-0-29
+        line:
+          start:
+            x: -90.49965469547384
+            z: -99.75
+          end:
+            x: -90.49965469547384
+            z: -56.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 43.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-02-opening
+            position: 21
+            width: 3
+            door:
+              id: connection-02-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-h-0-0-29
+        label: wall-h-0-0-29
+        line:
+          start:
+            x: -140.72912811497127
+            z: -99.75
+          end:
+            x: -90.49965469547384
+            z: -99.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 50.22947341949744
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-h-0-29-52
+        label: wall-h-0-29-52
+        line:
+          start:
+            x: -90.49965469547384
+            z: -99.75
+          end:
+            x: -50.662486121389655
+            z: -99.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 39.83716857408418
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-h-0-52-78
+        label: wall-h-0-52-78
+        line:
+          start:
+            x: -50.662486121389655
+            z: -99.75
+          end:
+            x: -5.629165124598851
+            z: -99.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 45.033320996790806
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-13-opening
+            position: 24.24871130596428
+            width: 3.4641016151377544
+            door:
+              id: connection-13-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-h-0-78-104
+        label: wall-h-0-78-104
+        line:
+          start:
+            x: -5.629165124598851
+            z: -99.75
+          end:
+            x: 39.40415587219196
+            z: -99.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 45.033320996790806
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-14-opening
+            position: 19.05255888325765
+            width: 3.4641016151377544
+            door:
+              id: connection-14-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-h-0-104-138
+        label: wall-h-0-104-138
+        line:
+          start:
+            x: 39.40415587219196
+            z: -99.75
+          end:
+            x: 98.29388332953378
+            z: -99.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 58.88972745734183
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-h-0-138-173
+        label: wall-h-0-138-173
+        line:
+          start:
+            x: 98.29388332953378
+            z: -99.75
+          end:
+            x: 158.9156615944445
+            z: -99.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 60.6217782649107
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-26-opening
+            position: 29.444863728670914
+            width: 3.4641016151377544
+            door:
+              id: connection-26-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-h-29-0-29
+        label: wall-h-29-0-29
+        line:
+          start:
+            x: -140.72912811497127
+            z: -56.25
+          end:
+            x: -90.49965469547384
+            z: -56.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 50.22947341949744
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-03-opening
+            position: 24.24871130596428
+            width: 3.4641016151377544
+            door:
+              id: connection-03-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-h-29-29-52
+        label: wall-h-29-29-52
+        line:
+          start:
+            x: -90.49965469547384
+            z: -56.25
+          end:
+            x: -50.662486121389655
+            z: -56.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 39.83716857408418
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-52--23-0
+        label: wall-v-52--23-0
+        line:
+          start:
+            x: -50.662486121389655
+            z: -134.25
+          end:
+            x: -50.662486121389655
+            z: -99.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 34.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-52-0-29
+        label: wall-v-52-0-29
+        line:
+          start:
+            x: -50.662486121389655
+            z: -99.75
+          end:
+            x: -50.662486121389655
+            z: -56.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 43.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-52-29-40
+        label: wall-v-52-29-40
+        line:
+          start:
+            x: -50.662486121389655
+            z: -56.25
+          end:
+            x: -50.662486121389655
+            z: -39.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 16.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-52-40-52
+        label: wall-v-52-40-52
+        line:
+          start:
+            x: -50.662486121389655
+            z: -39.75
+          end:
+            x: -50.662486121389655
+            z: -21.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 18
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-04-opening
+            position: 9
+            width: 3
+            door:
+              id: connection-04-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-v-52-52-86
+        label: wall-v-52-52-86
+        line:
+          start:
+            x: -50.662486121389655
+            z: -21.75
+          end:
+            x: -50.662486121389655
+            z: 29.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 51
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-08-opening
+            position: 25.5
+            width: 3
+            door:
+              id: connection-08-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-v-52-86-104
+        label: wall-v-52-86-104
+        line:
+          start:
+            x: -50.662486121389655
+            z: 29.25
+          end:
+            x: -50.662486121389655
+            z: 56.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 27
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-10-opening
+            position: 13.5
+            width: 4.5
+            door:
+              id: connection-10-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-v-52-104-121
+        label: wall-v-52-104-121
+        line:
+          start:
+            x: -50.662486121389655
+            z: 56.25
+          end:
+            x: -50.662486121389655
+            z: 81.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 25.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-52-121-144
+        label: wall-v-52-121-144
+        line:
+          start:
+            x: -50.662486121389655
+            z: 81.75
+          end:
+            x: -50.662486121389655
+            z: 116.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 34.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: stables-forecourt-opening
+            position: 21
+            width: 3
+            door:
+              id: stables-forecourt-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-h-52-0-35
+        label: wall-h-52-0-35
+        line:
+          start:
+            x: -140.72912811497127
+            z: -21.75
+          end:
+            x: -80.10734985006057
+            z: -21.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 60.6217782649107
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-05-opening
+            position: 29.444863728670914
+            width: 3.4641016151377544
+            door:
+              id: connection-05-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-h-52-35-52
+        label: wall-h-52-35-52
+        line:
+          start:
+            x: -80.10734985006057
+            z: -21.75
+          end:
+            x: -50.662486121389655
+            z: -21.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 29.444863728670917
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-h-52-52-104
+        label: wall-h-52-52-104
+        line:
+          start:
+            x: -50.662486121389655
+            z: -21.75
+          end:
+            x: 39.40415587219196
+            z: -21.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 90.06664199358161
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-16-opening
+            position: 45.033320996790806
+            width: 5.196152422706632
+            door:
+              id: connection-16-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-v-35-52-86
+        label: wall-v-35-52-86
+        line:
+          start:
+            x: -80.10734985006057
+            z: -21.75
+          end:
+            x: -80.10734985006057
+            z: 29.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 51
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-07-opening
+            position: 25.5
+            width: 3
+            door:
+              id: connection-07-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-v-35-121-127
+        label: wall-v-35-121-127
+        line:
+          start:
+            x: -80.10734985006057
+            z: 81.75
+          end:
+            x: -80.10734985006057
+            z: 90.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 9
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: passage-stables-opening
+            position: 4.5
+            width: 3
+            door:
+              id: passage-stables-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-v-35-127-144
+        label: wall-v-35-127-144
+        line:
+          start:
+            x: -80.10734985006057
+            z: 90.75
+          end:
+            x: -80.10734985006057
+            z: 116.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 25.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-h-86-0-35
+        label: wall-h-86-0-35
+        line:
+          start:
+            x: -140.72912811497127
+            z: 29.25
+          end:
+            x: -80.10734985006057
+            z: 29.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 60.6217782649107
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-09-opening
+            position: 29.444863728670914
+            width: 5.196152422706632
+            door:
+              id: connection-09-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-h-86-35-52
+        label: wall-h-86-35-52
+        line:
+          start:
+            x: -80.10734985006057
+            z: 29.25
+          end:
+            x: -50.662486121389655
+            z: 29.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 29.444863728670917
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-h-121-0-35
+        label: wall-h-121-0-35
+        line:
+          start:
+            x: -140.72912811497127
+            z: 81.75
+          end:
+            x: -80.10734985006057
+            z: 81.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 60.6217782649107
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-11-opening
+            position: 29.444863728670914
+            width: 3.4641016151377544
+            door:
+              id: connection-11-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-h-121-35-52
+        label: wall-h-121-35-52
+        line:
+          start:
+            x: -80.10734985006057
+            z: 81.75
+          end:
+            x: -50.662486121389655
+            z: 81.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 29.444863728670917
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-12-opening
+            position: 13.856406460551018
+            width: 3.4641016151377544
+            door:
+              id: connection-12-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-h-121-52-104
+        label: wall-h-121-52-104
+        line:
+          start:
+            x: -50.662486121389655
+            z: 81.75
+          end:
+            x: 39.40415587219196
+            z: 81.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 90.06664199358161
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-23-opening
+            position: 45.033320996790806
+            width: 5.196152422706632
+            door:
+              id: connection-23-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-h-121-104-138
+        label: wall-h-121-104-138
+        line:
+          start:
+            x: 39.40415587219196
+            z: 81.75
+          end:
+            x: 98.29388332953378
+            z: 81.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 58.88972745734183
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-21-opening
+            position: 29.444863728670914
+            width: 5.196152422706632
+            door:
+              id: connection-21-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-h-121-138-173
+        label: wall-h-121-138-173
+        line:
+          start:
+            x: 98.29388332953378
+            z: 81.75
+          end:
+            x: 158.9156615944445
+            z: 81.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 60.6217782649107
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-29-opening
+            position: 29.444863728670914
+            width: 3.4641016151377544
+            door:
+              id: connection-29-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-h-127-0-35
+        label: wall-h-127-0-35
+        line:
+          start:
+            x: -140.72912811497127
+            z: 90.75
+          end:
+            x: -80.10734985006057
+            z: 90.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 60.6217782649107
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: passage-prison-opening
+            position: 13.856406460551018
+            width: 3.4641016151377544
+            door:
+              id: passage-prison-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-h-144-0-35
+        label: wall-h-144-0-35
+        line:
+          start:
+            x: -140.72912811497127
+            z: 116.25
+          end:
+            x: -80.10734985006057
+            z: 116.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 60.6217782649107
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-h-144-35-52
+        label: wall-h-144-35-52
+        line:
+          start:
+            x: -80.10734985006057
+            z: 116.25
+          end:
+            x: -50.662486121389655
+            z: 116.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 29.444863728670917
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-h-144-52-104
+        label: wall-h-144-52-104
+        line:
+          start:
+            x: -50.662486121389655
+            z: 116.25
+          end:
+            x: 39.40415587219196
+            z: 116.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 90.06664199358161
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-24-opening
+            position: 45.033320996790806
+            width: 5.196152422706632
+            door:
+              id: connection-24-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-h-144-104-138
+        label: wall-h-144-104-138
+        line:
+          start:
+            x: 39.40415587219196
+            z: 116.25
+          end:
+            x: 98.29388332953378
+            z: 116.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 58.88972745734183
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-h-144-138-173
+        label: wall-h-144-138-173
+        line:
+          start:
+            x: 98.29388332953378
+            z: 116.25
+          end:
+            x: 158.9156615944445
+            z: 116.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 60.6217782649107
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-30-opening
+            position: 29.444863728670914
+            width: 5.196152422706632
+            door:
+              id: connection-30-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-v-78--23-0
+        label: wall-v-78--23-0
+        line:
+          start:
+            x: -5.629165124598851
+            z: -134.25
+          end:
+            x: -5.629165124598851
+            z: -99.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 34.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-h--23-52-78
+        label: wall-h--23-52-78
+        line:
+          start:
+            x: -50.662486121389655
+            z: -134.25
+          end:
+            x: -5.629165124598851
+            z: -134.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 45.033320996790806
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-h--23-78-104
+        label: wall-h--23-78-104
+        line:
+          start:
+            x: -5.629165124598851
+            z: -134.25
+          end:
+            x: 39.40415587219196
+            z: -134.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 45.033320996790806
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-h--23-138-173
+        label: wall-h--23-138-173
+        line:
+          start:
+            x: 98.29388332953378
+            z: -134.25
+          end:
+            x: 158.9156615944445
+            z: -134.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 60.6217782649107
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-104--23-0
+        label: wall-v-104--23-0
+        line:
+          start:
+            x: 39.40415587219196
+            z: -134.25
+          end:
+            x: 39.40415587219196
+            z: -99.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 34.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-104-0-35
+        label: wall-v-104-0-35
+        line:
+          start:
+            x: 39.40415587219196
+            z: -99.75
+          end:
+            x: 39.40415587219196
+            z: -47.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 52.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-104-35-40
+        label: wall-v-104-35-40
+        line:
+          start:
+            x: 39.40415587219196
+            z: -47.25
+          end:
+            x: 39.40415587219196
+            z: -39.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 7.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-104-40-52
+        label: wall-v-104-40-52
+        line:
+          start:
+            x: 39.40415587219196
+            z: -39.75
+          end:
+            x: 39.40415587219196
+            z: -21.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 18
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-17-opening
+            position: 9
+            width: 3
+            door:
+              id: connection-17-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-v-104-52-58
+        label: wall-v-104-52-58
+        line:
+          start:
+            x: 39.40415587219196
+            z: -21.75
+          end:
+            x: 39.40415587219196
+            z: -12.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 9
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-104-58-75
+        label: wall-v-104-58-75
+        line:
+          start:
+            x: 39.40415587219196
+            z: -12.75
+          end:
+            x: 39.40415587219196
+            z: 12.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 25.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-19-opening
+            position: 12
+            width: 3
+            door:
+              id: connection-19-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-v-104-75-104
+        label: wall-v-104-75-104
+        line:
+          start:
+            x: 39.40415587219196
+            z: 12.75
+          end:
+            x: 39.40415587219196
+            z: 56.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 43.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-20-opening
+            position: 21
+            width: 4.5
+            door:
+              id: connection-20-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-v-104-104-121
+        label: wall-v-104-104-121
+        line:
+          start:
+            x: 39.40415587219196
+            z: 56.25
+          end:
+            x: 39.40415587219196
+            z: 81.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 25.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-104-121-144
+        label: wall-v-104-121-144
+        line:
+          start:
+            x: 39.40415587219196
+            z: 81.75
+          end:
+            x: 39.40415587219196
+            z: 116.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 34.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-h-40-52-104
+        label: wall-h-40-52-104
+        line:
+          start:
+            x: -50.662486121389655
+            z: -39.75
+          end:
+            x: 39.40415587219196
+            z: -39.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 90.06664199358161
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-15-opening
+            position: 45.033320996790806
+            width: 5.196152422706632
+            door:
+              id: connection-15-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-h-104-52-104
+        label: wall-h-104-52-104
+        line:
+          start:
+            x: -50.662486121389655
+            z: 56.25
+          end:
+            x: 39.40415587219196
+            z: 56.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 90.06664199358161
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-22-opening
+            position: 45.033320996790806
+            width: 5.196152422706632
+            door:
+              id: connection-22-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-h-104-138-150
+        label: wall-h-104-138-150
+        line:
+          start:
+            x: 98.29388332953378
+            z: 56.25
+          end:
+            x: 119.07849302036031
+            z: 56.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 20.784609690826528
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-28-opening
+            position: 10.392304845413264
+            width: 3.4641016151377544
+            door:
+              id: connection-28-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-h-104-150-173
+        label: wall-h-104-150-173
+        line:
+          start:
+            x: 119.07849302036031
+            z: 56.25
+          end:
+            x: 158.9156615944445
+            z: 56.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 39.837168574084174
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-138--23-0
+        label: wall-v-138--23-0
+        line:
+          start:
+            x: 98.29388332953378
+            z: -134.25
+          end:
+            x: 98.29388332953378
+            z: -99.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 34.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-138-0-35
+        label: wall-v-138-0-35
+        line:
+          start:
+            x: 98.29388332953378
+            z: -99.75
+          end:
+            x: 98.29388332953378
+            z: -47.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 52.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-25-opening
+            position: 25.5
+            width: 3
+            door:
+              id: connection-25-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-v-138-35-58
+        label: wall-v-138-35-58
+        line:
+          start:
+            x: 98.29388332953378
+            z: -47.25
+          end:
+            x: 98.29388332953378
+            z: -12.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 34.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-138-58-75
+        label: wall-v-138-58-75
+        line:
+          start:
+            x: 98.29388332953378
+            z: -12.75
+          end:
+            x: 98.29388332953378
+            z: 12.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 25.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-138-75-104
+        label: wall-v-138-75-104
+        line:
+          start:
+            x: 98.29388332953378
+            z: 12.75
+          end:
+            x: 98.29388332953378
+            z: 56.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 43.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-138-104-121
+        label: wall-v-138-104-121
+        line:
+          start:
+            x: 98.29388332953378
+            z: 56.25
+          end:
+            x: 98.29388332953378
+            z: 81.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 25.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-138-121-144
+        label: wall-v-138-121-144
+        line:
+          start:
+            x: 98.29388332953378
+            z: 81.75
+          end:
+            x: 98.29388332953378
+            z: 116.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 34.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-h-35-104-138
+        label: wall-h-35-104-138
+        line:
+          start:
+            x: 39.40415587219196
+            z: -47.25
+          end:
+            x: 98.29388332953378
+            z: -47.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 58.88972745734183
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-18-opening
+            position: 29.444863728670914
+            width: 3.4641016151377544
+            door:
+              id: connection-18-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-h-35-138-150
+        label: wall-h-35-138-150
+        line:
+          start:
+            x: 98.29388332953378
+            z: -47.25
+          end:
+            x: 119.07849302036031
+            z: -47.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 20.784609690826528
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings:
+          - id: connection-27-opening
+            position: 10.392304845413264
+            width: 3.4641016151377544
+            door:
+              id: connection-27-door
+              assetRef: dnd5e:env:dark-fortress:wall_door_double_01
+      - id: wall-h-35-150-173
+        label: wall-h-35-150-173
+        line:
+          start:
+            x: 119.07849302036031
+            z: -47.25
+          end:
+            x: 158.9156615944445
+            z: -47.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 39.837168574084174
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-h-58-104-138
+        label: wall-h-58-104-138
+        line:
+          start:
+            x: 39.40415587219196
+            z: -12.75
+          end:
+            x: 98.29388332953378
+            z: -12.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 58.88972745734183
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-h-75-104-138
+        label: wall-h-75-104-138
+        line:
+          start:
+            x: 39.40415587219196
+            z: 12.75
+          end:
+            x: 98.29388332953378
+            z: 12.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 58.88972745734183
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-173--23-0
+        label: wall-v-173--23-0
+        line:
+          start:
+            x: 158.9156615944445
+            z: -134.25
+          end:
+            x: 158.9156615944445
+            z: -99.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 34.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-173-0-35
+        label: wall-v-173-0-35
+        line:
+          start:
+            x: 158.9156615944445
+            z: -99.75
+          end:
+            x: 158.9156615944445
+            z: -47.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 52.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-173-104-121
+        label: wall-v-173-104-121
+        line:
+          start:
+            x: 158.9156615944445
+            z: 56.25
+          end:
+            x: 158.9156615944445
+            z: 81.75
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 25.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-173-121-144
+        label: wall-v-173-121-144
+        line:
+          start:
+            x: 158.9156615944445
+            z: 81.75
+          end:
+            x: 158.9156615944445
+            z: 116.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 34.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+      - id: wall-v-150-35-104
+        label: wall-v-150-35-104
+        line:
+          start:
+            x: 119.07849302036031
+            z: -47.25
+          end:
+            x: 119.07849302036031
+            z: 56.25
+        appearance:
+          assetRef: dnd5e:env:dark-fortress:45_wall_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint:
+            width: 103.5
+            depth: 0.3
+            offsetX: 0
+            offsetZ: 0
+        openings: []
+    regions:
+      - id: region-kitchen
+        name: Kitchen / larder
+        lighting: {intensity: 1}
+        cells:
+          - r: -66
+            q: [[-48, -20]]
+          - r: -65
+            q: [[-48, -20]]
+          - r: -64
+            q: [[-49, -21]]
+          - r: -63
+            q: [[-49, -21]]
+          - r: -62
+            q: [[-50, -22]]
+          - r: -61
+            q: [[-50, -22]]
+          - r: -60
+            q: [[-51, -23]]
+          - r: -59
+            q: [[-51, -23]]
+          - r: -58
+            q: [[-52, -24]]
+          - r: -57
+            q: [[-52, -24]]
+          - r: -56
+            q: [[-53, -25]]
+          - r: -55
+            q: [[-53, -25]]
+          - r: -54
+            q: [[-54, -26]]
+          - r: -53
+            q: [[-54, -26]]
+          - r: -52
+            q: [[-55, -27]]
+          - r: -51
+            q: [[-55, -27]]
+          - r: -50
+            q: [[-56, -28]]
+          - r: -49
+            q: [[-56, -28]]
+          - r: -48
+            q: [[-57, -29]]
+          - r: -47
+            q: [[-57, -29]]
+          - r: -46
+            q: [[-58, -30]]
+          - r: -45
+            q: [[-58, -30]]
+          - r: -44
+            q: [[-59, -31]]
+          - r: -43
+            q: [[-59, -31]]
+          - r: -42
+            q: [[-60, -32]]
+          - r: -41
+            q: [[-60, -32]]
+          - r: -40
+            q: [[-61, -33]]
+          - r: -39
+            q: [[-61, -33]]
+          - r: -38
+            q: [[-62, -34]]
+      - id: region-servants
+        name: Servants’ quarters
+        lighting: {intensity: 1}
+        cells:
+          - r: -66
+            q: [[-19, 3]]
+          - r: -65
+            q: [[-19, 3]]
+          - r: -64
+            q: [[-20, 2]]
+          - r: -63
+            q: [[-20, 2]]
+          - r: -62
+            q: [[-21, 1]]
+          - r: -61
+            q: [[-21, 1]]
+          - r: -60
+            q: [[-22, 0]]
+          - r: -59
+            q: [[-22, 0]]
+          - r: -58
+            q: [[-23, -1]]
+          - r: -57
+            q: [[-23, -1]]
+          - r: -56
+            q: [[-24, -2]]
+          - r: -55
+            q: [[-24, -2]]
+          - r: -54
+            q: [[-25, -3]]
+          - r: -53
+            q: [[-25, -3]]
+          - r: -52
+            q: [[-26, -4]]
+          - r: -51
+            q: [[-26, -4]]
+          - r: -50
+            q: [[-27, -5]]
+          - r: -49
+            q: [[-27, -5]]
+          - r: -48
+            q: [[-28, -6]]
+          - r: -47
+            q: [[-28, -6]]
+          - r: -46
+            q: [[-29, -7]]
+          - r: -45
+            q: [[-29, -7]]
+          - r: -44
+            q: [[-30, -8]]
+          - r: -43
+            q: [[-30, -8]]
+          - r: -42
+            q: [[-31, -9]]
+          - r: -41
+            q: [[-31, -9]]
+          - r: -40
+            q: [[-32, -10]]
+          - r: -39
+            q: [[-32, -10]]
+          - r: -38
+            q: [[-33, -11]]
+      - id: region-mess
+        name: Mess hall
+        lighting: {intensity: 1}
+        cells:
+          - r: -37
+            q: [[-62, -11]]
+          - r: -36
+            q: [[-63, -12]]
+          - r: -35
+            q: [[-63, -12]]
+          - r: -34
+            q: [[-64, -13]]
+          - r: -33
+            q: [[-64, -13]]
+          - r: -32
+            q: [[-65, -14]]
+          - r: -31
+            q: [[-65, -14]]
+          - r: -30
+            q: [[-66, -15]]
+          - r: -29
+            q: [[-66, -15]]
+          - r: -28
+            q: [[-67, -16]]
+          - r: -27
+            q: [[-67, -16]]
+          - r: -26
+            q: [[-68, -17]]
+          - r: -25
+            q: [[-68, -17]]
+          - r: -24
+            q: [[-69, -18]]
+          - r: -23
+            q: [[-69, -18]]
+          - r: -22
+            q: [[-70, -19]]
+          - r: -21
+            q: [[-70, -19]]
+          - r: -20
+            q: [[-71, -20]]
+          - r: -19
+            q: [[-71, -20]]
+          - r: -18
+            q: [[-72, -21]]
+          - r: -17
+            q: [[-72, -21]]
+          - r: -16
+            q: [[-73, -22]]
+          - r: -15
+            q: [[-73, -22]]
+      - id: region-barracks
+        name: Barracks / tower
+        lighting: {intensity: 1}
+        cells:
+          - r: -14
+            q: [[-74, -40]]
+          - r: -13
+            q: [[-74, -40]]
+          - r: -12
+            q: [[-75, -41]]
+          - r: -11
+            q: [[-75, -41]]
+          - r: -10
+            q: [[-76, -42]]
+          - r: -9
+            q: [[-76, -42]]
+          - r: -8
+            q: [[-77, -43]]
+          - r: -7
+            q: [[-77, -43]]
+          - r: -6
+            q: [[-78, -44]]
+          - r: -5
+            q: [[-78, -44]]
+          - r: -4
+            q: [[-79, -45]]
+          - r: -3
+            q: [[-79, -45]]
+          - r: -2
+            q: [[-80, -46]]
+          - r: -1
+            q: [[-80, -46]]
+          - r: 0
+            q: [[-81, -47]]
+          - r: 1
+            q: [[-81, -47]]
+          - r: 2
+            q: [[-82, -48]]
+          - r: 3
+            q: [[-82, -48]]
+          - r: 4
+            q: [[-83, -49]]
+          - r: 5
+            q: [[-83, -49]]
+          - r: 6
+            q: [[-84, -50]]
+          - r: 7
+            q: [[-84, -50]]
+          - r: 8
+            q: [[-85, -51]]
+          - r: 9
+            q: [[-85, -51]]
+          - r: 10
+            q: [[-86, -52]]
+          - r: 11
+            q: [[-86, -52]]
+          - r: 12
+            q: [[-87, -53]]
+          - r: 13
+            q: [[-87, -53]]
+          - r: 14
+            q: [[-88, -54]]
+          - r: 15
+            q: [[-88, -54]]
+          - r: 16
+            q: [[-89, -55]]
+          - r: 17
+            q: [[-89, -55]]
+          - r: 18
+            q: [[-90, -56]]
+          - r: 19
+            q: [[-90, -56]]
+      - id: region-armory
+        name: Armory
+        lighting: {intensity: 1}
+        cells:
+          - r: -14
+            q: [[-39, -23]]
+          - r: -13
+            q: [[-39, -23]]
+          - r: -12
+            q: [[-40, -24]]
+          - r: -11
+            q: [[-40, -24]]
+          - r: -10
+            q: [[-41, -25]]
+          - r: -9
+            q: [[-41, -25]]
+          - r: -8
+            q: [[-42, -26]]
+          - r: -7
+            q: [[-42, -26]]
+          - r: -6
+            q: [[-43, -27]]
+          - r: -5
+            q: [[-43, -27]]
+          - r: -4
+            q: [[-44, -28]]
+          - r: -3
+            q: [[-44, -28]]
+          - r: -2
+            q: [[-45, -29]]
+          - r: -1
+            q: [[-45, -29]]
+          - r: 0
+            q: [[-46, -30]]
+          - r: 1
+            q: [[-46, -30]]
+          - r: 2
+            q: [[-47, -31]]
+          - r: 3
+            q: [[-47, -31]]
+          - r: 4
+            q: [[-48, -32]]
+          - r: 5
+            q: [[-48, -32]]
+          - r: 6
+            q: [[-49, -33]]
+          - r: 7
+            q: [[-49, -33]]
+          - r: 8
+            q: [[-50, -34]]
+          - r: 9
+            q: [[-50, -34]]
+          - r: 10
+            q: [[-51, -35]]
+          - r: 11
+            q: [[-51, -35]]
+          - r: 12
+            q: [[-52, -36]]
+          - r: 13
+            q: [[-52, -36]]
+          - r: 14
+            q: [[-53, -37]]
+          - r: 15
+            q: [[-53, -37]]
+          - r: 16
+            q: [[-54, -38]]
+          - r: 17
+            q: [[-54, -38]]
+          - r: 18
+            q: [[-55, -39]]
+          - r: 19
+            q: [[-55, -39]]
+      - id: region-training
+        name: Training yard
+        lighting: {intensity: 1}
+        cells:
+          - r: 20
+            q: [[-91, -40]]
+          - r: 21
+            q: [[-91, -40]]
+          - r: 22
+            q: [[-92, -41]]
+          - r: 23
+            q: [[-92, -41]]
+          - r: 24
+            q: [[-93, -42]]
+          - r: 25
+            q: [[-93, -42]]
+          - r: 26
+            q: [[-94, -43]]
+          - r: 27
+            q: [[-94, -43]]
+          - r: 28
+            q: [[-95, -44]]
+          - r: 29
+            q: [[-95, -44]]
+          - r: 30
+            q: [[-96, -45]]
+          - r: 31
+            q: [[-96, -45]]
+          - r: 32
+            q: [[-97, -46]]
+          - r: 33
+            q: [[-97, -46]]
+          - r: 34
+            q: [[-98, -47]]
+          - r: 35
+            q: [[-98, -47]]
+          - r: 36
+            q: [[-99, -48]]
+          - r: 37
+            q: [[-99, -48]]
+          - r: 38
+            q: [[-100, -49]]
+          - r: 39
+            q: [[-100, -49]]
+          - r: 40
+            q: [[-101, -50]]
+          - r: 41
+            q: [[-101, -50]]
+          - r: 42
+            q: [[-102, -51]]
+          - r: 43
+            q: [[-102, -51]]
+          - r: 44
+            q: [[-103, -52]]
+          - r: 45
+            q: [[-103, -52]]
+          - r: 46
+            q: [[-104, -53]]
+          - r: 47
+            q: [[-104, -53]]
+          - r: 48
+            q: [[-105, -54]]
+          - r: 49
+            q: [[-105, -54]]
+          - r: 50
+            q: [[-106, -55]]
+          - r: 51
+            q: [[-106, -55]]
+          - r: 52
+            q: [[-107, -56]]
+          - r: 53
+            q: [[-107, -56]]
+          - r: 54
+            q: [[-108, -57]]
+      - id: region-prison
+        name: Prison / jailer
+        lighting: {intensity: 1}
+        cells:
+          - r: 61
+            q: [[-111, -77]]
+          - r: 62
+            q: [[-112, -78]]
+          - r: 63
+            q: [[-112, -78]]
+          - r: 64
+            q: [[-113, -79]]
+          - r: 65
+            q: [[-113, -79]]
+          - r: 66
+            q: [[-114, -80]]
+          - r: 67
+            q: [[-114, -80]]
+          - r: 68
+            q: [[-115, -81]]
+          - r: 69
+            q: [[-115, -81]]
+          - r: 70
+            q: [[-116, -82]]
+          - r: 71
+            q: [[-116, -82]]
+          - r: 72
+            q: [[-117, -83]]
+          - r: 73
+            q: [[-117, -83]]
+          - r: 74
+            q: [[-118, -84]]
+          - r: 75
+            q: [[-118, -84]]
+          - r: 76
+            q: [[-119, -85]]
+          - r: 77
+            q: [[-119, -85]]
+      - id: region-stables
+        name: Stables
+        lighting: {intensity: 1}
+        cells:
+          - r: 55
+            q: [[-73, -57]]
+          - r: 56
+            q: [[-74, -58]]
+          - r: 57
+            q: [[-74, -58]]
+          - r: 58
+            q: [[-75, -59]]
+          - r: 59
+            q: [[-75, -59]]
+          - r: 60
+            q: [[-76, -60]]
+          - r: 61
+            q: [[-76, -60]]
+          - r: 62
+            q: [[-77, -61]]
+          - r: 63
+            q: [[-77, -61]]
+          - r: 64
+            q: [[-78, -62]]
+          - r: 65
+            q: [[-78, -62]]
+          - r: 66
+            q: [[-79, -63]]
+          - r: 67
+            q: [[-79, -63]]
+          - r: 68
+            q: [[-80, -64]]
+          - r: 69
+            q: [[-80, -64]]
+          - r: 70
+            q: [[-81, -65]]
+          - r: 71
+            q: [[-81, -65]]
+          - r: 72
+            q: [[-82, -66]]
+          - r: 73
+            q: [[-82, -66]]
+          - r: 74
+            q: [[-83, -67]]
+          - r: 75
+            q: [[-83, -67]]
+          - r: 76
+            q: [[-84, -68]]
+          - r: 77
+            q: [[-84, -68]]
+      - id: region-bedrooms
+        name: Bedrooms
+        lighting: {intensity: 1}
+        cells:
+          - r: -89
+            q: [[16, 41]]
+          - r: -88
+            q: [[15, 40]]
+          - r: -87
+            q: [[15, 40]]
+          - r: -86
+            q: [[14, 39]]
+          - r: -85
+            q: [[14, 39]]
+          - r: -84
+            q: [[13, 38]]
+          - r: -83
+            q: [[13, 38]]
+          - r: -82
+            q: [[12, 37]]
+          - r: -81
+            q: [[12, 37]]
+          - r: -80
+            q: [[11, 36]]
+          - r: -79
+            q: [[11, 36]]
+          - r: -78
+            q: [[10, 35]]
+          - r: -77
+            q: [[10, 35]]
+          - r: -76
+            q: [[9, 34]]
+          - r: -75
+            q: [[9, 34]]
+          - r: -74
+            q: [[8, 33]]
+          - r: -73
+            q: [[8, 33]]
+          - r: -72
+            q: [[7, 32]]
+          - r: -71
+            q: [[7, 32]]
+          - r: -70
+            q: [[6, 31]]
+          - r: -69
+            q: [[6, 31]]
+          - r: -68
+            q: [[5, 30]]
+          - r: -67
+            q: [[5, 30]]
+      - id: region-treasury
+        name: Treasury
+        lighting: {intensity: 1}
+        cells:
+          - r: -89
+            q: [[42, 67]]
+          - r: -88
+            q: [[41, 66]]
+          - r: -87
+            q: [[41, 66]]
+          - r: -86
+            q: [[40, 65]]
+          - r: -85
+            q: [[40, 65]]
+          - r: -84
+            q: [[39, 64]]
+          - r: -83
+            q: [[39, 64]]
+          - r: -82
+            q: [[38, 63]]
+          - r: -81
+            q: [[38, 63]]
+          - r: -80
+            q: [[37, 62]]
+          - r: -79
+            q: [[37, 62]]
+          - r: -78
+            q: [[36, 61]]
+          - r: -77
+            q: [[36, 61]]
+          - r: -76
+            q: [[35, 60]]
+          - r: -75
+            q: [[35, 60]]
+          - r: -74
+            q: [[34, 59]]
+          - r: -73
+            q: [[34, 59]]
+          - r: -72
+            q: [[33, 58]]
+          - r: -71
+            q: [[33, 58]]
+          - r: -70
+            q: [[32, 57]]
+          - r: -69
+            q: [[32, 57]]
+          - r: -68
+            q: [[31, 56]]
+          - r: -67
+            q: [[31, 56]]
+      - id: region-throne
+        name: Throne room
+        lighting: {intensity: 1}
+        cells:
+          - r: -66
+            q: [[4, 55]]
+          - r: -65
+            q: [[4, 55]]
+          - r: -64
+            q: [[3, 54]]
+          - r: -63
+            q: [[3, 54]]
+          - r: -62
+            q: [[2, 53]]
+          - r: -61
+            q: [[2, 53]]
+          - r: -60
+            q: [[1, 52]]
+          - r: -59
+            q: [[1, 52]]
+          - r: -58
+            q: [[0, 51]]
+          - r: -57
+            q: [[0, 51]]
+          - r: -56
+            q: [[-1, 50]]
+          - r: -55
+            q: [[-1, 50]]
+          - r: -54
+            q: [[-2, 49]]
+          - r: -53
+            q: [[-2, 49]]
+          - r: -52
+            q: [[-3, 48]]
+          - r: -51
+            q: [[-3, 48]]
+          - r: -50
+            q: [[-4, 47]]
+          - r: -49
+            q: [[-4, 47]]
+          - r: -48
+            q: [[-5, 46]]
+          - r: -47
+            q: [[-5, 46]]
+          - r: -46
+            q: [[-6, 45]]
+          - r: -45
+            q: [[-6, 45]]
+          - r: -44
+            q: [[-7, 44]]
+          - r: -43
+            q: [[-7, 44]]
+          - r: -42
+            q: [[-8, 43]]
+          - r: -41
+            q: [[-8, 43]]
+          - r: -40
+            q: [[-9, 42]]
+          - r: -39
+            q: [[-9, 42]]
+          - r: -38
+            q: [[-10, 41]]
+          - r: -37
+            q: [[-10, 41]]
+          - r: -36
+            q: [[-11, 40]]
+          - r: -35
+            q: [[-11, 40]]
+          - r: -34
+            q: [[-12, 39]]
+          - r: -33
+            q: [[-12, 39]]
+          - r: -32
+            q: [[-13, 38]]
+          - r: -31
+            q: [[-13, 38]]
+          - r: -30
+            q: [[-14, 37]]
+          - r: -29
+            q: [[-14, 37]]
+          - r: -28
+            q: [[-15, 36]]
+          - r: -27
+            q: [[-15, 36]]
+      - id: region-audience
+        name: Audience approach
+        lighting: {intensity: 1}
+        cells:
+          - r: -26
+            q: [[-16, 35]]
+          - r: -25
+            q: [[-16, 35]]
+          - r: -24
+            q: [[-17, 34]]
+          - r: -23
+            q: [[-17, 34]]
+          - r: -22
+            q: [[-18, 33]]
+          - r: -21
+            q: [[-18, 33]]
+          - r: -20
+            q: [[-19, 32]]
+          - r: -19
+            q: [[-19, 32]]
+          - r: -18
+            q: [[-20, 31]]
+          - r: -17
+            q: [[-20, 31]]
+          - r: -16
+            q: [[-21, 30]]
+          - r: -15
+            q: [[-21, 30]]
+      - id: region-courtyard
+        name: Courtyard
+        lighting: {intensity: 1}
+        cells:
+          - r: -14
+            q: [[-22, 29]]
+          - r: -13
+            q: [[-22, 29]]
+          - r: -12
+            q: [[-23, 28]]
+          - r: -11
+            q: [[-23, 28]]
+          - r: -10
+            q: [[-24, 27]]
+          - r: -9
+            q: [[-24, 27]]
+          - r: -8
+            q: [[-25, 26]]
+          - r: -7
+            q: [[-25, 26]]
+          - r: -6
+            q: [[-26, 25]]
+          - r: -5
+            q: [[-26, 25]]
+          - r: -4
+            q: [[-27, 24]]
+          - r: -3
+            q: [[-27, 24]]
+          - r: -2
+            q: [[-28, 23]]
+          - r: -1
+            q: [[-28, 23]]
+          - r: 0
+            q: [[-29, 22]]
+          - r: 1
+            q: [[-29, 22]]
+          - r: 2
+            q: [[-30, 21]]
+          - r: 3
+            q: [[-30, 21]]
+          - r: 4
+            q: [[-31, 20]]
+          - r: 5
+            q: [[-31, 20]]
+          - r: 6
+            q: [[-32, 19]]
+          - r: 7
+            q: [[-32, 19]]
+          - r: 8
+            q: [[-33, 18]]
+          - r: 9
+            q: [[-33, 18]]
+          - r: 10
+            q: [[-34, 17]]
+          - r: 11
+            q: [[-34, 17]]
+          - r: 12
+            q: [[-35, 16]]
+          - r: 13
+            q: [[-35, 16]]
+          - r: 14
+            q: [[-36, 15]]
+          - r: 15
+            q: [[-36, 15]]
+          - r: 16
+            q: [[-37, 14]]
+          - r: 17
+            q: [[-37, 14]]
+          - r: 18
+            q: [[-38, 13]]
+          - r: 19
+            q: [[-38, 13]]
+          - r: 20
+            q: [[-39, 12]]
+          - r: 21
+            q: [[-39, 12]]
+          - r: 22
+            q: [[-40, 11]]
+          - r: 23
+            q: [[-40, 11]]
+          - r: 24
+            q: [[-41, 10]]
+          - r: 25
+            q: [[-41, 10]]
+          - r: 26
+            q: [[-42, 9]]
+          - r: 27
+            q: [[-42, 9]]
+          - r: 28
+            q: [[-43, 8]]
+          - r: 29
+            q: [[-43, 8]]
+          - r: 30
+            q: [[-44, 7]]
+          - r: 31
+            q: [[-44, 7]]
+          - r: 32
+            q: [[-45, 6]]
+          - r: 33
+            q: [[-45, 6]]
+          - r: 34
+            q: [[-46, 5]]
+          - r: 35
+            q: [[-46, 5]]
+          - r: 36
+            q: [[-47, 4]]
+          - r: 37
+            q: [[-47, 4]]
+      - id: region-gate
+        name: Gatehouse
+        lighting: {intensity: 1}
+        cells:
+          - r: 38
+            q: [[-48, 3]]
+          - r: 39
+            q: [[-48, 3]]
+          - r: 40
+            q: [[-49, 2]]
+          - r: 41
+            q: [[-49, 2]]
+          - r: 42
+            q: [[-50, 1]]
+          - r: 43
+            q: [[-50, 1]]
+          - r: 44
+            q: [[-51, 0]]
+          - r: 45
+            q: [[-51, 0]]
+          - r: 46
+            q: [[-52, -1]]
+          - r: 47
+            q: [[-52, -1]]
+          - r: 48
+            q: [[-53, -2]]
+          - r: 49
+            q: [[-53, -2]]
+          - r: 50
+            q: [[-54, -3]]
+          - r: 51
+            q: [[-54, -3]]
+          - r: 52
+            q: [[-55, -4]]
+          - r: 53
+            q: [[-55, -4]]
+          - r: 54
+            q: [[-56, -5]]
+      - id: region-forecourt
+        name: Forecourt
+        lighting: {intensity: 1}
+        cells:
+          - r: 55
+            q: [[-56, -5]]
+          - r: 56
+            q: [[-57, -6]]
+          - r: 57
+            q: [[-57, -6]]
+          - r: 58
+            q: [[-58, -7]]
+          - r: 59
+            q: [[-58, -7]]
+          - r: 60
+            q: [[-59, -8]]
+          - r: 61
+            q: [[-59, -8]]
+          - r: 62
+            q: [[-60, -9]]
+          - r: 63
+            q: [[-60, -9]]
+          - r: 64
+            q: [[-61, -10]]
+          - r: 65
+            q: [[-61, -10]]
+          - r: 66
+            q: [[-62, -11]]
+          - r: 67
+            q: [[-62, -11]]
+          - r: 68
+            q: [[-63, -12]]
+          - r: 69
+            q: [[-63, -12]]
+          - r: 70
+            q: [[-64, -13]]
+          - r: 71
+            q: [[-64, -13]]
+          - r: 72
+            q: [[-65, -14]]
+          - r: 73
+            q: [[-65, -14]]
+          - r: 74
+            q: [[-66, -15]]
+          - r: 75
+            q: [[-66, -15]]
+          - r: 76
+            q: [[-67, -16]]
+          - r: 77
+            q: [[-67, -16]]
+      - id: region-chapel
+        name: Chapel / rectory
+        lighting: {intensity: 1}
+        cells:
+          - r: -66
+            q: [[56, 89]]
+          - r: -65
+            q: [[56, 89]]
+          - r: -64
+            q: [[55, 88]]
+          - r: -63
+            q: [[55, 88]]
+          - r: -62
+            q: [[54, 87]]
+          - r: -61
+            q: [[54, 87]]
+          - r: -60
+            q: [[53, 86]]
+          - r: -59
+            q: [[53, 86]]
+          - r: -58
+            q: [[52, 85]]
+          - r: -57
+            q: [[52, 85]]
+          - r: -56
+            q: [[51, 84]]
+          - r: -55
+            q: [[51, 84]]
+          - r: -54
+            q: [[50, 83]]
+          - r: -53
+            q: [[50, 83]]
+          - r: -52
+            q: [[49, 82]]
+          - r: -51
+            q: [[49, 82]]
+          - r: -50
+            q: [[48, 81]]
+          - r: -49
+            q: [[48, 81]]
+          - r: -48
+            q: [[47, 80]]
+          - r: -47
+            q: [[47, 80]]
+          - r: -46
+            q: [[46, 79]]
+          - r: -45
+            q: [[46, 79]]
+          - r: -44
+            q: [[45, 78]]
+          - r: -43
+            q: [[45, 78]]
+          - r: -42
+            q: [[44, 77]]
+          - r: -41
+            q: [[44, 77]]
+          - r: -40
+            q: [[43, 76]]
+          - r: -39
+            q: [[43, 76]]
+          - r: -38
+            q: [[42, 75]]
+          - r: -37
+            q: [[42, 75]]
+          - r: -36
+            q: [[41, 74]]
+          - r: -35
+            q: [[41, 74]]
+          - r: -34
+            q: [[40, 73]]
+          - r: -33
+            q: [[40, 73]]
+          - r: -32
+            q: [[39, 72]]
+      - id: region-library
+        name: Library
+        lighting: {intensity: 1}
+        cells:
+          - r: -31
+            q: [[39, 72]]
+          - r: -30
+            q: [[38, 71]]
+          - r: -29
+            q: [[38, 71]]
+          - r: -28
+            q: [[37, 70]]
+          - r: -27
+            q: [[37, 70]]
+          - r: -26
+            q: [[36, 69]]
+          - r: -25
+            q: [[36, 69]]
+          - r: -24
+            q: [[35, 68]]
+          - r: -23
+            q: [[35, 68]]
+          - r: -22
+            q: [[34, 67]]
+          - r: -21
+            q: [[34, 67]]
+          - r: -20
+            q: [[33, 66]]
+          - r: -19
+            q: [[33, 66]]
+          - r: -18
+            q: [[32, 65]]
+          - r: -17
+            q: [[32, 65]]
+          - r: -16
+            q: [[31, 64]]
+          - r: -15
+            q: [[31, 64]]
+          - r: -14
+            q: [[30, 63]]
+          - r: -13
+            q: [[30, 63]]
+          - r: -12
+            q: [[29, 62]]
+          - r: -11
+            q: [[29, 62]]
+          - r: -10
+            q: [[28, 61]]
+          - r: -9
+            q: [[28, 61]]
+      - id: region-apothecary
+        name: Apothecary
+        lighting: {intensity: 1}
+        cells:
+          - r: -8
+            q: [[27, 60]]
+          - r: -7
+            q: [[27, 60]]
+          - r: -6
+            q: [[26, 59]]
+          - r: -5
+            q: [[26, 59]]
+          - r: -4
+            q: [[25, 58]]
+          - r: -3
+            q: [[25, 58]]
+          - r: -2
+            q: [[24, 57]]
+          - r: -1
+            q: [[24, 57]]
+          - r: 0
+            q: [[23, 56]]
+          - r: 1
+            q: [[23, 56]]
+          - r: 2
+            q: [[22, 55]]
+          - r: 3
+            q: [[22, 55]]
+          - r: 4
+            q: [[21, 54]]
+          - r: 5
+            q: [[21, 54]]
+          - r: 6
+            q: [[20, 53]]
+          - r: 7
+            q: [[20, 53]]
+          - r: 8
+            q: [[19, 52]]
+      - id: region-ballroom
+        name: Ballroom
+        lighting: {intensity: 1}
+        cells:
+          - r: 9
+            q: [[19, 52]]
+          - r: 10
+            q: [[18, 51]]
+          - r: 11
+            q: [[18, 51]]
+          - r: 12
+            q: [[17, 50]]
+          - r: 13
+            q: [[17, 50]]
+          - r: 14
+            q: [[16, 49]]
+          - r: 15
+            q: [[16, 49]]
+          - r: 16
+            q: [[15, 48]]
+          - r: 17
+            q: [[15, 48]]
+          - r: 18
+            q: [[14, 47]]
+          - r: 19
+            q: [[14, 47]]
+          - r: 20
+            q: [[13, 46]]
+          - r: 21
+            q: [[13, 46]]
+          - r: 22
+            q: [[12, 45]]
+          - r: 23
+            q: [[12, 45]]
+          - r: 24
+            q: [[11, 44]]
+          - r: 25
+            q: [[11, 44]]
+          - r: 26
+            q: [[10, 43]]
+          - r: 27
+            q: [[10, 43]]
+          - r: 28
+            q: [[9, 42]]
+          - r: 29
+            q: [[9, 42]]
+          - r: 30
+            q: [[8, 41]]
+          - r: 31
+            q: [[8, 41]]
+          - r: 32
+            q: [[7, 40]]
+          - r: 33
+            q: [[7, 40]]
+          - r: 34
+            q: [[6, 39]]
+          - r: 35
+            q: [[6, 39]]
+          - r: 36
+            q: [[5, 38]]
+          - r: 37
+            q: [[5, 38]]
+          - r: 38
+            q: [[4, 37]]
+          - r: 39
+            q: [[4, 37]]
+          - r: 40
+            q: [[3, 36]]
+          - r: 41
+            q: [[3, 36]]
+          - r: 42
+            q: [[2, 35]]
+          - r: 43
+            q: [[2, 35]]
+          - r: 44
+            q: [[1, 34]]
+          - r: 45
+            q: [[1, 34]]
+          - r: 46
+            q: [[0, 33]]
+          - r: 47
+            q: [[0, 33]]
+          - r: 48
+            q: [[-1, 32]]
+          - r: 49
+            q: [[-1, 32]]
+          - r: 50
+            q: [[-2, 31]]
+          - r: 51
+            q: [[-2, 31]]
+          - r: 52
+            q: [[-3, 30]]
+          - r: 53
+            q: [[-3, 30]]
+          - r: 54
+            q: [[-4, 29]]
+      - id: region-banquet
+        name: Banquet hall
+        lighting: {intensity: 1}
+        cells:
+          - r: 55
+            q: [[-4, 29]]
+          - r: 56
+            q: [[-5, 28]]
+          - r: 57
+            q: [[-5, 28]]
+          - r: 58
+            q: [[-6, 27]]
+          - r: 59
+            q: [[-6, 27]]
+          - r: 60
+            q: [[-7, 26]]
+          - r: 61
+            q: [[-7, 26]]
+          - r: 62
+            q: [[-8, 25]]
+          - r: 63
+            q: [[-8, 25]]
+          - r: 64
+            q: [[-9, 24]]
+          - r: 65
+            q: [[-9, 24]]
+          - r: 66
+            q: [[-10, 23]]
+          - r: 67
+            q: [[-10, 23]]
+          - r: 68
+            q: [[-11, 22]]
+          - r: 69
+            q: [[-11, 22]]
+          - r: 70
+            q: [[-12, 21]]
+          - r: 71
+            q: [[-12, 21]]
+          - r: 72
+            q: [[-13, 20]]
+          - r: 73
+            q: [[-13, 20]]
+          - r: 74
+            q: [[-14, 19]]
+          - r: 75
+            q: [[-14, 19]]
+          - r: 76
+            q: [[-15, 18]]
+          - r: 77
+            q: [[-15, 18]]
+      - id: region-stash
+        name: Hidden stash
+        lighting: {intensity: 0.35}
+        cells:
+          - r: -89
+            q: [[102, 136]]
+          - r: -88
+            q: [[101, 135]]
+          - r: -87
+            q: [[101, 135]]
+          - r: -86
+            q: [[100, 134]]
+          - r: -85
+            q: [[100, 134]]
+          - r: -84
+            q: [[99, 133]]
+          - r: -83
+            q: [[99, 133]]
+          - r: -82
+            q: [[98, 132]]
+          - r: -81
+            q: [[98, 132]]
+          - r: -80
+            q: [[97, 131]]
+          - r: -79
+            q: [[97, 131]]
+          - r: -78
+            q: [[96, 130]]
+          - r: -77
+            q: [[96, 130]]
+          - r: -76
+            q: [[95, 129]]
+          - r: -75
+            q: [[95, 129]]
+          - r: -74
+            q: [[94, 128]]
+          - r: -73
+            q: [[94, 128]]
+          - r: -72
+            q: [[93, 127]]
+          - r: -71
+            q: [[93, 127]]
+          - r: -70
+            q: [[92, 126]]
+          - r: -69
+            q: [[92, 126]]
+          - r: -68
+            q: [[91, 125]]
+          - r: -67
+            q: [[91, 125]]
+      - id: region-crypt
+        name: Crypt
+        lighting: {intensity: 0.35}
+        cells:
+          - r: -66
+            q: [[90, 124]]
+          - r: -65
+            q: [[90, 124]]
+          - r: -64
+            q: [[89, 123]]
+          - r: -63
+            q: [[89, 123]]
+          - r: -62
+            q: [[88, 122]]
+          - r: -61
+            q: [[88, 122]]
+          - r: -60
+            q: [[87, 121]]
+          - r: -59
+            q: [[87, 121]]
+          - r: -58
+            q: [[86, 120]]
+          - r: -57
+            q: [[86, 120]]
+          - r: -56
+            q: [[85, 119]]
+          - r: -55
+            q: [[85, 119]]
+          - r: -54
+            q: [[84, 118]]
+          - r: -53
+            q: [[84, 118]]
+          - r: -52
+            q: [[83, 117]]
+          - r: -51
+            q: [[83, 117]]
+          - r: -50
+            q: [[82, 116]]
+          - r: -49
+            q: [[82, 116]]
+          - r: -48
+            q: [[81, 115]]
+          - r: -47
+            q: [[81, 115]]
+          - r: -46
+            q: [[80, 114]]
+          - r: -45
+            q: [[80, 114]]
+          - r: -44
+            q: [[79, 113]]
+          - r: -43
+            q: [[79, 113]]
+          - r: -42
+            q: [[78, 112]]
+          - r: -41
+            q: [[78, 112]]
+          - r: -40
+            q: [[77, 111]]
+          - r: -39
+            q: [[77, 111]]
+          - r: -38
+            q: [[76, 110]]
+          - r: -37
+            q: [[76, 110]]
+          - r: -36
+            q: [[75, 109]]
+          - r: -35
+            q: [[75, 109]]
+          - r: -34
+            q: [[74, 108]]
+          - r: -33
+            q: [[74, 108]]
+          - r: -32
+            q: [[73, 107]]
+      - id: region-passage
+        name: Enclosed passage
+        lighting: {intensity: 0.35}
+        cells:
+          - r: -31
+            q: [[73, 84]]
+          - r: -30
+            q: [[72, 83]]
+          - r: -29
+            q: [[72, 83]]
+          - r: -28
+            q: [[71, 82]]
+          - r: -27
+            q: [[71, 82]]
+          - r: -26
+            q: [[70, 81]]
+          - r: -25
+            q: [[70, 81]]
+          - r: -24
+            q: [[69, 80]]
+          - r: -23
+            q: [[69, 80]]
+          - r: -22
+            q: [[68, 79]]
+          - r: -21
+            q: [[68, 79]]
+          - r: -20
+            q: [[67, 78]]
+          - r: -19
+            q: [[67, 78]]
+          - r: -18
+            q: [[66, 77]]
+          - r: -17
+            q: [[66, 77]]
+          - r: -16
+            q: [[65, 76]]
+          - r: -15
+            q: [[65, 76]]
+          - r: -14
+            q: [[64, 75]]
+          - r: -13
+            q: [[64, 75]]
+          - r: -12
+            q: [[63, 74]]
+          - r: -11
+            q: [[63, 74]]
+          - r: -10
+            q: [[62, 73]]
+          - r: -9
+            q: [[62, 73]]
+          - r: -8
+            q: [[61, 72]]
+          - r: -7
+            q: [[61, 72]]
+          - r: -6
+            q: [[60, 71]]
+          - r: -5
+            q: [[60, 71]]
+          - r: -4
+            q: [[59, 70]]
+          - r: -3
+            q: [[59, 70]]
+          - r: -2
+            q: [[58, 69]]
+          - r: -1
+            q: [[58, 69]]
+          - r: 0
+            q: [[57, 68]]
+          - r: 1
+            q: [[57, 68]]
+          - r: 2
+            q: [[56, 67]]
+          - r: 3
+            q: [[56, 67]]
+          - r: 4
+            q: [[55, 66]]
+          - r: 5
+            q: [[55, 66]]
+          - r: 6
+            q: [[54, 65]]
+          - r: 7
+            q: [[54, 65]]
+          - r: 8
+            q: [[53, 64]]
+          - r: 9
+            q: [[53, 64]]
+          - r: 10
+            q: [[52, 63]]
+          - r: 11
+            q: [[52, 63]]
+          - r: 12
+            q: [[51, 62]]
+          - r: 13
+            q: [[51, 62]]
+          - r: 14
+            q: [[50, 61]]
+          - r: 15
+            q: [[50, 61]]
+          - r: 16
+            q: [[49, 60]]
+          - r: 17
+            q: [[49, 60]]
+          - r: 18
+            q: [[48, 59]]
+          - r: 19
+            q: [[48, 59]]
+          - r: 20
+            q: [[47, 58]]
+          - r: 21
+            q: [[47, 58]]
+          - r: 22
+            q: [[46, 57]]
+          - r: 23
+            q: [[46, 57]]
+          - r: 24
+            q: [[45, 56]]
+          - r: 25
+            q: [[45, 56]]
+          - r: 26
+            q: [[44, 55]]
+          - r: 27
+            q: [[44, 55]]
+          - r: 28
+            q: [[43, 54]]
+          - r: 29
+            q: [[43, 54]]
+          - r: 30
+            q: [[42, 53]]
+          - r: 31
+            q: [[42, 53]]
+          - r: 32
+            q: [[41, 52]]
+          - r: 33
+            q: [[41, 52]]
+          - r: 34
+            q: [[40, 51]]
+          - r: 35
+            q: [[40, 51]]
+          - r: 36
+            q: [[39, 50]]
+          - r: 37
+            q: [[39, 50]]
+      - id: region-mausoleum
+        name: Mausoleum
+        lighting: {intensity: 0.35}
+        cells:
+          - r: 38
+            q: [[38, 72]]
+          - r: 39
+            q: [[38, 72]]
+          - r: 40
+            q: [[37, 71]]
+          - r: 41
+            q: [[37, 71]]
+          - r: 42
+            q: [[36, 70]]
+          - r: 43
+            q: [[36, 70]]
+          - r: 44
+            q: [[35, 69]]
+          - r: 45
+            q: [[35, 69]]
+          - r: 46
+            q: [[34, 68]]
+          - r: 47
+            q: [[34, 68]]
+          - r: 48
+            q: [[33, 67]]
+          - r: 49
+            q: [[33, 67]]
+          - r: 50
+            q: [[32, 66]]
+          - r: 51
+            q: [[32, 66]]
+          - r: 52
+            q: [[31, 65]]
+          - r: 53
+            q: [[31, 65]]
+          - r: 54
+            q: [[30, 64]]
+      - id: region-cemetery
+        name: Cemetery
+        lighting: {intensity: 1}
+        cells:
+          - r: 55
+            q: [[30, 64]]
+          - r: 56
+            q: [[29, 63]]
+          - r: 57
+            q: [[29, 63]]
+          - r: 58
+            q: [[28, 62]]
+          - r: 59
+            q: [[28, 62]]
+          - r: 60
+            q: [[27, 61]]
+          - r: 61
+            q: [[27, 61]]
+          - r: 62
+            q: [[26, 60]]
+          - r: 63
+            q: [[26, 60]]
+          - r: 64
+            q: [[25, 59]]
+          - r: 65
+            q: [[25, 59]]
+          - r: 66
+            q: [[24, 58]]
+          - r: 67
+            q: [[24, 58]]
+          - r: 68
+            q: [[23, 57]]
+          - r: 69
+            q: [[23, 57]]
+          - r: 70
+            q: [[22, 56]]
+          - r: 71
+            q: [[22, 56]]
+          - r: 72
+            q: [[21, 55]]
+          - r: 73
+            q: [[21, 55]]
+          - r: 74
+            q: [[20, 54]]
+          - r: 75
+            q: [[20, 54]]
+          - r: 76
+            q: [[19, 53]]
+          - r: 77
+            q: [[19, 53]]
+      - id: region-west-grounds
+        name: West grounds
+        lighting: {intensity: 1}
+        cells:
+          - r: -66
+            q: [[-59, -49]]
+          - r: -65
+            q: [[-59, -49]]
+          - r: -64
+            q: [[-60, -50]]
+          - r: -63
+            q: [[-60, -50]]
+          - r: -62
+            q: [[-61, -51]]
+          - r: -61
+            q: [[-61, -51]]
+          - r: -60
+            q: [[-62, -52]]
+          - r: -59
+            q: [[-62, -52]]
+          - r: -58
+            q: [[-63, -53]]
+          - r: -57
+            q: [[-63, -53]]
+          - r: -56
+            q: [[-64, -54]]
+          - r: -55
+            q: [[-64, -54]]
+          - r: -54
+            q: [[-65, -55]]
+          - r: -53
+            q: [[-65, -55]]
+          - r: -52
+            q: [[-66, -56]]
+          - r: -51
+            q: [[-66, -56]]
+          - r: -50
+            q: [[-67, -57]]
+          - r: -49
+            q: [[-67, -57]]
+          - r: -48
+            q: [[-68, -58]]
+          - r: -47
+            q: [[-68, -58]]
+          - r: -46
+            q: [[-69, -59]]
+          - r: -45
+            q: [[-69, -59]]
+          - r: -44
+            q: [[-70, -60]]
+          - r: -43
+            q: [[-70, -60]]
+          - r: -42
+            q: [[-71, -61]]
+          - r: -41
+            q: [[-71, -61]]
+          - r: -40
+            q: [[-72, -62]]
+          - r: -39
+            q: [[-72, -62]]
+          - r: -38
+            q: [[-73, -63]]
+          - r: -37
+            q: [[-73, -63]]
+          - r: -36
+            q: [[-74, -64]]
+          - r: -35
+            q: [[-74, -64]]
+          - r: -34
+            q: [[-75, -65]]
+          - r: -33
+            q: [[-75, -65]]
+          - r: -32
+            q: [[-76, -66]]
+          - r: -31
+            q: [[-76, -66]]
+          - r: -30
+            q: [[-77, -67]]
+          - r: -29
+            q: [[-77, -67]]
+          - r: -28
+            q: [[-78, -68]]
+          - r: -27
+            q: [[-78, -68]]
+          - r: -26
+            q: [[-79, -69]]
+          - r: -25
+            q: [[-79, -69]]
+          - r: -24
+            q: [[-80, -70]]
+          - r: -23
+            q: [[-80, -70]]
+          - r: -22
+            q: [[-81, -71]]
+          - r: -21
+            q: [[-81, -71]]
+          - r: -20
+            q: [[-82, -72]]
+          - r: -19
+            q: [[-82, -72]]
+          - r: -18
+            q: [[-83, -73]]
+          - r: -17
+            q: [[-83, -73]]
+          - r: -16
+            q: [[-84, -74]]
+          - r: -15
+            q: [[-84, -74]]
+          - r: -14
+            q: [[-85, -75]]
+          - r: -13
+            q: [[-85, -75]]
+          - r: -12
+            q: [[-86, -76]]
+          - r: -11
+            q: [[-86, -76]]
+          - r: -10
+            q: [[-87, -77]]
+          - r: -9
+            q: [[-87, -77]]
+          - r: -8
+            q: [[-88, -78]]
+          - r: -7
+            q: [[-88, -78]]
+          - r: -6
+            q: [[-89, -79]]
+          - r: -5
+            q: [[-89, -79]]
+          - r: -4
+            q: [[-90, -80]]
+          - r: -3
+            q: [[-90, -80]]
+          - r: -2
+            q: [[-91, -81]]
+          - r: -1
+            q: [[-91, -81]]
+          - r: 0
+            q: [[-92, -82]]
+          - r: 1
+            q: [[-92, -82]]
+          - r: 2
+            q: [[-93, -83]]
+          - r: 3
+            q: [[-93, -83]]
+          - r: 4
+            q: [[-94, -84]]
+          - r: 5
+            q: [[-94, -84]]
+          - r: 6
+            q: [[-95, -85]]
+          - r: 7
+            q: [[-95, -85]]
+          - r: 8
+            q: [[-96, -86]]
+          - r: 9
+            q: [[-96, -86]]
+          - r: 10
+            q: [[-97, -87]]
+          - r: 11
+            q: [[-97, -87]]
+          - r: 12
+            q: [[-98, -88]]
+          - r: 13
+            q: [[-98, -88]]
+          - r: 14
+            q: [[-99, -89]]
+          - r: 15
+            q: [[-99, -89]]
+          - r: 16
+            q: [[-100, -90]]
+          - r: 17
+            q: [[-100, -90]]
+          - r: 18
+            q: [[-101, -91]]
+          - r: 19
+            q: [[-101, -91]]
+          - r: 20
+            q: [[-102, -92]]
+          - r: 21
+            q: [[-102, -92]]
+          - r: 22
+            q: [[-103, -93]]
+          - r: 23
+            q: [[-103, -93]]
+          - r: 24
+            q: [[-104, -94]]
+          - r: 25
+            q: [[-104, -94]]
+          - r: 26
+            q: [[-105, -95]]
+          - r: 27
+            q: [[-105, -95]]
+          - r: 28
+            q: [[-106, -96]]
+          - r: 29
+            q: [[-106, -96]]
+          - r: 30
+            q: [[-107, -97]]
+          - r: 31
+            q: [[-107, -97]]
+          - r: 32
+            q: [[-108, -98]]
+          - r: 33
+            q: [[-108, -98]]
+          - r: 34
+            q: [[-109, -99]]
+          - r: 35
+            q: [[-109, -99]]
+          - r: 36
+            q: [[-110, -100]]
+          - r: 37
+            q: [[-110, -100]]
+          - r: 38
+            q: [[-111, -101]]
+          - r: 39
+            q: [[-111, -101]]
+          - r: 40
+            q: [[-112, -102]]
+          - r: 41
+            q: [[-112, -102]]
+          - r: 42
+            q: [[-113, -103]]
+          - r: 43
+            q: [[-113, -103]]
+          - r: 44
+            q: [[-114, -104]]
+          - r: 45
+            q: [[-114, -104]]
+          - r: 46
+            q: [[-115, -105]]
+          - r: 47
+            q: [[-115, -105]]
+          - r: 48
+            q: [[-116, -106]]
+          - r: 49
+            q: [[-116, -106]]
+          - r: 50
+            q: [[-117, -107]]
+          - r: 51
+            q: [[-117, -107]]
+          - r: 52
+            q: [[-118, -108]]
+          - r: 53
+            q: [[-118, -108]]
+          - r: 54
+            q: [[-119, -109]]
+          - r: 55
+            q: [[-119, -109]]
+          - r: 56
+            q: [[-120, -110]]
+          - r: 57
+            q: [[-120, -110]]
+          - r: 58
+            q: [[-121, -111]]
+          - r: 59
+            q: [[-121, -111]]
+          - r: 60
+            q: [[-122, -112]]
+          - r: 61
+            q: [[-122, -112]]
+          - r: 62
+            q: [[-123, -113]]
+          - r: 63
+            q: [[-123, -113]]
+          - r: 64
+            q: [[-124, -114]]
+          - r: 65
+            q: [[-124, -114]]
+          - r: 66
+            q: [[-125, -115]]
+          - r: 67
+            q: [[-125, -115]]
+          - r: 68
+            q: [[-126, -116]]
+          - r: 69
+            q: [[-126, -116]]
+          - r: 70
+            q: [[-127, -117]]
+          - r: 71
+            q: [[-127, -117]]
+          - r: 72
+            q: [[-128, -118]]
+          - r: 73
+            q: [[-128, -118]]
+          - r: 74
+            q: [[-129, -119]]
+          - r: 75
+            q: [[-129, -119]]
+          - r: 76
+            q: [[-130, -120]]
+          - r: 77
+            q: [[-130, -120]]
+          - r: 78
+            q: [[-131, -121]]
+          - r: 79
+            q: [[-131, -121]]
+          - r: 80
+            q: [[-132, -122]]
+          - r: 81
+            q: [[-132, -122]]
+          - r: 82
+            q: [[-133, -123]]
+          - r: 83
+            q: [[-133, -123]]
+          - r: 84
+            q: [[-134, -124]]
+          - r: 85
+            q: [[-134, -124]]
+          - r: 86
+            q: [[-135, -125]]
+          - r: 87
+            q: [[-135, -125]]
+          - r: 88
+            q: [[-136, -126]]
+      - id: region-south-grounds
+        name: South grounds
+        lighting: {intensity: 1}
+        cells:
+          - r: 78
+            q: [[-120, 52]]
+          - r: 79
+            q: [[-120, 52]]
+          - r: 80
+            q: [[-121, 51]]
+          - r: 81
+            q: [[-121, 51]]
+          - r: 82
+            q: [[-122, 50]]
+          - r: 83
+            q: [[-122, 50]]
+          - r: 84
+            q: [[-123, 49]]
+          - r: 85
+            q: [[-123, 49]]
+          - r: 86
+            q: [[-124, 48]]
+          - r: 87
+            q: [[-124, 48]]
+          - r: 88
+            q: [[-125, 47]]
+      - id: region-prison-service-passage
+        name: Shared service passage
+        lighting: {intensity: 1}
+        cells:
+          - r: 55
+            q: [[-108, -74]]
+          - r: 56
+            q: [[-109, -75]]
+          - r: 57
+            q: [[-109, -75]]
+          - r: 58
+            q: [[-110, -76]]
+          - r: 59
+            q: [[-110, -76]]
+          - r: 60
+            q: [[-111, -77]]
+    propDeclarations: {}
+    arrangementDeclarations: {}
+    monsterDeclarations:
+      - id: gate-guard-1
+        ref: dnd5e:monsters:guard
+        startingCell:
+          location:
+            q: -32
+            r: 59
+      - id: gate-guard-2
+        ref: dnd5e:monsters:guard
+        startingCell:
+          location:
+            q: -35
+            r: 59
+      - id: gate-guard-3
+        ref: dnd5e:monsters:guard
+        startingCell:
+          location:
+            q: -28
+            r: 59
+      - id: gate-lt
+        ref: dnd5e:monsters:guard
+        startingCell:
+          location:
+            q: -30
+            r: 57
+    partyStart:
+      q: -34
+      r: 63
+    monsterBindings:
+      gate-guard-1:
+        faction: gate-watch
+        table: gate-watch-idle
+        options:
+          - id: claim-entertainment
+            say: We are the entertainment. Want a demonstration?
+            check:
+              - ability: performance
+                dc: 11
+            success:
+              - say: All right, that will do. Go on through.
+                fact: gate-admitted
+            failure:
+              - say: That is quite enough. Move along.
+                fact: gate-first-warning
+          - id: claim-invited-guests
+            say: We're invited guests. We're expected inside.
+            check:
+              - ability: deception
+                dc: 11
+            success:
+              - say: Fine. Go on through, then. Don't keep them waiting.
+                fact: gate-admitted
+            failure:
+              - say: Expected by whom? I don't believe you. Move along.
+                fact: gate-first-warning
+      gate-guard-2:
+        faction: gate-watch
+        table: gate-watch-idle
+      gate-guard-3:
+        faction: gate-watch
+        table: gate-watch-idle
+      gate-lt:
+        faction: gate-watch
+        table: gate-watch-idle
+    doorBindings:
+      connection-01-door: {}
+      connection-06-door: {}
+      connection-02-door: {}
+      connection-13-door: {}
+      connection-14-door: {}
+      connection-26-door: {}
+      connection-03-door: {}
+      connection-04-door: {}
+      connection-08-door: {}
+      connection-10-door: {}
+      stables-forecourt-door: {}
+      connection-05-door: {}
+      connection-16-door: {}
+      connection-07-door: {}
+      passage-stables-door: {}
+      connection-09-door: {}
+      connection-11-door: {}
+      connection-12-door: {}
+      connection-23-door: {}
+      connection-21-door: {}
+      connection-29-door: {}
+      passage-prison-door: {}
+      connection-24-door: {}
+      connection-30-door: {}
+      connection-17-door: {}
+      connection-19-door: {}
+      connection-20-door: {}
+      connection-15-door: {}
+      connection-22-door: {}
+      connection-28-door: {}
+      connection-25-door: {}
+      connection-18-door: {}
+      connection-27-door: {}
