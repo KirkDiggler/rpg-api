@@ -15,10 +15,11 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 )
 
-// benchKeys are the benchmark keep's two fixtures (rpg-project#740, plan
-// G6): keep scale and the 30k ceiling. They are the only fixtures these
-// tests name; no count of shelf files is pinned.
-var benchKeys = []string{benchKeep, "bench-keep-30k"}
+// benchKeys are the benchmark keep's fixtures: keep scale and the 30k
+// ceiling (rpg-project#740, plan G6), and the garrison keep, keep scale with
+// a standing garrison and patrols (rpg-project#766 S1). They are the only
+// fixtures these tests name; no count of shelf files is pinned.
+var benchKeys = []string{benchKeep, "bench-keep-30k", "bench-keep-garrison"}
 
 // benchKeep is the keep-scale fixture.
 const benchKeep = "bench-keep"
