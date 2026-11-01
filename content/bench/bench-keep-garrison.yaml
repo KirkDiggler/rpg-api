@@ -111,6 +111,11 @@ tables:
       - { hold: {} }
 factions:
   - { id: garrison, temper: { soldier: 2, coward: 1 } }
+dispositions:
+  - between:
+      - garrison
+      - party
+    stance: neutral
 exits:
   - { id: gate, cell: { q: 20, r: 79 } }
   - { id: postern, cell: { q: 71, r: 0 } }
