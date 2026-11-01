@@ -177,6 +177,7 @@ var stateKindToProto = map[sdk.StateKind]sessionpb.StateKind{
 	sdk.StateConcentrationEnded: sessionpb.StateKind_STATE_KIND_CONCENTRATION_ENDED,
 	sdk.StateConditionRemoved:   sessionpb.StateKind_STATE_KIND_CONDITION_REMOVED,
 	sdk.StateExperience:         sessionpb.StateKind_STATE_KIND_EXPERIENCE,
+	sdk.StateMachine:            sessionpb.StateKind_STATE_KIND_MACHINE,
 }
 
 var senseToProto = map[sdk.Sense]sessionpb.Sense{
@@ -207,6 +208,7 @@ var clockMarkToProto = map[sdk.ClockMark]sessionpb.ClockMark{
 	sdk.ClockEnded:            sessionpb.ClockMark_CLOCK_MARK_ENDED,
 	sdk.ClockWindowOpened:     sessionpb.ClockMark_CLOCK_MARK_WINDOW_OPENED,
 	sdk.ClockRollWindowOpened: sessionpb.ClockMark_CLOCK_MARK_ROLL_WINDOW_OPENED,
+	sdk.ClockWakeCut:          sessionpb.ClockMark_CLOCK_MARK_WAKE_CUT,
 }
 
 var influenceKindToProto = map[sdk.InfluenceKind]sessionpb.InfluenceKind{
@@ -780,6 +782,9 @@ func stateToProto(b sdk.StateChange) (*sessionpb.StateChange, error) {
 			Character: g.Character, Amount: int32(g.Amount), Total: int32(g.Total), //nolint:gosec // experience fits int32
 		})
 	}
+	if m := b.Machine; m != nil {
+		out.Machine = &sessionpb.MachineChange{From: m.From, To: m.To, Reason: m.Reason}
+	}
 	return out, p.err
 }
 
@@ -865,6 +870,11 @@ func clockToProto(b sdk.ClockEntry) (*sessionpb.ClockEntry, error) {
 		out.RollWindow = &sessionpb.RollWindowOpened{
 			PresentationId: r.PresentationID, Audience: p.one(r.Audience),
 			Offer: reactionRefToProto(&r.Offer), Roll: p.roll(r.Roll),
+		}
+	}
+	if w := b.WakeCut; w != nil {
+		out.WakeCut = &sessionpb.WakeCut{
+			Matched: int32(w.Matched), Dropped: int32(w.Dropped), //nolint:gosec // beat counts fit int32
 		}
 	}
 	return out, p.err
