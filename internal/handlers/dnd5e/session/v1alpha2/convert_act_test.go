@@ -231,12 +231,14 @@ func everyBody() map[string]bodyCase {
 				Concentration: &sdk.ConcentrationEnded{Spell: bless, Reason: "rest"},
 				Condition:     &sdk.ConditionLifted{Ref: "dnd5e:conditions:blessed", Name: "Blessed", SourceID: "alice", Reason: "rest"},
 				Experience:    []sdk.ExperienceGrant{{Character: "alice", Amount: 25, Total: 325}},
+				Machine:       &sdk.MachineChange{From: "waiting", To: "marching", Reason: "the gate is fighting"},
 			},
 			act(sessionpb.Family_FAMILY_STATE, &sessionpb.StateChange{Party: aliceP, Change: sessionpb.StateKind_STATE_KIND_EXPERIENCE,
 				Downed: &sessionpb.Downed{Kind: "creature"}, Stance: &sessionpb.StanceTurn{Between: []*sessionpb.Party{guardsP, aliceP}, Stance: "hostile", Cause: "insult"},
 				Concentration: &sessionpb.ConcentrationEnded{Spell: blessP, Reason: "rest"},
 				Condition:     &sessionpb.ConditionLifted{Ref: "dnd5e:conditions:blessed", Name: "Blessed", SourceId: "alice", Reason: "rest"},
 				Experience:    []*sessionpb.ExperienceGrant{{Character: "alice", Amount: 25, Total: 325}},
+				Machine:       &sessionpb.MachineChange{From: "waiting", To: "marching", Reason: "the gate is fighting"},
 			})},
 		"perception": {sdk.FamilyPerception, perceptionSDK(), act(sessionpb.Family_FAMILY_PERCEPTION, perceptionProto())},
 		"clock": {sdk.FamilyClock,
@@ -249,6 +251,7 @@ func everyBody() map[string]bodyCase {
 				Window: &sdk.WindowOpened{Member: alice, From: cell, To: spatial.Position{X: 4, Y: -2},
 					Windows: []sdk.WindowOffer{{Audience: gate1, Reaction: oa}}},
 				RollWindow: &sdk.RollWindowOpened{PresentationID: "p", Audience: alice, Offer: oa, Roll: d20},
+				WakeCut:    &sdk.WakeCut{Matched: 40, Dropped: 8},
 			},
 			act(sessionpb.Family_FAMILY_CLOCK, &sessionpb.ClockEntry{Mark: sessionpb.ClockMark_CLOCK_MARK_WINDOW_OPENED, Tick: 9,
 				Turn:      &sessionpb.TurnPassed{Member: aliceP, Next: gate1P},
@@ -260,6 +263,7 @@ func everyBody() map[string]bodyCase {
 				Window: &sessionpb.WindowOpened{Member: aliceP, From: cellP, To: &sessionpb.Position{X: 4, Y: -2},
 					Windows: []*sessionpb.WindowOffer{{Audience: gate1P, Reaction: oaP}}},
 				RollWindow: &sessionpb.RollWindowOpened{PresentationId: "p", Audience: aliceP, Offer: oaP, Roll: d20P},
+				WakeCut:    &sessionpb.WakeCut{Matched: 40, Dropped: 8},
 			})},
 	}
 }
@@ -387,6 +391,53 @@ func (s *ConvertActSuite) TestConvertUnknownValueRefuses() {
 	s.Require().ErrorIs(err, errUnknownValue)
 	s.True(got.GetRefused())
 	s.Equal("id-2", got.GetId())
+}
+
+// TestConvertMachineStateChange (rpg-project#776): a creature's machine moving
+// between states crosses as STATE_KIND_MACHINE with the state left, the state
+// entered and the transition's reason, and nothing else set.
+func (s *ConvertActSuite) TestConvertMachineStateChange() {
+	got, err := actToProto(sdk.Act{ID: "id-1", Family: sdk.FamilyState, Body: sdk.StateChange{
+		Party: gate1, Change: sdk.StateMachine,
+		Machine: &sdk.MachineChange{From: "waiting", To: "marching", Reason: "the gate is fighting"},
+	}})
+	s.Require().NoError(err)
+	want := &sessionpb.StateChange{Party: gate1P, Change: sessionpb.StateKind_STATE_KIND_MACHINE,
+		Machine: &sessionpb.MachineChange{From: "waiting", To: "marching", Reason: "the gate is fighting"}}
+	s.True(proto.Equal(want, got.GetState()), "want %v\n got %v", want, got.GetState())
+}
+
+// TestConvertWakeCut (rpg-project#776): a raise cut at its bound crosses as
+// CLOCK_MARK_WAKE_CUT carrying the beats it matched and the beats it dropped.
+func (s *ConvertActSuite) TestConvertWakeCut() {
+	got, err := actToProto(sdk.Act{ID: "id-1", Family: sdk.FamilyClock, Body: sdk.ClockEntry{
+		Mark: sdk.ClockWakeCut, Tick: 12, WakeCut: &sdk.WakeCut{Matched: 40, Dropped: 8},
+	}})
+	s.Require().NoError(err)
+	want := &sessionpb.ClockEntry{Mark: sessionpb.ClockMark_CLOCK_MARK_WAKE_CUT, Tick: 12,
+		WakeCut: &sessionpb.WakeCut{Matched: 40, Dropped: 8}}
+	s.True(proto.Equal(want, got.GetClock()), "want %v\n got %v", want, got.GetClock())
+}
+
+// TestConvertUnknownStateAndClockMarkRefuse: a state kind or clock mark this
+// build cannot spell still refuses its act, the machine and wake-cut entries
+// in the tables notwithstanding.
+func (s *ConvertActSuite) TestConvertUnknownStateAndClockMarkRefuse() {
+	got, err := actToProto(sdk.Act{ID: "id-1", Family: sdk.FamilyState, Body: sdk.StateChange{
+		Party: gate1, Change: "daydreaming", Machine: &sdk.MachineChange{From: "waiting", To: "marching"},
+	}})
+	s.Require().ErrorIs(err, errUnknownValue)
+	s.True(got.GetRefused())
+	s.Contains(got.GetRefusal(), "daydreaming")
+	s.Nil(got.GetBody())
+
+	got, err = actToProto(sdk.Act{ID: "id-2", Family: sdk.FamilyClock, Body: sdk.ClockEntry{
+		Mark: "nap_cut", WakeCut: &sdk.WakeCut{Matched: 1, Dropped: 1},
+	}})
+	s.Require().ErrorIs(err, errUnknownValue)
+	s.True(got.GetRefused())
+	s.Contains(got.GetRefusal(), "nap_cut")
+	s.Nil(got.GetBody())
 }
 
 // TestConvertEndedCarriesTheDeclaredResult (rpg-project#733): the ended entry
