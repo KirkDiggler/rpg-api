@@ -747,6 +747,9 @@ func tableAnswerToProto(b sdk.TableAnswer) (*sessionpb.TableAnswer, error) {
 			Percent: int32(c.Percent), Loaded: int32(c.Loaded), //nolint:gosec // table weights fit int32
 		})
 	}
+	if cue := b.Activity; cue != nil {
+		out.Activity = &sessionpb.ActivityCue{Ref: cue.Ref, Cycles: cue.Cycles}
+	}
 	if d := b.Dealt; d != nil {
 		out.Dealt = &sessionpb.Temper{Faction: p.one(d.Faction), Temper: d.Temper, Roll: p.rollValue(d.Roll)}
 	}
