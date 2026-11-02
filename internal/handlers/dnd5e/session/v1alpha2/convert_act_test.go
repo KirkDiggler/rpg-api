@@ -143,9 +143,9 @@ func everyBody() map[string]bodyCase {
 	ans := answer()
 	return map[string]bodyCase{
 		"walk": {sdk.FamilyAct,
-			sdk.WalkAct{Mover: alice, Path: []sdk.WalkStep{{Cell: cell, Doors: []string{"gate"}}, {Cell: spatial.Position{X: 4, Y: -2}}}, Cause: "shoved"},
+			sdk.WalkAct{Mover: alice, Path: []sdk.WalkStep{{Cell: cell, Doors: []string{"gate"}}, {Cell: spatial.Position{X: 4, Y: -2}}}, Cause: "shoved", Forced: true},
 			act(sessionpb.Family_FAMILY_ACT, &sessionpb.WalkAct{
-				Mover: aliceP, Path: []*sessionpb.WalkStep{{Cell: cellP, Doors: []string{"gate"}}, {Cell: &sessionpb.Position{X: 4, Y: -2}}}, Cause: "shoved",
+				Mover: aliceP, Path: []*sessionpb.WalkStep{{Cell: cellP, Doors: []string{"gate"}}, {Cell: &sessionpb.Position{X: 4, Y: -2}}}, Cause: "shoved", Forced: true,
 			})},
 		"attack": {sdk.FamilyReaction,
 			sdk.AttackAct{
@@ -373,6 +373,15 @@ func (s *ConvertActSuite) TestConvertAbsentPartiesStayAbsent() {
 	s.Require().NoError(err)
 	s.Nil(got.GetDoor().GetBy())
 	s.Nil(got.GetDoor().GetRoll())
+}
+
+// TestWalkToProtoOrdinaryWalkLeavesForcedFalse proves absent/legacy remains a
+// chosen walk: the canonical SDK zero value crosses without special casing
+// (rpg-toolkit#2227).
+func (s *ConvertActSuite) TestWalkToProtoOrdinaryWalkLeavesForcedFalse() {
+	got, err := walkToProto(sdk.WalkAct{Mover: alice, Path: []sdk.WalkStep{{Cell: cell}}})
+	s.Require().NoError(err)
+	s.False(got.GetForced())
 }
 
 // TestConvertUnknownValueRefuses: a closed-set value this build cannot spell
