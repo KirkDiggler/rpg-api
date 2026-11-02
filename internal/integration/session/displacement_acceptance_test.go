@@ -8,11 +8,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	storypb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
+	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 )
 
@@ -35,6 +37,36 @@ func forcedWalk(t *testing.T, acts []*storypb.Act, mover string) *storypb.Act {
 	}
 	require.FailNowf(t, "forced walk missing", "no forced walk for %q", mover)
 	return nil
+}
+
+// publishedActs takes only what the broker had already published when the
+// verb returned. The non-blocking receive is deliberate: a later publication
+// cannot make this assertion pass.
+func publishedActs(subscription *sessionorch.ActSubscription) []sdk.Act {
+	var acts []sdk.Act
+	for {
+		select {
+		case brokered, ok := <-subscription.Acts():
+			if !ok {
+				return acts
+			}
+			acts = append(acts, brokered.Act)
+		default:
+			return acts
+		}
+	}
+}
+
+func publishedForcedWalk(t *testing.T, acts []sdk.Act, mover string) sdk.Act {
+	t.Helper()
+	for _, act := range acts {
+		walk, ok := act.Body.(sdk.WalkAct)
+		if ok && walk.Mover.ID == mover && walk.Forced {
+			return act
+		}
+	}
+	require.FailNowf(t, "published forced walk missing", "no forced walk for %q at Cast return", mover)
+	return sdk.Act{}
 }
 
 // TestAcceptance_ThunderwaveForcedWalkReachesBothObservers drives the shipped
@@ -88,16 +120,35 @@ func TestAcceptance_ThunderwaveForcedWalkReachesBothObservers(t *testing.T) {
 	}()
 	fighterStream.settle(t, 1, 2*time.Second)
 
+	// These subscriptions observe the server's publish boundary directly. They
+	// must already contain the forced walk when Cast returns; unlike the live
+	// stream flush below, no wait can admit a late publication.
+	bardPublished, err := h.manager.ActBroker.Subscribe(sessionID, bardID)
+	require.NoError(t, err)
+	defer func() { _ = bardPublished.Close() }()
+	fighterPublished, err := h.manager.ActBroker.Subscribe(sessionID, fighterID)
+	require.NoError(t, err)
+	defer func() { _ = fighterPublished.Close() }()
+
 	row := castRowForSession(bardCtx, t, h, sessionID, bardID, thunderwaveSpellRef)
 	_, err = h.handler.Cast(bardCtx, &sessionpb.CastRequest{
 		Session: sessionID, Member: bardID, DeclarationId: row.GetId(), Cell: &sessionpb.Position{X: 3, Y: 0},
 	})
 	require.NoError(t, err)
 
+	bardPublishedWalk := publishedForcedWalk(t, publishedActs(bardPublished), skeletonID)
+	fighterPublishedWalk := publishedForcedWalk(t, publishedActs(fighterPublished), skeletonID)
+	require.Equal(t, bardPublishedWalk.ID, fighterPublishedWalk.ID,
+		"the same push must already be published to both eligible observers when Cast returns")
+
+	// The waits below only flush acts that the publish-boundary assertions above
+	// already proved were queued before Cast returned.
 	bardStory := storyOf(bardCtx, t, h.story, sessionID, bardID)
 	fighterStory := storyOf(fighterCtx, t, h.story, sessionID, fighterID)
 	bardWalk := forcedWalk(t, bardStream.settle(t, len(bardStory), 2*time.Second), skeletonID)
 	fighterWalk := forcedWalk(t, fighterStream.settle(t, len(fighterStory), 2*time.Second), skeletonID)
+	require.Equal(t, bardPublishedWalk.ID, bardWalk.GetId())
+	require.Equal(t, fighterPublishedWalk.ID, fighterWalk.GetId())
 	require.Equal(t, bardWalk.GetId(), fighterWalk.GetId(), "the same push reaches both eligible observers")
 	require.Equal(t, refs.Spells.Thunderwave().String(), bardWalk.GetWalk().GetCause())
 	require.Equal(t, refs.Spells.Thunderwave().String(), fighterWalk.GetWalk().GetCause())
