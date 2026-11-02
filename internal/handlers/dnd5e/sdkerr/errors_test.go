@@ -94,6 +94,8 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 
 		// FAILED_PRECONDITION -- well-formed request, world state refuses it.
 		{"ErrInBubble", sdk.ErrInBubble, codes.FailedPrecondition},
+		// A sneak refused in plain view (rpg-project#768 R11).
+		{"ErrSeen", sdk.ErrSeen, codes.FailedPrecondition},
 		{"ErrNotInFight", sdk.ErrNotInFight, codes.FailedPrecondition},
 		{"ErrClosed", sdk.ErrClosed, codes.FailedPrecondition},
 		{"ErrNotACharacter", sdk.ErrNotACharacter, codes.FailedPrecondition},

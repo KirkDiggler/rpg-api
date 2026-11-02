@@ -223,7 +223,11 @@ func StatusError(err error) error {
 	//   ErrStaleDeclaration for a prop no longer on the speaker's menu. Same shape as ErrOutOfReach above -- a
 	//   well-formed call the current world state refuses, not a caller
 	//   naming something that doesn't exist.
+	//
+	//   ErrSeen (rpg-project#768 R11) -- a sneak refused in plain view: the
+	//   member and the call are real, somebody can see them right now.
 	case errors.Is(err, sdk.ErrInBubble),
+		errors.Is(err, sdk.ErrSeen),
 		errors.Is(err, sdk.ErrNotInFight),
 		errors.Is(err, sdk.ErrClosed),
 		errors.Is(err, sdk.ErrNotACharacter),
