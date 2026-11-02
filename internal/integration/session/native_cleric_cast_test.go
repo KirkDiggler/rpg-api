@@ -38,11 +38,20 @@ func nativeClericCombatSceneAt(t *testing.T, targetX, targetY int, preferred ...
 	// before the real one (a character holds one seat).
 	const exploration = castSessionID + "-exploration"
 	h.launch(t, exploration, buildOpenRoom(t, 12, 6), party...)
+	// THE BAR IS YOURS ON THE WORLD CLOCK (rpg-project#785 R1, session
+	// v0.157.0): a cleric with a castable spell is offered a Cast row in free
+	// roam, priced in rounds of the world rather than slots. Before that ruling
+	// this loop asserted the opposite; the mapping is the same either way, the
+	// clock no longer hides it.
 	worldOffers, err := h.handler.Afford(ctx, &sessionpb.AffordRequest{Session: exploration, Member: id})
 	require.NoError(t, err)
+	worldCast := false
 	for _, offer := range worldOffers.GetDeclarations() {
-		require.False(t, offer.GetVerb() == sessionpb.Verb_VERB_CAST && offer.GetAvailable(), "world-clock exploration does not imply a missing cast mapping")
+		if offer.GetVerb() == sessionpb.Verb_VERB_CAST && offer.GetAvailable() {
+			worldCast = true
+		}
 	}
+	require.True(t, worldCast, "world-clock exploration offers the cleric's cast row (rpg-project#785 R1)")
 	_, err = h.handler.Exit(ctx, &sessionpb.ExitRequest{Session: exploration, Member: id})
 	require.NoError(t, err)
 	_, err = h.handler.Exit(allyCtx, &sessionpb.ExitRequest{Session: exploration, Member: "alice"})
