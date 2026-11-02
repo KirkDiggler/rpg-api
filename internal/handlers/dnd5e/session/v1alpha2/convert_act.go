@@ -557,7 +557,7 @@ func spellRefToProto(r sdk.SpellRef) *sessionpb.SpellRef {
 
 func walkToProto(b sdk.WalkAct) (*sessionpb.WalkAct, error) {
 	var p parties
-	out := &sessionpb.WalkAct{Mover: p.one(b.Mover), Cause: b.Cause}
+	out := &sessionpb.WalkAct{Mover: p.one(b.Mover), Cause: b.Cause, Forced: b.Forced}
 	for _, s := range b.Path {
 		out.Path = append(out.Path, &sessionpb.WalkStep{Cell: positionToProto(s.Cell), Doors: s.Doors})
 	}
