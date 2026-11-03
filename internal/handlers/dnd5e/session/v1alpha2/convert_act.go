@@ -164,6 +164,15 @@ var attackOutcomeToProto = map[sdk.AttackOutcome]sessionpb.AttackOutcome{
 	sdk.AttackWarded: sessionpb.AttackOutcome_ATTACK_OUTCOME_WARDED,
 }
 
+// moveKindToProto maps how a walk moved the body (rpg-project#825, design
+// R1). "" is OWN: a walk folded before the kind existed is the mover's own.
+var moveKindToProto = map[sdk.MoveKind]sessionpb.MoveKind{
+	"":                sessionpb.MoveKind_MOVE_KIND_OWN,
+	sdk.MoveOwn:       sessionpb.MoveKind_MOVE_KIND_OWN,
+	sdk.MoveCompelled: sessionpb.MoveKind_MOVE_KIND_COMPELLED,
+	sdk.MoveDisplaced: sessionpb.MoveKind_MOVE_KIND_DISPLACED,
+}
+
 var castOutcomeToProto = map[sdk.CastOutcome]sessionpb.CastOutcome{
 	sdk.CastMissed: sessionpb.CastOutcome_CAST_OUTCOME_MISS,
 	sdk.CastWarded: sessionpb.CastOutcome_CAST_OUTCOME_WARDED,
@@ -556,8 +565,17 @@ func spellRefToProto(r sdk.SpellRef) *sessionpb.SpellRef {
 // --- act bodies ------------------------------------------------------------
 
 func walkToProto(b sdk.WalkAct) (*sessionpb.WalkAct, error) {
+	kind, err := lookup(moveKindToProto, b.Kind, "move kind")
+	if err != nil {
+		return nil, err
+	}
 	var p parties
-	out := &sessionpb.WalkAct{Mover: p.one(b.Mover), Cause: b.Cause, Forced: b.Forced}
+	// Forced is the deprecated mirror of kind == displaced, still set for a
+	// reader that does not know kind (protos deprecate, never break).
+	out := &sessionpb.WalkAct{
+		Mover: p.one(b.Mover), Cause: b.Cause, Kind: kind,
+		Forced: b.Forced, //nolint:staticcheck // the deprecated mirror is written on purpose (rpg-project#825)
+	}
 	for _, s := range b.Path {
 		out.Path = append(out.Path, &sessionpb.WalkStep{Cell: positionToProto(s.Cell), Doors: s.Doors})
 	}

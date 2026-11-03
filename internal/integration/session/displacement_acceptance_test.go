@@ -152,4 +152,76 @@ func TestAcceptance_ThunderwaveForcedWalkReachesBothObservers(t *testing.T) {
 	require.Equal(t, bardWalk.GetId(), fighterWalk.GetId(), "the same push reaches both eligible observers")
 	require.Equal(t, refs.Spells.Thunderwave().String(), bardWalk.GetWalk().GetCause())
 	require.Equal(t, refs.Spells.Thunderwave().String(), fighterWalk.GetWalk().GetCause())
+	// THE KIND (rpg-project#825): a push is displaced, and forced mirrors it.
+	require.Equal(t, sdk.MoveDisplaced, bardPublishedWalk.Body.(sdk.WalkAct).Kind)
+	require.Equal(t, storypb.MoveKind_MOVE_KIND_DISPLACED, bardWalk.GetWalk().GetKind())
+	require.Equal(t, storypb.MoveKind_MOVE_KIND_DISPLACED, fighterWalk.GetWalk().GetKind())
+	require.True(t, fighterWalk.GetWalk().GetForced())
+}
+
+// TestAcceptance_DissonantWhispersFleeIsCompelled drives the shipped Dissonant
+// Whispers through the real handler: the skeleton fails its save and flees on
+// its own legs. The served walk is MOVE_KIND_COMPELLED with no forced
+// (rpg-project#825, design R1). Nobody stands beside the skeleton, so the flee
+// asks nobody and walks in one go.
+func TestAcceptance_DissonantWhispersFleeIsCompelled(t *testing.T) {
+	h := newAcceptanceHarnessWithDice(t, pushDice{})
+	const sessionID = "displacement-flee"
+	const fighterID = "fighter"
+	const skeletonID = "skel-1"
+
+	bardID := createFinalizedBaneBard(t, h, "player-bard")
+	bardCtx := auth.WithPlayerID(context.Background(), "player-bard")
+	fighterCtx := auth.WithPlayerID(context.Background(), "player-fighter")
+	_, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
+		Character: &entities.Character{Data: armedFighter(fighterID, "player-fighter")},
+	})
+	require.NoError(t, err)
+
+	h.launch(t, sessionID,
+		withMonsters(buildOpenRoom(t, 12, 6), monsterAt(skeletonID, refs.Monsters.Skeleton().String(), 4, 2)),
+		seatAt(bardID, 0, 2), seatAt(fighterID, 0, 4))
+	inCombat(t, h.charRepo, bardID, 1)
+	inCombat(t, h.charRepo, fighterID, 1)
+
+	turn, err := h.handler.Turn(bardCtx, &sessionpb.TurnRequest{Session: sessionID, Member: bardID})
+	require.NoError(t, err)
+	if turn.GetActive() == fighterID {
+		_, err = h.handler.EndTurn(fighterCtx, &sessionpb.EndTurnRequest{
+			Session: sessionID, Member: fighterID,
+			DeclarationId: currentDeclarationID(fighterCtx, t, h.handler, sessionID, fighterID, sessionpb.Verb_VERB_END_TURN),
+		})
+		require.NoError(t, err)
+	}
+
+	bardPublished, err := h.manager.ActBroker.Subscribe(sessionID, bardID)
+	require.NoError(t, err)
+	defer func() { _ = bardPublished.Close() }()
+
+	row := castRowForSession(bardCtx, t, h, sessionID, bardID, dissonantWhispersSpellRef)
+	_, err = h.handler.Cast(bardCtx, &sessionpb.CastRequest{
+		Session: sessionID, Member: bardID, DeclarationId: row.GetId(), Targets: []string{skeletonID},
+	})
+	require.NoError(t, err)
+
+	var published *sdk.WalkAct
+	for _, act := range publishedActs(bardPublished) {
+		if walk, ok := act.Body.(sdk.WalkAct); ok && walk.Mover.ID == skeletonID {
+			published = &walk
+		}
+	}
+	require.NotNil(t, published, "the flee was published when Cast returned")
+	require.Equal(t, sdk.MoveCompelled, published.Kind)
+	require.False(t, published.Forced, "a flee is not displaced")
+	require.Equal(t, refs.Spells.DissonantWhispers().String(), published.Cause)
+
+	var served *storypb.WalkAct
+	for _, act := range storyOf(bardCtx, t, h.story, sessionID, bardID) {
+		if walk := act.GetWalk(); walk != nil && walk.GetMover().GetId() == skeletonID {
+			served = walk
+		}
+	}
+	require.NotNil(t, served, "the bard's story serves the flee")
+	require.Equal(t, storypb.MoveKind_MOVE_KIND_COMPELLED, served.GetKind())
+	require.False(t, served.GetForced())
 }
