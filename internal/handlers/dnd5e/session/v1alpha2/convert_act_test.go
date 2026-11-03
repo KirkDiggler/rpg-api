@@ -143,9 +143,10 @@ func everyBody() map[string]bodyCase {
 	ans := answer()
 	return map[string]bodyCase{
 		"walk": {sdk.FamilyAct,
-			sdk.WalkAct{Mover: alice, Path: []sdk.WalkStep{{Cell: cell, Doors: []string{"gate"}}, {Cell: spatial.Position{X: 4, Y: -2}}}, Cause: "shoved", Forced: true},
+			sdk.WalkAct{Mover: alice, Path: []sdk.WalkStep{{Cell: cell, Doors: []string{"gate"}}, {Cell: spatial.Position{X: 4, Y: -2}}}, Cause: "shoved", Kind: sdk.MoveDisplaced, Forced: true},
 			act(sessionpb.Family_FAMILY_ACT, &sessionpb.WalkAct{
 				Mover: aliceP, Path: []*sessionpb.WalkStep{{Cell: cellP, Doors: []string{"gate"}}, {Cell: &sessionpb.Position{X: 4, Y: -2}}}, Cause: "shoved", Forced: true,
+				Kind: sessionpb.MoveKind_MOVE_KIND_DISPLACED,
 			})},
 		"attack": {sdk.FamilyReaction,
 			sdk.AttackAct{
@@ -382,6 +383,37 @@ func (s *ConvertActSuite) TestWalkToProtoOrdinaryWalkLeavesForcedFalse() {
 	got, err := walkToProto(sdk.WalkAct{Mover: alice, Path: []sdk.WalkStep{{Cell: cell}}})
 	s.Require().NoError(err)
 	s.False(got.GetForced())
+	s.Equal(sessionpb.MoveKind_MOVE_KIND_OWN, got.GetKind(), "an empty kind is own")
+}
+
+// TestWalkToProtoNamesEveryKind is the table over the three kinds
+// (rpg-project#825): each crosses as its own enum, and forced is carried as
+// the session set it, a mirror of displaced.
+func (s *ConvertActSuite) TestWalkToProtoNamesEveryKind() {
+	cases := []struct {
+		kind   sdk.MoveKind
+		want   sessionpb.MoveKind
+		forced bool
+	}{
+		{sdk.MoveOwn, sessionpb.MoveKind_MOVE_KIND_OWN, false},
+		{sdk.MoveCompelled, sessionpb.MoveKind_MOVE_KIND_COMPELLED, false},
+		{sdk.MoveDisplaced, sessionpb.MoveKind_MOVE_KIND_DISPLACED, true},
+	}
+	for _, tc := range cases {
+		s.Run(string(tc.kind), func() {
+			got, err := walkToProto(sdk.WalkAct{Mover: alice, Path: []sdk.WalkStep{{Cell: cell}}, Kind: tc.kind, Forced: tc.forced})
+			s.Require().NoError(err)
+			s.Equal(tc.want, got.GetKind())
+			s.Equal(tc.forced, got.GetForced())
+		})
+	}
+}
+
+// TestWalkToProtoRefusesAKindItCannotSpell: a kind this build has no enum
+// for refuses rather than crossing as a zero that would read as unspecified.
+func (s *ConvertActSuite) TestWalkToProtoRefusesAKindItCannotSpell() {
+	_, err := walkToProto(sdk.WalkAct{Mover: alice, Path: []sdk.WalkStep{{Cell: cell}}, Kind: "sideways"})
+	s.Require().ErrorIs(err, errUnknownValue)
 }
 
 // TestConvertUnknownValueRefuses: a closed-set value this build cannot spell
