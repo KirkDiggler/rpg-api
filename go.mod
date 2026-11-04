@@ -5,18 +5,18 @@ go 1.27.0
 require (
 	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20261103041524-4f44fc4c7c6f
 	github.com/KirkDiggler/rpg-toolkit/core v0.12.1
-	github.com/KirkDiggler/rpg-toolkit/dice v0.3.2
-	github.com/KirkDiggler/rpg-toolkit/events v0.6.3
-	github.com/KirkDiggler/rpg-toolkit/npc v0.2.0
+	github.com/KirkDiggler/rpg-toolkit/dice v0.3.3
+	github.com/KirkDiggler/rpg-toolkit/events v0.6.4
+	github.com/KirkDiggler/rpg-toolkit/npc v0.2.1
 	github.com/KirkDiggler/rpg-toolkit/play/clock v0.1.0
 	github.com/KirkDiggler/rpg-toolkit/play/interrupt v0.1.0
-	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.2
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.213.0
+	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.3
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.213.5
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.175.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.74.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.74.1
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.162.0
-	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.16.1
-	github.com/KirkDiggler/rpg-toolkit/world v0.4.1
+	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.16.3
+	github.com/KirkDiggler/rpg-toolkit/world v0.4.3
 	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
