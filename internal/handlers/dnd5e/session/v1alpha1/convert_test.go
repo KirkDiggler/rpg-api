@@ -1777,6 +1777,28 @@ func TestSightingToProto_CarriesHoldsDoor(t *testing.T) {
 	require.Empty(t, got.GetHoldsDoor())
 }
 
+// TestSightingToProto_CarriesTheHoldsDirection pins rpg-project#857 (R6): the
+// direction a holder bars and his post's side cross verbatim, the cells in
+// the session's order, and a body that holds nothing crosses both empty.
+func TestSightingToProto_CarriesTheHoldsDirection(t *testing.T) {
+	got := sightingToProto(sdk.Sighting{
+		Subject:      "gate-1",
+		HoldsDoor:    "the-mad-king/gate-wall-door",
+		HoldsAgainst: "entering",
+		HoldsSide:    []spatial.Position{{X: -4, Y: 7}, {X: -3, Y: 7}},
+	})
+	require.Equal(t, "entering", got.GetHoldsAgainst())
+	require.Len(t, got.GetHoldsSide(), 2)
+	require.Equal(t, -4.0, got.GetHoldsSide()[0].GetX())
+	require.Equal(t, 7.0, got.GetHoldsSide()[0].GetY())
+	require.Equal(t, -3.0, got.GetHoldsSide()[1].GetX())
+	require.Equal(t, 7.0, got.GetHoldsSide()[1].GetY())
+
+	got = sightingToProto(sdk.Sighting{Subject: "gate-2"})
+	require.Empty(t, got.GetHoldsAgainst())
+	require.Empty(t, got.GetHoldsSide())
+}
+
 // TestAtlasToProto_MarksAFootprintDoorsCrossings pins rpg-project#852 on the
 // v1alpha1 atlas: the castle gate's crossings (a footprint door's) arrive with
 // crossing true, an edge door's doorway arrives false.
