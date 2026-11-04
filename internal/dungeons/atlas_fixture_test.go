@@ -70,6 +70,13 @@ import (
 // expected output from changes to the projection under test.
 // reference-keep.atlas.json was captured from the API projector at 7e3f2676
 // with the newly published keep file; no projection code changed in that capture.
+//
+// the-mad-king.atlas.json and reference-keep.atlas.json were recaptured at
+// rpg-toolkit encounter b727dad4 (rpg-project#852, R5 H6): a footprint door's
+// crossings are now doorways of the map, each marked crossing. Doorways is
+// the only field that changed, and only by additions (16 for the castle's
+// seven doors, 182 for the keep's), every one marked crossing; no doorway was
+// removed and the other eleven files answer their fixtures unchanged.
 func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBeforeTheWave() {
 	files, err := filepath.Glob(filepath.Join(dungeonstest.ContentDir(s.T()), "*.yaml"))
 	s.Require().NoError(err)

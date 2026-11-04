@@ -48,6 +48,15 @@ func StatusError(err error) error {
 		return nil
 	}
 
+	// A held door's refusal (rpg-project#852, R7) is a sentence for the
+	// player: the session wraps it with its verb ("opendoor: ..."), and the
+	// client shows the message as written, so the detail's own reason is the
+	// whole message. The bare sentinel still has its case below.
+	var held *sdk.DoorHeldError
+	if errors.As(err, &held) {
+		return status.Error(codes.FailedPrecondition, held.Error())
+	}
+
 	switch {
 	// NOT_FOUND -- the caller named something that does not exist.
 	case errors.Is(err, sdk.ErrNoSession),
@@ -457,7 +466,14 @@ func StatusError(err error) error {
 		// become legal once the situation does: the fight ends, or the
 		// character leaves the other run.
 		errors.Is(err, sdk.ErrArmorInFight),
-		errors.Is(err, sdk.ErrSeatedElsewhere):
+		errors.Is(err, sdk.ErrSeatedElsewhere),
+		// ErrDoorHeld (rpg-project#852, R7) -- a door verb (open, close,
+		// unlock) refused because a body holding the door's opening bars it
+		// against the actor. The request is well formed and the door is real;
+		// it becomes legal once the holder leaves his post (cowed, drawn off,
+		// down). Its *sdk.DoorHeldError detail is answered above with the
+		// reason alone; this case is the bare sentinel's.
+		errors.Is(err, sdk.ErrDoorHeld):
 		return status.Error(codes.FailedPrecondition, err.Error())
 
 	// PERMISSION_DENIED -- the authenticated principal is real but owns no

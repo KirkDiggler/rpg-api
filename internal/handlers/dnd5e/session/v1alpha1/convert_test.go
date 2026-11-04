@@ -1765,3 +1765,32 @@ func TestGetView_WatchZoneCellsReadTheirLiteralWireFields(t *testing.T) {
 	require.Equal(t, 2.0, z.GetCells()[0].GetX())
 	require.Equal(t, -1.0, z.GetCells()[0].GetY())
 }
+
+// TestSightingToProto_CarriesHoldsDoor pins rpg-project#852: the door whose
+// opening a body bars against THIS viewer crosses verbatim, and a body that
+// holds nothing crosses empty -- the converter never fills it.
+func TestSightingToProto_CarriesHoldsDoor(t *testing.T) {
+	got := sightingToProto(sdk.Sighting{Subject: "gate-1", HoldsDoor: "the-mad-king/gate-wall-door"})
+	require.Equal(t, "the-mad-king/gate-wall-door", got.GetHoldsDoor())
+
+	got = sightingToProto(sdk.Sighting{Subject: "gate-2"})
+	require.Empty(t, got.GetHoldsDoor())
+}
+
+// TestAtlasToProto_MarksAFootprintDoorsCrossings pins rpg-project#852 on the
+// v1alpha1 atlas: the castle gate's crossings (a footprint door's) arrive with
+// crossing true, an edge door's doorway arrives false.
+func TestAtlasToProto_MarksAFootprintDoorsCrossings(t *testing.T) {
+	got := AtlasToProto(&sdk.Atlas{
+		Doorways: []sdk.AtlasDoorway{
+			{Door: "the-mad-king/gate-wall-door", From: spatial.Position{X: -3, Y: 7}, To: spatial.Position{X: -3, Y: 6}, Crossing: true},
+			{Door: "the-mad-king/gate-wall-door", From: spatial.Position{X: -4, Y: 7}, To: spatial.Position{X: -3, Y: 6}, Crossing: true},
+			{Door: "door-1", From: spatial.Position{X: 5, Y: 1}, To: spatial.Position{X: 6, Y: 1}},
+		},
+	})
+	require.Len(t, got.GetDoorways(), 3)
+	require.True(t, got.GetDoorways()[0].GetCrossing())
+	require.True(t, got.GetDoorways()[1].GetCrossing())
+	require.Equal(t, "door-1", got.GetDoorways()[2].GetConnection())
+	require.False(t, got.GetDoorways()[2].GetCrossing())
+}

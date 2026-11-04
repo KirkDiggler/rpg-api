@@ -766,3 +766,32 @@ func (s *ConvertActSuite) TestDamageTermSubtracts() {
 	s.Equal("-1d4", got.GetExpression())
 	s.Equal(int32(-3), got.GetTotal())
 }
+
+// TestPerceptionMarksAFootprintDoorsCrossings pins rpg-project#852 on the act
+// stream: a revealed footprint door's crossings and a room reveal's crossings
+// arrive with crossing true; an edge door's doorways arrive false.
+func (s *ConvertActSuite) TestPerceptionMarksAFootprintDoorsCrossings() {
+	gate := sdk.AtlasDoorway{Door: "the-mad-king/gate-wall-door", From: spatial.Position{X: -3, Y: 7}, To: spatial.Position{X: -3, Y: 6}, Crossing: true}
+	edge := sdk.AtlasDoorway{Door: "postern", From: cell, To: spatial.Position{X: 4, Y: -2}}
+	got, err := perceptionToProto(sdk.Perception{
+		Observer: alice, Sense: sdk.SenseCells,
+		Revealed: &sdk.SecretRevealed{Concealment: "gate", Doors: []sdk.RevealedDoor{
+			{Door: gate.Door, State: "closed", Doorways: []sdk.AtlasDoorway{gate}},
+			{Door: edge.Door, State: "locked", Doorways: []sdk.AtlasDoorway{edge}},
+		}},
+		Cells: &sdk.CellsLearned{Doorways: []sdk.AtlasDoorway{gate, edge}},
+	})
+	s.Require().NoError(err)
+
+	doors := got.GetRevealed().GetDoors()
+	s.Require().Len(doors, 2)
+	s.Require().Len(doors[0].GetDoorways(), 1)
+	s.True(doors[0].GetDoorways()[0].GetCrossing(), "a revealed footprint door's crossing")
+	s.Require().Len(doors[1].GetDoorways(), 1)
+	s.False(doors[1].GetDoorways()[0].GetCrossing(), "a revealed edge door's doorway")
+
+	room := got.GetCells().GetDoorways()
+	s.Require().Len(room, 2)
+	s.True(room[0].GetCrossing(), "a room reveal's footprint crossing")
+	s.False(room[1].GetCrossing(), "a room reveal's edge doorway")
+}

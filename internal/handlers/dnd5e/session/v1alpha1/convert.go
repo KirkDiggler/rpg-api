@@ -527,6 +527,10 @@ func sightingToProto(s sdk.Sighting) *sessionpb.Sighting {
 		CurrentVia: s.CurrentVia,
 		Status:     s.Status,
 		Seen:       seenToProto(s.Seen),
+		// The door whose opening this subject bars against THIS viewer
+		// (rpg-project#852): the session reads it per viewer from the
+		// encounter's observed holds; empty crosses as empty.
+		HoldsDoor: s.HoldsDoor,
 	}
 }
 
@@ -626,6 +630,9 @@ func atlasDoorwayToProto(d sdk.AtlasDoorway) *sessionpb.AtlasDoorway {
 		Connection: d.Door,
 		From:       positionToProto(d.From),
 		To:         positionToProto(d.To),
+		// A footprint door's crossing (rpg-project#852): planners read
+		// both kinds, renderers draw only an edge door's doorway.
+		Crossing: d.Crossing,
 	}
 }
 

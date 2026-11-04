@@ -239,6 +239,7 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrLevelNotOffered", sdk.ErrLevelNotOffered, codes.FailedPrecondition},
 		{"ErrArmorInFight", sdk.ErrArmorInFight, codes.FailedPrecondition},
 		{"ErrSeatedElsewhere", sdk.ErrSeatedElsewhere, codes.FailedPrecondition},
+		{"ErrDoorHeld", sdk.ErrDoorHeld, codes.FailedPrecondition},
 		// Already in the pinned SDK before this feature (v0.21.4) and unmapped
 		// until this audit: this package's OWN adapter vocabulary going stale
 		// against itself, not a caller mistake.
@@ -416,4 +417,15 @@ func TestStatusError_UnmappedSentinelFallsBackToInternal(t *testing.T) {
 
 func TestStatusError_Nil_ReturnsNil(t *testing.T) {
 	require.NoError(t, StatusError(nil))
+}
+
+// TestStatusError_DoorHeldCarriesItsReason pins rpg-project#852 R7: a held
+// door's refusal reaches the client as FAILED_PRECONDITION with the session's
+// reason verbatim, naming the holder, even under the session's verb wrap.
+func TestStatusError_DoorHeldCarriesItsReason(t *testing.T) {
+	got := StatusError(fmt.Errorf("open door: %w", &sdk.DoorHeldError{Reason: "Guard bars the door"}))
+	st, ok := status.FromError(got)
+	require.True(t, ok)
+	require.Equal(t, codes.FailedPrecondition, st.Code())
+	require.Equal(t, "Guard bars the door", st.Message(), "the reason alone, without the verb's wrap")
 }
