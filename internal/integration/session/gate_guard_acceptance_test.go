@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
@@ -120,15 +122,17 @@ func samePosition(a, b *sessionpb.Position) bool {
 }
 
 // TestAcceptance_TheGuardHoldsTheGatesPassage is the guard holds the gate's
-// passage on the server (rpg-project#852 S1b, R5): posted gate-1 holds the
-// whole opening of the gate door, so with the door open a walk through the
-// opening's OTHER cell stops at the opening by his name; the view says which
+// passage on the server (rpg-project#852 S1b, R5 and R7): posted gate-1 holds
+// the whole opening of the gate door. A walk through the opening's OTHER cell
+// stops at the opening by his name, open door or shut; the view says which
 // door he holds; the atlas lists the gate's crossings marked as crossings;
-// and the door list carries the gate with its state. The walk past the other
-// gate guard, who holds no post, is TestAcceptance_TheGuardHoldsTheGate's.
+// the door list carries the gate with its state; opening the held gate is
+// refused by his name; and once he is cowed the gate opens and the walk
+// crosses. The walk past the other gate guard, who holds no post, is
+// TestAcceptance_TheGuardHoldsTheGate's.
 func TestAcceptance_TheGuardHoldsTheGatesPassage(t *testing.T) {
 	ctx := auth.WithPlayerID(context.Background(), "player-alice")
-	h := newAcceptanceHarness(t)
+	h := newAcceptanceHarnessWithDice(t, standAsideDice{})
 	const run = "gate-passage-run"
 	out := launchTheMadKing(t, h, run, -1, 7)
 	require.Empty(t, out.Formed, "precondition: the gate guards are neutral, nobody fights")
@@ -180,21 +184,10 @@ func TestAcceptance_TheGuardHoldsTheGatesPassage(t *testing.T) {
 		}
 	})
 
-	t.Run("with the door open, the opening's other cell is barred by his name", func(t *testing.T) {
-		opened, err := h.handler.OpenDoor(ctx, &sessionpb.OpenDoorRequest{Session: run, Member: "alice", Door: castleGateDoor})
-		require.NoError(t, err)
-		require.Equal(t, sessionpb.DoorState_DOOR_STATE_OPEN, opened.GetDoor().GetState(), "precondition: the gate stands open")
-
+	t.Run("the opening's other cell is barred by his name", func(t *testing.T) {
 		view, err := h.handler.GetView(ctx, &sessionpb.GetViewRequest{Session: run, Member: "alice"})
 		require.NoError(t, err)
-		var seen *sessionpb.Sighting
-		for _, s := range view.GetSightings() {
-			if s.GetSubject() == gatePosted {
-				seen = s
-			}
-		}
-		require.NotNil(t, seen, "precondition: alice sees the posted guard")
-		require.Equal(t, castleGateDoor, seen.GetHoldsDoor(), "her sighting of him names the door he holds")
+		require.Equal(t, castleGateDoor, sightingOf(t, view, gatePosted).GetHoldsDoor(), "her sighting of him names the door he holds")
 
 		moved, err := h.handler.Move(ctx, &sessionpb.MoveRequest{
 			Session: run, Member: "alice", Path: []*sessionpb.Position{pastTheGate()},
@@ -208,4 +201,65 @@ func TestAcceptance_TheGuardHoldsTheGatesPassage(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, samePosition(besideTheGate(), where.GetPosition()), "she stands at the opening")
 	})
+
+	// R7 (lane #835): a held door refuses its verbs. Opening the gate from
+	// beside him is refused by his name, and is the client's to show.
+	t.Run("opening the held gate is refused by his name", func(t *testing.T) {
+		_, err := h.handler.OpenDoor(ctx, &sessionpb.OpenDoorRequest{Session: run, Member: "alice", Door: castleGateDoor})
+		require.Error(t, err)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.FailedPrecondition, st.Code())
+		require.Equal(t, guard.Name+" bars the door", st.Message(), "the refusal names the guard")
+	})
+
+	// The captain stands beside her (offset (0,8)). A stand-aside he hears
+	// cows gate-1, and a cowed guard holds nothing: the door opens and the
+	// walk crosses.
+	t.Run("once he is cowed, the gate opens and the walk crosses", func(t *testing.T) {
+		_, err := h.handler.Speak(ctx, &sessionpb.SpeakRequest{
+			Session: run, Member: "alice", Target: &sessionpb.SpeakRequest_MemberId{MemberId: "captain"}, OptionId: "stand-aside",
+		})
+		require.NoError(t, err)
+		view, err := h.handler.GetView(ctx, &sessionpb.GetViewRequest{Session: run, Member: "alice"})
+		require.NoError(t, err)
+		require.Empty(t, sightingOf(t, view, gatePosted).GetHoldsDoor(), "a cowed guard holds no door")
+
+		opened, err := h.handler.OpenDoor(ctx, &sessionpb.OpenDoorRequest{Session: run, Member: "alice", Door: castleGateDoor})
+		require.NoError(t, err)
+		require.Equal(t, sessionpb.DoorState_DOOR_STATE_OPEN, opened.GetDoor().GetState(), "the gate opens")
+
+		moved, err := h.handler.Move(ctx, &sessionpb.MoveRequest{
+			Session: run, Member: "alice", Path: []*sessionpb.Position{pastTheGate()},
+		})
+		require.NoError(t, err)
+		require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_COMPLETED, moved.GetStatus(), moved.GetStopReason())
+		require.Len(t, moved.GetSteps(), 1, "she steps through the gate")
+	})
+}
+
+// sightingOf is the view's sighting of subject, failing when it holds none.
+func sightingOf(t *testing.T, view *sessionpb.GetViewResponse, subject string) *sessionpb.Sighting {
+	t.Helper()
+	for _, s := range view.GetSightings() {
+		if s.GetSubject() == subject {
+			return s
+		}
+	}
+	require.FailNowf(t, "no sighting", "the view holds no sighting of %s", subject)
+
+	return nil
+}
+
+// standAsideDice rolls every d20 at 20 and every other die at 1: the
+// captain's stand-aside check passes and its weighted outcome takes the
+// first row, the stand-aside that cows the gate (the session's castle tests
+// roll the same way). A max-everything roller takes the last row, "GUARDS!".
+type standAsideDice struct{}
+
+func (standAsideDice) Roll(_ context.Context, size int) (int, error) {
+	if size == 20 {
+		return 20, nil
+	}
+	return 1, nil
 }
