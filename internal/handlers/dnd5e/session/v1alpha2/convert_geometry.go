@@ -88,7 +88,9 @@ func segmentsToProto(ss []sdk.AtlasSegment) []*sessionpb.AtlasSegment {
 
 func doorwaysToProto(ds []sdk.AtlasDoorway) []*sessionpb.AtlasDoorway {
 	return mapSlice(ds, func(d sdk.AtlasDoorway) *sessionpb.AtlasDoorway {
-		return &sessionpb.AtlasDoorway{Door: d.Door, From: positionToProto(d.From), To: positionToProto(d.To)}
+		// Crossing marks a footprint door's crossing (rpg-project#852), on
+		// the revealed door and the room reveal alike.
+		return &sessionpb.AtlasDoorway{Door: d.Door, From: positionToProto(d.From), To: positionToProto(d.To), Crossing: d.Crossing}
 	})
 }
 

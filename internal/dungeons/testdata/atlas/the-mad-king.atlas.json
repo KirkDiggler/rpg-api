@@ -8031,6 +8031,200 @@
    ]
   }
  ],
+ "doorways": [
+  {
+   "door": "the-mad-king/26369b41-e58f-475d-963a-95086d4cd868",
+   "from": {
+    "x": -7,
+    "y": 13
+   },
+   "to": {
+    "x": -6,
+    "y": 12
+   },
+   "crossing": true
+  },
+  {
+   "door": "the-mad-king/26369b41-e58f-475d-963a-95086d4cd868",
+   "from": {
+    "x": -6,
+    "y": 12
+   },
+   "to": {
+    "x": -6,
+    "y": 13
+   },
+   "crossing": true
+  },
+  {
+   "door": "the-mad-king/cells-wall-door",
+   "from": {
+    "x": -24,
+    "y": 7
+   },
+   "to": {
+    "x": -23,
+    "y": 6
+   },
+   "crossing": true
+  },
+  {
+   "door": "the-mad-king/cells-wall-door",
+   "from": {
+    "x": -23,
+    "y": 6
+   },
+   "to": {
+    "x": -23,
+    "y": 7
+   },
+   "crossing": true
+  },
+  {
+   "door": "the-mad-king/chapel-wall-door",
+   "from": {
+    "x": 20,
+    "y": -12
+   },
+   "to": {
+    "x": 21,
+    "y": -12
+   },
+   "crossing": true
+  },
+  {
+   "door": "the-mad-king/chapel-wall-door",
+   "from": {
+    "x": 20,
+    "y": -11
+   },
+   "to": {
+    "x": 21,
+    "y": -12
+   },
+   "crossing": true
+  },
+  {
+   "door": "the-mad-king/chapel-wall-door",
+   "from": {
+    "x": 20,
+    "y": -11
+   },
+   "to": {
+    "x": 21,
+    "y": -11
+   },
+   "crossing": true
+  },
+  {
+   "door": "the-mad-king/gate-wall-door",
+   "from": {
+    "x": -4,
+    "y": 7
+   },
+   "to": {
+    "x": -3,
+    "y": 6
+   },
+   "crossing": true
+  },
+  {
+   "door": "the-mad-king/gate-wall-door",
+   "from": {
+    "x": -3,
+    "y": 6
+   },
+   "to": {
+    "x": -3,
+    "y": 7
+   },
+   "crossing": true
+  },
+  {
+   "door": "the-mad-king/hall-wall-door",
+   "from": {
+    "x": 3,
+    "y": -7
+   },
+   "to": {
+    "x": 3,
+    "y": -6
+   },
+   "crossing": true
+  },
+  {
+   "door": "the-mad-king/hall-wall-door",
+   "from": {
+    "x": 3,
+    "y": -6
+   },
+   "to": {
+    "x": 4,
+    "y": -7
+   },
+   "crossing": true
+  },
+  {
+   "door": "the-mad-king/kitchen-wall-door",
+   "from": {
+    "x": -9,
+    "y": -12
+   },
+   "to": {
+    "x": -8,
+    "y": -12
+   },
+   "crossing": true
+  },
+  {
+   "door": "the-mad-king/kitchen-wall-door",
+   "from": {
+    "x": -9,
+    "y": -11
+   },
+   "to": {
+    "x": -8,
+    "y": -12
+   },
+   "crossing": true
+  },
+  {
+   "door": "the-mad-king/kitchen-wall-door",
+   "from": {
+    "x": -9,
+    "y": -11
+   },
+   "to": {
+    "x": -8,
+    "y": -11
+   },
+   "crossing": true
+  },
+  {
+   "door": "the-mad-king/throne-wall-door",
+   "from": {
+    "x": 8,
+    "y": -17
+   },
+   "to": {
+    "x": 8,
+    "y": -16
+   },
+   "crossing": true
+  },
+  {
+   "door": "the-mad-king/throne-wall-door",
+   "from": {
+    "x": 8,
+    "y": -16
+   },
+   "to": {
+    "x": 9,
+    "y": -17
+   },
+   "crossing": true
+  }
+ ],
  "structural_walls": [
   {
    "id": "cells-east-wall",
