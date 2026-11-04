@@ -124,8 +124,8 @@ func samePosition(a, b *sessionpb.Position) bool {
 // whole opening of the gate door, so with the door open a walk through the
 // opening's OTHER cell stops at the opening by his name; the view says which
 // door he holds; the atlas lists the gate's crossings marked as crossings;
-// the door list carries the gate with its state; and the other gate guard,
-// who holds no post, is walked past as before.
+// and the door list carries the gate with its state. The walk past the other
+// gate guard, who holds no post, is TestAcceptance_TheGuardHoldsTheGate's.
 func TestAcceptance_TheGuardHoldsTheGatesPassage(t *testing.T) {
 	ctx := auth.WithPlayerID(context.Background(), "player-alice")
 	h := newAcceptanceHarness(t)
@@ -154,17 +154,29 @@ func TestAcceptance_TheGuardHoldsTheGatesPassage(t *testing.T) {
 		require.NoError(t, err)
 		// Every door the castle draws is a footprint door, so the edge-door
 		// half (crossing false) is pinned by the converter tests.
-		var gate []*sessionpb.AtlasDoorway
-		for _, d := range atlas.GetDoorways() {
-			if d.GetConnection() == castleGateDoor {
-				gate = append(gate, d)
-			}
+		// The opening's two crossings, each joining a gatehouse-side cell to
+		// the courtyard cell past the gate. Pinned by name, not by count, so
+		// a wider opening adds crossings without breaking this.
+		crossings := []struct {
+			name     string
+			from, to *sessionpb.Position
+		}{
+			{"beneath the gate to past it", beneathTheGate(), pastTheGate()},
+			{"beside the gate to past it", besideTheGate(), pastTheGate()},
 		}
-		require.Len(t, gate, 2, "the gate's opening has two crossings")
-		for _, d := range gate {
-			require.True(t, d.GetCrossing(), "a footprint door's crossing %v-%v is marked", d.GetFrom(), d.GetTo())
-			require.True(t, samePosition(d.GetFrom(), pastTheGate()) || samePosition(d.GetTo(), pastTheGate()),
-				"every crossing of the gate reaches the courtyard cell past it")
+		for _, want := range crossings {
+			var found *sessionpb.AtlasDoorway
+			for _, d := range atlas.GetDoorways() {
+				if d.GetConnection() != castleGateDoor {
+					continue
+				}
+				if (samePosition(d.GetFrom(), want.from) && samePosition(d.GetTo(), want.to)) ||
+					(samePosition(d.GetFrom(), want.to) && samePosition(d.GetTo(), want.from)) {
+					found = d
+				}
+			}
+			require.NotNilf(t, found, "the gate's crossing %s is a doorway of the map", want.name)
+			require.Truef(t, found.GetCrossing(), "the gate's crossing %s is marked crossing", want.name)
 		}
 	})
 
