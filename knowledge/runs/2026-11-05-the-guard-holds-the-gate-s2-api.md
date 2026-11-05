@@ -1,6 +1,6 @@
 # 2026-11-05 · The guard holds the gate S2 · The api carries the bump
 
-Story [rpg-project#836](https://github.com/KirkDiggler/rpg-project/issues/836), slice [rpg-project#842](https://github.com/KirkDiggler/rpg-project/issues/842), design R2 A and R7. Api half T9, on protos v0.1.256 and toolkit [rpg-toolkit#2278](https://github.com/KirkDiggler/rpg-toolkit/pull/2278) (encounter) and [#2280](https://github.com/KirkDiggler/rpg-toolkit/pull/2280) (session).
+Story [rpg-project#836](https://github.com/KirkDiggler/rpg-project/issues/836), slice [rpg-project#842](https://github.com/KirkDiggler/rpg-project/issues/842), design R2 A and R7. Api half T9, on protos v0.1.256, encounter v0.178.0 and session v0.165.0, from toolkit [rpg-toolkit#2278](https://github.com/KirkDiggler/rpg-toolkit/pull/2278) (encounter) and [#2280](https://github.com/KirkDiggler/rpg-toolkit/pull/2280) (session).
 
 ## Shipped
 
