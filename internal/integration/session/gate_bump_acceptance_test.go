@@ -42,6 +42,26 @@ func linesOf(acts []*storypb.Act, who string) []string {
 	return out
 }
 
+// requireAnsweredUnderTheBump requires the one bump in acts and who's one line
+// to carry the same `act` correlation: the guard's answer reopens the bump's
+// act, which is what the web keys the line to the bump by (rpg-project#842).
+func requireAnsweredUnderTheBump(t *testing.T, acts []*storypb.Act, who string) {
+	t.Helper()
+	var bump, line string
+	for _, a := range acts {
+		if a.GetBarred() != nil {
+			require.Empty(t, bump, "one bump")
+			bump = a.GetAct()
+		}
+		if ans := a.GetTableAnswer(); ans != nil && ans.GetWho().GetId() == who && ans.GetSay() != "" {
+			require.Empty(t, line, "one line")
+			line = a.GetAct()
+		}
+	}
+	require.NotEmpty(t, bump, "the bump carries an act correlation")
+	require.Equal(t, bump, line, "the guard's line rides the bump's act")
+}
+
 // TestAcceptance_TheGateGuardAnswersTheBump is S2 of the guard holds the gate
 // on the server (rpg-project#842, R2 and R7): a bump is a beat the guard
 // hears. Alice walks into posted gate-1: the Move answers stopped, and her
@@ -83,6 +103,7 @@ func TestAcceptance_TheGateGuardAnswersTheBump(t *testing.T) {
 			"the cell she was refused into, his own")
 		require.Empty(t, bumps[0].GetDoor(), "a step names no door")
 		require.Equal(t, []string{theGuardsQuestion}, linesOf(acts, gatePosted), "he asks what she wants")
+		requireAnsweredUnderTheBump(t, acts, gatePosted)
 
 		var again *sessionpb.MoveResponse
 		acts = watchActs(ctx, t, h, run, "alice", func() {
@@ -95,6 +116,7 @@ func TestAcceptance_TheGateGuardAnswersTheBump(t *testing.T) {
 		require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_STOPPED, again.GetStatus(), "challenged, he still holds")
 		require.Len(t, barredActs(acts), 1, "the second bump is barred")
 		require.Equal(t, []string{theGuardsRepeat}, linesOf(acts, gatePosted), "and gets the shorter line")
+		requireAnsweredUnderTheBump(t, acts, gatePosted)
 	})
 
 	t.Run("a hand on the gate he holds is refused by his name and heard", func(t *testing.T) {
@@ -119,6 +141,7 @@ func TestAcceptance_TheGateGuardAnswersTheBump(t *testing.T) {
 		require.Nil(t, bumps[0].GetCell(), "and no cell")
 		require.Equal(t, gatePosted, bumps[0].GetBarrier().GetId())
 		require.Equal(t, []string{theGuardsQuestion}, linesOf(acts, gatePosted))
+		requireAnsweredUnderTheBump(t, acts, gatePosted)
 
 		doors, err := h.handler.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: run, Member: "alice"})
 		require.NoError(t, err)
