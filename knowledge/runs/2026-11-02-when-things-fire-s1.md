@@ -1,5 +1,7 @@
 # 2026-11-02 · When things fire S1 · The api serves the kind
 
+processed: 2026-11-05T201556Z
+
 Story [rpg-project#825](https://github.com/KirkDiggler/rpg-project/issues/825), slice [rpg-project#828](https://github.com/KirkDiggler/rpg-project/issues/828), design R1 B. Api PR [rpg-api#1181](https://github.com/KirkDiggler/rpg-api/pull/1181), on protos [rpg-api-protos#415](https://github.com/KirkDiggler/rpg-api-protos/pull/415) and toolkit [rpg-toolkit#2245](https://github.com/KirkDiggler/rpg-toolkit/pull/2245) and [#2246](https://github.com/KirkDiggler/rpg-toolkit/pull/2246).
 
 ## Shipped
