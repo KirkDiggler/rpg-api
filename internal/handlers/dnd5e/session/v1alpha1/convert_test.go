@@ -1788,11 +1788,11 @@ func TestSightingToProto_CarriesTheHoldsDirection(t *testing.T) {
 		HoldsSide:    []spatial.Position{{X: -4, Y: 7}, {X: -3, Y: 7}},
 	})
 	require.Equal(t, "entering", got.GetHoldsAgainst())
-	require.Len(t, got.GetHoldsSide(), 2)
-	require.Equal(t, -4.0, got.GetHoldsSide()[0].GetX())
-	require.Equal(t, 7.0, got.GetHoldsSide()[0].GetY())
-	require.Equal(t, -3.0, got.GetHoldsSide()[1].GetX())
-	require.Equal(t, 7.0, got.GetHoldsSide()[1].GetY())
+	side := make([][2]float64, 0, len(got.GetHoldsSide()))
+	for _, p := range got.GetHoldsSide() {
+		side = append(side, [2]float64{p.GetX(), p.GetY()})
+	}
+	require.Equal(t, [][2]float64{{-4, 7}, {-3, 7}}, side, "the side cells cross in the session's order")
 
 	got = sightingToProto(sdk.Sighting{Subject: "gate-2"})
 	require.Empty(t, got.GetHoldsAgainst())

@@ -28,6 +28,25 @@ func requireOnTheGatePost(t *testing.T, view *sessionpb.GetViewResponse, msg str
 	require.True(t, samePosition(beneathTheGate(), seen.GetPosition()), msg)
 }
 
+// cellsOf is the positions as plain coordinate pairs, so an exact set
+// compare reads values rather than proto pointers.
+func cellsOf(ps ...*sessionpb.Position) [][2]float64 {
+	out := make([][2]float64, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, [2]float64{p.GetX(), p.GetY()})
+	}
+	return out
+}
+
+// stepCellsOf is the cells a walk's steps stood on, in order.
+func stepCellsOf(steps []*sessionpb.Step) [][2]float64 {
+	out := make([][2]float64, 0, len(steps))
+	for _, s := range steps {
+		out = append(out, [2]float64{s.GetPosition().GetX(), s.GetPosition().GetY()})
+	}
+	return out
+}
+
 // toTheCaptain is the walk from beside the stranger to beside the captain,
 // round the gatehouse: the session's own route for it, in offset cells.
 func toTheCaptain() []*sessionpb.Position {
@@ -69,15 +88,8 @@ func TestAcceptance_TheGateGuardChecksArrivals(t *testing.T) {
 		seen := sightingOf(t, view, gatePosted)
 		require.Equal(t, castleGateDoor, seen.GetHoldsDoor(), "he holds the gate door")
 		require.Equal(t, holdsEntering, seen.GetHoldsAgainst(), "against arrivals")
-		side := seen.GetHoldsSide()
-		require.Len(t, side, 2, "the opening's two gatehouse cells")
-		for _, want := range []*sessionpb.Position{besideTheGate(), beneathTheGate()} {
-			found := false
-			for _, c := range side {
-				found = found || samePosition(want, c)
-			}
-			require.Truef(t, found, "the post's side holds (%v, %v)", want.GetX(), want.GetY())
-		}
+		require.ElementsMatch(t, cellsOf(besideTheGate(), beneathTheGate()), cellsOf(seen.GetHoldsSide()...),
+			"the post's side is exactly the opening's two gatehouse cells")
 
 		moved, err := h.handler.Move(ctx, &sessionpb.MoveRequest{
 			Session: run, Member: "alice", Path: []*sessionpb.Position{pastTheGate()},
@@ -113,7 +125,7 @@ func TestAcceptance_TheGateGuardChecksArrivals(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_COMPLETED, moved.GetStatus(), "out unchallenged: %s", moved.GetStopReason())
-		require.Len(t, moved.GetSteps(), 1, "she steps out through the gate")
+		require.Equal(t, cellsOf(besideTheGate()), stepCellsOf(moved.GetSteps()), "she steps out through the gate")
 
 		view, err := h.handler.GetView(ctx, &sessionpb.GetViewRequest{Session: run, Member: "alice"})
 		require.NoError(t, err)
