@@ -122,11 +122,14 @@ func TestAcceptance_TheGateGuardAnswersTheBump(t *testing.T) {
 
 		doors, err := h.handler.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: run, Member: "alice"})
 		require.NoError(t, err)
+		found := false
 		for _, d := range doors.GetDoors() {
 			if d.GetDoor() == castleGateDoor {
+				found = true
 				require.NotEqual(t, sessionpb.DoorState_DOOR_STATE_OPEN, d.GetState(), "the gate stays shut")
 			}
 		}
+		require.True(t, found, "the gate is in the door list")
 	})
 
 	t.Run("a wall bump writes no bump and no line", func(t *testing.T) {
