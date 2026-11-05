@@ -531,7 +531,25 @@ func sightingToProto(s sdk.Sighting) *sessionpb.Sighting {
 		// (rpg-project#852): the session reads it per viewer from the
 		// encounter's observed holds; empty crosses as empty.
 		HoldsDoor: s.HoldsDoor,
+		// Which crossings of that door the holder bars, and the door's
+		// crossing cells on his post's side (rpg-project#857, R6): copied as
+		// given beside HoldsDoor, empty when it is.
+		HoldsAgainst: s.HoldsAgainst,
+		HoldsSide:    positionsToProto(s.HoldsSide),
 	}
+}
+
+// positionsToProto carries a cell list through positionToProto in order; an
+// empty list crosses as nil.
+func positionsToProto(ps []spatial.Position) []*sessionpb.Position {
+	if len(ps) == 0 {
+		return nil
+	}
+	out := make([]*sessionpb.Position, len(ps))
+	for i, p := range ps {
+		out[i] = positionToProto(p)
+	}
+	return out
 }
 
 func sightingsToProto(ss []sdk.Sighting) []*sessionpb.Sighting {
