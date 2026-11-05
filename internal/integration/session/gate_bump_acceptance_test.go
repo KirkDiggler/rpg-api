@@ -119,6 +119,37 @@ func TestAcceptance_TheGateGuardAnswersTheBump(t *testing.T) {
 		requireAnsweredUnderTheBump(t, acts, gatePosted)
 	})
 
+	t.Run("a walk whose goal is his cell is the bump, not a bad position", func(t *testing.T) {
+		h := newAcceptanceHarnessWithDice(t, standAsideDice{})
+		const run = "gate-bump-goal-run"
+		out := launchTheMadKing(t, h, run, -1, 7)
+		require.Empty(t, out.Formed, "precondition: nobody fights")
+		guard := launched(t, out, gatePosted)
+
+		var moved *sessionpb.MoveResponse
+		acts := watchActs(ctx, t, h, run, "alice", func() {
+			var err error
+			// The click lands on him: the path ends on his cell.
+			moved, err = h.handler.Move(ctx, &sessionpb.MoveRequest{
+				Session: run, Member: "alice", Path: []*sessionpb.Position{beneathTheGate()},
+			})
+			require.NoError(t, err, "a goal on his cell is answered, never refused as a bad position")
+		})
+		require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_STOPPED, moved.GetStatus())
+		require.Equal(t, guard.Name+" stands in the way", moved.GetStopReason())
+		require.Empty(t, moved.GetSteps(), "she took no step")
+
+		bumps := barredActs(acts)
+		require.Len(t, bumps, 1, "the stream carries the bump")
+		cell := bumps[0].GetCell()
+		require.NotNil(t, cell)
+		require.Equal(t, [2]float64{beneathTheGate().GetX(), beneathTheGate().GetY()}, [2]float64{cell.GetX(), cell.GetY()},
+			"the refused cell is his own")
+		require.Equal(t, gatePosted, bumps[0].GetBarrier().GetId())
+		require.Equal(t, []string{theGuardsQuestion}, linesOf(acts, gatePosted), "he asks what she wants")
+		requireAnsweredUnderTheBump(t, acts, gatePosted)
+	})
+
 	t.Run("a hand on the gate he holds is refused by his name and heard", func(t *testing.T) {
 		h := newAcceptanceHarnessWithDice(t, standAsideDice{})
 		const run = "gate-bump-door-run"
