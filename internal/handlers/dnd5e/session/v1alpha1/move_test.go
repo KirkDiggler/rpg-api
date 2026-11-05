@@ -77,3 +77,22 @@ func TestMove_PreservesReactionPause(t *testing.T) {
 	require.False(t, out.GetJoinedCombat())
 	require.Empty(t, out.GetSteps())
 }
+
+// TestMove_BarredStopsWithTheReason pins rpg-project#842 (R2): a walk a body
+// stopped answers, never errs. It crosses STOPPED with the session's reason
+// and no step for the bump; the response has no field for the barrier, which
+// the `barred` act on the stream names.
+func TestMove_BarredStopsWithTheReason(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Move(gomock.Any(), gomock.Any()).Return(&sdk.MoveOutput{
+		Status: sdk.MovementStopped, StopReason: "Gate Guard bars the way",
+		Barred: &sdk.Barred{Barrier: "gate-1", Cell: spatial.Position{X: 0, Y: 6}, Reason: "Gate Guard bars the way"},
+	}, nil)
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	out, err := h.Move(auth.WithPlayerID(context.Background(), "alice"), &sessionpb.MoveRequest{Session: "sess", Member: "char-1", Path: []*sessionpb.Position{{X: 0, Y: 6}}})
+	require.NoError(t, err)
+	require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_STOPPED, out.GetStatus())
+	require.Equal(t, "Gate Guard bars the way", out.GetStopReason())
+	require.Empty(t, out.GetSteps(), "the bump is no step")
+}

@@ -102,6 +102,10 @@ func setBody(out *sessionpb.Act, body sdk.ActBody) error {
 		var v *sessionpb.DoorAct
 		v, err = doorToProto(b)
 		out.Body = &sessionpb.Act_Door{Door: v}
+	case sdk.BarredAct:
+		var v *sessionpb.BarredAct
+		v, err = barredToProto(b)
+		out.Body = &sessionpb.Act_Barred{Barred: v}
 	case sdk.EquipAct:
 		var v *sessionpb.EquipAct
 		v, err = equipToProto(b)
@@ -722,6 +726,20 @@ func dropToProto(b sdk.DropAct) (*sessionpb.DropAct, error) {
 func doorToProto(b sdk.DoorAct) (*sessionpb.DoorAct, error) {
 	var p parties
 	out := &sessionpb.DoorAct{By: p.one(b.By), Door: b.Door, State: b.State, Roll: p.roll(b.Roll)}
+	return out, p.err
+}
+
+// barredToProto spells a bump (rpg-project#842, the guard holds the gate R2):
+// the mover, the barrier, and either the cell the step was refused into or
+// the door a door verb was refused at, each copied as the session gave it. A
+// door bump's cell is absent, never a zero position. The session's Verb (open,
+// close, unlock) has no wire field yet and is not carried.
+func barredToProto(b sdk.BarredAct) (*sessionpb.BarredAct, error) {
+	var p parties
+	out := &sessionpb.BarredAct{Mover: p.one(b.Mover), Barrier: p.one(b.Barrier), Door: b.Door}
+	if b.Cell != nil {
+		out.Cell = positionToProto(*b.Cell)
+	}
 	return out, p.err
 }
 

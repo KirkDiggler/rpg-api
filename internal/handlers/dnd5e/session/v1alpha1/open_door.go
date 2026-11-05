@@ -27,6 +27,21 @@ func (h *Handler) OpenDoor(ctx context.Context, req *sessionpb.OpenDoorRequest) 
 	if err != nil {
 		return nil, sdkerr.StatusError(err)
 	}
+	if out.Refused != nil {
+		return nil, doorRefusalError(out.Refused)
+	}
 
 	return &sessionpb.OpenDoorResponse{Door: doorToProto(out.Door)}, nil
+}
+
+// doorRefusalError is a door verb a post holds against the member
+// (rpg-project#842, the guard holds the gate R2 and R7), answered on the wire
+// exactly as the held door was before the bump spoke: FAILED_PRECONDITION
+// whose message is the session's public reason ("<name> bars the door"). The
+// session now answers rather than errs: the door is unchanged, the attempt was
+// written as a `barred` act the holder heard, and his line arrives on the act
+// stream. The door responses have no field for a refusal, and a refused verb
+// must not cross as a success, so the status is the one way a client tells.
+func doorRefusalError(r *sdk.DoorRefusal) error {
+	return sdkerr.StatusError(&sdk.DoorHeldError{Reason: r.Reason})
 }

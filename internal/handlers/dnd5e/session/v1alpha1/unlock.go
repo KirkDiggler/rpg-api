@@ -39,6 +39,9 @@ func (h *Handler) Unlock(ctx context.Context, req *sessionpb.UnlockRequest) (*se
 	if err != nil {
 		return nil, sdkerr.StatusError(err)
 	}
+	if out.Refused != nil {
+		return nil, doorRefusalError(out.Refused)
+	}
 
 	return &sessionpb.UnlockResponse{
 		Beaten: out.Beaten,
