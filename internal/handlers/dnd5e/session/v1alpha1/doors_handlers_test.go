@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
@@ -211,4 +212,47 @@ func TestUnlock_MissingMember_Errors(t *testing.T) {
 // refusal: its sentinel, with the composition's DC-naming text.
 func sdkLockedErr() error {
 	return fmt.Errorf("opendoor: door %q is locked, DC 12: %w", "hall-tomb", sdk.ErrLocked)
+}
+
+// TestDoorVerbs_RefusedByAHolder_FailedPreconditionWithTheReason pins
+// rpg-project#842 (R2, R7): the session answers a held door with Refused and
+// no error; the wire answers FAILED_PRECONDITION with the holder's sentence,
+// the S1b shape, so a refused verb never crosses as a success.
+func TestDoorVerbs_RefusedByAHolder_FailedPreconditionWithTheReason(t *testing.T) {
+	refusal := &sdk.DoorRefusal{Holder: "gate-1", Reason: "Gate Guard bars the door"}
+	shut := sdk.Door{ID: "gate", State: "closed"}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	for _, tc := range []struct {
+		name string
+		call func(h *Handler, mgr *sessionv1alpha1mock.MockManager) error
+	}{
+		{"open", func(h *Handler, mgr *sessionv1alpha1mock.MockManager) error {
+			mgr.EXPECT().OpenDoor(gomock.Any(), gomock.Any()).Return(&sdk.OpenDoorOutput{Door: shut, Refused: refusal}, nil)
+			resp, err := h.OpenDoor(ctx, &sessionpb.OpenDoorRequest{Session: "sess-1", Member: "char-1", Door: "gate"})
+			require.Nil(t, resp)
+			return err
+		}},
+		{"close", func(h *Handler, mgr *sessionv1alpha1mock.MockManager) error {
+			mgr.EXPECT().CloseDoor(gomock.Any(), gomock.Any()).Return(&sdk.CloseDoorOutput{Door: sdk.Door{ID: "gate", State: "open"}, Refused: refusal}, nil)
+			resp, err := h.CloseDoor(ctx, &sessionpb.CloseDoorRequest{Session: "sess-1", Member: "char-1", Door: "gate"})
+			require.Nil(t, resp)
+			return err
+		}},
+		{"unlock", func(h *Handler, mgr *sessionv1alpha1mock.MockManager) error {
+			mgr.EXPECT().Unlock(gomock.Any(), gomock.Any()).Return(&sdk.UnlockOutput{Door: sdk.Door{ID: "gate", State: "locked"}, Refused: refusal}, nil)
+			resp, err := h.Unlock(ctx, &sessionpb.UnlockRequest{Session: "sess-1", Member: "char-1", Door: "gate"})
+			require.Nil(t, resp)
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+			h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+			err := tc.call(h, mgr)
+			requireCode(t, err, codes.FailedPrecondition)
+			st, _ := status.FromError(err)
+			require.Equal(t, "Gate Guard bars the door", st.Message(), "the holder's sentence is the whole message")
+		})
+	}
 }

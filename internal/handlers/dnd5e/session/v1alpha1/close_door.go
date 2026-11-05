@@ -20,5 +20,8 @@ func (h *Handler) CloseDoor(ctx context.Context, req *sessionpb.CloseDoorRequest
 	if err != nil {
 		return nil, sdkerr.StatusError(err)
 	}
+	if out.Refused != nil {
+		return nil, doorRefusalError(out.Refused)
+	}
 	return &sessionpb.CloseDoorResponse{Door: doorToProto(out.Door)}, nil
 }

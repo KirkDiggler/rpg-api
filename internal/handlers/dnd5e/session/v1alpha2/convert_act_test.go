@@ -118,6 +118,8 @@ func act(family sessionpb.Family, body any) *sessionpb.Act {
 		out.Body = &sessionpb.Act_Drop{Drop: b}
 	case *sessionpb.DoorAct:
 		out.Body = &sessionpb.Act_Door{Door: b}
+	case *sessionpb.BarredAct:
+		out.Body = &sessionpb.Act_Barred{Barred: b}
 	case *sessionpb.EquipAct:
 		out.Body = &sessionpb.Act_Equip{Equip: b}
 	case *sessionpb.StayAct:
@@ -212,6 +214,8 @@ func everyBody() map[string]bodyCase {
 			act(sessionpb.Family_FAMILY_ACT, &sessionpb.HoldAct{By: aliceP, Prop: chestP})},
 		"drop": {sdk.FamilyAct, sdk.DropAct{By: alice, Prop: chest, Cell: cell},
 			act(sessionpb.Family_FAMILY_ACT, &sessionpb.DropAct{By: aliceP, Prop: chestP, Cell: cellP})},
+		"barred": {sdk.FamilyAct, sdk.BarredAct{Mover: alice, Barrier: gate1, Cell: &cell},
+			act(sessionpb.Family_FAMILY_ACT, &sessionpb.BarredAct{Mover: aliceP, Barrier: gate1P, Cell: cellP})},
 		"door": {sdk.FamilyAct, sdk.DoorAct{By: alice, Door: "gate", State: "unlocked", Roll: d20},
 			act(sessionpb.Family_FAMILY_ACT, &sessionpb.DoorAct{By: aliceP, Door: "gate", State: "unlocked", Roll: d20P})},
 		"equip": {sdk.FamilyAct, sdk.EquipAct{By: alice, Slot: "main_hand", Item: "longsword", Change: "draw"},
@@ -374,6 +378,26 @@ func (s *ConvertActSuite) TestConvertAbsentPartiesStayAbsent() {
 	s.Require().NoError(err)
 	s.Nil(got.GetDoor().GetBy())
 	s.Nil(got.GetDoor().GetRoll())
+}
+
+// TestBarredToProtoCarriesBothShapes pins rpg-project#842 (R2): a step bump
+// crosses with the refused cell and no door; a door bump crosses with its
+// door and no cell, never a zero position standing in for one.
+func (s *ConvertActSuite) TestBarredToProtoCarriesBothShapes() {
+	refused := spatial.Position{X: -3, Y: 6}
+	step, err := barredToProto(sdk.BarredAct{Mover: alice, Barrier: gate1, Cell: &refused})
+	s.Require().NoError(err)
+	s.True(proto.Equal(aliceP, step.GetMover()))
+	s.True(proto.Equal(gate1P, step.GetBarrier()))
+	s.True(proto.Equal(&sessionpb.Position{X: -3, Y: 6}, step.GetCell()), "the step crosses the cell it was refused into")
+	s.Empty(step.GetDoor(), "a step names no door")
+
+	door, err := barredToProto(sdk.BarredAct{Mover: alice, Barrier: gate1, Door: "the-mad-king/gate-wall-door", Verb: "open"})
+	s.Require().NoError(err)
+	s.True(proto.Equal(aliceP, door.GetMover()))
+	s.True(proto.Equal(gate1P, door.GetBarrier()))
+	s.Equal("the-mad-king/gate-wall-door", door.GetDoor(), "the door bump names its door")
+	s.Nil(door.GetCell(), "a door bump carries no cell")
 }
 
 // TestWalkToProtoOrdinaryWalkLeavesForcedFalse proves absent/legacy remains a
