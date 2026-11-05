@@ -11,7 +11,7 @@ Friction names both entries and never settles them.
 
 ## Findings
 
-- none yet
+- 2026-11-01 · reference-keep is a read-only shipped layout/placement reference copied under an independent key for authoring: its 28,934 cells, 28 areas and annotations are not a populated adventure. Its Performance/Deception DC 11 replies and gate facts do not enforce admission or arrest; the later entrance requirement remains separate. · https://github.com/KirkDiggler/rpg-api/blob/82bd5946a2d8911b58db74314015708b4587d43c/knowledge/runs/2026-11-01-keep-reference.md, https://github.com/KirkDiggler/rpg-api/blob/dev/docs/how-to/reference-keep.md
 
 ## Friction
 
