@@ -73,6 +73,17 @@ func positionPtrFromProto(p *sessionpb.Position) *spatial.Position {
 	return &pos
 }
 
+// positionPtrToProto mirrors an OPTIONAL position onto the wire. Nil stays an
+// unset field rather than becoming the origin, for the same reason
+// positionPtrFromProto keeps nil: (0,0) is a real cell, so the zero Position
+// cannot also mean "none".
+func positionPtrToProto(p *spatial.Position) *sessionpb.Position {
+	if p == nil {
+		return nil
+	}
+	return positionToProto(*p)
+}
+
 // moneyToProto mirrors currency.Money onto the wire Money.
 func moneyToProto(m currency.Money) *sessionpb.Money {
 	return &sessionpb.Money{Copper: int32(m.Copper)}
@@ -1116,6 +1127,10 @@ func targetCandidateToProto(c sdk.TargetCandidate) *sessionpb.TargetCandidate {
 		Why:         shortfallToProto(c.Why),
 		Effects:     targetEffectsToProto(c.Effects),
 		HeldEffects: effectRowsToProto(c.HeldEffects),
+		// Approach is the session's answer to "where does this turn's walk
+		// stop in reach" (rpg-project#872 D4). Copied, never derived: nil
+		// stays unset so the client reads "no walk this turn reaches".
+		Approach: positionPtrToProto(c.Approach),
 	}
 }
 

@@ -138,6 +138,32 @@ func TestTargetCandidateToProto_FieldForField(t *testing.T) {
 	require.Empty(t, got.HeldEffects)
 }
 
+// TestTargetCandidateToProto_CarriesApproach pins rpg-project#872 D4 across
+// the boundary: the session's approach cell crosses as the wire Position,
+// and the origin is a real cell, not "unset".
+func TestTargetCandidateToProto_CarriesApproach(t *testing.T) {
+	got := targetCandidateToProto(sdk.TargetCandidate{
+		Member: "guard-1", Available: false,
+		Why:      &sdk.Shortfall{Reason: sdk.ShortfallTargetOutOfReach, Text: "target out of reach"},
+		Approach: &spatial.Position{X: 7, Y: 3},
+	})
+	require.NotNil(t, got.GetApproach())
+	require.Equal(t, 7.0, got.GetApproach().GetX())
+	require.Equal(t, 3.0, got.GetApproach().GetY())
+
+	origin := targetCandidateToProto(sdk.TargetCandidate{Member: "guard-1", Approach: &spatial.Position{}})
+	require.NotNil(t, origin.GetApproach(), "(0,0) is a cell, never folded into unset")
+	require.Zero(t, origin.GetApproach().GetX())
+	require.Zero(t, origin.GetApproach().GetY())
+}
+
+// TestTargetCandidateToProto_NilApproachStaysUnset: no walk this turn
+// reaches (or the candidate is already in reach), so the wire field is unset.
+func TestTargetCandidateToProto_NilApproachStaysUnset(t *testing.T) {
+	got := targetCandidateToProto(sdk.TargetCandidate{Member: "guard-1", Available: true})
+	require.Nil(t, got.GetApproach())
+}
+
 // TestTargetCandidateToProto_CarriesHeldEffects pins R18 across the boundary:
 // the rows a target holds cross as full rows, every field, in the SDK's
 // order, and stay apart from the per-target answers to the actor's rows.
