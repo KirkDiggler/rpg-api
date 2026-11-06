@@ -36,12 +36,12 @@ github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.3 h1:gqbzD6skMbfns82d4SRioMhTGzhf
 github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.3/go.mod h1:IULwBtc9bvB8wQ1CqI8V1Ak3OS8XKRFf/GW52FVx8hE=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.213.5 h1:SQjYCqeUSbFp3Vl9ilkHp6zbNWDXBcgTJ+KP0FBbv4w=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.213.5/go.mod h1:VQSSqvAvVzoKC7o8xC5YgRhMQ2D3OxbqgdZMhhMK0xs=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.178.1-0.20261106010014-56dffeaabbc9 h1:r7RFr2XPWtyT+/e632La88ZUq6NYtvUSj5U89ykcH1U=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.178.1-0.20261106010014-56dffeaabbc9/go.mod h1:u1ah8K3holmBtoI6LCgb3G4I8bjGFtVuwzto2nNwaZ0=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.179.0 h1:JfVox1jV6cESTT1kSEubqUDtWz1OXp7pbqKeUBubGVk=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.179.0/go.mod h1:u1ah8K3holmBtoI6LCgb3G4I8bjGFtVuwzto2nNwaZ0=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.74.1 h1:iDWym7pf3SO+cVdG/87hDyHd1JPcPsvfG7d2SNAHHEo=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.74.1/go.mod h1:JaV1ZAVLeWUihYq3Wfa9PLgTCvcrChkCK61QrNyUgfM=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.165.1-0.20261106010229-cdf03b34336f h1:/gv/bPU2h9O+QMCFhzvzD1IsZxuXTOFoU7PZFiTmUO8=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.165.1-0.20261106010229-cdf03b34336f/go.mod h1:dKlUlydTWIEg8IHZlcIlzhY+1QmF2ZrEMoy5Go5vqgU=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.166.0 h1:d4o7Trvipun1Ja5cGWJxzQmhWRkzpwtBp62G9SyDxGE=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.166.0/go.mod h1:C04AKJ6EqYDTjE1etWZ7TX97u0G+FvM33wu+7acF8Eg=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.16.3 h1:QiuembruTtSMWSWPkLnVN0G83KWTp1p3jbp6I5tJT/E=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.16.3/go.mod h1:wUfswqKns4MiPSyxl08OSkzHt+zVQWpiiWrtOpbxenU=
 github.com/KirkDiggler/rpg-toolkit/world v0.4.3 h1:5S2nKnnNPJoHJebtoR3wTVkW4xXjGRUD72dVIUvISbg=
