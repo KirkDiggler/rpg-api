@@ -1,6 +1,6 @@
 # 2026-11-05 · Click a hostile to attack D4 · The api carries the approach cell
 
-Card [rpg-project#872](https://github.com/KirkDiggler/rpg-project/issues/872), decision D4 A. Api half, on protos v0.1.257 (commit 3c58083e) and the PUSHED toolkit heads of [rpg-toolkit#2286](https://github.com/KirkDiggler/rpg-toolkit/pull/2286) (session bd800bb9) and [#2285](https://github.com/KirkDiggler/rpg-toolkit/pull/2285) (encounter 59b274fb). Both toolkit pins are pseudo-versions until those PRs merge and tag.
+Card [rpg-project#872](https://github.com/KirkDiggler/rpg-project/issues/872), decision D4 A. Api half, on protos v0.1.257 (commit 3c58083e) and the PUSHED toolkit heads of [rpg-toolkit#2286](https://github.com/KirkDiggler/rpg-toolkit/pull/2286) (session cdf03b34) and [#2285](https://github.com/KirkDiggler/rpg-toolkit/pull/2285) (encounter 56dffeaa). Both toolkit pins are pseudo-versions until those PRs merge and tag.
 
 ## Shipped
 
