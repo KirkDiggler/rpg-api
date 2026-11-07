@@ -1,0 +1,45 @@
+version: 5
+key: behavior-held
+play: {void: transparent, lighting: bright, standing: centre-covered}
+behaviorDefinitions:
+  patrol:
+    ref: example:behaviors:patrol-dual
+    parameters: [{name: weight, kind: int, required: true, min: 1, max: 3}]
+    end: repeat
+    body:
+      recipe:
+        initial: walk
+        states:
+          walk:
+            transitions:
+              - {on: time, do: [{pick: move}]}
+              - {on: turn, do: [{pick: move}]}
+              - {on: {$done: move}, to: {$next: true}}
+      table:
+        move:
+          - {Weight: {$param: weight}, Toward: {At: {$item: true}}}
+room:
+  version: 3
+  id: held-room
+  name: Held patrol
+  coordinateFrame: {horizontalPlane: world-xz, verticalAxis: world-y-up, distanceUnit: world-scene-unit, hexRadius: 1, footprintFrame: owner-local-xz}
+  scene: {version: 1, id: held-scene, name: Held patrol, items: [], groups: []}
+  room:
+    implicitRegionId: floor
+    regions:
+      - id: floor
+        name: Open hall
+        lighting: {intensity: 1}
+        cells:
+          - {r: 0, q: [[0, 18]]}
+          - {r: 1, q: [[0, 18]]}
+          - {r: 2, q: [[0, 18]]}
+    propDeclarations: {}
+    arrangementDeclarations: {}
+    partyStart: {q: 1, r: 0}
+    monsterDeclarations:
+      - {id: guard, ref: 'dnd5e:monsters:zombie', startingCell: {location: {q: 2, r: 0}}}
+    monsterBindings:
+      guard:
+        behaviors:
+          - {id: duty, use: patrol, items: [{q: 6, r: 0}, {q: 2, r: 0}], with: {weight: 1}}

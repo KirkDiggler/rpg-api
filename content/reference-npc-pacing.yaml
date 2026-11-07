@@ -27,32 +27,23 @@
 version: 5
 key: reference-npc-pacing
 play: {void: transparent, lighting: bright, standing: centre-covered}
-
 templates:
   pacing-knight:
     base: dnd5e:monsters:human
     name: Walker A - Knight
     hitDice: 10d8
     abilities: {str: 10, dex: 10, con: 10}
-    actions: [dnd5e:weapons:unarmed-strike]
+    actions: ['dnd5e:weapons:unarmed-strike']
   pacing-prisoner:
     base: dnd5e:monsters:human
     name: Walker B - Prisoner
     hitDice: 10d8
     abilities: {str: 10, dex: 10, con: 10}
-    actions: [dnd5e:weapons:unarmed-strike]
-
+    actions: ['dnd5e:weapons:unarmed-strike']
 factions:
   - {id: drill, mind: walker-a}
 dispositions:
   - {between: [drill, party], stance: neutral, until: {fact: drill-started}}
-tables:
-  pacing-walker:
-    time:
-      - {when: {enemy: reach}, attack: enemy}
-      - {when: {enemy: seen}, toward: enemy}
-      - {when: {enemy: none}, hold: {}}
-
 room:
   version: 3
   id: npc-pacing-room
@@ -70,7 +61,7 @@ room:
     regions:
       - id: npc-pacing-region
         name: NPC Pacing Yard
-        lighting: { intensity: 1 }
+        lighting: {intensity: 1}
         cells:
           - r: -1
             q: [[-1, 6]]
@@ -104,7 +95,6 @@ room:
     monsterBindings:
       walker-a:
         faction: drill
-        table: pacing-walker
         options:
           - id: begin-drill
             say: Begin the pacing drill.
@@ -113,6 +103,48 @@ room:
               - {say: "Drill begins. Stay on the start mark and end your turn.", fact: drill-started}
             failure:
               - {say: "Drill begins. Stay on the start mark and end your turn.", fact: drill-started}
+        behaviors:
+          - id: policy
+            use: walker-a-policy
       walker-b:
         faction: drill
-        table: pacing-walker
+        behaviors:
+          - id: policy
+            use: walker-b-policy
+behaviorDefinitions:
+  walker-a-policy:
+    recipe:
+      ref: site:behaviors:walker-a-policy
+      initial: ready
+      states:
+        ready:
+          transitions:
+            - on: time
+              do:
+                - pick: time
+            - on: turn
+              do:
+                - pick: time
+    table:
+      time:
+        - {when: {enemy: reach}, attack: enemy}
+        - {when: {enemy: seen}, toward: enemy}
+        - {when: {enemy: none}, hold: {}}
+  walker-b-policy:
+    recipe:
+      ref: site:behaviors:walker-b-policy
+      initial: ready
+      states:
+        ready:
+          transitions:
+            - on: time
+              do:
+                - pick: time
+            - on: turn
+              do:
+                - pick: time
+    table:
+      time:
+        - {when: {enemy: reach}, attack: enemy}
+        - {when: {enemy: seen}, toward: enemy}
+        - {when: {enemy: none}, hold: {}}

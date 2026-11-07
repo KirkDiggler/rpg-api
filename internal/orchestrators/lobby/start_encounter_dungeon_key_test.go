@@ -10,10 +10,9 @@ import (
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 )
 
-// frontRoomKey is the shipped v2 dungeon this file launches: a second dialect
-// from the single-room fixtures, so the key's path is proven on content the
-// World Builder did not author.
-const frontRoomKey = "reference-front-room"
+// authoredRoomKey names current source with canonical behavior configuration.
+// The historical v2 front-room policy is covered by explicit refusal below.
+const authoredRoomKey = "reference-pursuit"
 
 // TestStartEncounter_GetAtlasNamesTheDungeonTheLaunchResolved is the whole of
 // slice 4 end to end (rpg-project#479): a launch names a dungeon, the lobby
@@ -31,7 +30,7 @@ func (s *SessionStackSuite) TestStartEncounter_GetAtlasNamesTheDungeonTheLaunchR
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
 		WorldID:  testWorldID,
-		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: lobbyorch.DungeonKey(frontRoomKey),
+		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: lobbyorch.DungeonKey(authoredRoomKey),
 	})
 	s.Require().NoError(err)
 
@@ -43,11 +42,21 @@ func (s *SessionStackSuite) TestStartEncounter_GetAtlasNamesTheDungeonTheLaunchR
 		&sessionpb.GetAtlasRequest{Session: out.EncounterID, Member: "char-alice"})
 	s.Require().NoError(err)
 
-	s.Equal(frontRoomKey, resp.GetDungeonKey(),
+	s.Equal(authoredRoomKey, resp.GetDungeonKey(),
 		"the key the launch resolved reaches the client that has to fetch the room's picture by it")
 	s.Empty(resp.GetRoomSceneJson(),
 		"and no scene rides the wire: the engine stopped carrying one")
 	s.NotEmpty(resp.GetCells(), "the map itself is unchanged")
+}
+
+func (s *SessionStackSuite) TestStartEncounter_RefusesRetiredActorPolicy() {
+	s.seedCharacter("char-alice", "alice", "Alice")
+	s.seedReadyLobby("lobby-1", "alice")
+	_, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID: testWorldID, PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: "reference-front-room",
+	})
+	s.Require().Error(err)
+	s.Contains(err.Error(), "use canonical behaviors, not legacy table/machine input")
 }
 
 // TestStartEncounter_ADefaultedLaunchNamesTheDungeonItActuallyPlayed pins the

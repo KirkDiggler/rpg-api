@@ -51,5 +51,7 @@ func (s *NpcPacingSiteSuite) TestSiteHasTwoVisibleWalkersAndAResultIndependentSt
 	s.NotEmpty(start.Success[0].Fact)
 	s.Equal(start.Success[0].Fact, start.Failure[0].Fact, "neither die result may prevent the verification sequence")
 	s.Contains(string(raw), "until: {fact: drill-started}")
-	s.Contains(string(raw), "actions: [dnd5e:weapons:unarmed-strike]")
+	for _, id := range []string{"pacing-knight", "pacing-prisoner"} {
+		s.Equal([]string{"dnd5e:weapons:unarmed-strike"}, dungeon.Spec.Templates[id].Actions)
+	}
 }

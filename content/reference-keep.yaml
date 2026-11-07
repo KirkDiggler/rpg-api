@@ -22,18 +22,6 @@ templates:
       - perception
     actions:
       - dnd5e:weapons:spear
-tables:
-  gate-watch-idle:
-    time:
-      - when:
-          enemy: reach
-        attack: enemy
-      - when:
-          enemy: seen
-        toward: enemy
-      - when:
-          enemy: none
-        hold: {}
 factions:
   - id: gate-watch
     mind: gate-guard-1
@@ -5028,7 +5016,6 @@ room:
     monsterBindings:
       gate-guard-1:
         faction: gate-watch
-        table: gate-watch-idle
         options:
           - id: claim-entertainment
             say: We are the entertainment. Want a demonstration?
@@ -5052,15 +5039,24 @@ room:
             failure:
               - say: Expected by whom? I don't believe you. Move along.
                 fact: gate-first-warning
+        behaviors:
+          - id: policy
+            use: gate-guard-1-policy
       gate-guard-2:
         faction: gate-watch
-        table: gate-watch-idle
+        behaviors:
+          - id: policy
+            use: gate-guard-2-policy
       gate-guard-3:
         faction: gate-watch
-        table: gate-watch-idle
+        behaviors:
+          - id: policy
+            use: gate-guard-3-policy
       gate-lt:
         faction: gate-watch
-        table: gate-watch-idle
+        behaviors:
+          - id: policy
+            use: gate-lt-policy
     doorBindings:
       connection-01-door: {}
       connection-06-door: {}
@@ -5095,3 +5091,100 @@ room:
       connection-25-door: {}
       connection-18-door: {}
       connection-27-door: {}
+behaviorDefinitions:
+  gate-guard-1-policy:
+    recipe:
+      ref: site:behaviors:gate-guard-1-policy
+      initial: ready
+      states:
+        ready:
+          transitions:
+            - on: time
+              do:
+                - pick: time
+            - on: turn
+              do:
+                - pick: time
+    table:
+      time:
+        - when:
+            enemy: reach
+          attack: enemy
+        - when:
+            enemy: seen
+          toward: enemy
+        - when:
+            enemy: none
+          hold: {}
+  gate-guard-2-policy:
+    recipe:
+      ref: site:behaviors:gate-guard-2-policy
+      initial: ready
+      states:
+        ready:
+          transitions:
+            - on: time
+              do:
+                - pick: time
+            - on: turn
+              do:
+                - pick: time
+    table:
+      time:
+        - when:
+            enemy: reach
+          attack: enemy
+        - when:
+            enemy: seen
+          toward: enemy
+        - when:
+            enemy: none
+          hold: {}
+  gate-guard-3-policy:
+    recipe:
+      ref: site:behaviors:gate-guard-3-policy
+      initial: ready
+      states:
+        ready:
+          transitions:
+            - on: time
+              do:
+                - pick: time
+            - on: turn
+              do:
+                - pick: time
+    table:
+      time:
+        - when:
+            enemy: reach
+          attack: enemy
+        - when:
+            enemy: seen
+          toward: enemy
+        - when:
+            enemy: none
+          hold: {}
+  gate-lt-policy:
+    recipe:
+      ref: site:behaviors:gate-lt-policy
+      initial: ready
+      states:
+        ready:
+          transitions:
+            - on: time
+              do:
+                - pick: time
+            - on: turn
+              do:
+                - pick: time
+    table:
+      time:
+        - when:
+            enemy: reach
+          attack: enemy
+        - when:
+            enemy: seen
+          toward: enemy
+        - when:
+            enemy: none
+          hold: {}

@@ -232,7 +232,8 @@ func (s *StoresSuite) TestListIsTheWorldThenSingleRoomReferences() {
 		refs = append(refs, sum.Key)
 	}
 	s.IsIncreasing(refs, "references sorted by key")
-	for _, v2 := range []string{dungeons.DefaultKey, "reference-front-room", "reference-hearing", "reference-minds", "reference-raider-camp", "reference-tomb-heirloom"} {
+	s.Contains(refs, "reference-raider-camp", "the rebuilt current-format camp is an editable reference")
+	for _, v2 := range []string{dungeons.DefaultKey, "reference-front-room", "reference-hearing", "reference-minds", "reference-tomb-heirloom"} {
 		s.NotContains(refs, v2, "no version 2 reference is listed (R23)")
 	}
 
