@@ -999,7 +999,19 @@ func atlasRegionToProto(r sdk.AtlasRegion) *sessionpb.AtlasRegion {
 		Cells:     cells,
 		Archetype: r.Archetype,
 		Lighting:  &sessionpb.Lighting{Intensity: r.Lighting.Intensity},
+		Ground:    regionGroundToProto(r.Ground),
 	}
+}
+
+func regionGroundToProto(ground *sdk.RegionGround) *sessionpb.RegionGround {
+	if ground == nil {
+		return nil
+	}
+	out := &sessionpb.RegionGround{BaseRef: ground.BaseRef}
+	for _, paint := range ground.Paint {
+		out.Paint = append(out.Paint, &sessionpb.GroundPaint{Ref: paint.Ref, Cells: positionsToProto(paint.Cells)})
+	}
+	return out
 }
 
 func atlasRegionsToProto(rs []sdk.AtlasRegion) []*sessionpb.AtlasRegion {
