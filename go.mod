@@ -7,14 +7,15 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/core v0.12.1
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.3
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.4
+	github.com/KirkDiggler/rpg-toolkit/mechanics/effects v0.3.1-0.20261107191014-605694f3c24f
 	github.com/KirkDiggler/rpg-toolkit/npc v0.2.1
 	github.com/KirkDiggler/rpg-toolkit/play/clock v0.1.0
 	github.com/KirkDiggler/rpg-toolkit/play/interrupt v0.1.0
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.3
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.213.5
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.213.6-0.20261107204029-3e771a63d64e
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.179.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.74.1
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.166.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.74.3-0.20261107205037-9425c9da546a
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.166.1-0.20261107213426-2909290a7ab6
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.16.3
 	github.com/KirkDiggler/rpg-toolkit/world v0.4.3
 	github.com/alicebob/miniredis/v2 v2.35.0
