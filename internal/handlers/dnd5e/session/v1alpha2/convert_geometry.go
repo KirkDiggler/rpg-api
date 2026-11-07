@@ -42,8 +42,18 @@ func regionsToProto(rs []sdk.AtlasRegion) []*sessionpb.AtlasRegion {
 		return &sessionpb.AtlasRegion{
 			Id: r.ID, Name: r.Name, Cells: positionsToProto(r.Cells), Archetype: r.Archetype,
 			Lighting: &sessionpb.Lighting{Intensity: r.Lighting.Intensity},
+			Ground:   regionGroundToProto(r.Ground),
 		}
 	})
+}
+
+func regionGroundToProto(ground *sdk.RegionGround) *sessionpb.RegionGround {
+	if ground == nil {
+		return nil
+	}
+	return &sessionpb.RegionGround{BaseRef: ground.BaseRef, Paint: mapSlice(ground.Paint, func(p sdk.GroundPaint) *sessionpb.GroundPaint {
+		return &sessionpb.GroundPaint{Ref: p.Ref, Cells: positionsToProto(p.Cells)}
+	})}
 }
 
 func propsToProto(ps []sdk.AtlasProp) []*sessionpb.AtlasProp {
