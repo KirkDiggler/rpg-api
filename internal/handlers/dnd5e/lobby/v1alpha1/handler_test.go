@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
 
@@ -45,6 +46,14 @@ type HandlerSuite struct {
 	lobbyRepo lobbyrepo.Repository
 	broker    *lobbyorch.Broker
 	handler   *lobbyhandler.Handler
+	shipped   *dungeons.FileRegistry
+}
+
+func (s *HandlerSuite) SetupSuite() {
+	// Production compiles the immutable shipped shelf once, not per request.
+	// Keep that same lifetime here; every case still gets fresh writable world,
+	// lobby, character and session stores below, with real compiler/SDK wiring.
+	s.shipped = dungeonstest.ShippedStore(s.T())
 }
 
 func (s *HandlerSuite) SetupTest() {
@@ -75,7 +84,7 @@ func (s *HandlerSuite) SetupTest() {
 		EncounterIDGenerator: idgen.NewSequential("enc"),
 		Now:                  func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) },
 		SessionManager:       sessOrch.Manager,
-		Dungeons:             dungeonstest.Shipped(s.T()),
+		Dungeons:             dungeonstest.Join(s.T(), s.shipped, false),
 	})
 	s.Require().NoError(err)
 
