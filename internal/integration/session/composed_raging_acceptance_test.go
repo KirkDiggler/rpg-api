@@ -74,6 +74,7 @@ func (s *ComposedRagingAcceptanceSuite) TestNativeActivationFirstBoundaryAndInfo
 		s.False(ids[row.GetId()], "each output has its own identity")
 		ids[row.GetId()] = true
 		s.NotEmpty(row.GetDescription())
+		s.Equal("alice", row.GetSourceId(), "native class provenance survives the SDK and wire projection")
 		if row.GetState() == sessionpb.EffectState_EFFECT_STATE_APPLIES {
 			applies++
 			s.Equal("+2 damage", row.GetBenefit())

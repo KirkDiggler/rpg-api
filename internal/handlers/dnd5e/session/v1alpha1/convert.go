@@ -1181,6 +1181,7 @@ func effectRowsToProto(rows []sdk.EffectRow) []*sessionpb.EffectRow {
 	for i, row := range rows {
 		out[i] = &sessionpb.EffectRow{
 			Id:            row.ID,
+			SourceId:      row.SourceID,
 			Ref:           row.Ref,
 			Name:          row.Name,
 			Description:   row.Description,
