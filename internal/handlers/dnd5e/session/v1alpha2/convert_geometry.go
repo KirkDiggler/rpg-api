@@ -122,6 +122,7 @@ func structuralWallsToProto(ws []sdk.AtlasStructuralWall) []*sessionpb.AtlasStru
 			Id: w.ID, Ref: w.Ref, From: footprintPointToProto(w.From), To: footprintPointToProto(w.To),
 			Height: w.Height, Thickness: w.Thickness, Elevation: w.Elevation,
 			FootprintCells: positionsToProto(w.FootprintCells), Openings: openingsToProto(w.Openings),
+			MaterialOverrides: materialOverridesToProto(w.MaterialOverrides),
 		}
 	})
 }
@@ -146,6 +147,7 @@ func propPresentationsToProto(ps []sdk.PropPresentation) []*sessionpb.PropPresen
 		out := &sessionpb.PropPresentation{
 			Id: p.ID, Ref: p.Ref, Origin: footprintPointToProto(p.Origin), Elevation: p.Elevation,
 			FacingDegrees: p.FacingDegrees, HeightScale: p.HeightScale, DoorId: p.DoorID, Label: p.Label,
+			MaterialOverrides: materialOverridesToProto(p.MaterialOverrides),
 		}
 		if l := p.PointLight; l != nil {
 			out.PointLight = &sessionpb.PropPointLight{

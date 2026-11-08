@@ -12,6 +12,7 @@ func propPresentationToProto(p sdk.PropPresentation) *sessionpb.PropPresentation
 		Id: p.ID, Ref: p.Ref, Origin: &sessionpb.FootprintPoint{X: p.Origin.X, Y: p.Origin.Y},
 		Elevation: p.Elevation, FacingDegrees: p.FacingDegrees, HeightScale: p.HeightScale,
 		DoorId: p.DoorID, Label: p.Label,
+		MaterialOverrides: materialOverridesToProto(p.MaterialOverrides),
 	}
 	if l := p.PointLight; l != nil {
 		out.PointLight = &sessionpb.PropPointLight{

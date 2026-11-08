@@ -1,0 +1,57 @@
+version: 5
+key: wall-texture-walk
+play: {void: transparent, lighting: bright, standing: centre-covered}
+room:
+  version: 3
+  id: wall-texture
+  name: Wall texture walk
+  coordinateFrame:
+    horizontalPlane: world-xz
+    verticalAxis: world-y-up
+    distanceUnit: world-scene-unit
+    hexRadius: 1
+    footprintFrame: owner-local-xz
+  scene:
+    version: 1
+    id: wall-texture-scene
+    name: Wall texture walk
+    groups: []
+    items:
+      - id: display-bag
+        kind: prop
+        assetRef: dnd5e:props:fantasy-kingdom:bag_explorer_01
+        label: Display bag
+        transform: {x: 0, y: 0, z: 0, rotationY: 0}
+        materialOverrides:
+          - {surfaceId: atlas, materialRef: 'dnd5e:material:fantasy-kingdom:atlas_04_c'}
+  room:
+    implicitRegionId: courtyard
+    regions:
+      - id: courtyard
+        name: Courtyard
+        lighting: {intensity: 1}
+        cells:
+          - {r: -1, q: [[-2, 2]]}
+          - {r: 0, q: [[-2, 2]]}
+          - {r: 1, q: [[-2, 2]]}
+          - {r: 2, q: [[-1, 1]]}
+    walls:
+      - id: courtyard-wall
+        label: Texture wall
+        line: {start: {x: -3, z: -0.75}, end: {x: 3, z: -0.75}}
+        openings: []
+        appearance:
+          assetRef: dnd5e:env:fantasy-kingdom:house_wall_05
+          height: 3
+          thickness: 0.3
+          elevation: 0
+          materialOverrides:
+            - {surfaceId: atlas, materialRef: 'dnd5e:material:fantasy-kingdom:atlas_04_c'}
+        blocker:
+          footprint: {width: 6, depth: 0.3, offsetX: 0, offsetZ: 0}
+          blocksMovement: false
+          blocksLineOfSight: false
+    propDeclarations: {}
+    arrangementDeclarations: {}
+    partyStart: {q: 0, r: 2}
+    monsterDeclarations: []
