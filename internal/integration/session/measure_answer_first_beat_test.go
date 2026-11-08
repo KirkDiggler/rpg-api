@@ -1,3 +1,34 @@
+// measure_answer_first_beat_test.go is the live half of rpg-project#879's
+// measurement harness (S0, R5: the harness is the record). It measures R1 --
+// a verb answers within 100 ms at the garrison keep and its first beat lands
+// within 250 ms after -- on the server path, for both answer shapes.
+//
+// What: per world-clock Move, the answer (handler Move returns), the first
+// beat (the walker's first act after Through on the ActBroker), the last
+// beat, the drain, acts per verb, and a Redis GET floor; p50 and p95.
+// Keep: content/bench/bench-keep-garrison.yaml (10k hexes, 99 garrison, 20
+// patrols, neutral to the party), the party seated on the file's seat, an
+// 8-cell walk back and forth along an axial line (a 30 ft walker pays a
+// world round every six cells).
+// Knobs: RPG_MEASURE=1 (required; the test skips without it, so CI never
+// runs it), RPG_MEASURE_N (measured Moves per mode, default 20),
+// RPG_MEASURE_MODES ("whole" or "continues"; both by default),
+// RPG_MEASURE_KEYS, RPG_MEASURE_REDIS (a Redis it may flush, default
+// 127.0.0.1:6491).
+// Command:
+//
+//	redis-server --port 6491 --save '' --daemonize yes
+//	RPG_MEASURE=1 RPG_MEASURE_N=30 go test ./internal/integration/session/ \
+//	  -run TestMeasure_AnswerAndFirstBeat -count=1 -v -timeout 60m
+//
+// Caveats: timing ends at the ActBroker channel -- no gRPC transport,
+// protobuf encoding or network. Acts are per-recipient segments, and a
+// continued verb delivers all its acts (the answered steps' included) after
+// its save, so under S1 the first beat lands with the last. The act buffer
+// is raised for the run (a garrison verb folds 165-320 acts for one
+// recipient, past the default 256). Costs grow with every Move (the record
+// grows), so percentiles depend on N.
+
 package session_test
 
 import (
@@ -80,7 +111,7 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 
 	// The floor: a trivial GET round trip.
 	require.NoError(t, client.Set(context.Background(), "measure:floor", "x", 0).Err())
-	var floor []time.Duration
+	floor := make([]time.Duration, 0, 200)
 	for range 200 {
 		s := time.Now()
 		require.NoError(t, client.Get(context.Background(), "measure:floor").Err())
@@ -93,7 +124,7 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 		continues, acts, firstAfterAnswer, steps []int
 		compile, launch                          time.Duration
 	}
-	var rows []row
+	rows := make([]row, 0, len(modes)*len(keys))
 
 	for _, key := range keys {
 		raw := readShelf(t, key)
@@ -161,7 +192,7 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 			path := func(d int) []*sessionpb.Position {
 				p := make([]*sessionpb.Position, 0, pathLen)
 				for i := 1; i <= pathLen; i++ {
-					p = append(p, &sessionpb.Position{X: float64(x + d*i), Y: float64(y)}) // axial: (q±1, r) is a neighbour
+					p = append(p, &sessionpb.Position{X: float64(x + d*i), Y: float64(y)}) // axial: (q±1, r) is a neighbor
 				}
 				return p
 			}
