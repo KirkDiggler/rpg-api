@@ -73,6 +73,11 @@ type Config struct {
 	// returns; production leaves it false.
 	AnswerWhole bool
 
+	// RecordCapture is an optional host-owned diagnostic sink, independent of
+	// browser subscriptions. Nil keeps broker-only delivery. The host drains
+	// its capture after accepted continuations; New does not own its writer.
+	RecordCapture sdk.RecordStream
+
 	// Dice is the SDK's source of randomness. Optional: nil selects a
 	// crypto-secure dice.CryptoRoller, the production default. This is this
 	// PACKAGE's own ergonomics, not a relaxation of the toolkit's "supplied,
@@ -226,6 +231,10 @@ func New(cfg Config) (*Orchestrator, error) {
 	}
 
 	recordBroker := NewRecordBroker(0)
+	var recordStream sdk.RecordStream = recordBroker
+	if cfg.RecordCapture != nil {
+		recordStream = &recordPublisher{broker: recordBroker, capture: cfg.RecordCapture}
+	}
 	actBroker := NewActBroker(ActBufferFromEnv())
 	mgr, err := sdk.NewManager(&sdk.Config{
 		Locker:            locker,
@@ -237,7 +246,7 @@ func New(cfg Config) (*Orchestrator, error) {
 		Encounters:        NewEncounterRepository(cfg.Redis, cfg.TTL),
 		Characters:        NewCharacterRepository(cfg.Characters),
 		Seats:             NewSeatRepository(cfg.Redis),
-		Record:            recordBroker,
+		Record:            recordStream,
 		Acts:              actBroker,
 		Dice:              roller,
 		TurnDriver:        driverForSDK,

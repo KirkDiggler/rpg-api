@@ -24,6 +24,9 @@ const logRecordRestarted = "session record: catch-up restarted (older than reten
 // events; `more` says retained events after it did not fit, and is the
 // client's only end signal.
 func (h *Handler) GetRecord(ctx context.Context, req *sessionpb.GetRecordRequest) (*sessionpb.GetRecordResponse, error) {
+	if !h.enabled {
+		return nil, errRecordDisabled
+	}
 	if err := h.gate.CallerMemberSeated(ctx, req.GetSession(), req.GetMember()); err != nil {
 		return nil, err
 	}

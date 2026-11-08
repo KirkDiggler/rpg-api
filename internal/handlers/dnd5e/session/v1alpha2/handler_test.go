@@ -90,7 +90,7 @@ func (s *RecordHandlerSuite) SetupTest() {
 func (s *RecordHandlerSuite) TearDownTest() { s.cancel() }
 
 func (s *RecordHandlerSuite) handler(broker *sessionorch.RecordBroker) *Handler {
-	h, err := New(&HandlerConfig{Manager: s.manager, Broker: broker, Gate: s.gate})
+	h, err := New(&HandlerConfig{Manager: s.manager, Broker: broker, Gate: s.gate, Enabled: true})
 	s.Require().NoError(err)
 	return h
 }
@@ -261,7 +261,7 @@ func (s *RecordHandlerSuite) TestStreamRecordRequiresSeat() {
 		&characterrepo.GetOutput{Character: &entities.Character{Data: &tkcharacter.Data{ID: "char-1", PlayerID: "alice"}}}, nil)
 	gate, err := sessionaccess.New(chars, rosterOf("char-2"))
 	s.Require().NoError(err)
-	h, err := New(&HandlerConfig{Manager: s.manager, Broker: sessionorch.NewRecordBroker(8), Gate: gate})
+	h, err := New(&HandlerConfig{Manager: s.manager, Broker: sessionorch.NewRecordBroker(8), Gate: gate, Enabled: true})
 	s.Require().NoError(err)
 
 	err = h.StreamRecord(&sessionpb.StreamRecordRequest{Session: "sess-1", Member: "char-1"}, newRecordStream(s.ctx))

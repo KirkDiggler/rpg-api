@@ -31,6 +31,9 @@ import (
 // so the subscriber replaces what it holds instead of appending across a
 // hole (R25, R28).
 func (h *Handler) StreamRecord(req *sessionpb.StreamRecordRequest, stream sessionpb.RecordService_StreamRecordServer) error {
+	if !h.enabled {
+		return errRecordDisabled
+	}
 	ctx := stream.Context()
 	session, member := req.GetSession(), req.GetMember()
 	if err := h.gate.CallerMemberSeated(ctx, session, member); err != nil {

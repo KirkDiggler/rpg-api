@@ -18,6 +18,9 @@ import (
 	"context"
 	"errors"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
@@ -45,13 +48,19 @@ type Handler struct {
 	manager Manager
 	broker  *sessionorch.RecordBroker
 	gate    Gate
+	enabled bool
 }
 
-// HandlerConfig is everything the handler needs; every field is required.
+var errRecordDisabled = status.Error(codes.PermissionDenied, "diagnostic record access is disabled")
+
+// HandlerConfig supplies required dependencies and explicit diagnostic access.
 type HandlerConfig struct {
 	Manager Manager
 	Broker  *sessionorch.RecordBroker
 	Gate    Gate
+	// Enabled is development/playtest access, never inferred from client UI.
+	// False refuses both record RPCs; the ordinary story service is separate.
+	Enabled bool
 }
 
 // New builds a Handler, refusing a config missing any dependency.
@@ -68,7 +77,7 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 	if cfg.Gate == nil {
 		return nil, errors.New("session v1alpha2 handler: HandlerConfig.Gate is required")
 	}
-	return &Handler{manager: cfg.Manager, broker: cfg.Broker, gate: cfg.Gate}, nil
+	return &Handler{manager: cfg.Manager, broker: cfg.Broker, gate: cfg.Gate, enabled: cfg.Enabled}, nil
 }
 
 // StoryHandler implements sessionpb.StoryServiceServer: the act stream.
