@@ -7,8 +7,10 @@ package dungeonstest
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -40,19 +42,29 @@ func Projector(t testing.TB) dungeons.AtlasProjector {
 	mr := miniredis.RunT(t)
 	client := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = client.Close() })
+	p, err := projectorOver(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return p
+}
+
+// projectorOver is Projector's wiring over a client the caller owns.
+func projectorOver(client *goredis.Client) (dungeons.AtlasProjector, error) {
 	chars, err := characterrepo.NewRedis(&characterrepo.RedisConfig{Client: client})
 	if err != nil {
-		t.Fatalf("dungeonstest: character repo: %v", err)
+		return nil, fmt.Errorf("dungeonstest: character repo: %w", err)
 	}
 	orch, err := sessionorch.New(sessionorch.Config{
 		Redis: client, Characters: chars, TTL: time.Hour,
 		PresentationIDs: idgen.NewSequential("presentation"),
 	})
 	if err != nil {
-		t.Fatalf("dungeonstest: session orchestrator: %v", err)
+		return nil, fmt.Errorf("dungeonstest: session orchestrator: %w", err)
 	}
 
-	return ProjectorFor(orch.Manager)
+	return ProjectorFor(orch.Manager), nil
 }
 
 // ProjectorFor adapts a session Manager to dungeons.AtlasProjector.
@@ -85,15 +97,45 @@ func ContentDir(t testing.TB) string {
 
 // ShippedStore returns the shipped store over the real content/ directory.
 // It is never written: the shipped store has no write path.
+//
+// The store is compiled once per test binary and shared, as the server
+// compiles it once at boot and serves every session from it. Compiling the
+// whole shelf costs about a second, and the castle grows it; a suite that
+// built its own per test spent most of its time here and drifted toward the
+// CI job limit (rpg-api#1200). A FileRegistry is read-only after
+// construction, so sharing it leaks nothing between tests.
 func ShippedStore(t testing.TB) *dungeons.FileRegistry {
 	t.Helper()
 
-	r, err := dungeons.NewFileRegistry(ContentDir(t), Projector(t))
-	if err != nil {
-		t.Fatalf("dungeonstest: %v", err)
+	shipped.once.Do(func() { shipped.store, shipped.err = compileShipped(ContentDir(t)) })
+	if shipped.err != nil {
+		t.Fatalf("dungeonstest: %v", shipped.err)
 	}
 
-	return r
+	return shipped.store
+}
+
+// shipped is the one compiled shipped store per test binary.
+var shipped struct {
+	once  sync.Once
+	store *dungeons.FileRegistry
+	err   error
+}
+
+// compileShipped compiles dir over a projector whose miniredis lives as long
+// as the test binary: the store outlives the test that first asked for it,
+// and the projector it keeps must stay usable for every test after.
+func compileShipped(dir string) (*dungeons.FileRegistry, error) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		return nil, fmt.Errorf("start miniredis: %w", err)
+	}
+	p, err := projectorOver(goredis.NewClient(&goredis.Options{Addr: mr.Addr()}))
+	if err != nil {
+		return nil, err
+	}
+
+	return dungeons.NewFileRegistry(dir, p)
 }
 
 // Shipped returns a read-only Registry over the real content/ directory and
