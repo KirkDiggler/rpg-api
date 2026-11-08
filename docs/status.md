@@ -17,14 +17,17 @@ serves one member's acts, folded by the session SDK from that member's own
 story; the request's `member` is the recipient and the seat gate.
 `ActBroker` (`internal/orchestrators/session/act_broker.go`) implements
 `sdk.ActStream`, keyed by session and recipient. It enforces the same-id
-rule: acts sharing an id are one delivery unit, so a run is enqueued whole or
-not at all, and a subscriber whose free buffer cannot hold a whole run is
-closed as lagged with the last id whose run was fully enqueued. `GetStory`
+rule: acts sharing an id are one delivery unit, never split. The broker
+queues one commit's acts for a recipient as one unit, so its buffer counts
+commits, not acts (rpg-project#894: a garrison verb folds 165 to 320 acts for
+one player), and a subscriber with no room for the next commit is closed as
+lagged with the last id of the last commit queued: always between two ids. `GetStory`
 cuts its page after the fold and extends it to the end of the last same-id
 run, so a page ends only on an id boundary; it logs the acts folded per page
 at debug level (the re-fold per page is quadratic over a full catch-up). A
-refused act keeps its id and carries no body (R22). The buffer is 256,
-overridable by `SESSION_ACT_BUFFER`.
+refused act keeps its id and carries no body (R22). The buffer is 64 commits,
+overridable by `SESSION_ACT_BUFFER`; the record broker buffers 64 commits the
+same way.
 
 **The v1 event stream is deleted (rpg-project#631, E5c c1).** v1alpha1
 `SessionService.StreamEvents` and `GetStory` answer `Unimplemented` through the
