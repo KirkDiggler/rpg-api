@@ -4,8 +4,14 @@
 // within 250 ms after -- on the server path, for both answer shapes.
 //
 // What: per world-clock Move, the answer (handler Move returns), the first
-// beat (the walker's first act after Through on the ActBroker), the last
-// beat, the drain, acts per verb, and a Redis GET floor; p50 and p95.
+// beat, the last beat, the drain, acts per verb, and a Redis GET floor; p50
+// and p95. The first beat is the first act the walker receives on the
+// ActBroker for this verb -- their own or anyone's they see -- with an id
+// above the last act id received before the Move was issued (and above
+// Through when the answer continues); the last beat is the verb's last act
+// for the walker. A Move with no such act is counted in the "no beat"
+// column, never dropped from the percentiles silently, and fails the run in
+// AnswerWhole mode, where every verb publishes.
 // Keep: content/bench/bench-keep-garrison.yaml (10k hexes, 99 garrison, 20
 // patrols, neutral to the party), the party seated on the file's seat, an
 // 8-cell walk back and forth along an axial line (a 30 ft walker pays a
@@ -13,8 +19,9 @@
 // Knobs: RPG_MEASURE=1 (required; the test skips without it, so CI never
 // runs it), RPG_MEASURE_N (measured Moves per mode, default 20),
 // RPG_MEASURE_MODES ("whole" or "continues"; both by default),
-// RPG_MEASURE_KEYS, RPG_MEASURE_REDIS (a Redis it may flush, default
-// 127.0.0.1:6491), RPG_MEASURE_ACT_BUFFER (the broker's buffer in commits;
+// RPG_MEASURE_KEYS, RPG_MEASURE_REDIS (a loopback Redis it may flush,
+// default 127.0.0.1:6491; it refuses port 6379 and a store that already
+// holds keys), RPG_MEASURE_ACT_BUFFER (the broker's buffer in commits;
 // the production default when unset).
 // Command:
 //
@@ -27,14 +34,14 @@
 // continued verb delivers all its acts (the answered steps' included) after
 // its save, so under S1 the first beat lands with the last. The broker runs
 // at its production buffer; the table says whether the subscriber lagged.
-// Costs grow with every Move (the record
-// grows), so percentiles depend on N.
+// Costs grow with every Move (the record grows), so percentiles depend on N.
 
 package session_test
 
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -110,6 +117,7 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 	client := goredis.NewClient(&goredis.Options{Addr: addr})
 	t.Cleanup(func() { _ = client.Close() })
 	require.NoError(t, client.Ping(context.Background()).Err(), "redis at %s", addr)
+	guardFlushable(t, client, addr)
 
 	// The floor: a trivial GET round trip.
 	require.NoError(t, client.Set(context.Background(), "measure:floor", "x", 0).Err())
@@ -126,6 +134,7 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 		continues, acts, firstAfterAnswer, steps []int
 		compile, launch                          time.Duration
 		lagged                                   bool
+		noBeat                                   int
 	}
 	rows := make([]row, 0, len(modes)*len(keys))
 
@@ -216,8 +225,13 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 					dir = 1
 				}
 				p := path(dir)
+				// The high-water id: the last act the walker received before
+				// this Move. Only acts above it are this verb's.
 				mu.Lock()
-				got = got[:0]
+				highWater := ""
+				if len(got) > 0 {
+					highWater = got[len(got)-1].id
+				}
 				mu.Unlock()
 				t0 := time.Now()
 				resp, err := handler.Move(ctx, &sessionpb.MoveRequest{Session: run, Member: "alice", Path: p})
@@ -227,8 +241,20 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 				require.NoError(t, runner.wait(dctx))
 				drainedAt := time.Since(t0)
 				cancel()
-				// Let the subscriber goroutine take what the drain published.
-				time.Sleep(20 * time.Millisecond)
+				// Wait until the subscriber holds the verb's last act for the
+				// walker, as the catch-up read names it (no fixed sleep).
+				expected, err := orch.Manager.Acts(context.Background(), &sdk.ActsInput{
+					Session: run, Member: "alice", AfterID: highWater,
+				})
+				require.NoError(t, err)
+				if len(expected.Acts) > 0 {
+					want := expected.Acts[len(expected.Acts)-1].ID
+					require.Eventually(t, func() bool {
+						mu.Lock()
+						defer mu.Unlock()
+						return len(got) > 0 && got[len(got)-1].id >= want
+					}, 30*time.Second, time.Millisecond, "the subscriber never received act %s", want)
+				}
 
 				where, err := orch.Manager.Where(context.Background(), &sdk.WhereInput{Session: run, Member: "alice"})
 				require.NoError(t, err)
@@ -246,7 +272,12 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 				dir = -dir
 
 				mu.Lock()
-				acts := slices.Clone(got)
+				var acts []arrival
+				for _, a := range got {
+					if a.id > highWater {
+						acts = append(acts, a)
+					}
+				}
 				mu.Unlock()
 				if i < warm {
 					if i == 0 {
@@ -271,24 +302,28 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 				// answer continues (the acts at or before it are the answered
 				// steps, delivered with the rest; record ids are ULIDs, so
 				// "after" is a string compare); the verb's first act otherwise.
-				firstIdx := 0
-				if through := resp.GetThrough(); through != "" {
-					firstIdx = len(acts)
-					for j, a := range acts {
-						if a.id > through {
-							firstIdx = j
-							break
-						}
+				after := highWater
+				if through := resp.GetThrough(); through > after {
+					after = through
+				}
+				firstIdx := len(acts)
+				for j, a := range acts {
+					if a.id > after {
+						firstIdx = j
+						break
 					}
 				}
-				if len(acts) > 0 && firstIdx < len(acts) {
+				if firstIdx == len(acts) {
+					r.noBeat++
+					require.False(t, answerWhole, "move %d: no act for the walker after %q; a whole verb always publishes", i, after)
+				} else {
 					r.first = append(r.first, acts[firstIdx].at.Sub(t0))
 					r.last = append(r.last, acts[len(acts)-1].at.Sub(t0))
-					after := 0
+					arrivedAfter := 0
 					if acts[0].at.After(answered) {
-						after = 1
+						arrivedAfter = 1
 					}
-					r.firstAfterAnswer = append(r.firstAfterAnswer, after)
+					r.firstAfterAnswer = append(r.firstAfterAnswer, arrivedAfter)
 				}
 			}
 			series := make([]string, 0, len(r.answer))
@@ -315,16 +350,16 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "\nredis GET floor: p50 %s p95 %s (n=%d)\n", ms(pct(floor, 50)), ms(pct(floor, 95)), len(floor))
-	fmt.Fprintf(&b, "| keep | mode | n | continues | answer p50 | answer p95 | first beat p50 | first beat p95 | last beat p50 | last beat p95 | drained p50 | drained p95 | acts/verb | steps answered | acts arrive after answer | lagged | launch |\n")
-	fmt.Fprintf(&b, "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+	fmt.Fprintf(&b, "| keep | mode | n | continues | answer p50 | answer p95 | first beat p50 | first beat p95 | last beat p50 | last beat p95 | drained p50 | drained p95 | acts/verb | steps answered | no beat | acts arrive after answer | lagged | launch |\n")
+	fmt.Fprintf(&b, "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, r := range rows {
-		fmt.Fprintf(&b, "| %s | %s | %d | %d/%d | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %d/%d | %v | %s |\n",
+		fmt.Fprintf(&b, "| %s | %s | %d | %d/%d | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %d | %d/%d | %v | %s |\n",
 			r.key, r.mode, len(r.answer), sum(r.continues), len(r.continues),
 			ms(pct(r.answer, 50)), ms(pct(r.answer, 95)),
 			ms(pct(r.first, 50)), ms(pct(r.first, 95)),
 			ms(pct(r.last, 50)), ms(pct(r.last, 95)),
 			ms(pct(r.drained, 50)), ms(pct(r.drained, 95)),
-			span(r.acts), span(r.steps), sum(r.firstAfterAnswer), len(r.firstAfterAnswer), r.lagged,
+			span(r.acts), span(r.steps), r.noBeat, sum(r.firstAfterAnswer), len(r.firstAfterAnswer), r.lagged,
 			r.launch.Round(time.Millisecond))
 	}
 	t.Log(b.String())
@@ -365,6 +400,25 @@ func (r *countedRunner) wait(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// guardFlushable refuses a Redis the run was not pointed at: it must be on
+// loopback, not on 6379 (the default every local store uses), answer on the
+// port it was dialed on, and hold no keys before the run.
+func guardFlushable(t *testing.T, client *goredis.Client, addr string) {
+	t.Helper()
+	host, port, err := net.SplitHostPort(addr)
+	require.NoError(t, err, "RPG_MEASURE_REDIS %q", addr)
+	ip := net.ParseIP(host)
+	require.True(t, host == "localhost" || (ip != nil && ip.IsLoopback()),
+		"RPG_MEASURE_REDIS %q: the run flushes its store, so it must be a loopback Redis", addr)
+	require.NotEqual(t, "6379", port, "RPG_MEASURE_REDIS %q: refusing to flush the default Redis port", addr)
+	info, err := client.Info(context.Background(), "server").Result()
+	require.NoError(t, err)
+	require.Contains(t, info, "tcp_port:"+port, "RPG_MEASURE_REDIS %q: the server does not report that port", addr)
+	size, err := client.DBSize(context.Background()).Result()
+	require.NoError(t, err)
+	require.Zero(t, size, "RPG_MEASURE_REDIS %q holds %d keys; the run flushes its store, so point it at an empty one", addr, size)
 }
 
 func envOr(k, d string) string {

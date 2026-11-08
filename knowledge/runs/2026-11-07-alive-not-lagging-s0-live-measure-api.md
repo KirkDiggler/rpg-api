@@ -2,6 +2,13 @@
 
 Live half of the measurement harness for story [rpg-project#879](https://github.com/KirkDiggler/rpg-project/issues/879) (S0, R5: the harness is the record), measuring R1 for slice [rpg-project#890](https://github.com/KirkDiggler/rpg-project/issues/890). Base: `rpg-api` `dev` at [`f890674`](https://github.com/KirkDiggler/rpg-api/commit/f890674). Built on session v0.169.0 and encounter v0.184.0.
 
+Measured at `rpg-api` head [`2d8328d`](https://github.com/KirkDiggler/rpg-api/commit/2d8328d) (a merge of dev `f890674`), keep `bench-keep-garrison` (10k hexes, 99 garrison, 20 patrols, neutral to the party), an 8-cell walk, N=30 after 3 warm-up Moves, Redis 7.2.2 on a private loopback port, CPU AMD Ryzen 9 3950X 16-Core (load average 8–9). Command:
+
+```
+redis-server --port 6491 --save '' --daemonize yes
+RPG_MEASURE=1 RPG_MEASURE_N=30 go test ./internal/integration/session/ -run TestMeasure_AnswerAndFirstBeat -count=1 -v -timeout 60m
+```
+
 ## Shipped
 
 - `TestMeasure_AnswerAndFirstBeat`: the v1alpha1 handler's Move on a real Redis over `bench-keep-garrison`, both answer modes, reporting answer, first beat, last beat, drain, acts per verb, broker lag and a Redis floor; skipped unless `RPG_MEASURE=1` — [internal/integration/session/measure_answer_first_beat_test.go](https://github.com/KirkDiggler/rpg-api/blob/feat/measure-answer-first-beat/internal/integration/session/measure_answer_first_beat_test.go).
@@ -25,3 +32,4 @@ Live half of the measurement harness for story [rpg-project#879](https://github.
 
 - The first run on the merged #1197 failed: the test called `Orchestrator.Drain` between Moves, which became a one-way shutdown drain; the run now counts its own continuations — [rpg-api#1197](https://github.com/KirkDiggler/rpg-api/pull/1197).
 - One rerun on a machine at load 42 doubled every number; the published table is from a run at load 8–9.
+- Review on [rpg-api#1202](https://github.com/KirkDiggler/rpg-api/pull/1202) caught that a fixed 20 ms sleep let a verb's first beat take the previous verb's act under load, that a Move with no beat dropped out of the percentiles silently, and that the flush had no guard; the run now uses a high-water act id, waits on the catch-up read's last id, counts "no beat" (failing in AnswerWhole), and refuses a non-loopback, 6379 or non-empty Redis.
