@@ -11,15 +11,16 @@ import (
 
 // TestSeed_AnEmptyMountGetsTheShippedTombAndLoads is the fresh-box case:
 // RPG_CONTENT_DIR is a mounted, empty directory; after seeding, the registry
-// constructs and serves the tomb the image ships.
+// constructs and serves the default the image ships (here the tomb standing
+// in under dungeons.DefaultKey, see shippedTomb).
 func (s *RegistrySuite) TestSeed_AnEmptyMountGetsTheShippedTombAndLoads() {
 	empty := s.T().TempDir()
 
 	seeded, err := dungeons.SeedShipped(empty, s.dir)
 	s.Require().NoError(err)
-	s.Contains(seeded, "reference-tomb", "the tomb was written")
+	s.Contains(seeded, dungeons.DefaultKey, "the default was written")
 
-	onDisk, err := os.ReadFile(filepath.Join(empty, "reference-tomb.yaml"))
+	onDisk, err := os.ReadFile(filepath.Join(empty, defaultFile))
 	s.Require().NoError(err)
 	s.Equal(s.tomb, onDisk, "byte for byte the shipped file")
 
@@ -35,16 +36,16 @@ func (s *RegistrySuite) TestSeed_AnEmptyMountGetsTheShippedTombAndLoads() {
 }
 
 // TestSeed_NeverOverwritesAnExistingTomb: a directory that already has its
-// own reference-tomb.yaml — edited by an author — keeps it.
+// own default dungeon file — edited by an author — keeps it.
 func (s *RegistrySuite) TestSeed_NeverOverwritesAnExistingTomb() {
 	custom := append(bytes.Clone(s.tomb), []byte("# the author's own edit\n")...)
-	s.write("reference-tomb.yaml", custom)
+	s.write(defaultFile, custom)
 
 	seeded, err := dungeons.SeedShipped(s.dir, s.T().TempDir())
 	s.Require().NoError(err)
 	s.Empty(seeded)
 
-	onDisk, err := os.ReadFile(filepath.Join(s.dir, "reference-tomb.yaml"))
+	onDisk, err := os.ReadFile(filepath.Join(s.dir, defaultFile))
 	s.Require().NoError(err)
 	s.Equal(custom, onDisk, "untouched — even though the shipped source here does not exist at all")
 }
@@ -52,7 +53,7 @@ func (s *RegistrySuite) TestSeed_NeverOverwritesAnExistingTomb() {
 // TestSeed_ABrokenExistingTombIsStillRefusedByName: seeding does not paper
 // over a directory whose own tomb does not compile; the boot refusal stands.
 func (s *RegistrySuite) TestSeed_ABrokenExistingTombIsStillRefusedByName() {
-	s.write("reference-tomb.yaml", []byte("version: 2\nkey: reference-tomb\nvoid: nonsense\n"))
+	s.write(defaultFile, []byte("version: 2\nkey: "+dungeons.DefaultKey+"\nvoid: nonsense\n"))
 
 	seeded, err := dungeons.SeedShipped(s.dir, s.T().TempDir())
 	s.Require().NoError(err)
@@ -60,7 +61,7 @@ func (s *RegistrySuite) TestSeed_ABrokenExistingTombIsStillRefusedByName() {
 
 	_, err = dungeons.NewFileRegistry(s.dir, dungeonstest.Projector(s.T()))
 	s.Require().Error(err)
-	s.Contains(err.Error(), filepath.Join(s.dir, "reference-tomb.yaml"))
+	s.Contains(err.Error(), filepath.Join(s.dir, defaultFile))
 }
 
 // TestSeed_AnUnreadableShippedDirectoryNamesItself: there is nowhere to seed
@@ -75,7 +76,7 @@ func (s *RegistrySuite) TestSeed_AnUnreadableShippedDirectoryNamesItself() {
 	s.Require().Error(err)
 	s.Contains(err.Error(), nowhere, "the directory it could not read")
 	s.Contains(err.Error(), empty, "and the one it was seeding")
-	s.NotContains(err.Error(), "reference-tomb.yaml",
+	s.NotContains(err.Error(), defaultFile,
 		"and not a file, because a file is not what failed")
 
 	entries, err := os.ReadDir(empty)
@@ -92,7 +93,7 @@ func (s *RegistrySuite) TestSeed_AShippedTreeWithNoTombNamesTheFile() {
 
 	_, err := dungeons.SeedShipped(empty, tombless)
 	s.Require().Error(err)
-	s.Contains(err.Error(), filepath.Join(tombless, "reference-tomb.yaml"))
+	s.Contains(err.Error(), filepath.Join(tombless, defaultFile))
 	s.Contains(err.Error(), empty)
 }
 

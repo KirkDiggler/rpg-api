@@ -27,9 +27,9 @@ const ShippedContentDir = "content"
 // It exists because a deployment mounts an EMPTY directory as
 // RPG_CONTENT_DIR on a fresh box (rpg-deployment's ./content volume is
 // gitignored), and NewFileRegistry refuses a directory without the default
-// dungeon — correctly, since "no key" must always mean the tomb. Tracking a
-// second copy of the tomb in the deployment repo would drift from the one
-// the image ships; seeding from the image cannot.
+// dungeon — correctly, since "no key" must always mean the default. Tracking
+// a second copy of the default in the deployment repo would drift from the
+// one the image ships; seeding from the image cannot.
 //
 // # Why EVERY shipped dungeon and not only the default
 //

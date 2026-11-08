@@ -159,12 +159,17 @@ func (s *TemplatesSuite) TestCompile_ReferenceDungeonsDeclareNoTemplates() {
 	paths, err := filepath.Glob(filepath.Join("..", "..", "content", "*.yaml"))
 	s.Require().NoError(err)
 	s.Require().NotEmpty(paths)
+	// The retired walk sites the tests still play (rpg-api#1205).
+	sites, err := filepath.Glob(filepath.Join("..", "dungeons", "testdata", "sites", "*.yaml"))
+	s.Require().NoError(err)
+	s.Require().NotEmpty(sites)
+	paths = append(paths, sites...)
 
 	templated := map[string]bool{
-		filepath.Join("..", "..", "content", "action-augment-walk.yaml"):  true,
-		filepath.Join("..", "..", "content", "the-mad-king.yaml"):         true,
-		filepath.Join("..", "..", "content", "reference-npc-pacing.yaml"): true,
-		filepath.Join("..", "..", "content", "reference-keep.yaml"):       true,
+		filepath.Join("..", "dungeons", "testdata", "sites", "action-augment-walk.yaml"):  true,
+		filepath.Join("..", "..", "content", "the-mad-king.yaml"):                         true,
+		filepath.Join("..", "dungeons", "testdata", "sites", "reference-npc-pacing.yaml"): true,
+		filepath.Join("..", "..", "content", "reference-keep.yaml"):                       true,
 	}
 
 	for _, path := range paths {

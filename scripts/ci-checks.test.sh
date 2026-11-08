@@ -116,6 +116,10 @@ make_fixture() {
 	cp "$CHECKER_SOURCE" "$root/scripts/ci-checks.sh"
 	cp "$MAKEFILE_SOURCE" "$root/Makefile"
 	chmod +x "$root/scripts/ci-checks.sh"
+	# Read-only (git ls-files over the fixture's own repository), so the real
+	# script runs here unstubbed.
+	cp "$SOURCE_DIR/scripts/verify-content-allowlist.sh" "$root/scripts/verify-content-allowlist.sh"
+	chmod +x "$root/scripts/verify-content-allowlist.sh"
 	cat >"$root/scripts/verify-release-pin.sh" <<'EOF'
 #!/bin/bash
 set -euo pipefail

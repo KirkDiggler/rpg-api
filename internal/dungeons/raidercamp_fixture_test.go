@@ -20,7 +20,7 @@ const raiderCampKey = "reference-raider-camp"
 
 // shippedRaiderCamp is the real content file, so these tests run on what
 // the server boots with rather than a fixture that could drift from it.
-var shippedRaiderCamp = filepath.Join("..", "..", "content", raiderCampKey+".yaml")
+var shippedRaiderCamp = filepath.Join("testdata", "sites", raiderCampKey+".yaml")
 
 // The served camp uses current authored policy, including its reserves. The
 // toolkit's v2 geometry/parser example is historical, not a live-format oracle.

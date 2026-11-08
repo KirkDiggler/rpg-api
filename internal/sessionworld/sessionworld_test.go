@@ -23,14 +23,15 @@ func TestReferenceTombSuite(t *testing.T) {
 	suite.Run(t, new(ReferenceTombSuite))
 }
 
-// referenceTombPath is the shipped tomb, read from the content tree rather
+// referenceTombPath is the reference tomb, retired from the content tree to
+// internal/dungeons/testdata/sites (rpg-api#1205) and read from there rather
 // than embedded: this package holds no content any more (see the package
-// comment), and the test compiling the real shipped file is the point.
-var referenceTombPath = filepath.Join("..", "..", "content", "reference-tomb.yaml")
+// comment).
+var referenceTombPath = filepath.Join("..", "dungeons", "testdata", "sites", "reference-tomb.yaml")
 
 func (s *ReferenceTombSuite) SetupTest() {
 	raw, err := os.ReadFile(referenceTombPath)
-	s.Require().NoError(err, "the shipped tomb must exist at content/reference-tomb.yaml")
+	s.Require().NoError(err, "the tomb must exist at internal/dungeons/testdata/sites/reference-tomb.yaml")
 	tomb, err := Compile(raw)
 	s.Require().NoError(err, "the shipped tomb must compile")
 	s.tomb = tomb

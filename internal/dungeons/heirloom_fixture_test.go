@@ -20,7 +20,7 @@ const heirloomKey = "reference-tomb-heirloom"
 
 // shippedHeirloom is the real content file, so these tests run on what the
 // server boots with rather than a fixture that could drift from it.
-var shippedHeirloom = filepath.Join("..", "..", "content", heirloomKey+".yaml")
+var shippedHeirloom = filepath.Join("testdata", "sites", heirloomKey+".yaml")
 
 // TestHeirloomFixture_IsByteIdenticalToTheToolkits is the pin the plan asks
 // for, and the reason it is bytes rather than behavior: this file and the
@@ -75,18 +75,17 @@ func (s *RegistrySuite) TestHeirloomFixture_CompilesAndDeclaresItsScenarioEnding
 
 // TestSeed_AnEmptyMountGetsEveryShippedDungeon is the walk's runbook made
 // mechanical: a fresh box mounts an empty RPG_CONTENT_DIR, and after seeding
-// it serves everything the image ships — the tomb AND the heirloom fixture.
+// it serves everything the image ships — the castle AND the keep.
 // Before rpg-project#368 the seed copied the default alone, so a second
 // reference dungeon had to be carried to the box by hand.
 func (s *RegistrySuite) TestSeed_AnEmptyMountGetsEveryShippedDungeon() {
-	shipped := filepath.Join("..", "..", "content")
+	shipped := dungeonstest.ContentDir(s.T())
 	empty := s.T().TempDir()
 
 	seeded, err := dungeons.SeedShipped(empty, shipped)
 	s.Require().NoError(err)
 	s.Contains(seeded, dungeons.DefaultKey)
-	s.Contains(seeded, heirloomKey)
-	s.Contains(seeded, raiderCampKey, "the hold-out's fixture ships too (rpg-project#375)")
+	s.Contains(seeded, referenceKeepKey, "the keep ships too (rpg-api#1205)")
 
 	// Every *.yaml directly in the shipped directory, the seed's own rule; a
 	// subdirectory (content/bench, the benchmark fixtures) is not a dungeon.

@@ -9,7 +9,7 @@ const HeirloomVaultKey = "heirloom-vault"
 // that nobody declared holdable, two authored ways out, and the scenario
 // binding that turns the two into an ending.
 //
-// It is the compact sibling of content/reference-tomb-heirloom.yaml, and it
+// It is the compact sibling of testdata/sites/reference-tomb-heirloom.yaml, and it
 // exists for the same reason ConcealedVaultYAML does: an acceptance scene
 // that walks a party from a start cell to a vault should spend its steps on
 // the thing under test, not on crossing four rooms. The shipped fixture is

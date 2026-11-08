@@ -84,9 +84,16 @@ import (
 // graph and policy fields removed, then compared byte-equal to the complete
 // canonical source under the new graph. Projection code was not changed.
 func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBeforeTheWave() {
+	// The shipped content and the retired walk sites under testdata/sites
+	// (rpg-api#1205): the test shelf still plays the sites, so their atlases
+	// stay pinned.
 	files, err := filepath.Glob(filepath.Join(dungeonstest.ContentDir(s.T()), "*.yaml"))
 	s.Require().NoError(err)
 	s.Require().NotEmpty(files)
+	sites, err := filepath.Glob(filepath.Join(dungeonstest.SitesDir(s.T()), "*.yaml"))
+	s.Require().NoError(err)
+	s.Require().NotEmpty(sites)
+	files = append(files, sites...)
 
 	// Each shipped file's atlas is read off the shipped store's entry: the
 	// same compile and projection a validate-only Put ran when the fixtures
