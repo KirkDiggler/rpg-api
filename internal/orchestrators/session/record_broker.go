@@ -14,7 +14,8 @@ import (
 // is closed as lagged. It counts commits, as actBuffer does, never single
 // beats: on the garrison keep the record grows by hundreds of beats per verb
 // (rpg-project#894, F15), and a buffer of 256 BEATS would close a live
-// StreamRecord on the first verb. 64 is sized as actBuffer's is.
+// StreamRecord on the first verb. 64 is sized as actBuffer's is, and so is
+// the ceiling: about 64 commits times a commit's beats per stalled client.
 const recordBuffer = 64
 
 // ErrRecordLagged is what PublishRecord returns when it closed at least one
@@ -96,7 +97,7 @@ func (s *RecordSubscription) Units() <-chan RecordUnit { return s.ch }
 
 // Lagged reports whether the broker closed this subscription because it fell
 // behind, and the last id queued for it before it did. Meaningful once
-// Events is closed.
+// Units is closed.
 func (s *RecordSubscription) Lagged() (bool, string) {
 	s.broker.mu.Lock()
 	defer s.broker.mu.Unlock()

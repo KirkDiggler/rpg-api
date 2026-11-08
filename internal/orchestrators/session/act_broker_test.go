@@ -101,11 +101,16 @@ func (s *ActBrokerTestSuite) TestActBrokerGarrisonVerbFitsTwoCommits() {
 	verb := garrisonVerb("alice", "v1", 320)
 	s.Require().NoError(broker.PublishActs(s.ctx, verb))
 
-	unit := <-sub.Units()
-	s.Require().Len(unit, 320, "the whole commit is one unit")
-	for i := range verb {
-		s.Equal(verb[i].ID, unit[i].Act.ID, "act %d in order", i)
+	want := make([]string, 0, len(verb))
+	for _, a := range verb {
+		want = append(want, a.ID)
 	}
+	unit := <-sub.Units()
+	got := make([]string, 0, len(unit))
+	for _, a := range unit {
+		got = append(got, a.Act.ID)
+	}
+	s.Equal(want, got, "the whole commit is one unit, in order")
 	s.Require().NoError(sub.Close())
 	lagged, _ := sub.Lagged()
 	s.False(lagged)
@@ -179,7 +184,12 @@ func (s *ActBrokerTestSuite) TestActBrokerRoutesByRecipient() {
 
 	batch := []sdk.Act{act("alice", "A1"), act("bob", "B1"), act("alice", "A2")}
 	s.Require().NoError(broker.PublishActs(s.ctx, batch))
-	s.Len(<-alice.Units(), 2, "alice's acts of one commit are one unit")
+	first := <-alice.Units()
+	firstIDs := make([]string, 0, len(first))
+	for _, a := range first {
+		firstIDs = append(firstIDs, a.Act.ID)
+	}
+	s.Equal([]string{"A1", "A2"}, firstIDs, "alice's acts of one commit are one unit")
 	s.Require().NoError(broker.PublishActs(s.ctx, batch))
 	s.Require().NoError(alice.Close())
 	s.Require().NoError(bob.Close())

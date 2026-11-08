@@ -64,9 +64,19 @@ func (s *RecordBrokerTestSuite) TestRecordBrokerLongCommitIsOneUnit() {
 	sub, err := broker.Subscribe("sess-1")
 	s.Require().NoError(err)
 
-	s.Require().NoError(broker.PublishRecord(s.ctx, beats("sess-1", 1, 320)))
+	commit := beats("sess-1", 1, 320)
+	s.Require().NoError(broker.PublishRecord(s.ctx, commit))
+	want := make([]string, 0, len(commit))
+	for _, evt := range commit {
+		want = append(want, evt.ID)
+	}
+	unit := <-sub.Units()
+	got := make([]string, 0, len(unit))
+	for _, evt := range unit {
+		got = append(got, evt.ID)
+	}
+	s.Equal(want, got, "the whole commit is one unit, in order")
 	s.Require().NoError(sub.Close())
-	s.Len(s.drain(sub), 320)
 	lagged, _ := sub.Lagged()
 	s.False(lagged)
 }

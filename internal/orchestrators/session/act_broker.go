@@ -21,9 +21,11 @@ import (
 //
 // 64 commits is a client that is truly behind: a verb is one or two commits
 // (the answer, then its continuation), so it is thirty-odd verbs, or a
-// monster round's turns several times over, unread. Held units are the
-// commit's own slices, shared by every subscriber of the recipient, so the
-// bound on memory is 64 commits per stalled client, not 64 copies.
+// monster round's turns several times over, unread. The ceiling per stalled
+// client is therefore about 64 commits times a commit's acts for it (320 on
+// the garrison, so some 20k acts), where it was 256 acts. Held units are the
+// commit's own slices, shared by every subscriber of the recipient, so
+// several stalled clients of one recipient hold one copy, not one each.
 const actBuffer = 64
 
 // ActBufferEnv overrides actBuffer for one process, in commits. It exists for
@@ -137,7 +139,7 @@ func (s *ActSubscription) Units() <-chan ActUnit { return s.ch }
 
 // Lagged reports whether the broker closed this subscription because it fell
 // behind, and the last id of the last unit queued for it before it did.
-// Meaningful once Acts is closed.
+// Meaningful once Units is closed.
 func (s *ActSubscription) Lagged() (bool, string) {
 	s.broker.mu.Lock()
 	defer s.broker.mu.Unlock()
