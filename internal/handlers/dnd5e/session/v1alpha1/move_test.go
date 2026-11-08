@@ -96,3 +96,48 @@ func TestMove_BarredStopsWithTheReason(t *testing.T) {
 	require.Equal(t, "Gate Guard bars the way", out.GetStopReason())
 	require.Empty(t, out.GetSteps(), "the bump is no step")
 }
+
+// A walk that answers before the world runs (rpg-project#879 R2) says so on
+// the wire: continues, the record id the rest follows on the stream, the
+// CONTINUING status, and empty save and delivery reports, since both belong
+// to the rest of the walk.
+func TestMove_ContinuingAnswer_CarriesContinuesAndThrough(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Move(gomock.Any(), gomock.Any()).Return(&sdk.MoveOutput{
+		Status:    sdk.MovementContinuing,
+		Steps:     []sdk.Step{{Position: spatial.Position{X: 1, Y: 1}}, {Position: spatial.Position{X: 2, Y: 1}}},
+		Continues: true,
+		Through:   "record-42",
+	}, nil)
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	out, err := h.Move(auth.WithPlayerID(context.Background(), "alice"), &sessionpb.MoveRequest{
+		Session: "sess", Member: "char-1",
+		Path: []*sessionpb.Position{{X: 1, Y: 1}, {X: 2, Y: 1}, {X: 3, Y: 1}},
+	})
+	require.NoError(t, err)
+	require.True(t, out.GetContinues())
+	require.Equal(t, "record-42", out.GetThrough())
+	require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_CONTINUING, out.GetStatus())
+	require.Len(t, out.GetSteps(), 2)
+	require.Empty(t, out.GetSaved().GetWritten())
+	require.Empty(t, out.GetSaved().GetFailed())
+	require.False(t, out.GetDelivery().GetFailed())
+}
+
+// A whole walk never claims to continue.
+func TestMove_WholeAnswer_DoesNotContinue(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Move(gomock.Any(), gomock.Any()).Return(&sdk.MoveOutput{
+		Status: sdk.MovementCompleted,
+		Saved:  sdk.SaveReport{Written: []string{"encounter:sess"}},
+	}, nil)
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	out, err := h.Move(auth.WithPlayerID(context.Background(), "alice"), &sessionpb.MoveRequest{Session: "sess", Member: "char-1", Path: []*sessionpb.Position{{X: 1}}})
+	require.NoError(t, err)
+	require.False(t, out.GetContinues())
+	require.Empty(t, out.GetThrough())
+	require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_COMPLETED, out.GetStatus())
+	require.Equal(t, []string{"encounter:sess"}, out.GetSaved().GetWritten())
+}
