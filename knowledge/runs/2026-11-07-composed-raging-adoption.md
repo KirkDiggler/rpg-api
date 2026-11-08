@@ -12,6 +12,7 @@
 
 ## Found
 
+- After independent review, API head had no CI because dev's two landed performance-pin updates made the PR conflicting. Merged dev on top and pinned session 9f462d97, which merges toolkit main and retains encounter v0.181.0 without dropping Raging. Full make test and ci-check passed against the shipped tree — [S12](https://github.com/KirkDiggler/rpg-project/issues/884).
 - After generated SDK adoption and source-ID mapping, full make test passed in 426.37 seconds and make ci-check passed in 491.72 seconds; no test set was narrowed — [gate definitions](../../Makefile).
 - Proto #422 merged as 1fc63b4; publication CI 42422302400 passed and v0.1.259 points to generated commit 7dcb1b2. The Go submodule resolves that published commit to v0.0.0-20261107224950-7dcb1b2ebf4c; no generated code was authored locally — [publication](https://github.com/KirkDiggler/rpg-api-protos/actions/runs/42422302400).
 - Declaration/held-row converter assertions and all four native Raging row assertions failed on empty source IDs, then passed after the direct mapping. Source entity identity is not substituted for row identity or recipient — [wire projection tests](../../internal/handlers/dnd5e/session/v1alpha1/convert_test.go).
@@ -21,6 +22,7 @@
 
 ## Mistaken
 
+- The first catch-up gate included the untracked local walk YAML in shipped-content glob tests, failing the atlas fixture and reference-template assertions. Temporarily moved only that untracked file outside content for the complete gates and restored it afterward; tests were not skipped/changed and the served file was untouched — [content test](../../internal/dungeons/registry_test.go).
 - The first new converter fixture called ToJSON on the factory output instead of its Condition; that compile error was corrected before observing the meaningful missing-metadata RED. A new integration file also needed the repository's goimports grouping — [fixture](../../internal/handlers/dnd5e/v1alpha1/character/composed_raging_test.go).
 
 — cross-team agent, on behalf of KirkDiggler
