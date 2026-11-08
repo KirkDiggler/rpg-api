@@ -17,6 +17,8 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/testsupport/levelfixture"
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
+	genericeffects "github.com/KirkDiggler/rpg-toolkit/mechanics/effects"
+	"github.com/KirkDiggler/rpg-toolkit/mechanics/effects/machine"
 	"github.com/KirkDiggler/rpg-toolkit/npc"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/ammunition"
@@ -29,6 +31,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
+	dndevents "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/packs"
@@ -894,9 +897,14 @@ func (s *SessionStackSuite) spentBarbarian(id, playerID string) (*entities.Chara
 		MemberID: id, Source: refs.Classes.Barbarian().String(),
 	})
 	s.Require().NoError(err)
-	raging, err := json.Marshal(conditions.RagingData{
-		Ref: refs.Conditions.Raging(), CharacterID: id,
-		Source: refs.Features.Rage().String(), SawTurnEnd: true, TurnsActive: 2,
+	raging, err := json.Marshal(conditions.ComposedData{
+		Ref: *refs.Conditions.Raging(), MemberID: id,
+		Origin:   &dndevents.ConditionOrigin{Ref: *refs.Features.Rage(), EntityID: id},
+		Bindings: json.RawMessage(`{"damage_bonus":{"barbarian_level":true}}`),
+		Runtime: &genericeffects.Snapshot{State: "raging", Bag: machine.Bag{
+			machine.KeySawTurnEnd: true, machine.KeyTurnsActive: 2, machine.KeyRoundActivated: 1,
+			"was_hit_this_turn": false, "did_attack_this_turn": false,
+		}},
 	})
 	s.Require().NoError(err)
 

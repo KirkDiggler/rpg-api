@@ -10,11 +10,13 @@ Part of [#866](https://github.com/KirkDiggler/rpg-project/issues/866), integrati
 
 - Run the canonical route and disturbance scenarios with the production continuation runner, not the shared harness's synchronous AnswerWhole shortcut; an early response is not completion or a save — [upstream contract](https://github.com/KirkDiggler/rpg-api/pull/1197).
 - Read completion through an actual following GetWhere request on the same session guard, and drain an old host before recreating its in-process locker over Redis; a different locker is not the same coordination domain — [continuation contract](https://github.com/KirkDiggler/rpg-toolkit/pull/2314).
+- Retain S7's subscriber-local live folding and S10's whole-commit broker units, because live delivery must remain complete while reconnect reads each observer's own story; no canonical-side broker or stream special case is introduced — [listeners](https://github.com/KirkDiggler/rpg-api/pull/1201), [commit units](https://github.com/KirkDiggler/rpg-api/pull/1199).
 - The delayed-boundary test controls scheduling only before handing the unchanged continuation to the production runner; it supplies no test-only NPC picker, coordinator or movement — [#866](https://github.com/KirkDiggler/rpg-project/issues/866).
 
 ## Found
 
 - The six-cell Move answers CONTINUING with five steps, Through and no save; the real guarded read waits for the rest, then the exact two-/three-item routes and ten-choice clang/resumption journey retain their original configuration through Redis and fresh hosts — [#866](https://github.com/KirkDiggler/rpg-project/issues/866).
+- The joined S7/S9/S10 graph resolves canonical encounter ee0c1163 and session edaec8c9 alongside root v0.214.0/resolution v0.74.3; the same race-enabled behavior scenarios pass with the new listener/broker and composed-effects consumers rather than relying on the earlier graph's green result — [#866](https://github.com/KirkDiggler/rpg-project/issues/866).
 - A deliberately delayed continuation keeps the next request blocked, leaves storage unchanged before execution, survives request cancellation and a producer-config edit, delivers the sixth player step after Through, selects both NPCs once and refuses a repeated callback — [#866](https://github.com/KirkDiggler/rpg-project/issues/866).
 - Replacing the production runner's WithoutCancel context with the canceled request in a virtual overlay makes that test fail at two expected choices versus zero; repository bytes remain unchanged — [#866](https://github.com/KirkDiggler/rpg-project/issues/866).
 

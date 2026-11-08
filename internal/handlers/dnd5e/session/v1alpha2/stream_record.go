@@ -19,7 +19,8 @@ import (
 // before the catch-up read, so a beat written between the two is queued
 // rather than missed; a live beat at or below the last id already sent is
 // the same beat the read returned, and is skipped. Each beat goes out once,
-// in id order.
+// in id order. Live beats arrive one commit at a time (sessionorch.RecordUnit)
+// and go out in order, each through the same skip.
 //
 // A LAG ENDS THE STREAM, TOLD. When the broker closes the subscription as
 // lagged, the handler sends what was queued, then RecordLagged{last_id} with
@@ -87,7 +88,7 @@ func (h *Handler) StreamRecord(req *sessionpb.StreamRecordRequest, stream sessio
 		select {
 		case <-ctx.Done():
 			return nil
-		case evt, ok := <-sub.Events():
+		case unit, ok := <-sub.Units():
 			if !ok {
 				if lagged, _ := sub.Lagged(); lagged {
 					slog.WarnContext(ctx, "session record: subscriber lagged, stream ending",
@@ -96,11 +97,13 @@ func (h *Handler) StreamRecord(req *sessionpb.StreamRecordRequest, stream sessio
 				}
 				return nil
 			}
-			if evt.ID <= last {
-				continue // already sent by the catch-up read
-			}
-			if err := send(evt); err != nil {
-				return err
+			for _, evt := range unit {
+				if evt.ID <= last {
+					continue // already sent by the catch-up read
+				}
+				if err := send(evt); err != nil {
+					return err
+				}
 			}
 		}
 	}

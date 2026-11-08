@@ -20,6 +20,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
+	dndevents "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/fightingstyles"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/languages"
@@ -1425,9 +1426,10 @@ func ConvertCharacterDataToProto(in *CharacterProtoInput) (*dnd5ev1alpha1.Charac
 	if len(data.Conditions) > 0 {
 		for _, conditionJSON := range data.Conditions {
 			var conditionData struct {
-				Ref      string `json:"ref"`    // Toolkit stores ref as string "dnd5e:conditions:raging"
-				Source   string `json:"source"` // Source ref string "dnd5e:features:rage"
-				Duration int32  `json:"duration"`
+				Ref      string                     `json:"ref"`    // Toolkit stores ref as string "dnd5e:conditions:raging"
+				Source   string                     `json:"source"` // Unmigrated conditions keep their existing source field.
+				Origin   *dndevents.ConditionOrigin `json:"origin"` // Composed instances carry source provenance separately.
+				Duration int32                      `json:"duration"`
 			}
 			if err := json.Unmarshal(conditionJSON, &conditionData); err != nil {
 				continue // Skip invalid conditions
@@ -1462,10 +1464,15 @@ func ConvertCharacterDataToProto(in *CharacterProtoInput) (*dnd5ev1alpha1.Charac
 				char.FightingStyles = append(char.FightingStyles, fightingStyle)
 			}
 
+			source := conditionData.Source
+			if conditionData.Origin != nil {
+				source = conditionData.Origin.Ref.String()
+			}
 			char.ActiveConditions = append(char.ActiveConditions, &dnd5ev1alpha1.Condition{
 				Id:            conditionEnum,
 				Name:          conditionName,
-				Source:        conditionData.Source,
+				Notes:         display.Detail,
+				Source:        source,
 				Duration:      conditionData.Duration,
 				ConditionData: conditionJSON, // Pass through raw JSON for UI display
 			})

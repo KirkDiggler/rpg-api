@@ -902,11 +902,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_WithConditions() {
 		Name:  "Ragnar",
 		Level: 5,
 		Conditions: []json.RawMessage{
-			json.RawMessage(`{
-				"ref": "dnd5e:conditions:raging",
-				"source": "dnd5e:features:rage",
-				"duration": 10
-			}`),
+			s.currentRagingJSON("test-char"),
 			json.RawMessage(`{
 				"ref": "dnd5e:conditions:blessed",
 				"source": "bless_spell",
@@ -928,7 +924,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_WithConditions() {
 	assert.Equal(s.T(), dnd5ev1alpha1.ConditionId_CONDITION_ID_RAGING, ragingCondition.Id)
 	assert.Equal(s.T(), "Raging", ragingCondition.Name)
 	assert.Equal(s.T(), "dnd5e:features:rage", ragingCondition.Source)
-	assert.Equal(s.T(), int32(10), ragingCondition.Duration)
+	assert.Zero(s.T(), ragingCondition.Duration, "no duration field is invented for composed data")
 	assert.NotEmpty(s.T(), ragingCondition.ConditionData, "ConditionData should contain raw JSON")
 
 	// Check second condition details (Blessed - no enum, should be UNSPECIFIED)
