@@ -1,6 +1,9 @@
 package dungeonstest
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 // CreatureFactsWalkKey is the v4 single room that authors BOTH new deed
 // readings, so a walk can watch them arrive: its own `key:` line.
@@ -15,9 +18,17 @@ import "testing"
 // its own control: their wounds are nobody's side.
 const CreatureFactsWalkKey = "creature-facts-walk"
 
-// CreatureFactsWalkYAML is that room, read from the shared fixture directory
-// so no Go file carries the authored source as a raw string.
+// CreatureFactsWalkYAML is that room, read from the retired walk sites
+// (SitesDir) so no Go file carries the authored source as a raw string and
+// the test shelf serves the same bytes.
 func CreatureFactsWalkYAML(t testing.TB) []byte {
 	t.Helper()
-	return roomFixture(t, CreatureFactsWalkKey)
+
+	path := SitePath(t, CreatureFactsWalkKey)
+	raw, err := os.ReadFile(path) //nolint:gosec // the repo's own testdata dir joined with a named constant key
+	if err != nil {
+		t.Fatalf("dungeonstest: read %s: %v", path, err)
+	}
+
+	return raw
 }

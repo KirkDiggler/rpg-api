@@ -192,15 +192,15 @@ func (s *StartContractSuite) TestStartEncounter_CustomKey_PinsLaunchInputsAndSav
 	}
 }
 
-// TestStartEncounter_ExplicitDefaultKey_ResolvesTheTombAndPlacesTheVendor pins
-// the explicit default half of key resolution: naming the default key still
-// resolves to the same tomb, records the same resolved key, and takes the
-// default-only demo-vendor placement AFTER the launch.
-func (s *StartContractSuite) TestStartEncounter_ExplicitDefaultKey_ResolvesTheTombAndPlacesTheVendor() {
+// TestStartEncounter_ExplicitDefaultKey_ResolvesTheDefaultWithNoVendor pins
+// the explicit default half of key resolution: naming the default key
+// resolves the castle, records the same resolved key, and places no demo
+// vendor — the vendor is the tomb's alone (rpg-api#1205).
+func (s *StartContractSuite) TestStartEncounter_ExplicitDefaultKey_ResolvesTheDefaultWithNoVendor() {
 	entry := contractEntry(dungeons.DefaultKey)
 
 	s.seedLobby(readyContractLobby())
-	sessionID := s.armContractLaunch(entry, dungeons.DefaultKey, true)
+	sessionID := s.armContractLaunch(entry, dungeons.DefaultKey, false)
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
 		WorldID:  testWorldID,
@@ -211,14 +211,15 @@ func (s *StartContractSuite) TestStartEncounter_ExplicitDefaultKey_ResolvesTheTo
 	s.Equal(*sessionID, out.EncounterID)
 }
 
-// TestStartEncounter_OmittedKey_ResolvesTheTombAndPlacesTheVendor pins the
-// empty-request path: no key at all resolves to the default tomb, and the
-// RESOLVED key — not the empty request — is what Launch records.
-func (s *StartContractSuite) TestStartEncounter_OmittedKey_ResolvesTheTombAndPlacesTheVendor() {
+// TestStartEncounter_OmittedKey_ResolvesTheDefaultWithNoVendor pins the
+// empty-request path: no key at all resolves to the default castle, the
+// RESOLVED key — not the empty request — is what Launch records, and no
+// demo vendor is placed.
+func (s *StartContractSuite) TestStartEncounter_OmittedKey_ResolvesTheDefaultWithNoVendor() {
 	entry := contractEntry(dungeons.DefaultKey)
 
 	s.seedLobby(readyContractLobby())
-	sessionID := s.armContractLaunch(entry, dungeons.DefaultKey, true)
+	sessionID := s.armContractLaunch(entry, dungeons.DefaultKey, false)
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
 		WorldID:  testWorldID,
@@ -228,10 +229,28 @@ func (s *StartContractSuite) TestStartEncounter_OmittedKey_ResolvesTheTombAndPla
 	s.Equal(*sessionID, out.EncounterID)
 }
 
+// TestStartEncounter_TheTombPlacesTheVendor pins the TEMPORARY demo vendor's
+// gate: naming the reference tomb places it AFTER the launch. The tomb no
+// longer ships, so production never takes this branch (rpg-api#1205).
+func (s *StartContractSuite) TestStartEncounter_TheTombPlacesTheVendor() {
+	entry := contractEntry(string(tombKey))
+
+	s.seedLobby(readyContractLobby())
+	sessionID := s.armContractLaunch(entry, string(tombKey), true)
+
+	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
+		PlayerID: "alice", LobbyID: contractLobbyID,
+		DungeonKey: tombKey,
+	})
+	s.Require().NoError(err)
+	s.Equal(*sessionID, out.EncounterID)
+}
+
 // TestStartEncounter_ResolvesTheKeyInTheHostsWorld pins design R21: the
 // launch asks the registry for the key as the host, in the host's world, so
 // a member's encounter there resolves for the host (and the shipped
-// references behind it); the demo vendor stays the default's alone.
+// references behind it); the demo vendor stays the tomb's alone.
 func (s *StartContractSuite) TestStartEncounter_ResolvesTheKeyInTheHostsWorld() {
 	const key = "my-castle"
 	entry := contractEntry(key)

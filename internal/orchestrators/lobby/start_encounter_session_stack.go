@@ -18,6 +18,16 @@ import (
 // launch's one-id-one-member check can count it.
 const demoVendorMemberID = "demo-merchant-1"
 
+// demoVendorDungeonKey is the one dungeon the TEMPORARY demo vendor is
+// placed in: the reference tomb, whose geometry the vendor's cell was
+// verified against. It is named here rather than read from
+// dungeons.DefaultKey, because the default moved to the castle
+// (rpg-api#1205) and the vendor does not belong there. The tomb no longer
+// ships (it lives in internal/dungeons/testdata/sites), so in production
+// this gate is dead by design; only the test shelf still launches the tomb.
+// The vendor goes with rpg-api#903 Phase 2.
+const demoVendorDungeonKey = "reference-tomb"
+
 // DungeonKey selects a registered dungeon by the key its file names itself
 // with (the `key:` line; internal/dungeons). Empty means
 // dungeons.DefaultKey.
@@ -35,7 +45,7 @@ type StartEncounterInput struct {
 	WorldID string
 
 	// DungeonKey is the proto's dungeon_key field (rpg-api#688). Empty
-	// plays dungeons.DefaultKey (the reference tomb); a key the registry
+	// plays dungeons.DefaultKey (the castle, the-mad-king); a key the registry
 	// does not have is ErrDungeonNotFound, never a silent fallback
 	// (design.md §3c, rpg-project#256).
 	DungeonKey DungeonKey
@@ -173,8 +183,9 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	// specifically, by key -- not "every dungeon": this cell is only
 	// known-floor there. Other dungeons (including the small synthetic
 	// fixtures dungeonstest builds for unrelated tests) have no reason to
-	// share that geometry.
-	if key == dungeons.DefaultKey {
+	// share that geometry. See demoVendorDungeonKey: the tomb no longer
+	// ships, so production never takes this branch.
+	if key == demoVendorDungeonKey {
 		demoVendor, err := npcs.NewMerchant(nil)
 		if err != nil {
 			return nil, fmt.Errorf("build demo vendor for session %q: %w", encID, err)

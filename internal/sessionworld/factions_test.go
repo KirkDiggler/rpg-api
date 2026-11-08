@@ -14,7 +14,7 @@ import (
 // raiderCampPath is the shipped dungeon that declares sides: the hold-out's
 // fixture (rpg-project#375), one faction with a mind, hostile to the party
 // until the mind learns a fact a placed record reveals.
-var raiderCampPath = filepath.Join("..", "..", "content", "reference-raider-camp.yaml")
+var raiderCampPath = filepath.Join("..", "dungeons", "testdata", "sites", "reference-raider-camp.yaml")
 
 // compileRaiderCamp compiles the shipped camp through this package and,
 // beside it, through dungeonspec alone, so a test can compare what the

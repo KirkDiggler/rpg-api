@@ -47,10 +47,11 @@ import (
 )
 
 // DefaultKey is the dungeon StartEncounter plays when the caller names none.
-// It is the shipped content/reference-tomb.yaml, and the registry refuses to
-// construct without it (see NewFileRegistry) so "no key" can never mean "no
-// dungeon".
-const DefaultKey = "reference-tomb"
+// It is the shipped content/the-mad-king.yaml, the standing QA castle (the
+// reference tomb held the place until rpg-api#1205 retired it to test
+// fixtures), and the registry refuses to construct without it (see
+// NewFileRegistry) so "no key" can never mean "no dungeon".
+const DefaultKey = "the-mad-king"
 
 // yamlExt is the one file extension the registry reads and writes.
 const yamlExt = ".yaml"
@@ -286,8 +287,8 @@ type LoadReport struct {
 //
 // It fails, naming the file, when a file does not compile, when a file's
 // `key:` line disagrees with its filename, when two files claim one key, or
-// when DefaultKey is absent — the tomb must load whether or not authoring
-// is on, because StartEncounter with no key plays it.
+// when DefaultKey is absent — the default must load whether or not
+// authoring is on, because StartEncounter with no key plays it.
 //
 // projector produces each Entry's Atlas. Required.
 func NewFileRegistry(dir string, projector AtlasProjector) (*FileRegistry, error) {

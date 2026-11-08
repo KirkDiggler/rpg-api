@@ -19,6 +19,9 @@ const (
 	storeMyCastle = "my-castle"
 	storeMyKeep   = "my-keep"
 	storeBobKeep  = "bob-keep"
+	// storeTomb is the version 2 reference on the test shelf (the retired
+	// tomb under testdata/sites): resolvable by key, never listed (R23).
+	storeTomb = "reference-tomb"
 )
 
 var (
@@ -233,7 +236,7 @@ func (s *StoresSuite) TestListIsTheWorldThenSingleRoomReferences() {
 	}
 	s.IsIncreasing(refs, "references sorted by key")
 	s.Contains(refs, "reference-raider-camp", "the rebuilt current-format camp is an editable reference")
-	for _, v2 := range []string{dungeons.DefaultKey, "reference-front-room", "reference-hearing", "reference-minds", "reference-tomb-heirloom"} {
+	for _, v2 := range []string{storeTomb, "reference-front-room", "reference-hearing", "reference-minds", "reference-tomb-heirloom"} {
 		s.NotContains(refs, v2, "no version 2 reference is listed (R23)")
 	}
 
@@ -266,7 +269,7 @@ func (s *StoresSuite) TestListLeavesOutAReferenceHeldInTheWorld() {
 
 func (s *StoresSuite) TestGetStillResolvesAVersionTwoReference() {
 	r := s.registry(false)
-	e, err := r.Get(s.ctx, alice, dungeons.DefaultKey)
+	e, err := r.Get(s.ctx, alice, storeTomb)
 	s.Require().NoError(err)
 	s.Equal(dungeons.SourceShipped, e.Source)
 	s.False(e.SingleRoom)

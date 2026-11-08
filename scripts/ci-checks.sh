@@ -25,6 +25,13 @@ else
 	printf '%b\n' "${GREEN}✅ Release pins are clean${NC}"
 fi
 
+printf '\n📦 Checking the content/ allowlist...\n'
+if ! ./scripts/verify-content-allowlist.sh; then
+	record_failure 'content/ tracks a file outside the allowlist (a walk site stays untracked in its worktree)'
+else
+	printf '%b\n' "${GREEN}✅ content/ holds only the shipped allowlist${NC}"
+fi
+
 printf '\n📝 Checking EOF newlines...\n'
 FILES_MISSING_EOF=""
 while IFS= read -r file; do

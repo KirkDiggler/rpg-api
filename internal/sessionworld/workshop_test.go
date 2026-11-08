@@ -144,7 +144,7 @@ func (s *WorkshopSuite) TestTheImplicitRegionIsOneBrightCryptRoom() {
 // props — absence stays absence rather than becoming a zero-sized box at the
 // origin.
 func TestALegacyV2DungeonPlacesNoProps(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "content", "reference-tomb.yaml"))
+	raw, err := os.ReadFile(filepath.Join("..", "dungeons", "testdata", "sites", "reference-tomb.yaml"))
 	require.NoError(t, err, "the shipped tomb must exist")
 	dungeon, err := Compile(raw)
 	require.NoError(t, err, "the shipped tomb must still compile")

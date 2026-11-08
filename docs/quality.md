@@ -239,8 +239,9 @@ Pub/Sub behavior outside tests.
 
 `internal/sessionworld/` — compiles one authored dungeon file (`Compile(raw)`)
 through the toolkit's `dungeonspec` into a world plus authored party seats and
-monster placements. It holds no content since rpg-api#806: the reference tomb
-is `content/reference-tomb.yaml`, loaded by `internal/dungeons`. Its defining
+monster placements. It holds no content since rpg-api#806: the shipped
+dungeons are `content/*.yaml`, loaded by `internal/dungeons`; its tests read
+the retired reference tomb from `internal/dungeons/testdata/sites/`. Its defining
 test pins that placements are projected by the composition, not copied: the
 entrance literal moved from `(1,-4)` to `(0,-3)` when rpg-toolkit#1141
 corrected the hex convention, with no code change here (rpg-api#802). The borrowed-projection step (a throwaway encounter) is gone

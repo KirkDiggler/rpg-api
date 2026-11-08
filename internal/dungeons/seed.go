@@ -21,15 +21,15 @@ const ShippedContentDir = "content"
 // SeedShipped makes sure dir holds every dungeon the binary ships before the
 // registry loads it: each shipped *.yaml the directory does not already have
 // is copied in (same-directory temp + rename, so a crash never leaves half a
-// tomb). Returns the keys written, sorted, empty when there was nothing to
+// file). Returns the keys written, sorted, empty when there was nothing to
 // do.
 //
 // It exists because a deployment mounts an EMPTY directory as
 // RPG_CONTENT_DIR on a fresh box (rpg-deployment's ./content volume is
 // gitignored), and NewFileRegistry refuses a directory without the default
-// dungeon — correctly, since "no key" must always mean the tomb. Tracking a
-// second copy of the tomb in the deployment repo would drift from the one
-// the image ships; seeding from the image cannot.
+// dungeon — correctly, since "no key" must always mean the default. Tracking
+// a second copy of the default in the deployment repo would drift from the
+// one the image ships; seeding from the image cannot.
 //
 // # Why EVERY shipped dungeon and not only the default
 //
@@ -37,14 +37,14 @@ const ShippedContentDir = "content"
 // half of what it is for. The property wanted is "a fresh box has the
 // content the image ships"; seeding one file gets that property only while
 // the image ships one file. The moment a second reference dungeon exists —
-// reference-tomb-heirloom.yaml, the fixture the recover-the-artifact
-// scenario is authored against — the one-file version quietly means "a
+// then reference-tomb-heirloom.yaml, today reference-keep.yaml beside the
+// default castle — the one-file version quietly means "a
 // fresh box has SOME of the shipped content", and the missing one has to be
 // carried to the box by hand before anybody can play it.
 //
 // The consequence to name: a SHIPPED dungeon deleted from a mounted
-// directory comes back on the next boot. That was already true of the tomb
-// and is now true of its siblings. A dungeon PutDungeon authored is never
+// directory comes back on the next boot. That was already true of the
+// default and is now true of its siblings. A dungeon PutDungeon authored is never
 // touched — its key is not one the image ships — and neither is an edited
 // copy of a shipped one, because:
 //
@@ -56,22 +56,22 @@ const ShippedContentDir = "content"
 // things: a shipped directory that cannot be read names the directory it
 // could not open and the one it was seeding, and a readable shipped
 // directory with no default dungeon in it names the file it looked for. A
-// target that already has its own tomb makes the second one moot, so it is
+// target that already has its own default makes the second one moot, so it is
 // not raised.
 func SeedShipped(dir, shipped string) ([]string, error) {
 	if same, err := sameDir(dir, shipped); err != nil {
 		return nil, err
 	} else if same {
 		// Nothing to seed FROM: the registry is reading the shipped tree
-		// itself. Whether the tomb is there is NewFileRegistry's question.
+		// itself. Whether the default is there is NewFileRegistry's question.
 		return nil, nil
 	}
 
 	// TWO DIFFERENT FAILURES, TWO DIFFERENT SENTENCES (Copilot, PR #914):
 	// the source directory being unreadable is not the same thing as the
-	// tomb being missing from it, and one message covering both sends
+	// default being missing from it, and one message covering both sends
 	// whoever reads it to the wrong place — it would say the target "has no
-	// reference-tomb.yaml" when the target may well have one and it is the
+	// the-mad-king.yaml" when the target may well have one and it is the
 	// SOURCE that could not be opened.
 	entries, err := os.ReadDir(shipped)
 	if err != nil {
@@ -79,7 +79,7 @@ func SeedShipped(dir, shipped string) ([]string, error) {
 			shipped, dir, err)
 	}
 	// The DEFAULT is special and stays special: "no key" must always mean the
-	// tomb, so a shipped tree that cannot supply it is named here rather than
+	// default, so a shipped tree that cannot supply it is named here rather than
 	// left to surface as a registry refusal one layer on. Every other shipped
 	// dungeon is optional by construction — there is nothing to be missing.
 	if _, statErr := os.Stat(filepath.Join(shipped, DefaultKey+yamlExt)); statErr != nil {

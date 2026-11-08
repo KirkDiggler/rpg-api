@@ -17,7 +17,7 @@ type NpcPacingSiteSuite struct {
 func TestNpcPacingSiteSuite(t *testing.T) { suite.Run(t, new(NpcPacingSiteSuite)) }
 
 func (s *NpcPacingSiteSuite) TestSiteHasTwoVisibleWalkersAndAResultIndependentStartSignal() {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "content", "reference-npc-pacing.yaml"))
+	raw, err := os.ReadFile(filepath.Join("..", "dungeons", "testdata", "sites", "reference-npc-pacing.yaml"))
 	s.Require().NoError(err)
 	dungeon, err := Compile(raw)
 	s.Require().NoError(err)

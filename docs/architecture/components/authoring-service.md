@@ -21,9 +21,17 @@ internal/dungeons/                           the registry: shipped store (FileRe
 internal/repositories/worlddungeons/         the per-world store authors save to (Redis)
 internal/orchestrators/authoring/            PutDungeon / GetDungeon business logic
 internal/handlers/dnd5e/authoring/v1alpha1/  proto <-> input, status mapping
-content/reference-tomb.yaml                  the shipped dungeon
+content/the-mad-king.yaml                    the default dungeon (dungeons.DefaultKey)
+content/reference-keep.yaml                  the keep
 content/bench/                               the benchmark keep's two fixtures (rpg-project#740); not read at boot
+internal/dungeons/testdata/sites/            retired walk sites the tests still play; never shipped (rpg-api#1205)
 ```
+
+`content/` ships only the castle, the keep and the bench keeps;
+`scripts/verify-content-allowlist.sh` (CI) fails a PR that tracks anything
+else there. A slice's walk site lives in its worktree's `content/`,
+untracked, and is served from `RPG_API_PATH` (rpg-project
+`.agents/skills/walk`).
 
 ## Structural wall promotion
 
@@ -59,7 +67,7 @@ names an unknown ref is refused with a validation error and never becomes an
 entry, shipped or Put. Construction **fails** (naming the file) when a file
 does not compile, when a
 file's `key:` line disagrees with its filename, when two files claim one key,
-or when `reference-tomb` is absent. A dungeon that silently vanished from the
+or when the default (`the-mad-king`) is absent. A dungeon that silently vanished from the
 picker would be a worse failure than a server that refuses to boot and says
 why. Each entry's `Atlas` comes from the `AtlasProjector` — production wires
 `session.Manager.AtlasOf` (`AtlasOf` over the compiled `dungeonspec.Compiled`,
@@ -135,31 +143,30 @@ a save).
 
 A deployment mounts `RPG_CONTENT_DIR` as a volume that is **empty on a fresh
 box** (rpg-deployment's `./content` is gitignored), and the registry refuses
-a directory without `reference-tomb.yaml` — correctly, since "no key" must
-always mean the tomb. So when `RPG_CONTENT_DIR` is set, `cmd/server` first
-calls `dungeons.SeedDefault(dir, shipped)`: if the directory has no
-`reference-tomb.yaml`, the copy that the image ships is written in through a
-same-directory temp file + rename, and the boot log says so. `shipped` is
+a directory without the default dungeon file — correctly, since "no key" must
+always mean the default. So when `RPG_CONTENT_DIR` is set, `cmd/server` first
+calls `dungeons.SeedShipped(dir, shipped)`: every shipped file the directory
+lacks is copied in from the image through a same-directory temp file + rename, and the boot log says so. `shipped` is
 `RPG_SHIPPED_CONTENT_DIR`, defaulting to `./content` (the same file the
 unset-variable default loads); the image sets it to an immutable copy at
 `/usr/share/rpg-api/content`, outside the working directory, so a volume
 mounted over `/home/appuser/content` cannot hide the seed. Seeding is a
-no-op when the two paths are the same directory. It **never overwrites**: an existing tomb — authored,
+no-op when the two paths are the same directory. It **never overwrites**: an existing file — authored,
 edited, or simply different — is left alone, and one that does not compile
 is still refused by name. A missing shipped copy is a construction error
-naming both paths. Tracking a second tomb in the deployment repo would drift
+naming both paths. Tracking a second default in the deployment repo would drift
 from the one the image ships; seeding from the image cannot.
 
 ## The gate
 
-`cmd/server` constructs the registry **unconditionally** — the tomb must load
+`cmd/server` constructs the registry **unconditionally** — the default must load
 with authoring off because `StartEncounter` with no `dungeon_key` plays it.
 `AuthoringService` is registered only when `RPG_AUTHORING_ENABLED=1`, which
 then requires `RPG_CONTENT_DIR` to be set explicitly (writing into an
 implicit `./content` is not something to do by accident). With the gate off a
 client sees `Unimplemented` for both RPCs — the proto's documented way to
 tell "authoring is off" from "server unreachable"; the web's Home-button probe
-is `GetDungeon("reference-tomb")`.
+is `GetDungeon("")`, refused for the missing key before any content is read.
 
 There are **two** fences and they now guard different things. The env var
 decides whether the service exists at all, and it is the one a deployment
@@ -174,7 +181,7 @@ than a code change.
 
 | Variable | Effect |
 |---|---|
-| `RPG_CONTENT_DIR` | the shipped store's directory, loaded at boot and never written by a request (saves land in the world store in Redis); default `content` (the Docker image ships the repo's `content/` at `/home/appuser/content`). When set and lacking `reference-tomb.yaml`, the shipped copy is seeded into it at boot |
+| `RPG_CONTENT_DIR` | the shipped store's directory, loaded at boot and never written by a request (saves land in the world store in Redis); default `content` (the Docker image ships the repo's `content/` at `/home/appuser/content`). When set, every shipped file it lacks is seeded into it at boot |
 | `RPG_AUTHORING_ENABLED=1` | registers `AuthoringService`; requires `RPG_CONTENT_DIR` |
 | `RPG_SHIPPED_CONTENT_DIR` | where the seed is read from; default `content`, the image sets `/usr/share/rpg-api/content` |
 
@@ -234,7 +241,7 @@ component: dungeonspec **version 2** (regions, walls, doors, absolute
 defects carry `line N`), `Seat.At`/`MonsterPlacement.At` as absolute offset
 cells (so `sessionworld` asks `encounter.HexCellAt` for the axial cell and
 the throwaway-encounter projection is gone), `session.Atlas.Regions`, and
-`Manager.AtlasOf`. `content/reference-tomb.yaml` is T2's golden v2 file —
+`Manager.AtlasOf`. The reference tomb (now `internal/dungeons/testdata/sites/reference-tomb.yaml`, rpg-api#1205) is T2's golden v2 file —
 the same 224 cells, boundaries, doorways and props version 1 produced, with
 three regions added.
 

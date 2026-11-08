@@ -53,7 +53,7 @@ COPY --from=builder /app/server .
 # compile; with the variable unset it reads ./content, which is this copy.
 #
 # To author against a persistent directory, point RPG_CONTENT_DIR at a
-# mounted volume (e.g. /content). If it lacks reference-tomb.yaml the server
+# mounted volume (e.g. /content). If it lacks a shipped file the server
 # seeds it from the IMMUTABLE copy at /usr/share/rpg-api/content -- kept
 # outside the working directory on purpose, so a volume mounted over
 # /home/appuser/content can never hide the seed (rpg-project#256).

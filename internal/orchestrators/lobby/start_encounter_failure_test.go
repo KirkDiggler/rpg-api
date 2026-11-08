@@ -359,18 +359,18 @@ func (s *StartContractSuite) TestStartEncounter_LaunchSeatedElsewhere_IsAPrecond
 // succeeded, then PlaceNPC fails. The write is still unarmed.
 func (s *StartContractSuite) TestStartEncounter_PlaceNPCFailure_StopsAndWraps() {
 	boom := errors.New("vendor placement refused")
-	entry := contractEntry(dungeons.DefaultKey)
+	entry := contractEntry(string(tombKey))
 
 	observed, orch, before, sub := s.failingLaunchFixture()
 	defer func() { _ = sub.Close() }()
 
-	calls := s.launchSuccessCalls(entry, dungeons.DefaultKey, true, 1)
+	calls := s.launchSuccessCalls(entry, string(tombKey), true, 1)
 	calls = append(calls, s.manager.EXPECT().PlaceNPC(s.ctx, gomock.Any()).Return(nil, boom))
 	gomock.InOrder(calls...)
 
 	out, err := orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
 		WorldID:  testWorldID,
-		PlayerID: "alice", LobbyID: contractLobbyID,
+		PlayerID: "alice", LobbyID: contractLobbyID, DungeonKey: tombKey,
 	})
 	s.Nil(out)
 	s.Require().ErrorIs(err, boom)
