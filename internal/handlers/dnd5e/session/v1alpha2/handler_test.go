@@ -151,13 +151,15 @@ func (s *RecordHandlerSuite) TestStreamRecordCatchUpThenLive() {
 // lagged delivers what was queued, then RecordLagged with the last id SENT —
 // not the broker's last queued id — as its last message, and the stream ends
 // OK. The replay sends ids beyond what was queued, so the two differ: the
-// broker queued id-05 and lagged on id-06; the client received id-03..id-07.
+// broker queued the commit [id-05] and lagged on the commit [id-06]; the
+// client received id-03..id-07.
 func (s *RecordHandlerSuite) TestStreamRecordLaggedEndsWithStatus() {
 	broker := sessionorch.NewRecordBroker(1)
 	s.seated()
 	s.manager.EXPECT().Record(gomock.Any(), gomock.Any()).DoAndReturn(
 		func(ctx context.Context, _ *sdk.RecordReadInput) (*sdk.RecordReadOutput, error) {
-			_ = broker.PublishRecord(ctx, beats("id-05", "id-06")) // id-06 overflows
+			s.Require().NoError(broker.PublishRecord(ctx, beats("id-05")))
+			_ = broker.PublishRecord(ctx, beats("id-06")) // the second commit overflows
 			return &sdk.RecordReadOutput{Events: beats("id-03", "id-04", "id-05", "id-06", "id-07")}, nil
 		})
 

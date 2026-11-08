@@ -46,11 +46,13 @@ func publishedActs(subscription *sessionorch.ActSubscription) []sdk.Act {
 	var acts []sdk.Act
 	for {
 		select {
-		case brokered, ok := <-subscription.Acts():
+		case unit, ok := <-subscription.Units():
 			if !ok {
 				return acts
 			}
-			acts = append(acts, brokered.Act)
+			for _, brokered := range unit {
+				acts = append(acts, brokered.Act)
+			}
 		default:
 			return acts
 		}
