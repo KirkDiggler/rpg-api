@@ -42,11 +42,13 @@ func (s *RecordBrokerTestSuite) drain(sub *sessionorch.RecordSubscription) []str
 	var got []string
 	for {
 		select {
-		case evt, ok := <-sub.Events():
+		case unit, ok := <-sub.Units():
 			if !ok {
 				return got
 			}
-			got = append(got, evt.ID)
+			for _, evt := range unit {
+				got = append(got, evt.ID)
+			}
 		case <-time.After(time.Second):
 			s.FailNow("the subscription never closed")
 			return got
@@ -54,25 +56,43 @@ func (s *RecordBrokerTestSuite) drain(sub *sessionorch.RecordSubscription) []str
 	}
 }
 
-// TestRecordBrokerLaggedSubscriberIsTold: with a buffer of 4, five beats
+// TestRecordBrokerLongCommitIsOneUnit: a commit of 320 beats, the record's
+// growth for one garrison verb, is one unit, so a buffer of 2 holds it and
+// nothing lags.
+func (s *RecordBrokerTestSuite) TestRecordBrokerLongCommitIsOneUnit() {
+	broker := sessionorch.NewRecordBroker(2)
+	sub, err := broker.Subscribe("sess-1")
+	s.Require().NoError(err)
+
+	s.Require().NoError(broker.PublishRecord(s.ctx, beats("sess-1", 1, 320)))
+	s.Require().NoError(sub.Close())
+	s.Len(s.drain(sub), 320)
+	lagged, _ := sub.Lagged()
+	s.False(lagged)
+}
+
+// TestRecordBrokerLaggedSubscriberIsTold: with a buffer of 4, five commits
 // published unread give the subscriber the first four, then a closed channel
-// marked lagged with the fourth id. Nothing is skipped silently: the fifth is
-// never handed over as if the stream were whole.
+// marked lagged with the fourth commit's last id. Nothing is skipped
+// silently: the fifth is never handed over as if the stream were whole.
 func (s *RecordBrokerTestSuite) TestRecordBrokerLaggedSubscriberIsTold() {
 	broker := sessionorch.NewRecordBroker(4)
 	sub, err := broker.Subscribe("sess-1")
 	s.Require().NoError(err)
 
-	err = broker.PublishRecord(s.ctx, beats("sess-1", 1, 5))
+	for i := 0; i < 4; i++ {
+		s.Require().NoError(broker.PublishRecord(s.ctx, beats("sess-1", 2*i+1, 2)))
+	}
+	err = broker.PublishRecord(s.ctx, beats("sess-1", 9, 2))
 	s.Require().ErrorIs(err, sessionorch.ErrRecordLagged)
 
-	s.Equal([]string{"id-01", "id-02", "id-03", "id-04"}, s.drain(sub))
+	s.Equal([]string{"id-01", "id-02", "id-03", "id-04", "id-05", "id-06", "id-07", "id-08"}, s.drain(sub))
 	lagged, last := sub.Lagged()
 	s.True(lagged)
-	s.Equal("id-04", last)
+	s.Equal("id-08", last)
 
 	// A lagged subscriber is gone: later beats are not queued for it.
-	s.Require().NoError(broker.PublishRecord(s.ctx, beats("sess-1", 6, 1)))
+	s.Require().NoError(broker.PublishRecord(s.ctx, beats("sess-1", 11, 1)))
 }
 
 // TestRecordBrokerRoutesBySession: a subscriber receives its session's
@@ -105,16 +125,23 @@ func (s *RecordBrokerTestSuite) TestRecordBrokerOneLaggardStarvesNobody() {
 	s.Require().NoError(err)
 
 	s.Require().NoError(broker.PublishRecord(s.ctx, beats("sess-1", 1, 2)))
-	got := make([]string, 0, 3)
-	got = append(got, (<-fast.Events()).ID, (<-fast.Events()).ID)
-	s.Require().ErrorIs(broker.PublishRecord(s.ctx, beats("sess-1", 3, 1)), sessionorch.ErrRecordLagged)
-	got = append(got, (<-fast.Events()).ID)
+	s.Require().NoError(broker.PublishRecord(s.ctx, beats("sess-1", 3, 1)))
+	var got []string
+	for i := 0; i < 2; i++ {
+		for _, evt := range <-fast.Units() {
+			got = append(got, evt.ID)
+		}
+	}
+	s.Require().ErrorIs(broker.PublishRecord(s.ctx, beats("sess-1", 4, 1)), sessionorch.ErrRecordLagged)
+	for _, evt := range <-fast.Units() {
+		got = append(got, evt.ID)
+	}
 
-	s.Equal([]string{"id-01", "id-02", "id-03"}, got)
-	s.Equal([]string{"id-01", "id-02"}, s.drain(slow))
+	s.Equal([]string{"id-01", "id-02", "id-03", "id-04"}, got)
+	s.Equal([]string{"id-01", "id-02", "id-03"}, s.drain(slow))
 	lagged, last := slow.Lagged()
 	s.True(lagged)
-	s.Equal("id-02", last)
+	s.Equal("id-03", last)
 	s.Require().NoError(fast.Close())
 }
 
