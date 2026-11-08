@@ -23,8 +23,13 @@ import (
 // runner only starts the work and counts it; it queues nothing.
 //
 // A FAILED CONTINUE CANNOT BE TOLD TO THE CLIENT: the answer has already
-// gone. It is logged with the session and the verb; what did land reaches
-// the stream as usual, and the next read shows the stored state.
+// gone. A failed continuation persists nothing, the answered steps included,
+// so it is logged with the session, the verb and the error, and the client
+// learns the stored state by reading it again.
+//
+// Run cannot panic once it has started the goroutine: it only returns. A
+// runner that panicked after spawning Continue would give the session guard
+// back while the rest was still running.
 //
 // Drain waits for the continuations in flight, for a graceful shutdown that
 // must not drop a walk's save. The zero value is usable.
