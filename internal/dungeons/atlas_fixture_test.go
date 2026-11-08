@@ -77,6 +77,10 @@ import (
 // the only field that changed, and only by additions (16 for the castle's
 // seven doors, 182 for the keep's), every one marked crossing; no doorway was
 // removed and the other eleven files answer their fixtures unchanged.
+//
+// The courtyard ground fold (rpg-project#874) was captured using reviewed API
+// 2355058 with the new Studio-authored castle source. Only region-courtyard's
+// ground field changed; a structural comparison kept every other atlas fact.
 func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBeforeTheWave() {
 	files, err := filepath.Glob(filepath.Join(dungeonstest.ContentDir(s.T()), "*.yaml"))
 	s.Require().NoError(err)
