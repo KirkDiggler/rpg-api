@@ -125,6 +125,95 @@ func (s *ContinuationRunnerSuite) TestFailedContinueIsLoggedNotPanicked() {
 	s.Contains(out, "save refused")
 }
 
+// A panic in the rest of a verb is recovered on the runner's goroutine: the
+// process lives, the stack is logged with the session and the verb, the
+// continuation's own defers run (the SDK's release of the guard is one), and
+// Drain still sees it end.
+func (s *ContinuationRunnerSuite) TestPanickingContinueIsRecoveredAndCountedDone() {
+	released := make(chan struct{})
+	s.Require().NoError(s.runner.Run(context.Background(), &sdk.RunContinuationInput{
+		Session: "sess-7", Verb: sdk.VerbMove,
+		Continue: func(context.Context) (*sdk.ContinuationReport, error) {
+			defer close(released) // stands for the SDK's deferred guard release
+			panic("a machine nil-derefs in the raise")
+		},
+	}))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	s.Require().NoError(s.runner.Drain(ctx), "a panicked continuation is counted done")
+	<-released
+	out := s.logs.String()
+	s.Contains(out, "session continuation panicked after its answer")
+	s.Contains(out, "the client must re-read")
+	s.Contains(out, "session=sess-7")
+	s.Contains(out, "verb=move")
+	s.Contains(out, "a machine nil-derefs in the raise")
+	s.Contains(out, "continuations.go", "the stack is logged")
+}
+
+// A rest that ran but did not store or deliver all of itself is logged with
+// what failed, since the answer no longer carries the reports.
+func (s *ContinuationRunnerSuite) TestDegradedReportIsLogged() {
+	s.Require().NoError(s.runner.Run(context.Background(), &sdk.RunContinuationInput{
+		Session: "sess-3", Verb: sdk.VerbMove,
+		Continue: func(context.Context) (*sdk.ContinuationReport, error) {
+			return &sdk.ContinuationReport{
+				Saved:    sdk.SaveReport{Written: []string{"encounter:sess-3"}, Failed: []string{"exploration:sess-3"}},
+				Delivery: sdk.DeliveryReport{Failed: []string{"record"}},
+			}, nil
+		},
+	}))
+	s.Require().NoError(s.runner.Drain(context.Background()))
+	out := s.logs.String()
+	s.Contains(out, "session continuation ended degraded after its answer")
+	s.Contains(out, "session=sess-3")
+	s.Contains(out, "verb=move")
+	s.Contains(out, "exploration:sess-3")
+	s.Contains(out, "record")
+}
+
+// A clean rest logs nothing.
+func (s *ContinuationRunnerSuite) TestCleanReportLogsNothing() {
+	s.Require().NoError(s.runner.Run(context.Background(), &sdk.RunContinuationInput{
+		Session: "sess-1", Verb: sdk.VerbMove,
+		Continue: func(context.Context) (*sdk.ContinuationReport, error) {
+			return &sdk.ContinuationReport{Saved: sdk.SaveReport{Written: []string{"encounter:sess-1"}}}, nil
+		},
+	}))
+	s.Require().NoError(s.runner.Drain(context.Background()))
+	s.Empty(s.logs.String())
+}
+
+// Once Drain has started, Run refuses: the SDK then fails the verb with the
+// guard given back and nothing saved, instead of answering with a rest the
+// process exit could cut off.
+func (s *ContinuationRunnerSuite) TestRunAfterDrainStartedIsRefused() {
+	proceed := make(chan struct{})
+	s.Require().NoError(s.runner.Run(context.Background(), &sdk.RunContinuationInput{
+		Session: "sess-1", Verb: sdk.VerbMove,
+		Continue: func(context.Context) (*sdk.ContinuationReport, error) {
+			<-proceed
+			return &sdk.ContinuationReport{}, nil
+		},
+	}))
+	short, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	s.ErrorIs(s.runner.Drain(short), context.DeadlineExceeded)
+
+	called := false
+	err := s.runner.Run(context.Background(), &sdk.RunContinuationInput{
+		Session: "sess-2", Verb: sdk.VerbMove,
+		Continue: func(context.Context) (*sdk.ContinuationReport, error) {
+			called = true
+			return &sdk.ContinuationReport{}, nil
+		},
+	})
+	s.ErrorIs(err, ErrContinuationsDraining)
+	close(proceed)
+	s.NoError(s.runner.Drain(context.Background()))
+	s.False(called, "a refused continuation never runs")
+}
+
 // The SDK never sends an input without Continue; a runner handed one refuses
 // it, so the verb releases its own guard and saves nothing.
 func (s *ContinuationRunnerSuite) TestRunRefusesAnInputWithoutContinue() {

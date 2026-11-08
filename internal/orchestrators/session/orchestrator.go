@@ -67,7 +67,8 @@ type Config struct {
 
 	// AnswerWhole hands the SDK no runner at all, so every verb runs whole
 	// before it answers and the answer carries the verb's Saved and Delivery,
-	// exactly as before rpg-project#879. Continuations is then ignored. It is
+	// exactly as before rpg-project#879. New refuses it together with a
+	// non-nil Continuations, which it would otherwise ignore. It is
 	// for tests that read the store, or a report, right after a verb
 	// returns; production leaves it false.
 	AnswerWhole bool
@@ -205,6 +206,9 @@ func New(cfg Config) (*Orchestrator, error) {
 	// THE VERB ANSWERS BEFORE THE WORLD RUNS (rpg-project#879 R2): the
 	// rest of a world-clock Move runs on the runner, under the session
 	// guard it inherits. AnswerWhole leaves the SDK's own inline path.
+	if cfg.AnswerWhole && cfg.Continuations != nil {
+		return nil, errors.New("session orchestrator: Config.AnswerWhole and Config.Continuations are exclusive")
+	}
 	var continuations sdk.ContinuationRunner
 	if !cfg.AnswerWhole {
 		continuations = cfg.Continuations
