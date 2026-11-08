@@ -42,7 +42,11 @@ import (
 // RPG_MEASURE_KEYS picks the shelf files (content/bench/<key>.yaml or
 // content/<key>.yaml), default bench-keep-garrison (the plain bench-keep
 // forms a fight at launch, so its Move is not a world-clock walk);
-// RPG_MEASURE_N the measured Moves per mode (default 20).
+// RPG_MEASURE_N the measured Moves per mode (default 20); RPG_MEASURE_MODES
+// "whole" or "continues" runs one mode only, for a profile:
+//
+//	RPG_MEASURE=1 RPG_MEASURE_MODES=whole RPG_MEASURE_N=10 go test ./internal/integration/session/ \
+//	  -run TestMeasure_AnswerAndFirstBeat -count=1 -v -cpuprofile cpu.out
 func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 	if os.Getenv("RPG_MEASURE") != "1" {
 		t.Skip("measurement: set RPG_MEASURE=1 (and a flushable Redis at RPG_MEASURE_REDIS)")
@@ -53,6 +57,15 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 	if v := os.Getenv("RPG_MEASURE_N"); v != "" {
 		_, err := fmt.Sscanf(v, "%d", &n)
 		require.NoError(t, err)
+	}
+	// RPG_MEASURE_MODES narrows the run to one mode ("whole" or
+	// "continues"), so a -cpuprofile covers only that mode's Moves.
+	modes := []bool{true, false}
+	switch os.Getenv("RPG_MEASURE_MODES") {
+	case "whole":
+		modes = []bool{true}
+	case "continues":
+		modes = []bool{false}
 	}
 	// A garrison verb folds a few hundred acts for one recipient (every
 	// patrol step it sees); the default buffer would close the subscriber
@@ -89,7 +102,7 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 		require.NoError(t, err, "compiling %s", key)
 		compileTook := time.Since(cs)
 
-		for _, answerWhole := range []bool{true, false} {
+		for _, answerWhole := range modes {
 			mode := "S1 continues"
 			if answerWhole {
 				mode = "AnswerWhole"
