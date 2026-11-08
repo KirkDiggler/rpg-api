@@ -546,6 +546,21 @@ func runServer(_ *cobra.Command, _ []string) error {
 			log.Println("Server stopped gracefully")
 		}
 
+		// A Move may have answered before its save (rpg-project#879 R2):
+		// wait for the continuations still running to save and deliver. The
+		// drain has its own budget, because the forced path reaches here
+		// with shutdownCtx already spent (an open stream keeps GracefulStop
+		// from returning). Stop does not wait for handlers, so a Move still
+		// mid-verb may reach the runner after the drain began; the runner
+		// refuses it and that verb fails with nothing saved.
+		drainCtx, drainCancel := context.WithTimeout(context.Background(), continuationDrainBudget)
+		defer drainCancel()
+		if err := sessionOrch.Drain(drainCtx); err != nil {
+			log.Printf("session continuations not drained before shutdown: %v", err)
+		} else {
+			log.Println("Session continuations drained")
+		}
+
 		if err := lobbyBroker.Close(); err != nil {
 			log.Printf("lobby broker close: %v", err)
 		}
@@ -555,6 +570,11 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return err
 	}
 }
+
+// continuationDrainBudget is how long shutdown waits for session
+// continuations (verbs that answered before their save) after the gRPC server
+// stopped, whichever way it stopped.
+const continuationDrainBudget = 10 * time.Second
 
 // fieldMillis reads the middleware's `grpc.time_ms` field. go-grpc-middleware
 // v2 sends it as a STRING (DurationToTimeMillisFields formats a float32 with

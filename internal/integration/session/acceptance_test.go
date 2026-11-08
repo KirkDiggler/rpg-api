@@ -371,6 +371,14 @@ func newAcceptanceHarnessWithDice(t *testing.T, roller sdk.Roller) *acceptanceHa
 // passes something, and its own doc says why it has to.
 func newAcceptanceHarnessWith(t *testing.T, roller sdk.Roller, driver sdk.TurnDriver) *acceptanceHarness {
 	t.Helper()
+	return newAcceptanceHarnessAnswering(t, roller, driver, true)
+}
+
+// newAcceptanceHarnessAnswering is the harness with the answer's shape
+// chosen: answerWhole true runs every verb whole before it answers, false
+// wires the production continuation runner (rpg-project#879 R2).
+func newAcceptanceHarnessAnswering(t *testing.T, roller sdk.Roller, driver sdk.TurnDriver, answerWhole bool) *acceptanceHarness {
+	t.Helper()
 
 	mr := miniredis.RunT(t)
 	client := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
@@ -384,9 +392,16 @@ func newAcceptanceHarnessWith(t *testing.T, roller sdk.Roller, driver sdk.TurnDr
 	// a deterministic hit is the right choice over a ~1-in-3 chance of a
 	// flaky "miss" run with real randomness (session.Roller's own doc:
 	// "a test wires a fixed one and gets a reproducible fight").
+	//
+	// AnswerWhole: the scenes assert on a whole walk's answer -- the fight
+	// it formed, every step, what it saved -- and read the store right after
+	// the verb, so newAcceptanceHarnessWith runs the walk whole before it
+	// answers. The answer that continues is
+	// continuation_acceptance_test.go's subject.
 	orch, err := sessionorch.New(sessionorch.Config{
 		Redis: client, Characters: charRepo, TTL: 24 * time.Hour, Dice: roller,
 		PresentationIDs: idgen.NewSequential("presentation"), TurnDriver: driver,
+		AnswerWhole: answerWhole,
 	})
 	require.NoError(t, err)
 
