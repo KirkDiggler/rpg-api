@@ -143,14 +143,14 @@ func TestTwoStoryStreamSubscribers(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = bobLag.Close() }()
 
-	// Prime his buffer to exactly its capacity: filling it is not itself a
-	// lag, so this must close nothing.
-	capacity := cap(bobLag.Acts())
-	fill := make([]sdk.Act, 0, capacity)
+	// Prime his buffer to exactly its capacity, one commit per slot (the
+	// buffer counts commits): filling it is not itself a lag, so this must
+	// close nothing.
+	capacity := cap(bobLag.Units())
 	for i := 0; i < capacity; i++ {
-		fill = append(fill, sdk.Act{Session: session, Recipient: "bob", ID: fmt.Sprintf("fill-%04d", i)})
+		fill := []sdk.Act{{Session: session, Recipient: "bob", ID: fmt.Sprintf("fill-%04d", i)}}
+		require.NoError(t, h.manager.ActBroker.PublishActs(context.Background(), fill))
 	}
-	require.NoError(t, h.manager.ActBroker.PublishActs(context.Background(), fill))
 	lagged, _ := bobLag.Lagged()
 	require.False(t, lagged, "a full buffer is not a lag")
 

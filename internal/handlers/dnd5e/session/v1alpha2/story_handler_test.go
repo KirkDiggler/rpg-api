@@ -2,6 +2,7 @@ package sessionv1alpha2
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -205,26 +206,76 @@ func (s *StoryHandlerSuite) TestStreamEventsRestartedFirst() {
 
 // TestStreamEventsLaggedLast: when the broker closes the subscription as
 // lagged, the stream sends what was queued, then `lagged` naming the last id
-// SENT, which ends a whole run, and ends OK with nothing after it. The run
-// [C, C, C] did not fit a buffer of 2 beside nothing queued, so no C went
-// out, and the client resumes after B.
+// SENT, which ends a whole run, and ends OK with nothing after it. With a
+// buffer of 1, the commit [C, C] is queued and the commit [D, D, D] does not
+// fit, so no D went out, and the client resumes after C.
 func (s *StoryHandlerSuite) TestStreamEventsLaggedLast() {
-	broker := sessionorch.NewActBroker(2)
+	broker := sessionorch.NewActBroker(1)
 	s.seated()
 	s.manager.EXPECT().Acts(gomock.Any(), gomock.Any()).DoAndReturn(
 		func(ctx context.Context, _ *sdk.ActsInput) (*sdk.ActsOutput, error) {
-			_ = broker.PublishActs(ctx, storyActs("C", "C", "C")) // overflows: the run is not split
+			s.Require().NoError(broker.PublishActs(ctx, storyActs("C", "C")))
+			_ = broker.PublishActs(ctx, storyActs("D", "D", "D")) // overflows: the commit is not split
 			return &sdk.ActsOutput{Acts: storyActs("A", "B")}, nil
 		})
 
 	stream, done := s.run(s.handler(broker), "")
-	s.Equal("A", stream.next(s.T()).GetAct().GetId())
-	s.Equal("B", stream.next(s.T()).GetAct().GetId())
+	var got []string
+	var ends []bool
+	for i := 0; i < 4; i++ {
+		a := stream.next(s.T()).GetAct()
+		got = append(got, a.GetId())
+		ends = append(ends, a.GetRunEnd())
+	}
+	s.Equal([]string{"A", "B", "C", "C"}, got)
+	s.Equal([]bool{true, true, false, true}, ends, "the last act sent ends its run")
 	lagged := stream.next(s.T()).GetLagged()
 	s.Require().NotNil(lagged, "the stream says it lagged")
-	s.Equal("B", lagged.GetLastId())
+	s.Equal("C", lagged.GetLastId())
 	s.NoError(s.ended(done))
 	s.Empty(stream.sent, "lagged is the last message")
+}
+
+// TestStreamEventsSendsUnitsSkippingReplay: with a buffer of 2, a commit
+// [B, B, C] folded between the subscribe and the read, and a garrison verb of
+// 320 acts after it, the stream sends the replay [A, B, B], then C alone of
+// the first unit (B's whole run is at or below the replay's end), then every
+// act of the verb in order, and never lags.
+func (s *StoryHandlerSuite) TestStreamEventsSendsUnitsSkippingReplay() {
+	broker := sessionorch.NewActBroker(2)
+	verb := make([]string, 0, 320)
+	for i := 0; len(verb) < 320; i++ {
+		id := fmt.Sprintf("V%04d", i)
+		verb = append(verb, id)
+		if i%10 == 0 {
+			verb = append(verb, id, id) // a same-id run of three
+		}
+	}
+	verb = verb[:320]
+	s.seated()
+	s.manager.EXPECT().Acts(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, _ *sdk.ActsInput) (*sdk.ActsOutput, error) {
+			s.Require().NoError(broker.PublishActs(ctx, storyActs("B", "B", "C")))
+			s.Require().NoError(broker.PublishActs(ctx, storyActs(verb...)), "a 320-act commit is one unit")
+			return &sdk.ActsOutput{Acts: storyActs("A", "B", "B")}, nil
+		})
+
+	stream, done := s.run(s.handler(broker), "")
+	want := append([]string{"A", "B", "B", "C"}, verb...)
+	got := make([]string, 0, len(want))
+	ends := make([]bool, 0, len(want))
+	for range want {
+		a := stream.next(s.T()).GetAct()
+		s.Require().NotNil(a, "an act, never lagged")
+		got = append(got, a.GetId())
+		ends = append(ends, a.GetRunEnd())
+	}
+	s.Equal(want, got)
+	s.Equal([]bool{true, false, true, true}, ends[:4])
+	s.Equal([]bool{false, false, true, true}, ends[4:8], "the verb's first run of three, then a lone act")
+	s.quiet(stream)
+	s.cancel()
+	s.NoError(s.ended(done))
 }
 
 // TestStoryRequiresSeat: an unseated caller gets PermissionDenied from both
