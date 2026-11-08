@@ -14,7 +14,8 @@
 // runs it), RPG_MEASURE_N (measured Moves per mode, default 20),
 // RPG_MEASURE_MODES ("whole" or "continues"; both by default),
 // RPG_MEASURE_KEYS, RPG_MEASURE_REDIS (a Redis it may flush, default
-// 127.0.0.1:6491).
+// 127.0.0.1:6491), RPG_MEASURE_ACT_BUFFER (the broker's buffer in commits;
+// the production default when unset).
 // Command:
 //
 //	redis-server --port 6491 --save '' --daemonize yes
@@ -24,9 +25,9 @@
 // Caveats: timing ends at the ActBroker channel -- no gRPC transport,
 // protobuf encoding or network. Acts are per-recipient segments, and a
 // continued verb delivers all its acts (the answered steps' included) after
-// its save, so under S1 the first beat lands with the last. The act buffer
-// is raised for the run (a garrison verb folds 165-320 acts for one
-// recipient, past the default 256). Costs grow with every Move (the record
+// its save, so under S1 the first beat lands with the last. The broker runs
+// at its production buffer; the table says whether the subscriber lagged.
+// Costs grow with every Move (the record
 // grows), so percentiles depend on N.
 
 package session_test
@@ -98,10 +99,11 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 	case "continues":
 		modes = []bool{false}
 	}
-	// A garrison verb folds a few hundred acts for one recipient (every
-	// patrol step it sees); the default buffer would close the subscriber
-	// as lagged.
-	t.Setenv(sessionorch.ActBufferEnv, "1000000")
+	// The broker runs at its production buffer unless RPG_MEASURE_ACT_BUFFER
+	// says otherwise; a subscriber that lags is reported in the table.
+	if v := os.Getenv("RPG_MEASURE_ACT_BUFFER"); v != "" {
+		t.Setenv(sessionorch.ActBufferEnv, v)
+	}
 	const warm = 3
 	const pathLen = 8 // a 30 ft walker pays a world round every six cells
 
@@ -123,6 +125,7 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 		answer, first, last, drained             []time.Duration
 		continues, acts, firstAfterAnswer, steps []int
 		compile, launch                          time.Duration
+		lagged                                   bool
 	}
 	rows := make([]row, 0, len(modes)*len(keys))
 
@@ -186,10 +189,12 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				for a := range sub.Acts() {
+				for unit := range sub.Units() {
 					now := time.Now()
 					mu.Lock()
-					got = append(got, arrival{id: a.Act.ID, verb: a.Act.Verb, at: now})
+					for _, a := range unit {
+						got = append(got, arrival{id: a.Act.ID, verb: a.Act.Verb, at: now})
+					}
 					mu.Unlock()
 				}
 			}()
@@ -296,6 +301,11 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 				series = append(series, fmt.Sprintf("%d", r.first[j].Milliseconds()))
 			}
 			t.Logf("%s %s first-beat ms per move, in order: %s", key, mode, strings.Join(series, " "))
+			lagged, lastID := sub.Lagged()
+			r.lagged = lagged
+			if lagged {
+				t.Logf("%s %s: the subscriber lagged at the broker's buffer (last id %s)", key, mode, lastID)
+			}
 			require.NoError(t, sub.Close())
 			<-done
 			require.NoError(t, client.FlushDB(context.Background()).Err())
@@ -305,16 +315,16 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "\nredis GET floor: p50 %s p95 %s (n=%d)\n", ms(pct(floor, 50)), ms(pct(floor, 95)), len(floor))
-	fmt.Fprintf(&b, "| keep | mode | n | continues | answer p50 | answer p95 | first beat p50 | first beat p95 | last beat p50 | last beat p95 | drained p50 | drained p95 | acts/verb | steps answered | acts arrive after answer | launch |\n")
-	fmt.Fprintf(&b, "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+	fmt.Fprintf(&b, "| keep | mode | n | continues | answer p50 | answer p95 | first beat p50 | first beat p95 | last beat p50 | last beat p95 | drained p50 | drained p95 | acts/verb | steps answered | acts arrive after answer | lagged | launch |\n")
+	fmt.Fprintf(&b, "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, r := range rows {
-		fmt.Fprintf(&b, "| %s | %s | %d | %d/%d | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %d/%d | %s |\n",
+		fmt.Fprintf(&b, "| %s | %s | %d | %d/%d | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %d/%d | %v | %s |\n",
 			r.key, r.mode, len(r.answer), sum(r.continues), len(r.continues),
 			ms(pct(r.answer, 50)), ms(pct(r.answer, 95)),
 			ms(pct(r.first, 50)), ms(pct(r.first, 95)),
 			ms(pct(r.last, 50)), ms(pct(r.last, 95)),
 			ms(pct(r.drained, 50)), ms(pct(r.drained, 95)),
-			span(r.acts), span(r.steps), sum(r.firstAfterAnswer), len(r.firstAfterAnswer),
+			span(r.acts), span(r.steps), sum(r.firstAfterAnswer), len(r.firstAfterAnswer), r.lagged,
 			r.launch.Round(time.Millisecond))
 	}
 	t.Log(b.String())
