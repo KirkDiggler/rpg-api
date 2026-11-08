@@ -1,0 +1,31 @@
+# 2026-11-07 — current composed Raging in native readers
+
+## Shipped
+
+- Adopt pushed session 2909290a, resolution 9425c9da and rulebook 3e771a63; metadata conversion carries canonical origin ref and registry description while preserving raw condition bytes — [converter](../../internal/handlers/dnd5e/v1alpha1/character/converters.go).
+- Replace obsolete concrete saved-data fixtures; real handler activation, Redis persistence, four domain-specific action rows and first-boundary reload are exercised together — [native integration test](../../internal/integration/session/composed_raging_acceptance_test.go).
+
+## Decided
+
+- Map registry Detail into the existing Condition.notes display field and composed Origin.Ref into Source; neither time remaining nor a damage bonus is calculated here. Other condition formats retain their source field — [converter seam test](../../internal/handlers/dnd5e/v1alpha1/character/composed_raging_test.go).
+- At the first checkpoint, source-ID mapping awaited proto#422 publication. The operator merged it; generated release v0.1.259 (7dcb1b2) is now pinned and EffectRow.SourceID maps directly to source_id. Isolated boot, operator look, walk, independent review and toolkit release-tag adoption remain outstanding — [S12](https://github.com/KirkDiggler/rpg-project/issues/884).
+
+## Found
+
+- API #1197 landed during preflight, so merged dev again and retained its host continuation runner/queue integration. Only dependency files conflicted; current pins already include encounter v0.182.0/proto v0.1.260 plus the Raging session. Full make test and ci-check pass with that landed host implementation — [upstream integration](https://github.com/KirkDiggler/rpg-api/pull/1197).
+- Authorized release preflight merged current dev and pinned session 9f1e5728 / encounter v0.182.0, retaining landed optional continuation work without opting this host into a runner. Adopted published proto v0.1.260 at generated d83fdfa5 to match current web dev. Dependency-only conflicts; full make test and ci-check passed against shipped content — [S12](https://github.com/KirkDiggler/rpg-project/issues/884).
+- Adopted session 277ed80e → resolution e6e26a2d → root c00e0d76 for the live QA damage-sustain defect. Full make test and ci-check pass with the local walk fixture temporarily outside the shipped-content scan and restored afterward; no API rule or legacy damage publisher was added — [#2312](https://github.com/KirkDiggler/rpg-toolkit/issues/2312).
+- After independent review, API head had no CI because dev's two landed performance-pin updates made the PR conflicting. Merged dev on top and pinned session 9f462d97, which merges toolkit main and retains encounter v0.181.0 without dropping Raging. Full make test and ci-check passed against the shipped tree — [S12](https://github.com/KirkDiggler/rpg-project/issues/884).
+- After generated SDK adoption and source-ID mapping, full make test passed in 426.37 seconds and make ci-check passed in 491.72 seconds; no test set was narrowed — [gate definitions](../../Makefile).
+- Proto #422 merged as 1fc63b4; publication CI 42422302400 passed and v0.1.259 points to generated commit 7dcb1b2. The Go submodule resolves that published commit to v0.0.0-20261107224950-7dcb1b2ebf4c; no generated code was authored locally — [publication](https://github.com/KirkDiggler/rpg-api-protos/actions/runs/42422302400).
+- Declaration/held-row converter assertions and all four native Raging row assertions failed on empty source IDs, then passed after the direct mapping. Source entity identity is not substituted for row identity or recipient — [wire projection tests](../../internal/handlers/dnd5e/session/v1alpha1/convert_test.go).
+
+- The converter test failed because source and description were empty, then passed after direct metadata projection. The native integration test observes fresh → raging progress in Redis without renewed grace/payment — [tests](../../internal/handlers/dnd5e/v1alpha1/character/composed_raging_test.go).
+- Full make test passed, including cmd/server. make ci-check passed in 483.95 seconds after import formatting; the earlier combined command reached its 600-second bound after make test had completed, not a passing ci-check — [gate definitions](../../Makefile).
+
+## Mistaken
+
+- The first catch-up gate included the untracked local walk YAML in shipped-content glob tests, failing the atlas fixture and reference-template assertions. Temporarily moved only that untracked file outside content for the complete gates and restored it afterward; tests were not skipped/changed and the served file was untouched — [content test](../../internal/dungeons/registry_test.go).
+- The first new converter fixture called ToJSON on the factory output instead of its Condition; that compile error was corrected before observing the meaningful missing-metadata RED. A new integration file also needed the repository's goimports grouping — [fixture](../../internal/handlers/dnd5e/v1alpha1/character/composed_raging_test.go).
+
+— cross-team agent, on behalf of KirkDiggler
