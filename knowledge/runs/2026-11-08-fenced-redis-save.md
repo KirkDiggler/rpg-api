@@ -19,6 +19,9 @@ Built on `rpg-api` `dev` [`5711f56`](https://github.com/KirkDiggler/rpg-api/comm
 - Nothing is written until everything is checked. A Lua script does not roll back on a later error, so the fence, sheet existence and sheet owner are checked before the first SET.
 - A sheet whose `player_id` would change fails closed with `ErrBadRepository`. No session verb moves a sheet between players; the player index belongs to the character repository's Create and Update.
 - A fenced save's session record takes the encounter repository's TTL. The orchestrator builds both repositories with the same `Config.TTL`.
+- The session orchestrator's `Config.Characters` must be the Redis character repository on `Config.Redis`, because the fenced save writes sheets into that Redis whatever the field holds. The server already wires it so; the field's doc now says it.
+- The lobby handler suite ran the session over a mocked character repository, so the fenced save could not find the sheets it reads. It now runs on the Redis character repository on its own miniredis, as the server does, and seeds characters instead of arming mock calls.
+- Two test hooks that matched the encounter save as a SET (the serialization suite's pause, the contract suite's write failure) now match the script too.
 - The contract's `Seats` field is written under `session-seat:v1alpha1:<character>`, no TTL, as `SaveSeat` writes it. The card did not name seats; the toolkit contract does.
 
 ## Found
