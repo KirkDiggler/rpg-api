@@ -76,9 +76,12 @@ func (s *ActListenersTestSuite) TestForgetsARecipientClosedAsLagged() {
 	sub, err := broker.Subscribe("sess-1", "alice")
 	s.Require().NoError(err)
 
-	// Two single-act runs into a buffer of one: the second closes her as lagged.
-	err = broker.PublishActs(s.ctx, []sdk.Act{
+	// The buffer counts commits: two undrained commits into a buffer of one,
+	// and the second closes her as lagged.
+	s.Require().NoError(broker.PublishActs(s.ctx, []sdk.Act{
 		{Session: "sess-1", ID: "a", Recipient: "alice", Family: sdk.FamilyAct},
+	}), "the first commit fills the buffer")
+	err = broker.PublishActs(s.ctx, []sdk.Act{
 		{Session: "sess-1", ID: "b", Recipient: "alice", Family: sdk.FamilyAct},
 	})
 	s.Require().ErrorIs(err, sessionorch.ErrActsLagged)
