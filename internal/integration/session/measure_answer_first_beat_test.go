@@ -22,7 +22,9 @@
 // RPG_MEASURE_KEYS, RPG_MEASURE_REDIS (a loopback Redis it may flush,
 // default 127.0.0.1:6491; it refuses port 6379 and a store that already
 // holds keys), RPG_MEASURE_ACT_BUFFER (the broker's buffer in commits;
-// the production default when unset).
+// the production default when unset), RPG_MEASURE_RELOAD=0 (skips the
+// cold-reload row: after each mode's walk, N rebuilds of that session from
+// the store by stage -- measure_cold_reload_test.go).
 // Command:
 //
 //	redis-server --port 6491 --save '' --daemonize yes
@@ -137,6 +139,10 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 		noBeat                                   int
 	}
 	rows := make([]row, 0, len(modes)*len(keys))
+	// RPG_MEASURE_RELOAD=0 skips the cold-reload row (measure_cold_reload_test.go).
+	reloadOn := os.Getenv("RPG_MEASURE_RELOAD") != "0"
+	var reloads []reloadRow
+	moveTotals := map[string][2][]time.Duration{}
 
 	for _, key := range keys {
 		raw := readShelf(t, key)
@@ -343,6 +349,10 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 			}
 			require.NoError(t, sub.Close())
 			<-done
+			if reloadOn {
+				reloads = append(reloads, measureColdReload(t, client, orch, run, "alice", key, mode, n))
+				moveTotals[key+"|"+mode] = [2][]time.Duration{r.answer, r.drained}
+			}
 			require.NoError(t, client.FlushDB(context.Background()).Err())
 			rows = append(rows, r)
 		}
@@ -361,6 +371,9 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 			ms(pct(r.drained, 50)), ms(pct(r.drained, 95)),
 			span(r.acts), span(r.steps), r.noBeat, sum(r.firstAfterAnswer), len(r.firstAfterAnswer), r.lagged,
 			r.launch.Round(time.Millisecond))
+	}
+	if reloadOn {
+		b.WriteString(reloadTable(reloads, moveTotals))
 	}
 	t.Log(b.String())
 }
