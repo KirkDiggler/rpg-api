@@ -77,6 +77,12 @@ import (
 // the only field that changed, and only by additions (16 for the castle's
 // seven doors, 182 for the keep's), every one marked crossing; no doorway was
 // removed and the other eleven files answer their fixtures unchanged.
+//
+// reference-raider-camp was rebuilt as current source for #866: the same 112
+// floor cells and three regions, now with structural walls/doors and a placed
+// letter. Its atlas was captured with the pre-adoption released dependency
+// graph and policy fields removed, then compared byte-equal to the complete
+// canonical source under the new graph. Projection code was not changed.
 func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBeforeTheWave() {
 	files, err := filepath.Glob(filepath.Join(dungeonstest.ContentDir(s.T()), "*.yaml"))
 	s.Require().NoError(err)
