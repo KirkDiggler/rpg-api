@@ -142,9 +142,18 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 
 			charRepo, err := characterrepo.NewRedis(&characterrepo.RedisConfig{Client: client})
 			require.NoError(t, err)
+			// The production runner, counted: Orchestrator.Drain is the
+			// shutdown drain (it refuses every later continuation), so the
+			// run waits on its own count between Moves instead.
+			runner := &countedRunner{inner: sessionorch.NewInProcessContinuationRunner()}
+			var continuations sdk.ContinuationRunner = runner
+			if answerWhole {
+				continuations = nil
+			}
 			orch, err := sessionorch.New(sessionorch.Config{
 				Redis: client, Characters: charRepo, TTL: 24 * time.Hour, Dice: testDice{},
-				PresentationIDs: idgen.NewSequential("presentation"), AnswerWhole: answerWhole,
+				PresentationIDs: idgen.NewSequential("presentation"),
+				AnswerWhole:     answerWhole, Continuations: continuations,
 			})
 			require.NoError(t, err)
 			handler, err := sessionhandler.New(&sessionhandler.HandlerConfig{
@@ -210,7 +219,7 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 				answered := time.Now()
 				require.NoError(t, err, "move %d dir %d from (%d,%d)", i, dir, x, y)
 				dctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-				require.NoError(t, orch.Drain(dctx))
+				require.NoError(t, runner.wait(dctx))
 				drainedAt := time.Since(t0)
 				cancel()
 				// Let the subscriber goroutine take what the drain published.
@@ -309,6 +318,43 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 			r.launch.Round(time.Millisecond))
 	}
 	t.Log(b.String())
+}
+
+// countedRunner is the in-process continuation runner with a count of the
+// continuations in flight, so a measurement can wait for one verb's rest
+// without the shutdown drain.
+type countedRunner struct {
+	inner *sessionorch.InProcessContinuationRunner
+	wg    sync.WaitGroup
+}
+
+func (r *countedRunner) Run(ctx context.Context, in *sdk.RunContinuationInput) error {
+	if in == nil {
+		return r.inner.Run(ctx, in)
+	}
+	counted := *in
+	r.wg.Add(1)
+	cont := in.Continue
+	counted.Continue = func(ctx context.Context) (*sdk.ContinuationReport, error) {
+		defer r.wg.Done()
+		return cont(ctx)
+	}
+	if err := r.inner.Run(ctx, &counted); err != nil {
+		r.wg.Done()
+		return err
+	}
+	return nil
+}
+
+func (r *countedRunner) wait(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() { r.wg.Wait(); close(done) }()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func envOr(k, d string) string {
