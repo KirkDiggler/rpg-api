@@ -12,6 +12,7 @@
 
 ## Found
 
+- Adopted session 277ed80e → resolution e6e26a2d → root c00e0d76 for the live QA damage-sustain defect. Full make test and ci-check pass with the local walk fixture temporarily outside the shipped-content scan and restored afterward; no API rule or legacy damage publisher was added — [#2312](https://github.com/KirkDiggler/rpg-toolkit/issues/2312).
 - After independent review, API head had no CI because dev's two landed performance-pin updates made the PR conflicting. Merged dev on top and pinned session 9f462d97, which merges toolkit main and retains encounter v0.181.0 without dropping Raging. Full make test and ci-check passed against the shipped tree — [S12](https://github.com/KirkDiggler/rpg-project/issues/884).
 - After generated SDK adoption and source-ID mapping, full make test passed in 426.37 seconds and make ci-check passed in 491.72 seconds; no test set was narrowed — [gate definitions](../../Makefile).
 - Proto #422 merged as 1fc63b4; publication CI 42422302400 passed and v0.1.259 points to generated commit 7dcb1b2. The Go submodule resolves that published commit to v0.0.0-20261107224950-7dcb1b2ebf4c; no generated code was authored locally — [publication](https://github.com/KirkDiggler/rpg-api-protos/actions/runs/42422302400).
