@@ -546,6 +546,16 @@ func runServer(_ *cobra.Command, _ []string) error {
 			log.Println("Server stopped gracefully")
 		}
 
+		// A Move may have answered before its save (rpg-project#879 R2):
+		// the server takes no more verbs now, so wait, under the same
+		// shutdown deadline, for the continuations still running to save
+		// and deliver.
+		if err := sessionOrch.Drain(shutdownCtx); err != nil {
+			log.Printf("session continuations not drained before shutdown: %v", err)
+		} else {
+			log.Println("Session continuations drained")
+		}
+
 		if err := lobbyBroker.Close(); err != nil {
 			log.Printf("lobby broker close: %v", err)
 		}
