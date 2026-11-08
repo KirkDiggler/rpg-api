@@ -15,9 +15,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
-	sessionhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
-	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
@@ -40,7 +38,7 @@ func (d *patrolDice) Roll(_ context.Context, sides int) (int, error) {
 func (s *BehaviorPatrolSuite) TestBehaviorPatrolAcceptance() {
 	ctx := auth.WithPlayerID(context.Background(), "player-alice")
 	die := &patrolDice{}
-	h := newAcceptanceHarnessWithDice(s.T(), die)
+	h := newAcceptanceHarnessAnswering(s.T(), die, nil, false)
 	_, err := h.charRepo.Create(ctx, characterrepo.CreateInput{Character: &entities.Character{Data: armedFighter("alice", "player-alice")}})
 	s.Require().NoError(err)
 	raw, err := os.ReadFile(filepath.Join(dungeonstest.ContentDir(s.T()), "..", "internal", "orchestrators", "authoring", "testdata", "behavior-patrol-consumer.yaml"))
@@ -67,14 +65,12 @@ func (s *BehaviorPatrolSuite) TestBehaviorPatrolAcceptance() {
 		{{X: 1, Y: 2}, {X: 2, Y: 2}, {X: 3, Y: 2}, {X: 4, Y: 2}, {X: 5, Y: 2}, {X: 6, Y: 2}},
 		{{X: 5, Y: 2}, {X: 4, Y: 2}, {X: 3, Y: 2}, {X: 2, Y: 2}, {X: 1, Y: 2}, {X: 0, Y: 2}},
 	} {
-		// Recreate the real manager/handler over the same Redis between verbs.
-		orch, makeErr := sessionorch.New(sessionorch.Config{Redis: h.redis, Characters: h.charRepo, TTL: time.Hour, Dice: die, PresentationIDs: idgen.NewSequential(fmt.Sprintf("reload-%d", round))})
-		s.Require().NoError(makeErr)
-		handler, makeErr := sessionhandler.New(&sessionhandler.HandlerConfig{Manager: orch.Manager, Characters: h.charRepo, Preferences: orch.Preferences})
-		s.Require().NoError(makeErr)
-		moved, moveErr := handler.Move(ctx, &sessionpb.MoveRequest{Session: run, Member: "alice", Path: path})
+		// Recreate the real asynchronous manager over the same Redis only
+		// after draining the previous host; do not revert to AnswerWhole.
+		s.reloadBehaviorHost(h, die, fmt.Sprintf("reload-%d", round))
+		moved, moveErr := h.handler.Move(ctx, &sessionpb.MoveRequest{Session: run, Member: "alice", Path: path})
 		s.Require().NoError(moveErr)
-		s.Equal(sessionpb.MovementStatus_MOVEMENT_STATUS_COMPLETED, moved.GetStatus())
+		s.awaitBehaviorMove(h, run, moved, path[len(path)-1])
 		s.Equal(2*(round+1), die.choices)
 		stored, readErr := repository.GetEncounter(ctx, run)
 		s.Require().NoError(readErr)
@@ -84,7 +80,7 @@ func (s *BehaviorPatrolSuite) TestBehaviorPatrolAcceptance() {
 				s.Equal(want, m.Behaviors.Definition)
 			}
 		}
-		view, readErr := handler.GetView(ctx, &sessionpb.GetViewRequest{Session: run, Member: "alice"})
+		view, readErr := h.handler.GetView(ctx, &sessionpb.GetViewRequest{Session: run, Member: "alice"})
 		s.Require().NoError(readErr)
 		for _, private := range []string{"behaviorDefinitions", "ComposerData", "item/0/walk"} {
 			s.NotContains(protojson.Format(view), private)

@@ -109,6 +109,20 @@ func (s *OrchestratorTestSuite) TestNew_InvalidStaleTargetPolicyFailsConstructio
 	s.ErrorContains(err, "StaleTargetPolicy")
 }
 
+// AnswerWhole hands the SDK no runner, so an injected one would be silently
+// ignored: New refuses the pair instead.
+func (s *OrchestratorTestSuite) TestNew_AnswerWholeWithARunnerFailsConstruction() {
+	ctrl := gomock.NewController(s.T())
+	client := goredis.NewClient(&goredis.Options{Addr: s.miniredis.Addr()})
+	defer func() { _ = client.Close() }()
+	orch, err := sessionorch.New(sessionorch.Config{
+		Redis: client, Characters: charactermock.NewMockRepository(ctrl),
+		AnswerWhole: true, Continuations: sessionorch.NewInProcessContinuationRunner(),
+	})
+	s.Nil(orch)
+	s.ErrorContains(err, "exclusive")
+}
+
 // passDriver is an every-session driver a test can hand Config.TurnDriver.
 type passDriver struct{}
 

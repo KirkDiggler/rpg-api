@@ -12,6 +12,7 @@
 package session
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -55,6 +56,22 @@ type Config struct {
 	// handlers/lobby calls share it. Multiple Orchestrators/processes must
 	// inject one shared coordinator; independent local lockers are insufficient.
 	Locker sdk.SessionLocker
+
+	// Continuations runs the part of a verb that follows its answer
+	// (rpg-project#879 R2): a world-clock Move answers with the steps before
+	// the one that pays a round and hands the rest to this runner with the
+	// session's guard held. Optional: nil selects an
+	// InProcessContinuationRunner, which Orchestrator.Drain waits on. A test
+	// injects its own to observe or script the hand-off.
+	Continuations sdk.ContinuationRunner
+
+	// AnswerWhole hands the SDK no runner at all, so every verb runs whole
+	// before it answers and the answer carries the verb's Saved and Delivery,
+	// exactly as before rpg-project#879. New refuses it together with a
+	// non-nil Continuations, which it would otherwise ignore. It is
+	// for tests that read the store, or a report, right after a verb
+	// returns; production leaves it false.
+	AnswerWhole bool
 
 	// Dice is the SDK's source of randomness. Optional: nil selects a
 	// crypto-secure dice.CryptoRoller, the production default. This is this
@@ -113,6 +130,30 @@ type Orchestrator struct {
 	// Preferences writes character configuration under the character guard
 	// of the same locker Manager uses.
 	Preferences *Preferences
+
+	// continuations is what Manager hands the rest of a verb to; nil when
+	// Config.AnswerWhole is set.
+	continuations sdk.ContinuationRunner
+}
+
+// continuationDrainer is a runner that can wait for its continuations in
+// flight, as InProcessContinuationRunner does.
+type continuationDrainer interface {
+	Drain(ctx context.Context) error
+}
+
+// Drain waits for the continuations in flight -- verbs that answered before
+// their save -- to finish, or for ctx to end, whichever comes first. A host
+// calls it on shutdown, after the gRPC server stopped taking verbs, so no
+// answered walk loses its save. It returns nil at once when the runner keeps
+// nothing in flight (Config.AnswerWhole, or an injected runner without a
+// Drain of its own), and ctx's error when the deadline wins.
+func (o *Orchestrator) Drain(ctx context.Context) error {
+	d, ok := o.continuations.(continuationDrainer)
+	if !ok {
+		return nil
+	}
+	return d.Drain(ctx)
 }
 
 // New constructs an Orchestrator, wiring every session.Config capability
@@ -162,6 +203,19 @@ func New(cfg Config) (*Orchestrator, error) {
 	if locker == nil {
 		locker = NewInProcessSessionLocker()
 	}
+	// THE VERB ANSWERS BEFORE THE WORLD RUNS (rpg-project#879 R2): the
+	// rest of a world-clock Move runs on the runner, under the session
+	// guard it inherits. AnswerWhole leaves the SDK's own inline path.
+	if cfg.AnswerWhole && cfg.Continuations != nil {
+		return nil, errors.New("session orchestrator: Config.AnswerWhole and Config.Continuations are exclusive")
+	}
+	var continuations sdk.ContinuationRunner
+	if !cfg.AnswerWhole {
+		continuations = cfg.Continuations
+		if continuations == nil {
+			continuations = NewInProcessContinuationRunner()
+		}
+	}
 	configs := cfg.CharacterConfig
 	if configs == nil {
 		var err error
@@ -175,6 +229,7 @@ func New(cfg Config) (*Orchestrator, error) {
 	actBroker := NewActBroker(ActBufferFromEnv())
 	mgr, err := sdk.NewManager(&sdk.Config{
 		Locker:            locker,
+		Continuations:     continuations,
 		CharacterConfig:   &characterConfigReader{repo: configs},
 		StaleTargetPolicy: policy,
 		PresentationIDs:   presentationIDs,
@@ -193,6 +248,7 @@ func New(cfg Config) (*Orchestrator, error) {
 
 	return &Orchestrator{
 		Manager: mgr, RecordBroker: recordBroker, ActBroker: actBroker,
-		Preferences: &Preferences{locker: locker, repo: configs},
+		Preferences:   &Preferences{locker: locker, repo: configs},
+		continuations: continuations,
 	}, nil
 }

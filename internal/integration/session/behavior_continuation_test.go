@@ -39,12 +39,38 @@ func (d *behaviorScript) Roll(_ context.Context, sides int) (int, error) {
 }
 
 func (s *BehaviorPatrolSuite) reloadBehaviorHost(h *acceptanceHarness, die sdk.Roller, label string) {
+	// A fresh host models restart only after the old host's accepted work has
+	// drained. Different in-process lockers are not one coordination domain.
+	drain, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	s.Require().NoError(h.manager.Drain(drain))
 	orch, err := sessionorch.New(sessionorch.Config{Redis: h.redis, Characters: h.charRepo, TTL: time.Hour, Dice: die, PresentationIDs: idgen.NewSequential(label)})
 	s.Require().NoError(err)
 	handler, err := sessionhandler.New(&sessionhandler.HandlerConfig{Manager: orch.Manager, Characters: h.charRepo, Preferences: orch.Preferences})
 	s.Require().NoError(err)
 	h.manager, h.handler = orch, handler
 	h.story = newStoryHandler(s.T(), orch, h.charRepo)
+	s.T().Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		s.NoError(orch.Drain(ctx))
+	})
+}
+
+// awaitBehaviorMove reads through the same real session guard as a following
+// player request. It neither fabricates completion nor polls private progress.
+func (s *BehaviorPatrolSuite) awaitBehaviorMove(h *acceptanceHarness, run string, answer *sessionpb.MoveResponse, goal *sessionpb.Position) {
+	s.True(answer.GetContinues())
+	s.Equal(sessionpb.MovementStatus_MOVEMENT_STATUS_CONTINUING, answer.GetStatus())
+	s.Require().Len(answer.GetSteps(), 5, "the sixth step and its world opportunity belong to the continuation")
+	s.NotEmpty(answer.GetThrough())
+	s.Empty(answer.GetSaved().GetWritten(), "the early answer claims no durable save")
+	ctx, cancel := context.WithTimeout(auth.WithPlayerID(context.Background(), "player-alice"), 10*time.Second)
+	defer cancel()
+	where, err := h.handler.GetWhere(ctx, &sessionpb.GetWhereRequest{Session: run, Member: "alice"})
+	s.Require().NoError(err)
+	s.Equal(goal.GetX(), where.GetPosition().GetX())
+	s.Equal(goal.GetY(), where.GetPosition().GetY())
 }
 
 func (s *BehaviorPatrolSuite) storedBehavior(h *acceptanceHarness, run, id string) *encounter.MemberData {
@@ -65,7 +91,7 @@ func (s *BehaviorPatrolSuite) TestHeldBehaviorSurvivesRedisReloadAndSourceEdit()
 	// The actual initiative rolls, then the sole behavior choice. A resume or
 	// read that chooses again fails the script rather than receiving spare dice.
 	die := &behaviorScript{faces: []behaviorFace{{20, 15}, {20, 15}, {100, 1}}}
-	h := newAcceptanceHarnessWithDice(s.T(), die)
+	h := newAcceptanceHarnessAnswering(s.T(), die, nil, false)
 	_, err := h.charRepo.Create(ctx, characterrepo.CreateInput{Character: &entities.Character{Data: armedFighter("alice", "player-alice")}})
 	s.Require().NoError(err)
 	raw, err := os.ReadFile("testdata/behavior-held.yaml")
