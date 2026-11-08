@@ -26,13 +26,18 @@ allowed() {
 
 echo "Verifying content/ holds only the shipped allowlist..."
 
+# A plain assignment, not a process substitution: if git ls-files fails,
+# set -e stops here instead of the loop reading nothing and passing.
+tracked="$(git ls-files -- content)"
+
 failures=0
 while IFS= read -r path; do
+	[ -n "$path" ] || continue
 	if ! allowed "$path"; then
 		echo "error: $path is not on the content/ allowlist" >&2
 		failures=$((failures + 1))
 	fi
-done < <(git ls-files -- content)
+done <<<"$tracked"
 
 if [ "$failures" -gt 0 ]; then
 	cat >&2 <<'MSG'

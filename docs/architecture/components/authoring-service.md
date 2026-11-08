@@ -241,7 +241,7 @@ component: dungeonspec **version 2** (regions, walls, doors, absolute
 defects carry `line N`), `Seat.At`/`MonsterPlacement.At` as absolute offset
 cells (so `sessionworld` asks `encounter.HexCellAt` for the axial cell and
 the throwaway-encounter projection is gone), `session.Atlas.Regions`, and
-`Manager.AtlasOf`. `content/reference-tomb.yaml` is T2's golden v2 file —
+`Manager.AtlasOf`. The reference tomb (now `internal/dungeons/testdata/sites/reference-tomb.yaml`, rpg-api#1205) is T2's golden v2 file —
 the same 224 cells, boundaries, doorways and props version 1 produced, with
 three regions added.
 

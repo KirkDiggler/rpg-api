@@ -463,7 +463,7 @@ func (s *SessionStackSuite) TestStartEncounter_DemoVendorIsPlacedAndInteractable
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
 		WorldID:  testWorldID,
-		PlayerID: "alice", LobbyID: "lobby-1",
+		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: tombKey,
 	})
 	s.Require().NoError(err)
 
@@ -506,7 +506,7 @@ func (s *SessionStackSuite) TestStartEncounter_TradeBuysFromTheDemoVendor() {
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
 		WorldID:  testWorldID,
-		PlayerID: "alice", LobbyID: "lobby-1",
+		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: tombKey,
 	})
 	s.Require().NoError(err)
 
@@ -566,7 +566,7 @@ func (s *SessionStackSuite) TestStartEncounter_SellToTheDemoVendor() {
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
 		WorldID:  testWorldID,
-		PlayerID: "alice", LobbyID: "lobby-1",
+		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: tombKey,
 	})
 	s.Require().NoError(err)
 

@@ -15,13 +15,15 @@ Built on `rpg-api` `dev` [`3abf710`](https://github.com/KirkDiggler/rpg-api/comm
 
 - The allowlist reads `git ls-files`, not the directory. A walk site sits untracked in its slice worktree's `content/` (the walk skill's rule); a filesystem check would fail every local run on a walk env, a tracked-file check fails only the PR that commits one.
 - No test was deleted. Every test that opened a retired file reads it from `testdata/sites/` now; the tomb-specific lobby tests name `reference-tomb`, and the registry mechanics suite writes the small tomb under the default key rather than compiling the castle per test.
+- The TEMPORARY demo vendor (rpg-api#903 Phase 1) was gated on `dungeons.DefaultKey`. Moving the default would have put the merchant in every castle launch. It is now gated on its own `reference-tomb` key. The tomb no longer ships, so in production the gate is dead by design until Phase 2 removes the vendor. Review on PR #1206 caught this.
+- The allowlist script captures `git ls-files` in a plain assignment, so a git failure stops it under `set -e` (exit 128 on a corrupt index) instead of reading as empty and green.
 - The default is now a single-room (version 5) file, so `ListDungeons` lists it; the tomb, a version 2 file, was not listed. The list tests assert both.
 - The atlas pin covers `content/` and the sites, so the retired sites' captured atlases stay checked.
 
 ## Commands and proof
 
 ```
-go test ./...                          # 41 packages ok
+go test ./...                          # 41 packages ok (again after the review fix)
 golangci-lint run ./...                # 0 issues
 ./scripts/ci-checks.test.sh            # ci-check safety contract tests: PASS
 ./scripts/verify-content-allowlist.sh  # on the branch
