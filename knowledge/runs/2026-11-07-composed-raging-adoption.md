@@ -12,6 +12,7 @@
 
 ## Found
 
+- Authorized release preflight merged current dev and pinned session 9f1e5728 / encounter v0.182.0, retaining landed optional continuation work without opting this host into a runner. Adopted published proto v0.1.260 at generated d83fdfa5 to match current web dev. Dependency-only conflicts; full make test and ci-check passed against shipped content — [S12](https://github.com/KirkDiggler/rpg-project/issues/884).
 - Adopted session 277ed80e → resolution e6e26a2d → root c00e0d76 for the live QA damage-sustain defect. Full make test and ci-check pass with the local walk fixture temporarily outside the shipped-content scan and restored afterward; no API rule or legacy damage publisher was added — [#2312](https://github.com/KirkDiggler/rpg-toolkit/issues/2312).
 - After independent review, API head had no CI because dev's two landed performance-pin updates made the PR conflicting. Merged dev on top and pinned session 9f462d97, which merges toolkit main and retains encounter v0.181.0 without dropping Raging. Full make test and ci-check passed against the shipped tree — [S12](https://github.com/KirkDiggler/rpg-project/issues/884).
 - After generated SDK adoption and source-ID mapping, full make test passed in 426.37 seconds and make ci-check passed in 491.72 seconds; no test set was narrowed — [gate definitions](../../Makefile).
