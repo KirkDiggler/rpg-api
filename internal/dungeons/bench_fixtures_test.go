@@ -28,8 +28,10 @@ const benchKeep = "bench-keep"
 // measure tests under internal/integration/session use. The bench keeps are
 // the measurement's own input, and checking them costs what measuring does:
 // regenerating the 30k ceiling alone took 28.6 s under -race, and the two
-// tests together 45 s of the package's 199 s (rpg-project#911). A measure
-// run checks its fixtures first:
+// tests together 45 s of the package's 199 s (rpg-project#911). CI runs them
+// as their own step, without -race and outside the test budget
+// (.github/workflows/test.yml), so a repin that shifts keepgen's output still
+// fails the PR:
 //
 //	RPG_MEASURE=1 go test ./internal/dungeons/ -run TestBenchFixtures -count=1
 func measureOnly(t *testing.T) {

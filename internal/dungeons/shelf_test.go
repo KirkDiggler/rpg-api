@@ -1,10 +1,12 @@
 package dungeons_test
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
@@ -20,9 +22,10 @@ import (
 // Every suite here used to copy and compile the whole shelf per test, and
 // one compile is about 5 s under -race: the package spent 199 s, most of it
 // recompiling the same files (rpg-project#911). A FileRegistry is read-only
-// after construction and the joined registry caches nothing, so sharing it
-// leaks nothing between tests; each test still gets its own world store and
-// projector. The directory stays on disk for the binary, so a test can still
+// after construction and the joined registry caches nothing. Get copies an
+// entry's YAML bytes; the compiled dungeon and its atlas are shared, read
+// only, and no test may mutate them. Each test still gets its own world
+// store and projector. The directory stays on disk for the binary, so a test can still
 // prove a save never writes it: against shelf.staged, the files as TestMain
 // staged them, never against a snapshot of its own, because the directory
 // outlives the test and an earlier save of the same bytes would hide a
@@ -71,12 +74,36 @@ func runWithShelf(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "dungeons shelf: %v\n", err)
 		return 1
 	}
-	if !reflect.DeepEqual(staged, after) {
-		fmt.Fprintln(os.Stderr, "dungeons shelf: a test wrote the shared content directory; the shipped store has no write path")
+	if changed := shelfChanges(staged, after); len(changed) > 0 {
+		fmt.Fprintf(os.Stderr, "dungeons shelf: a test wrote the shared content directory (%s); the shipped store has no write path\n",
+			strings.Join(changed, ", "))
 		return 1
 	}
 
 	return code
+}
+
+// shelfChanges names every file added, removed or rewritten between two
+// readings of the shelf, sorted.
+func shelfChanges(before, after map[string][]byte) []string {
+	var out []string
+	for name, raw := range after {
+		was, ok := before[name]
+		switch {
+		case !ok:
+			out = append(out, name+" added")
+		case !bytes.Equal(was, raw):
+			out = append(out, name+" rewritten")
+		}
+	}
+	for name := range before {
+		if _, ok := after[name]; !ok {
+			out = append(out, name+" removed")
+		}
+	}
+	sort.Strings(out)
+
+	return out
 }
 
 // readShelf is every file in dir by name, with its bytes.
