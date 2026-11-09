@@ -47,7 +47,7 @@ func (h *Handler) GetRecord(ctx context.Context, req *sessionpb.GetRecordRequest
 	for _, evt := range out.Events {
 		converted, cerr := recordEventToProto(evt)
 		if cerr != nil {
-			slog.ErrorContext(ctx, "session record: fields not projectable, sent without them",
+			slog.ErrorContext(ctx, "session record: legacy fields not projectable, raw payload retained",
 				"session", req.GetSession(), "id", evt.ID, "beat", evt.Beat, "error", cerr)
 		}
 		events = append(events, converted)

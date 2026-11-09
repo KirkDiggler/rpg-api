@@ -70,7 +70,7 @@ func (h *Handler) StreamRecord(req *sessionpb.StreamRecordRequest, stream sessio
 	send := func(evt sdk.RecordEvent) error {
 		converted, cerr := recordEventToProto(evt)
 		if cerr != nil {
-			slog.ErrorContext(ctx, "session record: fields not projectable, sent without them",
+			slog.ErrorContext(ctx, "session record: legacy fields not projectable, raw payload retained",
 				"session", session, "id", evt.ID, "beat", evt.Beat, "error", cerr)
 		}
 		if err := stream.Send(&sessionpb.StreamRecordResponse{

@@ -43,7 +43,11 @@ func (s *BehaviorPatrolSuite) TestMachineTraceCaptureSurvivesReload() {
 	s.Require().NoError(err)
 	raw, err := os.ReadFile(filepath.Join(dungeonstest.ContentDir(s.T()), "..", "internal", "orchestrators", "authoring", "testdata", "behavior-patrol-consumer.yaml"))
 	s.Require().NoError(err)
-	dungeon, err := sessionworld.Compile(raw)
+	// A valid authored scalar beyond the Struct/JS safe-integer boundary.
+	// It is configuration, not fabricated runtime progress.
+	wideSource := strings.Replace(string(raw), "initial: idle", "initial: idle\n      bag: {inspection-count: 9007199254740993}", 1)
+	s.Require().NotEqual(string(raw), wideSource)
+	dungeon, err := sessionworld.Compile([]byte(wideSource))
 	s.Require().NoError(err)
 	const run = "inspection-capture-run"
 	h.launchAtStart(s.T(), run, dungeon.Spec, "alice")
@@ -104,11 +108,10 @@ func (s *BehaviorPatrolSuite) TestMachineTraceCaptureSurvivesReload() {
 		s.Require().True(ok, "captured ID remains available in the normal retained record")
 		s.Equal(actual.Act, captured.Act)
 		s.Equal(actual.Beat, captured.Beat)
-		fields, marshalErr := json.Marshal(actual.Fields.AsMap())
-		s.Require().NoError(marshalErr)
-		s.JSONEq(string(fields), string(captured.Fields))
+		s.Equal(string(captured.Fields), string(actual.GetFieldsJson()), "live/catch-up wire and capture preserve the same owner bytes")
 		counts[captured.Beat]++
 	}
+	s.Contains(buf.String(), "9007199254740993", "the real compiler/host capture retains the original integer")
 	s.Equal(2, counts[encounter.BeatBehaviorConfig], "source edit/reload does not rebind or duplicate symbols")
 	s.Positive(counts[encounter.BeatBehaviorDecision])
 	s.Positive(counts[encounter.BeatBehaviorWork])

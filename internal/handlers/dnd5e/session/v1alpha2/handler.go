@@ -9,9 +9,10 @@
 //
 // THE RECORD IS NOT PER RECIPIENT. Every seated caller receives the whole
 // record, per-observer beats included, before release (R13, R26); rpg-api
-// neither filters nor regroups it. A beat whose fields cannot be spelled as a
-// Struct still goes out — id, beat and act intact, fields empty — so one bad
-// payload never leaves a hole in the stream.
+// neither filters nor regroups it. Exact JSON bytes are carried in fields_json;
+// the deprecated Struct is only an approximate projection. A payload that cannot
+// become a Struct still retains its identity and raw bytes so the reader reports
+// unavailable/unsupported evidence without a hole or an approximate fallback.
 package sessionv1alpha2
 
 import (
