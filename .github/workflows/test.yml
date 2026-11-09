@@ -67,16 +67,6 @@ jobs:
           $(go list ./... | grep -v /gen/ | grep -v /mock | grep -v cmd/server) \
           | tee "$RUNNER_TEMP/test.json" | ./scripts/test-budget.sh log
         go tool cover -html=coverage.out -o coverage.html
-
-    - name: Test budget
-      if: ${{ !cancelled() }}
-      run: |
-        if [[ ! -s "$RUNNER_TEMP/test.json" ]]; then
-          echo "No test output: the test step stopped before its tests."
-          exit 0
-        fi
-        ./scripts/test-budget.sh check -budget "$TEST_BUDGET" \
-          -allow testbudget.allow -label rpg-api < "$RUNNER_TEMP/test.json"
     
     - name: Generate coverage badge
       run: |
@@ -188,3 +178,14 @@ jobs:
         # This would typically update a coverage badge in README
         # For now, just echo the coverage
         echo "Coverage: $COVERAGE%"
+
+    # Last, so a test over budget never skips the coverage report above.
+    - name: Test budget
+      if: ${{ !cancelled() }}
+      run: |
+        if [[ ! -s "$RUNNER_TEMP/test.json" ]]; then
+          echo "No test output: the test step stopped before its tests."
+          exit 0
+        fi
+        ./scripts/test-budget.sh check -budget "$TEST_BUDGET" \
+          -allow testbudget.allow -label rpg-api < "$RUNNER_TEMP/test.json"
