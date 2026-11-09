@@ -71,7 +71,7 @@ The other 24 are named "not yet sized" with their package and time. After the fi
 ## Budget proof
 
 - Red: [run 42690637523](https://github.com/KirkDiggler/rpg-api/actions/runs/42690637523) at `6d3c486`, a temporary `TestBudgetProbe_SleepsSixSeconds` in `internal/dungeons`. The budget step failed naming it alone, "took 6s; the budget is 5s", with an error annotation; every other test was within the budget or allowed.
-- Green: CI_GREEN
+- Green: [run 42692257625](https://github.com/KirkDiggler/rpg-api/actions/runs/42692257625) at `92451e4`, the probe reverted and the near-budget tests allowed: "every top-level test in rpg-api is within 5s or allowed". The coverage steps and PR comment ran before it. Its `Run tests with coverage` step took 3 min.
 
 ## Found
 
