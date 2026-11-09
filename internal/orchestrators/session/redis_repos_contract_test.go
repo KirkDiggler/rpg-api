@@ -175,7 +175,10 @@ func (h sessionWriteFailure) ProcessPipelineHook(next goredis.ProcessPipelineHoo
 }
 func (h sessionWriteFailure) ProcessHook(next goredis.ProcessHook) goredis.ProcessHook {
 	return func(ctx context.Context, cmd goredis.Cmder) error {
-		if cmd.Name() == "set" {
+		// Every write: SaveSession is a SET, SaveEncounter a script that also
+		// advances the checkpoint version (redis_fenced.go).
+		switch cmd.Name() {
+		case "set", "evalsha", "eval":
 			return h.cause
 		}
 		return next(ctx, cmd)

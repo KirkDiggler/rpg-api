@@ -90,7 +90,7 @@ func (s *RecordHandlerSuite) SetupTest() {
 func (s *RecordHandlerSuite) TearDownTest() { s.cancel() }
 
 func (s *RecordHandlerSuite) handler(broker *sessionorch.RecordBroker) *Handler {
-	h, err := New(&HandlerConfig{Manager: s.manager, Broker: broker, Gate: s.gate})
+	h, err := New(&HandlerConfig{Manager: s.manager, Broker: broker, Gate: s.gate, Enabled: true})
 	s.Require().NoError(err)
 	return h
 }
@@ -185,15 +185,16 @@ func withBadMiddle() []sdk.RecordEvent {
 }
 
 // requireDegradedMiddle: all three beats arrive; the bad one keeps its id,
-// beat and act and carries no fields; the beats beside it keep theirs.
+// beat and act and original raw bytes, so a reader can report the unsupported
+// payload explicitly rather than losing either the beat or its evidence.
 func (s *RecordHandlerSuite) requireDegradedMiddle(events []*sessionpb.RecordEvent) {
 	s.Require().Len(events, 3)
 	s.Equal([]string{"id-01", "id-02", "id-03"}, []string{events[0].GetId(), events[1].GetId(), events[2].GetId()})
 	s.Equal("moved", events[1].GetBeat())
 	s.Equal("move:01HF", events[1].GetAct())
-	s.Nil(events[1].GetFields(), "the unreadable payload is dropped from its own beat only")
-	s.NotNil(events[0].GetFields())
-	s.NotNil(events[2].GetFields())
+	s.Equal(`[1,2]`, string(events[1].GetFieldsJson()))
+	s.Equal(`{"beat":"moved"}`, string(events[0].GetFieldsJson()))
+	s.Equal(`{"beat":"moved"}`, string(events[2].GetFieldsJson()))
 }
 
 // TestGetRecordDegradesOneBadBeat: one payload that is not a JSON object
@@ -261,7 +262,7 @@ func (s *RecordHandlerSuite) TestStreamRecordRequiresSeat() {
 		&characterrepo.GetOutput{Character: &entities.Character{Data: &tkcharacter.Data{ID: "char-1", PlayerID: "alice"}}}, nil)
 	gate, err := sessionaccess.New(chars, rosterOf("char-2"))
 	s.Require().NoError(err)
-	h, err := New(&HandlerConfig{Manager: s.manager, Broker: sessionorch.NewRecordBroker(8), Gate: gate})
+	h, err := New(&HandlerConfig{Manager: s.manager, Broker: sessionorch.NewRecordBroker(8), Gate: gate, Enabled: true})
 	s.Require().NoError(err)
 
 	err = h.StreamRecord(&sessionpb.StreamRecordRequest{Session: "sess-1", Member: "char-1"}, newRecordStream(s.ctx))
@@ -345,7 +346,7 @@ func (s *RecordHandlerSuite) TestRecordFieldsToStruct() {
 	evt.Fields = json.RawMessage(`{"beat":"struck","amount":6,"targets":["gate-1"],"attack":{"roll":14,"mods":[{"src":"str","v":3}]}}`)
 	out, err := recordEventToProto(evt)
 	s.Require().NoError(err)
-	fields := out.GetFields().AsMap()
+	fields := out.GetFields().AsMap() //nolint:staticcheck // verify the retained approximate projection, not exact diagnostic decoding.
 	s.Equal(float64(6), fields["amount"])
 	s.Equal([]any{"gate-1"}, fields["targets"])
 	attack := fields["attack"].(map[string]any)
@@ -362,7 +363,7 @@ func (s *RecordHandlerSuite) TestUnreadableFieldsStillSend() {
 	s.Error(err)
 	s.Equal("id-01", out.GetId())
 	s.Equal("moved", out.GetBeat())
-	s.Nil(out.GetFields())
+	s.Equal(`[1,2]`, string(out.GetFieldsJson()))
 }
 
 // TestNewRefusesMissingDependencies is the constructor's contract.

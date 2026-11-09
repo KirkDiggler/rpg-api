@@ -81,8 +81,11 @@ type redisEncounterRepository struct {
 	ttl    time.Duration
 }
 
-// NewEncounterRepository returns a Redis-backed sdk.EncounterRepository.
-// ttl is the per-key expiration applied on save; pass 0 to disable expiration.
+// NewEncounterRepository returns a Redis-backed sdk.EncounterRepository that
+// also carries sdk.FencedEncounterRepository (redis_fenced.go), so the SDK
+// takes the fenced save. ttl is the per-key expiration applied on save, to the
+// encounter, its checkpoint version and a fenced save's session record; pass
+// 0 to disable expiration.
 func NewEncounterRepository(client redisclient.Client, ttl time.Duration) sdk.EncounterRepository {
 	return &redisEncounterRepository{client: client, ttl: ttl}
 }
@@ -115,7 +118,10 @@ func (r *redisEncounterRepository) SaveEncounter(ctx context.Context, id string,
 	if err != nil {
 		return fmt.Errorf("marshal encounter %q: %w", id, err)
 	}
-	if err := r.client.Set(ctx, sessionEncKeyPrefix+id, b, r.ttl).Err(); err != nil {
+	// A plain write is still a save that landed, so it advances the
+	// checkpoint version a fenced writer compares against (redis_fenced.go).
+	keys := []string{sessionEncKeyPrefix + id, sessionEncVerKeyPrefix + id}
+	if err := savePlainScript.Run(ctx, r.client, keys, b, r.ttl.Milliseconds()).Err(); err != nil {
 		return fmt.Errorf("set encounter %q: %w", id, err)
 	}
 	return nil

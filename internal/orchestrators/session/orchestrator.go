@@ -40,6 +40,12 @@ type Config struct {
 
 	// Characters is rpg-api's existing character store, adapted to the SDK's
 	// CharacterRepository contract by NewCharacterRepository.
+	//
+	// IT MUST BE THE REDIS CHARACTER REPOSITORY ON Config.Redis. The fenced
+	// save writes a verb's seated sheets in the same Lua script as its world
+	// (redis_fenced.go, rpg-project#879 S12a), under characterrepo.Key, so the
+	// sheets the session writes land in Config.Redis whatever this field
+	// holds. A different store would read sheets the session never wrote.
 	Characters characterrepo.Repository
 
 	// TTL is the per-key expiration applied to session and encounter Redis
@@ -72,6 +78,11 @@ type Config struct {
 	// for tests that read the store, or a report, right after a verb
 	// returns; production leaves it false.
 	AnswerWhole bool
+
+	// RecordCapture is an optional host-owned diagnostic sink, independent of
+	// browser subscriptions. Nil keeps broker-only delivery. The host drains
+	// its capture after accepted continuations; New does not own its writer.
+	RecordCapture sdk.RecordStream
 
 	// Dice is the SDK's source of randomness. Optional: nil selects a
 	// crypto-secure dice.CryptoRoller, the production default. This is this
@@ -226,6 +237,10 @@ func New(cfg Config) (*Orchestrator, error) {
 	}
 
 	recordBroker := NewRecordBroker(0)
+	var recordStream sdk.RecordStream = recordBroker
+	if cfg.RecordCapture != nil {
+		recordStream = &recordPublisher{broker: recordBroker, capture: cfg.RecordCapture}
+	}
 	actBroker := NewActBroker(ActBufferFromEnv())
 	mgr, err := sdk.NewManager(&sdk.Config{
 		Locker:            locker,
@@ -237,7 +252,7 @@ func New(cfg Config) (*Orchestrator, error) {
 		Encounters:        NewEncounterRepository(cfg.Redis, cfg.TTL),
 		Characters:        NewCharacterRepository(cfg.Characters),
 		Seats:             NewSeatRepository(cfg.Redis),
-		Record:            recordBroker,
+		Record:            recordStream,
 		Acts:              actBroker,
 		Dice:              roller,
 		TurnDriver:        driverForSDK,

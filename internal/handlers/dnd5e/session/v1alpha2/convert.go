@@ -11,19 +11,19 @@ import (
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
 )
 
-// recordEventToProto spells one record beat on the wire: the beat as
-// written, its fields as a Struct (Law 5). Every number becomes a double.
-//
-// The error reports fields that could not be spelled; the event it returns
-// beside it is still whole but for its fields, and the caller sends it — a
-// beat with unreadable fields is one degraded beat, not a gap (R22's spirit).
+// recordEventToProto carries original payload bytes without interpreting them.
+// The legacy Struct is still an approximate projection for older readers; exact
+// inspection uses FieldsJson only. A legacy projection error never discards the
+// raw payload or record identity, so clients can report unavailable/malformed
+// evidence rather than silently substituting a different representation.
 func recordEventToProto(evt sdk.RecordEvent) (*sessionpb.RecordEvent, error) {
-	out := &sessionpb.RecordEvent{Id: evt.ID, At: evt.At, Act: evt.Act, Beat: evt.Beat}
+	out := &sessionpb.RecordEvent{Id: evt.ID, At: evt.At, Act: evt.Act, Beat: evt.Beat,
+		FieldsJson: append([]byte(nil), evt.Fields...)}
 	fields, err := fieldsToStruct(evt.Fields)
 	if err != nil {
 		return out, fmt.Errorf("record event %s (%s): %w", evt.ID, evt.Beat, err)
 	}
-	out.Fields = fields
+	out.Fields = fields //nolint:staticcheck // additive wire migration retains the approximate field; exact readers use FieldsJson.
 	return out, nil
 }
 
