@@ -260,7 +260,23 @@ func runServer(_ *cobra.Command, _ []string) error {
 	// character service equips through the session Manager's Equip/Unequip
 	// verbs (rpg-project#542). The session orchestrator takes the character
 	// REPOSITORY, not the service, so there is no cycle, only an order.
+	// Capture uses a dedicated JSONL stdout stream in every server mode.
+	// It is independent of the browser-only development diagnostic gate.
+	recordCapture, err := sessionorch.NewRecordCapture(&sessionorch.RecordCaptureConfig{Writer: os.Stdout})
+	if err != nil {
+		return fmt.Errorf("session record capture: %w", err)
+	}
+	defer func() {
+		// On normal shutdown the continuation drain below runs first. This
+		// also closes the worker on a construction/listener error before serve.
+		drain, cancel := context.WithTimeout(context.Background(), recordCaptureDrainBudget)
+		defer cancel()
+		if captureErr := recordCapture.Drain(drain); captureErr != nil {
+			log.Printf("session record capture not drained cleanly: %v", captureErr)
+		}
+	}()
 	sessionOrch, err := sessionorch.New(sessionorch.Config{
+		RecordCapture:     recordCapture,
 		StaleTargetPolicy: sdk.StaleTargetPolicy(os.Getenv(envStaleTargetPolicy)),
 		Redis:             redisClient,
 		Characters:        charRepo,
@@ -351,15 +367,12 @@ func runServer(_ *cobra.Command, _ []string) error {
 	// RecordService, session v1alpha2 (rpg-project#628): the record stream
 	// for the debug panel. Same seat gate as the act stream; its own broker,
 	// which closes a lagging subscriber as lagged instead of skipping it.
-	recordHandlerImpl, err := sessionrecordhandler.New(&sessionrecordhandler.HandlerConfig{
-		Manager: sessionOrch.Manager,
-		Broker:  sessionOrch.RecordBroker,
-		Gate:    access,
-	})
-	if err != nil {
-		return fmt.Errorf("session record handler: %w", err)
+	if recordErr := registerRecordService(&recordServiceInput{
+		Registrar: srv, Development: authConfig.DevMode,
+		Manager: sessionOrch.Manager, Broker: sessionOrch.RecordBroker, Gate: access,
+	}); recordErr != nil {
+		return fmt.Errorf("session record handler: %w", recordErr)
 	}
-	sessionv1alpha2pb.RegisterRecordServiceServer(srv, recordHandlerImpl)
 
 	// StoryService, session v1alpha2 (rpg-project#630): the act stream, per
 	// recipient. Same seat gate; its own broker, keyed by session and member,
@@ -575,6 +588,10 @@ func runServer(_ *cobra.Command, _ []string) error {
 // continuations (verbs that answered before their save) after the gRPC server
 // stopped, whichever way it stopped.
 const continuationDrainBudget = 10 * time.Second
+
+// recordCaptureDrainBudget bounds accepted diagnostic export after the
+// continuation drain; capture errors never roll back a committed game verb.
+const recordCaptureDrainBudget = 10 * time.Second
 
 // fieldMillis reads the middleware's `grpc.time_ms` field. go-grpc-middleware
 // v2 sends it as a STRING (DurationToTimeMillisFields formats a float32 with
