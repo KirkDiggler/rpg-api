@@ -36,22 +36,19 @@ func TestSingleRoomRegistrySuite(t *testing.T) { suite.Run(t, new(SingleRoomRegi
 
 func (s *SingleRoomRegistrySuite) SetupTest() {
 	s.ctx = context.Background()
-	s.dir = dungeonstest.ScratchDir(s.T())
+	s.dir = shelf.dir
 	s.world = dungeonstest.WorldStore(s.T())
 	s.registry = s.open()
 	s.raw = dungeonstest.WorkshopRoomYAML(s.T())
 }
 
-// open joins a fresh shipped store over s.dir with the suite's world store:
-// what a restarted server would serve.
+// open joins a fresh registry over the shared shelf (shelf_test.go) and the
+// suite's world store: what a restarted server would serve. The shipped
+// store is the same compile of the same bytes either way; what a restart
+// must rebuild is the world entry, which the fresh registry reads back from
+// the world store and compiles again.
 func (s *SingleRoomRegistrySuite) open() dungeons.Registry {
-	shipped, err := dungeons.NewFileRegistry(s.dir, dungeonstest.Projector(s.T()))
-	s.Require().NoError(err)
-	r, err := dungeons.NewRegistry(&dungeons.RegistryConfig{
-		Shipped: shipped, World: s.world, Authoring: true, Projector: dungeonstest.Projector(s.T()),
-	})
-	s.Require().NoError(err)
-	return r
+	return joinShelf(s.T(), s.world, true)
 }
 
 // workshopFile is the registry file the full room is stored under.

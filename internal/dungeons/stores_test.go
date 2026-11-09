@@ -3,8 +3,6 @@ package dungeons_test
 import (
 	"bytes"
 	"context"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -30,9 +28,10 @@ var (
 	carol = dungeons.Caller{WorldID: "w2", PlayerID: "carol"}
 )
 
-// StoresSuite is the two-store registry over a real shipped store (a temp
-// copy of content/ with the castle kitchen fixture staged in as a reference)
-// and a real world store over miniredis.
+// StoresSuite is the two-store registry over a real shipped store (the
+// package's shared shelf: content/, the retired walk sites and the castle
+// kitchen fixture staged in as a reference, compiled once per binary; see
+// shelf_test.go) and a real world store over miniredis, fresh per test.
 type StoresSuite struct {
 	suite.Suite
 	ctx     context.Context
@@ -45,19 +44,13 @@ func TestStoresSuite(t *testing.T) { suite.Run(t, new(StoresSuite)) }
 
 func (s *StoresSuite) SetupTest() {
 	s.ctx = context.Background()
-	s.dir = dungeonstest.ScratchDir(s.T())
+	s.dir = shelf.dir
 	s.world = dungeonstest.WorldStore(s.T())
-	s.kitchen = dungeonstest.StageCastleKitchen(s.T(), s.dir)
+	s.kitchen = dungeonstest.CastleKitchenYAML(s.T())
 }
 
 func (s *StoresSuite) registry(authoring bool) dungeons.Registry {
-	shipped, err := dungeons.NewFileRegistry(s.dir, dungeonstest.Projector(s.T()))
-	s.Require().NoError(err)
-	r, err := dungeons.NewRegistry(&dungeons.RegistryConfig{
-		Shipped: shipped, World: s.world, Authoring: authoring, Projector: dungeonstest.Projector(s.T()),
-	})
-	s.Require().NoError(err)
-	return r
+	return joinShelf(s.T(), s.world, authoring)
 }
 
 // file is the castle kitchen as an author's own encounter under key.
@@ -79,25 +72,21 @@ func (s *StoresSuite) stored(worldID, key string) worlddungeons.Record {
 	return out.Record
 }
 
+// dirSnapshot is the content directory as it stands, every file with its
+// bytes.
 func (s *StoresSuite) dirSnapshot() map[string][]byte {
-	entries, err := os.ReadDir(s.dir)
+	files, err := readShelf(s.dir)
 	s.Require().NoError(err)
-	out := make(map[string][]byte, len(entries))
-	for _, e := range entries {
-		raw, readErr := os.ReadFile(filepath.Join(s.dir, e.Name()))
-		s.Require().NoError(readErr)
-		out[e.Name()] = raw
-	}
-	return out
+	return files
 }
 
 func (s *StoresSuite) TestPutWritesTheWorldStoreAndNotTheDirectory() {
 	r := s.registry(true)
-	before := s.dirSnapshot()
+	s.Require().Equal(shelf.staged, s.dirSnapshot(), "the directory starts as staged")
 
 	raw := s.save(r, alice, storeMyCastle)
 
-	s.Equal(before, s.dirSnapshot(), "the directory is unchanged")
+	s.Equal(shelf.staged, s.dirSnapshot(), "the directory is unchanged")
 	s.Equal(worlddungeons.Record{Key: storeMyCastle, Owner: alice.PlayerID, Name: "The Castle Kitchen", YAML: raw},
 		s.stored(alice.WorldID, storeMyCastle), "the compiled name is stored with the record")
 }
