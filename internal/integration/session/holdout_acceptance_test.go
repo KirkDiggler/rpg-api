@@ -183,6 +183,9 @@ func (r *campRun) props(t *testing.T) []string {
 	for _, p := range atlas.GetProps() {
 		out = append(out, p.GetId())
 	}
+	for _, p := range atlas.GetPlaced() {
+		out = append(out, p.GetId())
+	}
 	return out
 }
 
@@ -229,9 +232,9 @@ func (r *campRun) ended(t *testing.T) bool {
 	return holdoutActIndex(r.story(t), holdoutIsClock(storypb.ClockMark_CLOCK_MARK_ENDED)) != -1
 }
 
-// intoTheYard walks the gate leg on the world clock. The scout sees alice at
-// the palisade's doorway and the camp -- hostile until its chief learns
-// better -- forms a fight on sight.
+// intoTheYard walks the gate leg through the real opening. Native structural
+// walls can reveal the scout before the body crosses, so a fight may stop the
+// first Move early. Finish the same authored path using the actual turn budget.
 func (r *campRun) intoTheYard(t *testing.T) {
 	t.Helper()
 	path := make([]*sessionpb.Position, 0, len(gateLeg))
@@ -242,7 +245,21 @@ func (r *campRun) intoTheYard(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, moved.GetFormed(), "the camp attacks on sight: a fight formed on the way in")
 	require.Contains(t, moved.GetFormed().GetOrder(), "scout", "and it is the yard's")
-	require.Equal(t, at(3, 4), r.where(t), "alice stands in the doorway, in the yard")
+	if current := r.where(t); current != at(3, 4) {
+		for i, cell := range path {
+			if cell.GetX() != current.X || cell.GetY() != current.Y {
+				continue
+			}
+			continued, moveErr := r.h.handler.Move(r.alice, &sessionpb.MoveRequest{
+				Session: r.sess, Member: "alice", Path: path[i+1:],
+				DeclarationId: currentDeclarationID(r.alice, t, r.h.handler, r.sess, "alice", sessionpb.Verb_VERB_MOVE),
+			})
+			require.NoError(t, moveErr)
+			require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_COMPLETED, continued.GetStatus(), continued.GetStopReason())
+			break
+		}
+	}
+	require.Equal(t, at(3, 4), r.where(t), "alice actually crosses into the yard")
 }
 
 // holdOutUntil ends alice's turn -- the camp takes its own inside each
@@ -261,6 +278,10 @@ func (r *campRun) holdOutUntil(t *testing.T, n int) {
 // run has ended. The camp's turns run inside each EndTurn.
 func (r *campRun) walkToTheHut(t *testing.T) {
 	t.Helper()
+	// Crossing the gate can spend part of the current turn. End that turn
+	// normally before requesting the full movement legs below; never reset
+	// the sheet or assume the earlier partial walk was free.
+	r.endTurn(t)
 	grid := spatial.NewAxialHexGrid(spatial.AxialHexGridConfig{SpanWidth: 1e6, SpanHeight: 1e6})
 	floor := map[spatial.Position]bool{}
 	for _, c := range yardFloor {
@@ -575,8 +596,13 @@ func TestAcceptance_TheChiefFelledByThePartyBringsTheReinforcements(t *testing.T
 	// Cut the chief down. He closes in on his own turns; alice swings when
 	// he is in reach, and only her rolls land.
 	felled := false
+	var killingBlow []*storypb.Act
 	for turn := 0; turn < 12 && !felled; turn++ {
 		if r.canAttack(t, "chief") {
+			before := map[string]bool{}
+			for _, act := range r.story(t) {
+				before[act.GetId()] = true
+			}
 			high.Store(true)
 			swing, err := r.h.handler.Attack(r.alice, &sessionpb.AttackRequest{
 				Session: r.sess, Attacker: "alice", Target: "chief",
@@ -587,6 +613,11 @@ func TestAcceptance_TheChiefFelledByThePartyBringsTheReinforcements(t *testing.T
 			require.True(t, swing.GetHit(), "the highest face always lands")
 			if r.isDown(t, "chief") {
 				felled = true
+				for _, act := range r.story(t) {
+					if !before[act.GetId()] {
+						killingBlow = append(killingBlow, act)
+					}
+				}
 				break
 			}
 		}
@@ -594,9 +625,20 @@ func TestAcceptance_TheChiefFelledByThePartyBringsTheReinforcements(t *testing.T
 	}
 	require.True(t, felled, "alice's own blow felled the chief")
 
-	// Inside that blow's record: three ARRIVED beats, as raiders, at the
-	// gate where the author drew them -- no further verb was needed.
-	came := arrivals(r.story(t))
+	// Examine only this actual blow, not earlier arrivals (the letter may
+	// already have arrived on its own round). Every new act shares its cause.
+	require.NotEmpty(t, killingBlow)
+	cause := killingBlow[0].GetAct()
+	require.NotEmpty(t, cause)
+	for _, act := range killingBlow {
+		require.Equal(t, cause, act.GetAct())
+	}
+	came := arrivals(killingBlow)
+	for id, arrival := range came {
+		if arrival.GetKind() != "monster" {
+			delete(came, id)
+		}
+	}
 	require.Len(t, came, 3, "three reinforcements arrived in the same verb that felled the chief")
 	wantCells := map[spatial.Position]bool{}
 	for _, c := range arrivalCells {

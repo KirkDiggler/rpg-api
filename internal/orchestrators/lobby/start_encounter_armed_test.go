@@ -52,7 +52,7 @@ func (s *SessionStackSuite) TestStartEncounter_AWeaponTheCatalogDoesNotHaveRefus
 	s.seedReadyLobby("lobby-1", "alice")
 
 	dir := s.T().TempDir()
-	src := dungeonstest.ContentDir(s.T())
+	src := dungeonstest.FixtureContentDir(s.T())
 	entries, err := os.ReadDir(src)
 	s.Require().NoError(err)
 	for _, e := range entries {

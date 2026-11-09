@@ -12,7 +12,7 @@ import (
 // armed_minds_test.go proves the shipped walk scene: two goblins in one room,
 // armed differently, from one stat block (rpg-project#448).
 //
-// It compiles the REAL content/reference-minds.yaml rather than a fixture,
+// It compiles the REAL internal/dungeons/testdata/sites/reference-minds.yaml rather than a fixture,
 // because the thing under test is the file — the acceptance case is "place two
 // goblin archers without touching Go", and a fixture would not be the file the
 // walk plays.
@@ -24,11 +24,11 @@ type ArmedMindsSuite struct {
 
 func TestArmedMindsSuite(t *testing.T) { suite.Run(t, new(ArmedMindsSuite)) }
 
-var referenceMindsPath = filepath.Join("..", "..", "content", "reference-minds.yaml")
+var referenceMindsPath = filepath.Join("..", "dungeons", "testdata", "sites", "reference-minds.yaml")
 
 func (s *ArmedMindsSuite) SetupTest() {
 	raw, err := os.ReadFile(referenceMindsPath)
-	s.Require().NoError(err, "the shipped minds dungeon must exist at content/reference-minds.yaml")
+	s.Require().NoError(err, "the shipped minds dungeon must exist at internal/dungeons/testdata/sites/reference-minds.yaml")
 	minds, err := Compile(raw)
 	s.Require().NoError(err, "the shipped minds dungeon must compile")
 	s.minds = minds

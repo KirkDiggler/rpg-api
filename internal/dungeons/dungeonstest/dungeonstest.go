@@ -1,7 +1,8 @@
 // Package dungeonstest builds content registries for tests from the shipped
-// content tree, so every suite that starts an encounter runs on the same
-// reference tomb the server boots with rather than a fixture that could
-// drift from it.
+// content tree plus the retired walk sites under
+// internal/dungeons/testdata/sites, so every suite that starts an encounter
+// runs on the same castle the server boots with, and a suite pinned to a
+// retired site still finds it without the site shipping (rpg-api#1205).
 package dungeonstest
 
 import (
@@ -95,8 +96,64 @@ func ContentDir(t testing.TB) string {
 	return dir
 }
 
-// ShippedStore returns the shipped store over the real content/ directory.
-// It is never written: the shipped store has no write path.
+// SitesDir is internal/dungeons/testdata/sites: the walk sites a finished
+// slice verified, kept for the suites that still play them. The image ships
+// only content/, so nothing here reaches a server (rpg-api#1205).
+func SitesDir(t testing.TB) string {
+	t.Helper()
+
+	return filepath.Join(filepath.Dir(ContentDir(t)), "internal", "dungeons", "testdata", "sites")
+}
+
+// SitePath is one retired walk site's file under SitesDir, by key.
+func SitePath(t testing.TB, key string) string {
+	t.Helper()
+
+	return filepath.Join(SitesDir(t), key+".yaml")
+}
+
+// FixtureContentDir is a temp directory holding the shipped content/ files
+// and every walk site under SitesDir: the shelf a test registry loads. A
+// test about what ships reads ContentDir instead.
+func FixtureContentDir(t testing.TB) string {
+	t.Helper()
+
+	dst := t.TempDir()
+	if err := stageShelf(dst, ContentDir(t), SitesDir(t)); err != nil {
+		t.Fatalf("dungeonstest: %v", err)
+	}
+
+	return dst
+}
+
+// stageShelf copies every yaml file directly under srcs into dst.
+func stageShelf(dst string, srcs ...string) error {
+	for _, src := range srcs {
+		entries, readErr := os.ReadDir(src)
+		if readErr != nil {
+			return fmt.Errorf("read %s: %w", src, readErr)
+		}
+		for _, e := range entries {
+			if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" {
+				continue
+			}
+			raw, err := os.ReadFile(filepath.Join(src, e.Name())) //nolint:gosec // src is a fixture dir, e a ReadDir entry
+			if err != nil {
+				return fmt.Errorf("read %s: %w", e.Name(), err)
+			}
+			//nolint:gosec // dst is a temp dir this package made, e a ReadDir entry
+			if err := os.WriteFile(filepath.Join(dst, e.Name()), raw, 0o600); err != nil {
+				return fmt.Errorf("stage %s: %w", e.Name(), err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// ShippedStore returns the shipped store over FixtureContentDir's shelf:
+// the real content/ plus the retired walk sites. It is never written: the
+// shipped store has no write path.
 //
 // The store is compiled once per test binary and shared, as the server
 // compiles it once at boot and serves every session from it. Compiling the
@@ -107,7 +164,9 @@ func ContentDir(t testing.TB) string {
 func ShippedStore(t testing.TB) *dungeons.FileRegistry {
 	t.Helper()
 
-	shipped.once.Do(func() { shipped.store, shipped.err = compileShipped(ContentDir(t)) })
+	shipped.once.Do(func() {
+		shipped.store, shipped.err = compileShipped(ContentDir(t), SitesDir(t))
+	})
 	if shipped.err != nil {
 		t.Fatalf("dungeonstest: %v", shipped.err)
 	}
@@ -122,10 +181,21 @@ var shipped struct {
 	err   error
 }
 
-// compileShipped compiles dir over a projector whose miniredis lives as long
+// compileShipped compiles the yaml files of srcs over a projector whose miniredis lives as long
 // as the test binary: the store outlives the test that first asked for it,
 // and the projector it keeps must stay usable for every test after.
-func compileShipped(dir string) (*dungeons.FileRegistry, error) {
+//
+// The shelf is staged into a directory of its own, removed once compiled:
+// the registry reads its directory only while it is constructed.
+func compileShipped(srcs ...string) (*dungeons.FileRegistry, error) {
+	dir, err := os.MkdirTemp("", "dungeonstest-shipped-")
+	if err != nil {
+		return nil, fmt.Errorf("stage shelf: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	if stageErr := stageShelf(dir, srcs...); stageErr != nil {
+		return nil, stageErr
+	}
 	mr, err := miniredis.Run()
 	if err != nil {
 		return nil, fmt.Errorf("start miniredis: %w", err)
@@ -138,7 +208,7 @@ func compileShipped(dir string) (*dungeons.FileRegistry, error) {
 	return dungeons.NewFileRegistry(dir, p)
 }
 
-// Shipped returns a read-only Registry over the real content/ directory and
+// Shipped returns a read-only Registry over FixtureContentDir and
 // an empty world store: every key resolves to its reference. WRITES are
 // refused; a validate-only Put is answered, because a grade writes nothing
 // (rpg-project#481).
@@ -165,24 +235,12 @@ func ScratchReadOnly(t testing.TB) (dungeons.Registry, string) {
 	return scratch(t, false)
 }
 
-// ScratchDir copies the shipped content into a temp directory and returns it.
+// ScratchDir copies the shipped content and the retired walk sites into a
+// temp directory and returns it (FixtureContentDir).
 func ScratchDir(t testing.TB) string {
 	t.Helper()
 
-	src := ContentDir(t)
-	dst := t.TempDir()
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		t.Fatalf("dungeonstest: read %s: %v", src, err)
-	}
-	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" {
-			continue
-		}
-		copyFile(t, filepath.Join(src, e.Name()), filepath.Join(dst, e.Name()))
-	}
-
-	return dst
+	return FixtureContentDir(t)
 }
 
 // WorldStore returns a world store over its own miniredis.
@@ -231,17 +289,6 @@ func Join(t testing.TB, shipped *dungeons.FileRegistry, authoring bool) dungeons
 	return r
 }
 
-// copyFile copies one content file into the scratch directory.
-func copyFile(t testing.TB, src, dst string) {
-	t.Helper()
-
-	raw, err := os.ReadFile(filepath.Clean(src)) //nolint:gosec // src is a ReadDir entry under the repo content dir
-	if err != nil {
-		t.Fatalf("dungeonstest: read %s: %v", src, err)
-	}
-	writeFile(t, dst, raw)
-}
-
 // writeFile writes one content file into a scratch directory.
 func writeFile(t testing.TB, dst string, raw []byte) {
 	t.Helper()
@@ -251,8 +298,9 @@ func writeFile(t testing.TB, dst string, raw []byte) {
 	}
 }
 
-// ShippedCount is how many dungeons the content/ directory holds — what a
-// picker over the shipped registry must list.
+// ShippedCount is how many dungeons a test registry's shelf holds
+// (FixtureContentDir: content/ plus the retired walk sites) — what a picker
+// over the shipped registry must list.
 //
 // COUNTED, never asserted as a literal: the content tree grows (it gained
 // the heirloom fixture with rpg-project#368), and a hard-coded 1 turns every
@@ -261,18 +309,30 @@ func writeFile(t testing.TB, dst string, raw []byte) {
 func ShippedCount(t testing.TB) int {
 	t.Helper()
 
-	entries, err := os.ReadDir(ContentDir(t))
+	n := 0
+	for _, dir := range []string{ContentDir(t), SitesDir(t)} {
+		n += countYAML(t, dir)
+	}
+	if n == 0 {
+		t.Fatal("dungeonstest: the content directory holds no dungeons at all")
+	}
+
+	return n
+}
+
+// countYAML counts the dungeon files directly in dir.
+func countYAML(t testing.TB, dir string) int {
+	t.Helper()
+
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		t.Fatalf("dungeonstest: read content dir: %v", err)
+		t.Fatalf("dungeonstest: read %s: %v", dir, err)
 	}
 	n := 0
 	for _, e := range entries {
 		if !e.IsDir() && filepath.Ext(e.Name()) == ".yaml" {
 			n++
 		}
-	}
-	if n == 0 {
-		t.Fatal("dungeonstest: the content directory holds no dungeons at all")
 	}
 
 	return n

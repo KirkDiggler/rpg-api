@@ -1,0 +1,144 @@
+# The hold-out camp in the current authoring format: three places, two open
+# passages, a letter arriving on round six, and reinforcements on the chief's
+# fall. Combat is explicit shared content, never an injected kind default.
+# The original floor cells, actor seats and letter cell are retained. The two
+# old infinitesimal seams are now thin structural walls with authored openings.
+version: 5
+key: reference-raider-camp
+play: {void: transparent, lighting: bright, standing: centre-covered}
+behaviorDefinitions:
+  combat:
+    recipe:
+      ref: site:behaviors:raider-combat
+      initial: ready
+      states:
+        ready:
+          transitions:
+            - {on: time, do: [{pick: time}]}
+            - {on: turn, do: [{pick: time}]}
+    table:
+      time:
+        - {weight: 3, when: {fled: {within: 3}}, away: actor}
+        - {weight: 3, when: {attacked: {within: 3}}, attack: attacker}
+        - {when: {enemy: reach}, attack: enemy}
+        - {when: {enemy: seen}, toward: enemy}
+        - {when: {enemy: remembered}, toward: enemy}
+        - {when: {enemy: none}, hold: {}}
+factions:
+  - id: raiders
+    mind: chief
+    behaviors: [{id: combat, use: combat}]
+dispositions:
+  - {between: [raiders, party], stance: hostile, until: { fact: saved-wiseman }}
+intel:
+  - {id: wisemans-letter, reveals: {fact: saved-wiseman}}
+exits:
+  - {id: front-gate, cell: {q: 0, r: 3}}
+scenarios:
+  hold-out: { convince: raiders }
+room:
+  version: 3
+  id: raider-camp
+  name: The Raider Camp
+  coordinateFrame: {horizontalPlane: world-xz, verticalAxis: world-y-up, distanceUnit: world-scene-unit, hexRadius: 1, footprintFrame: owner-local-xz}
+  scene:
+    version: 1
+    id: raider-camp-scene
+    name: The Raider Camp
+    items:
+      - id: letter
+        kind: prop
+        assetRef: dnd5e:props:scroll
+        label: The Wiseman's Letter
+        transform: {x: 2.598076211353316, y: 0, z: 4.5, rotationY: 0}
+    groups: []
+  room:
+    implicitRegionId: gate
+    regions:
+      - id: gate
+        name: The Gate
+        lighting: {intensity: 0.6}
+        cells:
+          - {r: 0, q: [[0, 2]]}
+          - {r: 1, q: [[0, 2]]}
+          - {r: 2, q: [[-1, 1]]}
+          - {r: 3, q: [[-1, 1]]}
+          - {r: 4, q: [[-2, 0]]}
+          - {r: 5, q: [[-2, 0]]}
+          - {r: 6, q: [[-3, -1]]}
+          - {r: 7, q: [[-3, -1]]}
+      - id: yard
+        name: The Yard
+        lighting: {intensity: 0.8}
+        cells:
+          - {r: 0, q: [[3, 9]]}
+          - {r: 1, q: [[3, 9]]}
+          - {r: 2, q: [[2, 8]]}
+          - {r: 3, q: [[2, 8]]}
+          - {r: 4, q: [[1, 7]]}
+          - {r: 5, q: [[1, 7]]}
+          - {r: 6, q: [[0, 6]]}
+          - {r: 7, q: [[0, 6]]}
+      - id: hut
+        name: The Chief's Hut
+        lighting: {intensity: 0.4}
+        cells:
+          - {r: 0, q: [[10, 13]]}
+          - {r: 1, q: [[10, 13]]}
+          - {r: 2, q: [[9, 12]]}
+          - {r: 3, q: [[9, 12]]}
+          - {r: 4, q: [[8, 11]]}
+          - {r: 5, q: [[8, 11]]}
+          - {r: 6, q: [[7, 10]]}
+          - {r: 7, q: [[7, 10]]}
+    walls:
+      - id: palisade
+        label: The palisade
+        line: {start: {x: 4.763139720814412, z: -0.75}, end: {x: 4.763139720814412, z: 11.25}}
+        appearance: {assetRef: 'dnd5e:env:dark-fortress:45_wall_01', height: 3, thickness: 0.1, elevation: 0}
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint: {width: 12, depth: 0.1, offsetX: 0, offsetZ: 0}
+        openings:
+          - id: gate-gap
+            position: 6
+            width: 0.8
+            door: {id: gate-yard, assetRef: 'dnd5e:env:dark-fortress:wall_door_double_01'}
+      - id: hut-wall
+        label: The hut wall
+        line: {start: {x: 16.887495373796554, z: -0.75}, end: {x: 16.887495373796554, z: 11.25}}
+        appearance: {assetRef: 'dnd5e:env:dark-fortress:45_wall_01', height: 3, thickness: 0.1, elevation: 0}
+        blocker:
+          blocksMovement: true
+          blocksLineOfSight: true
+          footprint: {width: 12, depth: 0.1, offsetX: 0, offsetZ: 0}
+        openings:
+          - id: hut-gap
+            position: 7.5
+            width: 0.8
+            door: {id: yard-hut, assetRef: 'dnd5e:env:dark-fortress:wall_door_double_01'}
+    doorBindings:
+      gate-yard: {closed: false}
+      yard-hut: {closed: false}
+    propDeclarations:
+      letter:
+        blocksMovement: false
+        blocksLineOfSight: false
+        footprint: {width: 0.3, depth: 0.3, offsetX: 0, offsetZ: 0}
+    arrangementDeclarations: {}
+    propBindings:
+      letter: {holdable: true, holds: [wisemans-letter], arrives: {round: 6}}
+    partyStart: {q: -1, r: 3}
+    monsterDeclarations:
+      - {id: chief, ref: 'dnd5e:monsters:skeleton-captain', startingCell: {location: {q: 10, r: 4}}}
+      - {id: scout, ref: 'dnd5e:monsters:skeleton', startingCell: {location: {q: 3, r: 2}}}
+      - {id: reinforcement-1, ref: 'dnd5e:monsters:zombie', startingCell: {location: {q: -1, r: 4}}}
+      - {id: reinforcement-2, ref: 'dnd5e:monsters:zombie', startingCell: {location: {q: 0, r: 4}}}
+      - {id: reinforcement-3, ref: 'dnd5e:monsters:zombie', startingCell: {location: {q: -1, r: 5}}}
+    monsterBindings:
+      chief: {faction: raiders}
+      scout: {faction: raiders}
+      reinforcement-1: {faction: raiders, arrives: {down: chief}}
+      reinforcement-2: {faction: raiders, arrives: {down: chief}}
+      reinforcement-3: {faction: raiders, arrives: {down: chief}}

@@ -21,9 +21,14 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/repositories/worlddungeons"
 )
 
-// shippedTomb is the real content file, so these tests run on what the server
-// boots with rather than a fixture that could drift from it.
-var shippedTomb = filepath.Join("..", "..", "content", "reference-tomb.yaml")
+// shippedTomb is the retired tomb under testdata/sites (rpg-api#1205): the
+// small multi-room fixture the registry mechanics run on. SetupTest writes
+// it under dungeons.DefaultKey, standing in for the default dungeon file, so
+// these mechanics do not compile the whole castle on every test.
+var shippedTomb = filepath.Join("testdata", "sites", "reference-tomb.yaml")
+
+// defaultFile is the default dungeon's filename in the suite's directory.
+const defaultFile = dungeons.DefaultKey + ".yaml"
 
 type RegistrySuite struct {
 	suite.Suite
@@ -44,8 +49,8 @@ func (s *RegistrySuite) SetupTest() {
 
 	raw, err := os.ReadFile(shippedTomb)
 	s.Require().NoError(err)
-	s.tomb = raw
-	s.write("reference-tomb.yaml", raw)
+	s.tomb = dungeonstest.AsKey(s.T(), raw, "reference-tomb", dungeons.DefaultKey)
+	s.write(defaultFile, s.tomb)
 	s.world = dungeonstest.WorldStore(s.T())
 }
 
@@ -55,7 +60,7 @@ func (s *RegistrySuite) write(name string, raw []byte) {
 
 // rekeyed is the tomb under another key: the same dungeon, a different file.
 func (s *RegistrySuite) rekeyed(key string) []byte {
-	out := bytes.Replace(s.tomb, []byte("key: reference-tomb"), []byte("key: "+key), 1)
+	out := bytes.Replace(s.tomb, []byte("key: "+dungeons.DefaultKey), []byte("key: "+key), 1)
 	s.Require().NotEqual(s.tomb, out, "the fixture's key line must be where this helper expects it")
 	return out
 }
@@ -98,7 +103,7 @@ func (s *RegistrySuite) TestBoot_LoadsTheShippedTomb() {
 
 	list, err := r.List(s.ctx)
 	s.Require().NoError(err)
-	s.Equal([]dungeons.Summary{{Key: "reference-tomb", Name: "The Reference Tomb", Source: dungeons.SourceShipped}}, list)
+	s.Equal([]dungeons.Summary{{Key: dungeons.DefaultKey, Name: "The Reference Tomb", Source: dungeons.SourceShipped}}, list)
 
 	e, err := r.Get(s.ctx, dungeons.DefaultKey)
 	s.Require().NoError(err)
@@ -132,7 +137,7 @@ func (s *RegistrySuite) TestBoot_RefusesAFileWhoseNameIsNotItsKey() {
 }
 
 func (s *RegistrySuite) TestBoot_RefusesADirectoryWithoutTheDefaultDungeon() {
-	s.Require().NoError(os.Remove(filepath.Join(s.dir, "reference-tomb.yaml")))
+	s.Require().NoError(os.Remove(filepath.Join(s.dir, defaultFile)))
 	s.write("other.yaml", s.rekeyed("other"))
 
 	_, err := dungeons.NewFileRegistry(s.dir, dungeonstest.Projector(s.T()))
@@ -142,7 +147,7 @@ func (s *RegistrySuite) TestBoot_RefusesADirectoryWithoutTheDefaultDungeon() {
 
 func (s *RegistrySuite) TestBoot_IgnoresFilesThatAreNotYAML() {
 	s.write("README.md", []byte("not a dungeon"))
-	s.write(".reference-tomb.123.tmp", []byte("a leftover temp file"))
+	s.write("."+dungeons.DefaultKey+".123.tmp", []byte("a leftover temp file"))
 
 	s.open()
 }
@@ -201,7 +206,7 @@ func (s *RegistrySuite) TestProjector_AWorldThatWillNotLoadIsNotTheAuthorsProble
 	_, err := dungeons.NewFileRegistry(s.dir, &countingProjector{fail: errors.New("invalid world")})
 	s.Require().Error(err)
 	s.Contains(err.Error(), "project atlas")
-	s.Contains(err.Error(), "reference-tomb.yaml")
+	s.Contains(err.Error(), defaultFile)
 
 	_, err = dungeons.NewFileRegistry(s.dir, nil)
 	s.Require().Error(err, "a registry without a projector cannot answer PutDungeon and is refused")
@@ -244,7 +249,7 @@ func (s *RegistrySuite) TestPut_WritesThenGetReturnsTheBytesUnchanged() {
 
 	s.Equal(dungeons.SourceWorld, e.Source)
 	s.Equal(dungeonstest.Caller.PlayerID, e.Owner)
-	s.Equal([]string{"reference-tomb.yaml"}, s.dirNames(), "the save landed in the world store, not the directory")
+	s.Equal([]string{defaultFile}, s.dirNames(), "the save landed in the world store, not the directory")
 
 	list, err := r.List(s.ctx, dungeonstest.Caller)
 	s.Require().NoError(err)
@@ -419,7 +424,7 @@ func (s *RegistrySuite) TestPut_OverwritesInPlaceAndNeverWritesTheDirectory() {
 	s.Require().NoError(err)
 	s.Equal(second, e.YAML)
 
-	s.Equal([]string{"reference-tomb.yaml"}, s.dirNames(), "a save never writes the content directory")
+	s.Equal([]string{defaultFile}, s.dirNames(), "a save never writes the content directory")
 }
 
 // TestPut_ConcurrentPutsOnOneKeySerialise runs under -race: N writers on one

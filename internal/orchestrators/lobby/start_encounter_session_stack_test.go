@@ -17,6 +17,8 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/testsupport/levelfixture"
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
+	genericeffects "github.com/KirkDiggler/rpg-toolkit/mechanics/effects"
+	"github.com/KirkDiggler/rpg-toolkit/mechanics/effects/machine"
 	"github.com/KirkDiggler/rpg-toolkit/npc"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/ammunition"
@@ -29,6 +31,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/customization"
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
+	dndevents "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/npcs"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/packs"
@@ -103,6 +106,12 @@ func (s *SessionStackSuite) SetupTest() {
 	s.Require().NoError(err)
 	s.orch = orch
 }
+
+// tombKey is the retired reference tomb on the test shelf
+// (internal/dungeons/testdata/sites, rpg-api#1205). It was the default until
+// the castle took that place; the suites that pin its garrison, seams and
+// doors now name it.
+const tombKey = lobbyorch.DungeonKey("reference-tomb")
 
 func TestSessionStackSuite(t *testing.T) {
 	suite.Run(t, new(SessionStackSuite))
@@ -206,7 +215,7 @@ func (s *SessionStackSuite) TestStartEncounter_SDKRosterIsAuthoritative() {
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
 		WorldID:  testWorldID,
-		PlayerID: "alice", LobbyID: "lobby-1",
+		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: tombKey,
 	})
 	s.Require().NoError(err)
 
@@ -261,7 +270,7 @@ func (s *SessionStackSuite) TestStartEncounter_SeatsTheTombsWholeGarrison() {
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
 		WorldID:  testWorldID,
-		PlayerID: "alice", LobbyID: "lobby-1",
+		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: tombKey,
 	})
 	s.Require().NoError(err)
 
@@ -290,7 +299,7 @@ func (s *SessionStackSuite) TestStartEncounter_ThePartyEntersOutOfSightOfTheGarr
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
 		WorldID:  testWorldID,
-		PlayerID: "alice", LobbyID: "lobby-1",
+		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: tombKey,
 	})
 	s.Require().NoError(err)
 
@@ -332,7 +341,7 @@ func (s *SessionStackSuite) TestStartEncounter_TheTombReachesTheWire() {
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
 		WorldID:  testWorldID,
-		PlayerID: "alice", LobbyID: "lobby-1",
+		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: tombKey,
 	})
 	s.Require().NoError(err)
 
@@ -375,7 +384,7 @@ func (s *SessionStackSuite) TestStartEncounter_GetAtlasServesALearnedSeamAsALine
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
 		WorldID:  testWorldID,
-		PlayerID: "alice", LobbyID: "lobby-1",
+		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: tombKey,
 	})
 	s.Require().NoError(err)
 
@@ -416,20 +425,31 @@ func (s *SessionStackSuite) TestStartEncounter_GetAtlasServesALearnedSeamAsALine
 	s.NotContains(where, "reference-tomb/hall-tomb", "the tomb door stands behind cells not yet learned")
 }
 
-// TestStartEncounter_ExplicitDefaultKeyIsTheTomb: naming the tomb and naming
-// nothing are the same dungeon.
-func (s *SessionStackSuite) TestStartEncounter_ExplicitDefaultKeyIsTheTomb() {
+// TestStartEncounter_ExplicitDefaultKeyIsTheDefault: naming the default and
+// naming nothing are the same dungeon.
+func (s *SessionStackSuite) TestStartEncounter_ExplicitDefaultKeyIsTheDefault() {
 	s.seedCharacter("char-alice", "alice", "Alice")
+	s.seedCharacter("char-bob", "bob", "Bob")
 	s.seedReadyLobby("lobby-1", "alice")
+	s.seedReadyLobby("lobby-2", "bob")
 
-	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+	named, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
 		WorldID:  testWorldID,
 		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: lobbyorch.DungeonKey(dungeons.DefaultKey),
 	})
 	s.Require().NoError(err)
+	unnamed, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
+		WorldID:  testWorldID,
+		PlayerID: "bob", LobbyID: "lobby-2",
+	})
+	s.Require().NoError(err)
 
-	_, err = s.sessOrch.Manager.Turn(s.ctx, &sdk.TurnInput{Session: out.EncounterID, Member: "skeleton-captain-1"})
-	s.Require().NoError(err, "the captain is in it, so it is the tomb")
+	namedAtlas, err := s.sessOrch.Manager.Atlas(s.ctx, &sdk.AtlasInput{Session: named.EncounterID, Member: "char-alice"})
+	s.Require().NoError(err)
+	unnamedAtlas, err := s.sessOrch.Manager.Atlas(s.ctx, &sdk.AtlasInput{Session: unnamed.EncounterID, Member: "char-bob"})
+	s.Require().NoError(err)
+	s.Equal(dungeons.DefaultKey, namedAtlas.DungeonKey)
+	s.Equal(dungeons.DefaultKey, unnamedAtlas.DungeonKey, "no key plays the default")
 }
 
 // TestStartEncounter_DemoVendorIsPlacedAndInteractable is #903 Phase 1's own
@@ -443,7 +463,7 @@ func (s *SessionStackSuite) TestStartEncounter_DemoVendorIsPlacedAndInteractable
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
 		WorldID:  testWorldID,
-		PlayerID: "alice", LobbyID: "lobby-1",
+		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: tombKey,
 	})
 	s.Require().NoError(err)
 
@@ -486,7 +506,7 @@ func (s *SessionStackSuite) TestStartEncounter_TradeBuysFromTheDemoVendor() {
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
 		WorldID:  testWorldID,
-		PlayerID: "alice", LobbyID: "lobby-1",
+		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: tombKey,
 	})
 	s.Require().NoError(err)
 
@@ -546,7 +566,7 @@ func (s *SessionStackSuite) TestStartEncounter_SellToTheDemoVendor() {
 
 	out, err := s.orch.StartEncounter(s.ctx, &lobbyorch.StartEncounterInput{
 		WorldID:  testWorldID,
-		PlayerID: "alice", LobbyID: "lobby-1",
+		PlayerID: "alice", LobbyID: "lobby-1", DungeonKey: tombKey,
 	})
 	s.Require().NoError(err)
 
@@ -648,7 +668,7 @@ func (s *SessionStackSuite) lobbyOver(registry dungeons.Registry) *lobbyorch.Orc
 // the one a session starts on, and its atlas reaches the wire.
 func (s *SessionStackSuite) TestStartEncounter_PlaysADungeonTheAuthorPut() {
 	registry, _ := dungeonstest.Scratch(s.T())
-	tomb, err := registry.Get(s.ctx, dungeonstest.Caller, dungeons.DefaultKey)
+	tomb, err := registry.Get(s.ctx, dungeonstest.Caller, string(tombKey))
 	s.Require().NoError(err)
 	crypt := bytes.Replace(tomb.YAML, []byte("key: reference-tomb"), []byte("key: crypt"), 1)
 	res, err := registry.Put(s.ctx, &dungeons.PutInput{Caller: dungeonstest.Caller, Key: "crypt", YAML: crypt})
@@ -753,10 +773,12 @@ func (s *SessionStackSuite) TestListDungeons_ReadsTheRegistry() {
 	}
 	// Every single-room reference, counted rather than spelled: a literal
 	// here would turn each new piece of content into a failure that says
-	// nothing about the content. The version 2 files, the default tomb among
-	// them, still play by key but are not listed (design R23).
+	// nothing about the content. The version 2 files, the tomb among them,
+	// still play by key but are not listed (design R23); the default castle
+	// is a single-room reference, so it is listed.
 	s.Equal(dungeonstest.ListedReferenceKeys(s.T()), keys)
-	s.NotContains(keys, dungeons.DefaultKey)
+	s.NotContains(keys, string(tombKey))
+	s.Contains(keys, dungeons.DefaultKey)
 }
 
 // TestStartEncounter_FirstAdmissionPersistsCompleteLongRestOutcomes is the
@@ -894,9 +916,14 @@ func (s *SessionStackSuite) spentBarbarian(id, playerID string) (*entities.Chara
 		MemberID: id, Source: refs.Classes.Barbarian().String(),
 	})
 	s.Require().NoError(err)
-	raging, err := json.Marshal(conditions.RagingData{
-		Ref: refs.Conditions.Raging(), CharacterID: id,
-		Source: refs.Features.Rage().String(), SawTurnEnd: true, TurnsActive: 2,
+	raging, err := json.Marshal(conditions.ComposedData{
+		Ref: *refs.Conditions.Raging(), MemberID: id,
+		Origin:   &dndevents.ConditionOrigin{Ref: *refs.Features.Rage(), EntityID: id},
+		Bindings: json.RawMessage(`{"damage_bonus":{"barbarian_level":true}}`),
+		Runtime: &genericeffects.Snapshot{State: "raging", Bag: machine.Bag{
+			machine.KeySawTurnEnd: true, machine.KeyTurnsActive: 2, machine.KeyRoundActivated: 1,
+			"was_hit_this_turn": false, "did_attack_this_turn": false,
+		}},
 	})
 	s.Require().NoError(err)
 

@@ -18,7 +18,7 @@ import (
 
 // TestArrivalsAreCarriedToTheSeam is Faction's test asked of Arrives: a
 // MONSTER's predicate is about the member and is hand-carried to the seam
-// for the launch to forward; a PROP's rides Compiled.Field on the PropInput
+// for the launch to forward; a PROP's rides Compiled.Field on PlacedPropInput
 // with no line here. The chief's fall is spelled as the composition's own
 // Trigger naming the member id the chief spawns under -- the reason an
 // authored id is the member id in the first place.
@@ -45,10 +45,10 @@ func TestArrivalsAreCarriedToTheSeam(t *testing.T) {
 
 	// The letter's arrival rode the field: no line of this package put it
 	// there, and the composition holds the prop in reserve until round 6.
-	var letter *tkencounter.PropInput
-	for i := range camp.Spec.Field.Props {
-		if camp.Spec.Field.Props[i].ID == "letter" {
-			letter = &camp.Spec.Field.Props[i]
+	var letter *tkencounter.PlacedPropInput
+	for i := range camp.Spec.Field.Placed {
+		if camp.Spec.Field.Placed[i].ID == "letter" {
+			letter = &camp.Spec.Field.Placed[i]
 		}
 	}
 	require.NotNil(t, letter, "the letter is in the world's field, in reserve")
@@ -73,7 +73,12 @@ func TestAnArrivalsCellIsNobodysSeat(t *testing.T) {
 		cell := cellOf(orientation, spatial.Position{X: float64(arrival[0]), Y: float64(arrival[1])})
 		require.False(t, seats[cell], "[%d,%d] is where a reinforcement arrives, and nobody's seat", arrival[0], arrival[1])
 	}
-	require.Len(t, camp.PartySeats, 20, "the gate's floor, less the cells that are spoken for")
+	// A nonblocking footprint is not an occupied creature cell. Native
+	// placement permits a player and the holdable letter to share its cell.
+	require.True(t, seats[cellOf(orientation, spatial.Position{X: 1, Y: 3})], "the nonblocking letter reserves no actor seat")
+	for _, seat := range spec.PartyStart {
+		require.Equal(t, "gate", seat.Region, "a party seat stays in the gate partition")
+	}
 }
 
 // TestAFileAuthoredEndingCompilesAndKeepsItsOwnName pins what this package

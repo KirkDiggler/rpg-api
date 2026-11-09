@@ -451,342 +451,206 @@
    "y": 1
   }
  ],
- "boundaries": [
+ "placed": [
   {
-   "from": {
-    "x": -1,
-    "y": 6
+   "id": "gate-yard",
+   "placement": {
+    "width": 0.2886751345948129,
+    "depth": 2.3094010767585034,
+    "origin": {
+     "x": 13.75,
+     "y": 15.155444566227677
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
    },
-   "to": {
-    "x": 0,
-    "y": 6
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
+   "blocks_movement": false,
+   "blocks_line_of_sight": false,
+   "holdable": false,
+   "cells": [
+    {
+     "x": 1,
+     "y": 3
+    }
+   ]
   },
   {
-   "from": {
-    "x": -1,
-    "y": 7
+   "id": "hut-wall",
+   "placement": {
+    "width": 0.2886751345948129,
+    "depth": 34.64101615137755,
+    "origin": {
+     "x": 48.75000000000001,
+     "y": 15.155444566227677
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
    },
-   "to": {
-    "x": 0,
-    "y": 6
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
+   "blocks_movement": false,
+   "blocks_line_of_sight": false,
+   "holdable": false,
+   "cells": [
+    {
+     "x": 8,
+     "y": 4
+    }
+   ]
   },
   {
-   "from": {
-    "x": -1,
-    "y": 7
+   "id": "palisade",
+   "placement": {
+    "width": 0.2886751345948129,
+    "depth": 34.64101615137755,
+    "origin": {
+     "x": 13.75,
+     "y": 15.155444566227677
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
    },
-   "to": {
-    "x": 0,
-    "y": 7
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
+   "blocks_movement": false,
+   "blocks_line_of_sight": false,
+   "holdable": false,
+   "cells": [
+    {
+     "x": 1,
+     "y": 3
+    }
+   ]
   },
   {
-   "from": {
-    "x": 0,
-    "y": 4
-   },
-   "to": {
-    "x": 1,
-    "y": 4
+   "id": "wall/hut-wall/span/0",
+   "placement": {
+    "width": 0.2886751345948129,
+    "depth": 20.495934556231717,
+    "origin": {
+     "x": 48.75000000000001,
+     "y": 8.082903768654761
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
    },
    "blocks_movement": true,
-   "blocks_line_of_sight": true
+   "blocks_line_of_sight": true,
+   "holdable": false,
+   "cells": [
+    {
+     "x": 9,
+     "y": 2
+    }
+   ]
   },
   {
-   "from": {
-    "x": 0,
-    "y": 5
-   },
-   "to": {
-    "x": 0,
-    "y": 6
+   "id": "wall/hut-wall/span/1",
+   "placement": {
+    "width": 0.2886751345948129,
+    "depth": 11.835680518387328,
+    "origin": {
+     "x": 48.75000000000001,
+     "y": 26.558112382722786
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
    },
    "blocks_movement": true,
-   "blocks_line_of_sight": true
+   "blocks_line_of_sight": true,
+   "holdable": false,
+   "cells": [
+    {
+     "x": 7,
+     "y": 6
+    }
+   ]
   },
   {
-   "from": {
-    "x": 0,
-    "y": 5
-   },
-   "to": {
-    "x": 1,
-    "y": 4
+   "id": "wall/palisade/span/0",
+   "placement": {
+    "width": 0.2886751345948129,
+    "depth": 16.165807537309522,
+    "origin": {
+     "x": 13.75,
+     "y": 5.917840259193664
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
    },
    "blocks_movement": true,
-   "blocks_line_of_sight": true
+   "blocks_line_of_sight": true,
+   "holdable": false,
+   "cells": [
+    {
+     "x": 2,
+     "y": 1
+    }
+   ]
   },
   {
-   "from": {
-    "x": 0,
-    "y": 5
-   },
-   "to": {
-    "x": 1,
-    "y": 5
+   "id": "wall/palisade/span/1",
+   "placement": {
+    "width": 0.2886751345948129,
+    "depth": 16.165807537309522,
+    "origin": {
+     "x": 13.75,
+     "y": 24.393048873261687
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
    },
    "blocks_movement": true,
-   "blocks_line_of_sight": true
+   "blocks_line_of_sight": true,
+   "holdable": false,
+   "cells": [
+    {
+     "x": 0,
+     "y": 6
+    }
+   ]
   },
   {
-   "from": {
-    "x": 1,
-    "y": 2
+   "id": "yard-hut",
+   "placement": {
+    "width": 0.2886751345948129,
+    "depth": 2.3094010767585034,
+    "origin": {
+     "x": 48.75000000000001,
+     "y": 19.48557158514987
+    },
+    "facing": 90,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
    },
-   "to": {
-    "x": 2,
-    "y": 2
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
-  },
-  {
-   "from": {
-    "x": 1,
-    "y": 3
-   },
-   "to": {
-    "x": 2,
-    "y": 2
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
-  },
-  {
-   "from": {
-    "x": 1,
-    "y": 3
-   },
-   "to": {
-    "x": 2,
-    "y": 3
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
-  },
-  {
-   "from": {
-    "x": 2,
-    "y": 0
-   },
-   "to": {
-    "x": 3,
-    "y": 0
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
-  },
-  {
-   "from": {
-    "x": 2,
-    "y": 1
-   },
-   "to": {
-    "x": 2,
-    "y": 2
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
-  },
-  {
-   "from": {
-    "x": 2,
-    "y": 1
-   },
-   "to": {
-    "x": 3,
-    "y": 0
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
-  },
-  {
-   "from": {
-    "x": 2,
-    "y": 1
-   },
-   "to": {
-    "x": 3,
-    "y": 1
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
-  },
-  {
-   "from": {
-    "x": 6,
-    "y": 6
-   },
-   "to": {
-    "x": 7,
-    "y": 6
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
-  },
-  {
-   "from": {
-    "x": 6,
-    "y": 7
-   },
-   "to": {
-    "x": 7,
-    "y": 6
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
-  },
-  {
-   "from": {
-    "x": 6,
-    "y": 7
-   },
-   "to": {
-    "x": 7,
-    "y": 7
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
-  },
-  {
-   "from": {
-    "x": 7,
-    "y": 4
-   },
-   "to": {
-    "x": 8,
-    "y": 4
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
-  },
-  {
-   "from": {
-    "x": 7,
-    "y": 5
-   },
-   "to": {
-    "x": 7,
-    "y": 6
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
-  },
-  {
-   "from": {
-    "x": 7,
-    "y": 5
-   },
-   "to": {
-    "x": 8,
-    "y": 5
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
-  },
-  {
-   "from": {
-    "x": 8,
-    "y": 2
-   },
-   "to": {
-    "x": 9,
-    "y": 2
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
-  },
-  {
-   "from": {
-    "x": 8,
-    "y": 3
-   },
-   "to": {
-    "x": 8,
-    "y": 4
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
-  },
-  {
-   "from": {
-    "x": 8,
-    "y": 3
-   },
-   "to": {
-    "x": 9,
-    "y": 2
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
-  },
-  {
-   "from": {
-    "x": 8,
-    "y": 3
-   },
-   "to": {
-    "x": 9,
-    "y": 3
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
-  },
-  {
-   "from": {
-    "x": 9,
-    "y": 0
-   },
-   "to": {
-    "x": 10,
-    "y": 0
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
-  },
-  {
-   "from": {
-    "x": 9,
-    "y": 1
-   },
-   "to": {
-    "x": 9,
-    "y": 2
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
-  },
-  {
-   "from": {
-    "x": 9,
-    "y": 1
-   },
-   "to": {
-    "x": 10,
-    "y": 0
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
-  },
-  {
-   "from": {
-    "x": 9,
-    "y": 1
-   },
-   "to": {
-    "x": 10,
-    "y": 1
-   },
-   "blocks_movement": true,
-   "blocks_line_of_sight": true
+   "blocks_movement": false,
+   "blocks_line_of_sight": false,
+   "holdable": false,
+   "cells": [
+    {
+     "x": 8,
+     "y": 4
+    }
+   ]
   }
  ],
  "doorways": [
@@ -799,7 +663,8 @@
    "to": {
     "x": 1,
     "y": 4
-   }
+   },
+   "crossing": true
   },
   {
    "door": "reference-raider-camp/yard-hut",
@@ -810,29 +675,154 @@
    "to": {
     "x": 8,
     "y": 4
-   }
+   },
+   "crossing": true
   }
  ],
- "segments": [
+ "structural_walls": [
   {
+   "id": "hut-wall",
+   "ref": "dnd5e:env:dark-fortress:45_wall_01",
    "from": {
-    "q": -1,
-    "r": 7.5
+    "x": 48.75000000000001,
+    "y": -2.165063509461097
    },
    "to": {
-    "q": 3,
-    "r": -0.5
-   }
+    "x": 48.75000000000001,
+    "y": 32.47595264191645
+   },
+   "height": 8.660254037844387,
+   "thickness": 0.2886751345948129,
+   "elevation": 0,
+   "footprint_cells": [
+    {
+     "x": 10,
+     "y": 0
+    },
+    {
+     "x": 9,
+     "y": 1
+    },
+    {
+     "x": 9,
+     "y": 2
+    },
+    {
+     "x": 8,
+     "y": 3
+    },
+    {
+     "x": 8,
+     "y": 4
+    },
+    {
+     "x": 7,
+     "y": 5
+    },
+    {
+     "x": 7,
+     "y": 6
+    },
+    {
+     "x": 6,
+     "y": 7
+    }
+   ],
+   "openings": [
+    {
+     "id": "hut-gap",
+     "position": 21.65063509461097,
+     "width": 2.3094010767585034
+    }
+   ]
   },
   {
+   "id": "palisade",
+   "ref": "dnd5e:env:dark-fortress:45_wall_01",
    "from": {
-    "q": 6,
-    "r": 7.5
+    "x": 13.75,
+    "y": -2.165063509461097
    },
    "to": {
-    "q": 10,
-    "r": -0.5
-   }
+    "x": 13.75,
+    "y": 32.47595264191645
+   },
+   "height": 8.660254037844387,
+   "thickness": 0.2886751345948129,
+   "elevation": 0,
+   "footprint_cells": [
+    {
+     "x": 3,
+     "y": 0
+    },
+    {
+     "x": 2,
+     "y": 1
+    },
+    {
+     "x": 2,
+     "y": 2
+    },
+    {
+     "x": 1,
+     "y": 3
+    },
+    {
+     "x": 1,
+     "y": 4
+    },
+    {
+     "x": 0,
+     "y": 5
+    },
+    {
+     "x": 0,
+     "y": 6
+    },
+    {
+     "x": -1,
+     "y": 7
+    }
+   ],
+   "openings": [
+    {
+     "id": "gate-gap",
+     "position": 17.320508075688775,
+     "width": 2.3094010767585034
+    }
+   ]
+  }
+ ],
+ "structural_doors": [
+  {
+   "id": "reference-raider-camp/gate-yard",
+   "ref": "dnd5e:env:dark-fortress:wall_door_double_01",
+   "from": {
+    "x": 13.75,
+    "y": 14.000744027848425
+   },
+   "to": {
+    "x": 13.75,
+    "y": 16.31014510460693
+   },
+   "height": 8.660254037844387,
+   "thickness": 0.2886751345948129,
+   "elevation": 0
+  },
+  {
+   "id": "reference-raider-camp/yard-hut",
+   "ref": "dnd5e:env:dark-fortress:wall_door_double_01",
+   "from": {
+    "x": 48.75000000000001,
+    "y": 18.330871046770618
+   },
+   "to": {
+    "x": 48.75000000000001,
+    "y": 20.640272123529122
+   },
+   "height": 8.660254037844387,
+   "thickness": 0.2886751345948129,
+   "elevation": 0
   }
  ],
  "regions": [
@@ -1328,8 +1318,7 @@
   "at": {
    "x": -1,
    "y": 3
-  },
-  "facing": "e"
+  }
  },
  "dungeon_key": "reference-raider-camp"
 }

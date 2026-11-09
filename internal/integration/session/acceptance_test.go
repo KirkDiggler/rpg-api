@@ -404,6 +404,13 @@ func newAcceptanceHarnessAnswering(t *testing.T, roller sdk.Roller, driver sdk.T
 		AnswerWhole: answerWhole,
 	})
 	require.NoError(t, err)
+	// Accepted continuations must finish before this test's Redis client
+	// closes, including when an assertion stops a test early.
+	t.Cleanup(func() {
+		drain, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		require.NoError(t, orch.Drain(drain))
+	})
 
 	h, err := sessionhandler.New(&sessionhandler.HandlerConfig{
 		Manager: orch.Manager, Characters: charRepo, Preferences: orch.Preferences,
