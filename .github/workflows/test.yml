@@ -6,6 +6,19 @@ on:
   pull_request:
     branches: [ main, dev ]
 
+# The test budget. The suite runs with -json, and scripts/test-budget.sh writes
+# the ten slowest top-level tests to the job summary and fails the job naming
+# each top-level test that takes longer than TEST_BUDGET under -race. A test
+# may stay over the budget only when testbudget.allow names it, one test per
+# line with its reason after a "#" on the same line; a line without a reason
+# fails the job too. A slow test is a finding: size the fixture to the cases
+# it proves, or name it with a reason (rpg-project#907). The script is the
+# toolkit's (rpg-toolkit scripts/test-budget.sh), copied with the same
+# interface. Locally:
+#   go test -race -json ./... | ./scripts/test-budget.sh check -allow testbudget.allow
+env:
+  TEST_BUDGET: 5s
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -23,6 +36,9 @@ jobs:
       with:
         go-version-file: go.mod
     
+    - name: The test budget reads go test -json as its cases say
+      run: ./scripts/test-budget.test.sh
+
     - name: Verify published release pins
       run: ./scripts/verify-release-pin.sh
 
@@ -42,10 +58,25 @@ jobs:
     
     - name: Run tests with coverage
       run: |
-        # Run tests excluding generated code, mocks, and cmd
-        go test -v -race -coverprofile=coverage.out -covermode=atomic \
-          $(go list ./... | grep -v /gen/ | grep -v /mock | grep -v cmd/server)
+        set -o pipefail
+        # Run tests excluding generated code, mocks, and cmd. -json feeds the
+        # test budget step; the log filter prints what plain go test would
+        # (package results, build errors, a failing test's output), and
+        # pipefail keeps go test's exit status.
+        go test -json -race -coverprofile=coverage.out -covermode=atomic \
+          $(go list ./... | grep -v /gen/ | grep -v /mock | grep -v cmd/server) \
+          | tee "$RUNNER_TEMP/test.json" | ./scripts/test-budget.sh log
         go tool cover -html=coverage.out -o coverage.html
+
+    - name: Test budget
+      if: ${{ !cancelled() }}
+      run: |
+        if [[ ! -s "$RUNNER_TEMP/test.json" ]]; then
+          echo "No test output: the test step stopped before its tests."
+          exit 0
+        fi
+        ./scripts/test-budget.sh check -budget "$TEST_BUDGET" \
+          -allow testbudget.allow -label rpg-api < "$RUNNER_TEMP/test.json"
     
     - name: Generate coverage badge
       run: |
