@@ -76,15 +76,15 @@ const (
 	// envContentDir is the directory of authored dungeon files the registry
 	// loads at boot and the AuthoringService writes to. Defaults to
 	// dungeons.ShippedContentDir relative to the working directory, which is
-	// where the repo (and the image) keep the shipped reference tomb; when
-	// set, the shipped tomb is seeded into it if absent.
+	// where the repo (and the image) keep the shipped dungeons; when set,
+	// every shipped file it lacks is seeded into it.
 	envContentDir = "RPG_CONTENT_DIR"
 	// envAuthoringEnabled set to "1" registers the AuthoringService
 	// (PutDungeon writes into envContentDir). Off by default: the registry
 	// still loads and serves content, and ListDungeons/GetDungeon remain
 	// ungated reads.
 	envAuthoringEnabled = "RPG_AUTHORING_ENABLED"
-	// envShippedContentDir overrides where the shipped tomb is seeded FROM
+	// envShippedContentDir overrides where the shipped dungeons are seeded FROM
 	// when envContentDir is set and empty. Defaults to
 	// dungeons.ShippedContentDir; the image sets it to an immutable copy
 	// outside the working directory so a volume mounted over ./content
@@ -385,7 +385,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 	sessionpresentationv1alpha1pb.RegisterSessionPresentationServiceServer(srv, presentationHandlerImpl)
 
 	// Content registry (rpg-api#806): constructed UNCONDITIONALLY -- the
-	// reference tomb must load whether or not authoring is on, because a
+	// default dungeon must load whether or not authoring is on, because a
 	// StartEncounter with no dungeon_key plays it. A file that does not
 	// compile fails the boot here, naming itself.
 	contentDir := os.Getenv(envContentDir)
@@ -396,7 +396,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 		contentDir = dungeons.ShippedContentDir
 	} else {
 		// A mounted content directory starts EMPTY on a fresh box; the
-		// registry refuses a directory without the tomb, so seed it from the
+		// registry refuses a directory without the default, so seed it from the
 		// copy the image ships. Never overwrites an existing file.
 		shippedDir := os.Getenv(envShippedContentDir)
 		if shippedDir == "" {
@@ -546,6 +546,21 @@ func runServer(_ *cobra.Command, _ []string) error {
 			log.Println("Server stopped gracefully")
 		}
 
+		// A Move may have answered before its save (rpg-project#879 R2):
+		// wait for the continuations still running to save and deliver. The
+		// drain has its own budget, because the forced path reaches here
+		// with shutdownCtx already spent (an open stream keeps GracefulStop
+		// from returning). Stop does not wait for handlers, so a Move still
+		// mid-verb may reach the runner after the drain began; the runner
+		// refuses it and that verb fails with nothing saved.
+		drainCtx, drainCancel := context.WithTimeout(context.Background(), continuationDrainBudget)
+		defer drainCancel()
+		if err := sessionOrch.Drain(drainCtx); err != nil {
+			log.Printf("session continuations not drained before shutdown: %v", err)
+		} else {
+			log.Println("Session continuations drained")
+		}
+
 		if err := lobbyBroker.Close(); err != nil {
 			log.Printf("lobby broker close: %v", err)
 		}
@@ -555,6 +570,11 @@ func runServer(_ *cobra.Command, _ []string) error {
 		return err
 	}
 }
+
+// continuationDrainBudget is how long shutdown waits for session
+// continuations (verbs that answered before their save) after the gRPC server
+// stopped, whichever way it stopped.
+const continuationDrainBudget = 10 * time.Second
 
 // fieldMillis reads the middleware's `grpc.time_ms` field. go-grpc-middleware
 // v2 sends it as a STRING (DurationToTimeMillisFields formats a float32 with

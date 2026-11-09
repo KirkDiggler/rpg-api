@@ -175,7 +175,7 @@ func TestTargetCandidateToProto_CarriesHeldEffects(t *testing.T) {
 		},
 		HeldEffects: []sdk.EffectRow{
 			{
-				ID: "held-b", Ref: "ref:b", Name: "name b", Description: "description b",
+				ID: "held-b", Ref: "ref:b", Name: "name b", Description: "description b", SourceID: "caster-9",
 				State: sdk.EffectDepends, Reason: "reason b",
 				Participation: sdk.LaterChoice, Benefit: "benefit b",
 			},
@@ -188,7 +188,7 @@ func TestTargetCandidateToProto_CarriesHeldEffects(t *testing.T) {
 	})
 	require.Equal(t, []*sessionpb.EffectRow{
 		{
-			Id: "held-b", Ref: "ref:b", Name: "name b", Description: "description b",
+			Id: "held-b", Ref: "ref:b", Name: "name b", Description: "description b", SourceId: "caster-9",
 			State: sessionpb.EffectState_EFFECT_STATE_DEPENDS, Reason: "reason b",
 			Participation: sessionpb.EffectParticipation_EFFECT_PARTICIPATION_LATER_CHOICE, Benefit: "benefit b",
 		},
@@ -261,7 +261,7 @@ func TestDeclarationToProto_CarriesEffectRows(t *testing.T) {
 		TargetKind: sdk.TargetMember,
 		Effects: []sdk.EffectRow{
 			{
-				ID: "row-2", Ref: "ref-2", Name: "name 2", Description: "description 2",
+				ID: "row-2", Ref: "ref-2", Name: "name 2", Description: "description 2", SourceID: "ring-17",
 				State: sdk.EffectDepends, Reason: "reason 2", Participation: sdk.ContributesNow,
 			},
 			{
@@ -272,7 +272,7 @@ func TestDeclarationToProto_CarriesEffectRows(t *testing.T) {
 	})
 	require.Equal(t, []*sessionpb.EffectRow{
 		{
-			Id: "row-2", Ref: "ref-2", Name: "name 2", Description: "description 2",
+			Id: "row-2", Ref: "ref-2", Name: "name 2", Description: "description 2", SourceId: "ring-17",
 			State: sessionpb.EffectState_EFFECT_STATE_DEPENDS, Reason: "reason 2",
 			Participation: sessionpb.EffectParticipation_EFFECT_PARTICIPATION_CONTRIBUTES_NOW,
 		},

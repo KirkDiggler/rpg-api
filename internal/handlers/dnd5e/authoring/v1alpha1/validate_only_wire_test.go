@@ -113,7 +113,7 @@ func (s *ValidateOnlyWireSuite) TestActionAugmentsGradeThroughPutDungeon() {
 	const fixtureKey = "action-augment-walk"
 	const authorKey = "my-action-augment"
 
-	raw, err := os.ReadFile(filepath.Join(dungeonstest.ContentDir(s.T()), fixtureKey+".yaml")) //nolint:gosec // fixture path is under the repository content directory
+	raw, err := os.ReadFile(dungeonstest.SitePath(s.T(), fixtureKey)) //nolint:gosec // fixture path is under the repository's retired walk sites
 	s.Require().NoError(err)
 
 	resp, err := s.handler.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{

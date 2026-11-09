@@ -32,7 +32,7 @@ type ShenanigansSuite struct {
 // (rpg-project#458). It is a fifth dungeon rather than a fifth room on the
 // Three Minds, because that file has no `factions:` at all and a scene where
 // nothing attacks you needs a faction graph to say so.
-var referenceFrontRoomPath = filepath.Join("..", "..", "content", "reference-front-room.yaml")
+var referenceFrontRoomPath = filepath.Join("..", "dungeons", "testdata", "sites", "reference-front-room.yaml")
 
 func TestShenanigansSuite(t *testing.T) { suite.Run(t, new(ShenanigansSuite)) }
 

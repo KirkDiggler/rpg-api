@@ -12,6 +12,12 @@ import (
 )
 
 // Move walks a member along a path of cells, one at a time.
+//
+// A world-clock walk may answer before it ends (rpg-project#879 R2):
+// continues is set, the status is CONTINUING, the steps are those before the
+// one that pays a round, and through names the record id the rest continues
+// from on the stream. Saved and Delivery are then empty, because the save
+// and the delivery belong to the rest of the walk.
 func (h *Handler) Move(ctx context.Context, req *sessionpb.MoveRequest) (*sessionpb.MoveResponse, error) {
 	if err := h.callerActingAs(ctx, req.GetMember()); err != nil {
 		return nil, err
@@ -42,6 +48,8 @@ func (h *Handler) Move(ctx context.Context, req *sessionpb.MoveRequest) (*sessio
 		Formed:       formedToProto(out.Formed),
 		Saved:        saveReportToProto(out.Saved),
 		Delivery:     deliveryReportToProto(out.Delivery),
+		Continues:    out.Continues,
+		Through:      out.Through,
 	}, nil
 }
 
@@ -53,6 +61,8 @@ func movementStatusToProto(status sdk.MovementStatus) sessionpb.MovementStatus {
 		return sessionpb.MovementStatus_MOVEMENT_STATUS_PAUSED
 	case sdk.MovementStopped:
 		return sessionpb.MovementStatus_MOVEMENT_STATUS_STOPPED
+	case sdk.MovementContinuing:
+		return sessionpb.MovementStatus_MOVEMENT_STATUS_CONTINUING
 	default:
 		return sessionpb.MovementStatus_MOVEMENT_STATUS_UNSPECIFIED
 	}

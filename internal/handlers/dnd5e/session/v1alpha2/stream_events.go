@@ -28,8 +28,14 @@ const logStoryRestarted = "session story: catch-up restarted (older than retenti
 // replay's end, never the last id sent, because the acts of one same-id run
 // share an id and every one of them must go out.
 //
-// A LAG ENDS THE STREAM, TOLD, BETWEEN TWO IDS. The broker enqueues a same-id
-// run whole or not at all, and the replay is whole runs, so when the broker
+// LIVE ACTS ARRIVE ONE COMMIT AT A TIME. The broker queues one unit per
+// commit for this member (sessionorch.ActUnit), and the handler sends the
+// unit's acts in order, each through the same replay skip, so a skip never
+// drops part of a same-id run: a run shares one id, so it is skipped whole or
+// sent whole.
+//
+// A LAG ENDS THE STREAM, TOLD, BETWEEN TWO IDS. The broker enqueues a commit
+// whole or not at all, and the replay is whole runs, so when the broker
 // closes the subscription as lagged the handler drains what was queued and
 // the last id it sent ends a whole run. It sends StoryLagged{last_id} with
 // that id and ends with OK.
@@ -93,7 +99,7 @@ func (h *StoryHandler) StreamEvents(req *sessionpb.StreamEventsRequest, stream s
 		select {
 		case <-ctx.Done():
 			return nil
-		case b, ok := <-sub.Acts():
+		case unit, ok := <-sub.Units():
 			if !ok {
 				if lagged, _ := sub.Lagged(); lagged {
 					slog.WarnContext(ctx, "session story: subscriber lagged, stream ending",
@@ -104,11 +110,13 @@ func (h *StoryHandler) StreamEvents(req *sessionpb.StreamEventsRequest, stream s
 				}
 				return nil
 			}
-			if b.Act.ID <= replayed {
-				continue // already sent by the catch-up read
-			}
-			if err := send(b.Act, b.RunEnd); err != nil {
-				return err
+			for _, b := range unit {
+				if b.Act.ID <= replayed {
+					continue // already sent by the catch-up read
+				}
+				if err := send(b.Act, b.RunEnd); err != nil {
+					return err
+				}
 			}
 		}
 	}

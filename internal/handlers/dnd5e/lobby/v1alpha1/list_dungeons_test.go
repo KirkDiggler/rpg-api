@@ -36,7 +36,8 @@ func (s *HandlerSuite) TestListDungeons_ListsWhatIsShipped() {
 		keys = append(keys, d.GetKey())
 	}
 	s.Equal(dungeonstest.ListedReferenceKeys(s.T()), keys)
-	s.NotContains(keys, dungeons.DefaultKey, "the v2 tomb plays by an empty key, unlisted")
+	s.NotContains(keys, "reference-tomb", "the v2 tomb plays by key, unlisted")
+	s.Contains(keys, dungeons.DefaultKey, "the default castle is a single-room reference, listed")
 }
 
 func (s *HandlerSuite) TestListDungeons_WithoutAWorld_FailedPrecondition() {

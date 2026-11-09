@@ -521,6 +521,15 @@ func (ts *TestServer) closeAll() {
 	if ts.LobbyBroker != nil {
 		_ = ts.LobbyBroker.Close()
 	}
+	// A Move may have answered before its save (rpg-project#879 R2): let the
+	// continuations land before the Redis client they write through closes.
+	if ts.SessionOrch != nil {
+		drainCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := ts.SessionOrch.Drain(drainCtx); err != nil {
+			log.Printf("session continuations not drained: %v", err)
+		}
+		cancel()
+	}
 	if ts.redisClient != nil {
 		_ = ts.redisClient.Close()
 	}
