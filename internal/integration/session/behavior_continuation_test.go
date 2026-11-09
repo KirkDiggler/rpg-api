@@ -39,12 +39,16 @@ func (d *behaviorScript) Roll(_ context.Context, sides int) (int, error) {
 }
 
 func (s *BehaviorPatrolSuite) reloadBehaviorHost(h *acceptanceHarness, die sdk.Roller, label string) {
+	s.reloadRecordingBehaviorHost(h, die, label, nil)
+}
+
+func (s *BehaviorPatrolSuite) reloadRecordingBehaviorHost(h *acceptanceHarness, die sdk.Roller, label string, capture sdk.RecordStream) {
 	// A fresh host models restart only after the old host's accepted work has
 	// drained. Different in-process lockers are not one coordination domain.
 	drain, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	s.Require().NoError(h.manager.Drain(drain))
-	orch, err := sessionorch.New(sessionorch.Config{Redis: h.redis, Characters: h.charRepo, TTL: time.Hour, Dice: die, PresentationIDs: idgen.NewSequential(label)})
+	orch, err := sessionorch.New(sessionorch.Config{Redis: h.redis, Characters: h.charRepo, TTL: time.Hour, Dice: die, PresentationIDs: idgen.NewSequential(label), RecordCapture: capture})
 	s.Require().NoError(err)
 	handler, err := sessionhandler.New(&sessionhandler.HandlerConfig{Manager: orch.Manager, Characters: h.charRepo, Preferences: orch.Preferences})
 	s.Require().NoError(err)

@@ -72,7 +72,7 @@ func (s *HandlerSuite) TestStreamLobby_ForwardsBrokerEvents() {
 	self := stream.WaitForSend(s.T(), 2*time.Second)
 	s.Require().NotNil(self.GetMemberConnectionChanged())
 
-	s.expectCharacter("char-bob", "bob", "Bob", 10, 10)
+	s.seedCharacter("char-bob", "bob", "Bob", 10, 10)
 	bobCtx := playerCtx("bob")
 	_, err := s.handler.JoinLobby(bobCtx, &lobbyv1alpha1.JoinLobbyRequest{
 		JoinRef: joinRef, CharacterId: "char-bob",

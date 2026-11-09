@@ -24,6 +24,9 @@ const logRecordRestarted = "session record: catch-up restarted (older than reten
 // events; `more` says retained events after it did not fit, and is the
 // client's only end signal.
 func (h *Handler) GetRecord(ctx context.Context, req *sessionpb.GetRecordRequest) (*sessionpb.GetRecordResponse, error) {
+	if !h.enabled {
+		return nil, errRecordDisabled
+	}
 	if err := h.gate.CallerMemberSeated(ctx, req.GetSession(), req.GetMember()); err != nil {
 		return nil, err
 	}
@@ -44,7 +47,7 @@ func (h *Handler) GetRecord(ctx context.Context, req *sessionpb.GetRecordRequest
 	for _, evt := range out.Events {
 		converted, cerr := recordEventToProto(evt)
 		if cerr != nil {
-			slog.ErrorContext(ctx, "session record: fields not projectable, sent without them",
+			slog.ErrorContext(ctx, "session record: legacy fields not projectable, raw payload retained",
 				"session", req.GetSession(), "id", evt.ID, "beat", evt.Beat, "error", cerr)
 		}
 		events = append(events, converted)

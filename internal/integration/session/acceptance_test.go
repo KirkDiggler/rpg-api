@@ -379,6 +379,11 @@ func newAcceptanceHarnessWith(t *testing.T, roller sdk.Roller, driver sdk.TurnDr
 // wires the production continuation runner (rpg-project#879 R2).
 func newAcceptanceHarnessAnswering(t *testing.T, roller sdk.Roller, driver sdk.TurnDriver, answerWhole bool) *acceptanceHarness {
 	t.Helper()
+	return newAcceptanceHarnessRecording(t, roller, driver, answerWhole, nil)
+}
+
+func newAcceptanceHarnessRecording(t *testing.T, roller sdk.Roller, driver sdk.TurnDriver, answerWhole bool, capture sdk.RecordStream) *acceptanceHarness {
+	t.Helper()
 
 	mr := miniredis.RunT(t)
 	client := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
@@ -401,7 +406,7 @@ func newAcceptanceHarnessAnswering(t *testing.T, roller sdk.Roller, driver sdk.T
 	orch, err := sessionorch.New(sessionorch.Config{
 		Redis: client, Characters: charRepo, TTL: 24 * time.Hour, Dice: roller,
 		PresentationIDs: idgen.NewSequential("presentation"), TurnDriver: driver,
-		AnswerWhole: answerWhole,
+		AnswerWhole: answerWhole, RecordCapture: capture,
 	})
 	require.NoError(t, err)
 	// Accepted continuations must finish before this test's Redis client

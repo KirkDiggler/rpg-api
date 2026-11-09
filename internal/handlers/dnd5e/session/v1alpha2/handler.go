@@ -9,14 +9,18 @@
 //
 // THE RECORD IS NOT PER RECIPIENT. Every seated caller receives the whole
 // record, per-observer beats included, before release (R13, R26); rpg-api
-// neither filters nor regroups it. A beat whose fields cannot be spelled as a
-// Struct still goes out — id, beat and act intact, fields empty — so one bad
-// payload never leaves a hole in the stream.
+// neither filters nor regroups it. Exact JSON bytes are carried in fields_json;
+// the deprecated Struct is only an approximate projection. A payload that cannot
+// become a Struct still retains its identity and raw bytes so the reader reports
+// unavailable/unsupported evidence without a hole or an approximate fallback.
 package sessionv1alpha2
 
 import (
 	"context"
 	"errors"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
@@ -45,13 +49,19 @@ type Handler struct {
 	manager Manager
 	broker  *sessionorch.RecordBroker
 	gate    Gate
+	enabled bool
 }
 
-// HandlerConfig is everything the handler needs; every field is required.
+var errRecordDisabled = status.Error(codes.PermissionDenied, "diagnostic record access is disabled")
+
+// HandlerConfig supplies required dependencies and explicit diagnostic access.
 type HandlerConfig struct {
 	Manager Manager
 	Broker  *sessionorch.RecordBroker
 	Gate    Gate
+	// Enabled is development/playtest access, never inferred from client UI.
+	// False refuses both record RPCs; the ordinary story service is separate.
+	Enabled bool
 }
 
 // New builds a Handler, refusing a config missing any dependency.
@@ -68,7 +78,7 @@ func New(cfg *HandlerConfig) (*Handler, error) {
 	if cfg.Gate == nil {
 		return nil, errors.New("session v1alpha2 handler: HandlerConfig.Gate is required")
 	}
-	return &Handler{manager: cfg.Manager, broker: cfg.Broker, gate: cfg.Gate}, nil
+	return &Handler{manager: cfg.Manager, broker: cfg.Broker, gate: cfg.Gate, enabled: cfg.Enabled}, nil
 }
 
 // StoryHandler implements sessionpb.StoryServiceServer: the act stream.

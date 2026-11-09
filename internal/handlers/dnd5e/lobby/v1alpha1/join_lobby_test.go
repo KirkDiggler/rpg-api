@@ -38,7 +38,7 @@ func (s *HandlerSuite) TestJoinLobby_EmptyCharacterID_InvalidArgument() {
 
 func (s *HandlerSuite) TestJoinLobby_Success_ReturnsFullRoster() {
 	lobbyID, joinRef := s.createLobby("alice", "char-alice", "Alice")
-	s.expectCharacter("char-bob", "bob", "Bob", 10, 10)
+	s.seedCharacter("char-bob", "bob", "Bob", 10, 10)
 
 	bobCtx := playerCtx("bob")
 	resp, err := s.handler.JoinLobby(bobCtx, &lobbyv1alpha1.JoinLobbyRequest{
