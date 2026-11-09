@@ -37,7 +37,7 @@ func (s *HandlerSuite) TestStartEncounter_NotAllReady_FailedPrecondition() {
 
 func (s *HandlerSuite) TestStartEncounter_NotHost_PermissionDenied() {
 	lobbyID, joinRef := s.createLobby("alice", "char-alice", "Alice")
-	s.expectCharacter("char-bob", "bob", "Bob", 10, 10)
+	s.seedCharacter("char-bob", "bob", "Bob", 10, 10)
 	bobCtx := playerCtx("bob")
 	_, err := s.handler.JoinLobby(bobCtx, &lobbyv1alpha1.JoinLobbyRequest{
 		JoinRef: joinRef, CharacterId: "char-bob",
@@ -55,7 +55,7 @@ func (s *HandlerSuite) TestStartEncounter_Success_ReturnsEncounterID() {
 	_, err := s.handler.SetReady(s.ctx, &lobbyv1alpha1.SetReadyRequest{LobbyId: lobbyID, Ready: true})
 	s.Require().NoError(err)
 
-	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+	s.seedCharacter("char-alice", "alice", "Alice", 12, 12)
 	resp, err := s.handler.StartEncounter(s.ctx, &lobbyv1alpha1.StartEncounterRequest{LobbyId: lobbyID})
 	s.Require().NoError(err)
 	s.Require().NotEmpty(resp.GetEncounterId())

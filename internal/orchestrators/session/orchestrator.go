@@ -40,6 +40,12 @@ type Config struct {
 
 	// Characters is rpg-api's existing character store, adapted to the SDK's
 	// CharacterRepository contract by NewCharacterRepository.
+	//
+	// IT MUST BE THE REDIS CHARACTER REPOSITORY ON Config.Redis. The fenced
+	// save writes a verb's seated sheets in the same Lua script as its world
+	// (redis_fenced.go, rpg-project#879 S12a), under characterrepo.Key, so the
+	// sheets the session writes land in Config.Redis whatever this field
+	// holds. A different store would read sheets the session never wrote.
 	Characters characterrepo.Repository
 
 	// TTL is the per-key expiration applied to session and encounter Redis

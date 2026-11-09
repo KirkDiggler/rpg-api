@@ -502,6 +502,16 @@ func StatusError(err error) error {
 	case errors.Is(err, sdk.ErrStoryTrimmed):
 		return status.Error(codes.OutOfRange, err.Error())
 
+	// ABORTED -- the verb's fenced save found the checkpoint moved: another
+	// writer saved between this verb's load and its save (a lease that
+	// expired mid-verb, rpg-project#879 S12a). NOTHING landed, so this is
+	// not the partial-write story below and must be matched before it (the
+	// SDK's SaveError unwraps to both). The client retries the verb against
+	// the newer world.
+	case errors.Is(err, sdk.ErrStaleCheckpoint):
+		return status.Error(codes.Aborted,
+			"stale checkpoint: another save landed first and nothing of this verb was written; retry it: "+err.Error())
+
 	// UNAVAILABLE -- a write landed only partially. Retry guidance lives in
 	// the SaveReport carried by the SDK's SaveError (design rule 7); errors.As
 	// against it is the caller's way to recover which aggregates landed.

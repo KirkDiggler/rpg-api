@@ -51,6 +51,10 @@ const (
 	measureSessionKeyPrefix = "session:v1alpha1:"
 	measureEncKeyPrefix     = "session-enc:v1alpha1:"
 	measureScratchKey       = "measure:reload:scratch"
+	// measureScratchEncounter is the encounter id the fenced-save row writes
+	// (rpg-project#879 S12a): its blob and checkpoint version, never the
+	// run's own.
+	measureScratchEncounter = "measure-reload-scratch"
 )
 
 // reloadRow is one cold-reload measurement over n rebuilds of one session.
@@ -62,6 +66,7 @@ type reloadRow struct {
 	fetch, decode, repoGet, siteBuild []time.Duration
 	readLoad, attach                  []time.Duration
 	toData, encode, persist           []time.Duration
+	fencedGet, fencedSave             []time.Duration
 }
 
 // measureColdReload rebuilds run's encounter from the store n times, by
@@ -73,6 +78,9 @@ func measureColdReload(
 	t.Helper()
 	ctx := context.Background()
 	encRepo := sessionorch.NewEncounterRepository(client, 0)
+	fenced, ok := encRepo.(sdk.FencedEncounterRepository)
+	require.True(t, ok, "the Redis encounter repository carries the fenced capability")
+	var scratchVersion uint64
 	r := reloadRow{key: key, mode: mode, n: n}
 
 	// One untimed pass so the first measured rebuild is not the process's
@@ -113,6 +121,13 @@ func measureColdReload(
 		r.repoGet = append(r.repoGet, time.Since(s))
 		require.NoError(t, err)
 
+		// The fenced read the session takes: blob and version in one MGET,
+		// plus decode.
+		s = time.Now()
+		_, err = fenced.GetFencedEncounter(ctx, &sdk.GetFencedEncounterInput{Encounter: sess.Encounter})
+		r.fencedGet = append(r.fencedGet, time.Since(s))
+		require.NoError(t, err)
+
 		// site build: the encounter's load with no session seam.
 		s = time.Now()
 		enc, err := tkencounter.LoadEncounter(&tkencounter.LoadEncounterInput{
@@ -135,6 +150,16 @@ func measureColdReload(
 		require.NoError(t, client.Set(ctx, measureScratchKey, b, 0).Err())
 		r.persist = append(r.persist, time.Since(s))
 
+		// The fenced save the session takes, on a scratch encounter id:
+		// encode plus the one script (compare with 5b + 5c).
+		s = time.Now()
+		saved, err := fenced.SaveFenced(ctx, &sdk.SaveFencedInput{
+			Encounter: measureScratchEncounter, Data: &out, Expected: scratchVersion,
+		})
+		r.fencedSave = append(r.fencedSave, time.Since(s))
+		require.NoError(t, err)
+		scratchVersion = saved.Version
+
 		// read load: the session's whole read-path reload, and the attach
 		// residual (what is left after both fetches, both decodes and the
 		// bare build).
@@ -146,7 +171,8 @@ func measureColdReload(
 		sessCost := r.sessionFetch[len(r.sessionFetch)-1] + r.sessionDecode[len(r.sessionDecode)-1]
 		r.attach = append(r.attach, whole-sessCost-fetch-decode-build)
 	}
-	require.NoError(t, client.Del(ctx, measureScratchKey).Err())
+	require.NoError(t, client.Del(ctx, measureScratchKey,
+		measureEncKeyPrefix+measureScratchEncounter, "session-enc-ver:v1alpha1:"+measureScratchEncounter).Err())
 	return r
 }
 
@@ -176,6 +202,8 @@ func reloadTable(rows []reloadRow, moves map[string][2][]time.Duration) string {
 		line("5a ToData", 0, r.toData)
 		line("5b encode (JSON)", r.outBytes, r.encode)
 		line("5c persist (SET)", r.outBytes, r.persist)
+		line("1+2 fenced GetFencedEncounter (MGET + decode)", 0, r.fencedGet)
+		line("5b+5d fenced SaveFenced (encode + script)", r.outBytes, r.fencedSave)
 		if m, ok := moves[r.key+"|"+r.mode]; ok {
 			line("Move answer (walk above)", 0, m[0])
 			line("Move drained (walk above)", 0, m[1])
