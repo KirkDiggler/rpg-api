@@ -37,7 +37,7 @@ func TestCreatureFactsWalkSuite(t *testing.T) { suite.Run(t, new(CreatureFactsWa
 
 func (s *CreatureFactsWalkSuite) SetupTest() {
 	s.ctx = context.Background()
-	s.registry, s.dir = dungeonstest.Scratch(s.T())
+	s.registry, s.dir = joinShelf(s.T(), dungeonstest.WorldStore(s.T()), true), shelf.dir
 	s.raw = dungeonstest.AsKey(s.T(), dungeonstest.CreatureFactsWalkYAML(s.T()),
 		dungeonstest.CreatureFactsWalkKey, creatureFactsCopyKey)
 }
