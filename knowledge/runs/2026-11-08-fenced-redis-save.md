@@ -26,7 +26,7 @@ Built on `rpg-api` `dev` [`5711f56`](https://github.com/KirkDiggler/rpg-api/comm
 
 ## Found
 
-- **Blocker, toolkit v0.172.0:** under the fence, Exit and a closing run never clear seats. Exit calls `clearSeats` after `commit`, and commit calls `clearSeatsOfAClosedRun` after `persist`. Under the fence `writeSeat` only adds to the pending set, the fenced save has already taken it, and releasing the guard drops it. A run's seats outlive its Exit, so every scene that exits and relaunches the same character fails with "seated in another session" (about 30 integration scenes here). The fix belongs in the toolkit.
+- **Blocker, toolkit v0.172.0, fixed in v0.172.1:** under the fence, Exit and a closing run never clear seats. Exit calls `clearSeats` after `commit`, and commit calls `clearSeatsOfAClosedRun` after `persist`. Under the fence `writeSeat` only adds to the pending set, the fenced save has already taken it, and releasing the guard drops it. A run's seats outlive its Exit, so every scene that exits and relaunches the same character fails with "seated in another session" (about 30 integration scenes here). The fix belongs in the toolkit.
 - A run launched before this deploy holds a blob with no version and fails closed at its next verb. Relaunch it.
 - The fenced save costs about 8 to 13 ms over encode + SET on the garrison keep's 9 MB blob, more than one round trip: the script copies the 9 MB argument. Move p50 moved within noise.
 
@@ -39,6 +39,21 @@ Built on `rpg-api` `dev` [`5711f56`](https://github.com/KirkDiggler/rpg-api/comm
 | 5b + 5d fenced SaveFenced | - | 72 to 78 ms |
 | 1 + 2 GetEncounter | 79 ms | 76 ms |
 | 1 + 2 fenced GetFencedEncounter | - | 78 ms |
+
+### Re-pinned on session v0.172.1 (seat clears ride the fenced save)
+
+The toolkit fix (rpg-toolkit#2334) lands the cleared seats in the fenced save, and every Exit-then-relaunch scene passes. The pin also took `play/record` v0.3.0, which shrank the garrison keep's blob from 9.1 MB to 2.7 MB, so these Move numbers are not comparable with the table above. The fence cost is read inside one run: SaveFenced against encode + SET on the same blob.
+
+| row (p50, garrison keep, N=20, session v0.172.1) | value |
+|---|---|
+| Move answer, AnswerWhole | 777 ms |
+| Move answer, S1 continues | 198 ms |
+| Move drained, S1 continues | 782 ms |
+| 5b encode + 5c SET (whole / continues) | 23.05 + 1.01 ms / 22.07 + 0.94 ms |
+| 5b + 5d fenced SaveFenced (whole / continues) | 24.43 ms / 23.29 ms |
+| GetEncounter / fenced GetFencedEncounter (whole) | 26.27 ms / 27.41 ms |
+
+At 2.7 MB the fence costs about one round trip, 0.3 ms on the write side and about 1 ms on the read side.
 
 ## Mistaken
 
