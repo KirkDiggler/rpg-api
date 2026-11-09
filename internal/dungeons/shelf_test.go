@@ -48,8 +48,8 @@ func runWithShelf(m *testing.M) int {
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 
-	if err := stageShelf(dir); err != nil {
-		fmt.Fprintf(os.Stderr, "dungeons shelf: %v\n", err)
+	if stageErr := stageShelf(dir); stageErr != nil {
+		fmt.Fprintf(os.Stderr, "dungeons shelf: %v\n", stageErr)
 		return 1
 	}
 	store, closeFn, err := dungeonstest.CompileShelf(dir)
