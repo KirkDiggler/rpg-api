@@ -57,13 +57,18 @@ jobs:
         make generate
         git diff --exit-code -- ':(glob)**/mock/*.go'
     
+    # A bare run: step is `bash -e {0}`, without pipefail: the pipe below
+    # would exit with the log filter's 0 and a failing test would go green.
+    # `shell: bash` runs it as `bash --noprofile --norc -eo pipefail {0}`.
     - name: Run tests with coverage
+      shell: bash
       run: |
+        # THE LINE THAT MATTERS: pipefail makes the pipe's status go test's.
+        # It holds even if the shell: line above is removed.
         set -o pipefail
         # Run tests excluding generated code, mocks, and cmd. -json feeds the
         # test budget step; the log filter prints what plain go test would
-        # (package results, build errors, a failing test's output), and
-        # pipefail keeps go test's exit status.
+        # (package results, build errors, a failing test's output).
         go test -json -race -coverprofile=coverage.out -covermode=atomic \
           $(go list ./... | grep -v /gen/ | grep -v /mock | grep -v cmd/server) \
           | tee "$RUNNER_TEMP/test.json" | ./scripts/test-budget.sh log
@@ -75,7 +80,10 @@ jobs:
     # check is byte equality) and outside the -json stream the test budget
     # judges (rpg-api#1212).
     - name: The bench keep fixtures match the pinned keepgen
-      run: RPG_MEASURE=1 go test ./internal/dungeons/ -run TestBenchFixtures -count=1
+      shell: bash
+      run: |
+        set -o pipefail # no pipe today; kept so a later pipe cannot hide a failure
+        RPG_MEASURE=1 go test ./internal/dungeons/ -run TestBenchFixtures -count=1
 
     # Every test's time, for sizing the allowlist from CI's own timing.
     - name: Upload the test timings
