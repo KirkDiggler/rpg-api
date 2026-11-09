@@ -26,9 +26,9 @@ func (s *BehaviorsSuite) SetupTest() {
 	// A real registry with its mandatory default, independent of unrelated shelf
 	// fixtures; the policy under test always enters through PutDungeon.
 	dir := s.T().TempDir()
-	tomb, err := os.ReadFile(filepath.Join(dungeonstest.ContentDir(s.T()), "reference-tomb.yaml"))
+	defaultRaw, err := os.ReadFile(filepath.Join(dungeonstest.ContentDir(s.T()), dungeons.DefaultKey+".yaml"))
 	s.Require().NoError(err)
-	s.Require().NoError(os.WriteFile(filepath.Join(dir, "reference-tomb.yaml"), tomb, 0o600))
+	s.Require().NoError(os.WriteFile(filepath.Join(dir, dungeons.DefaultKey+".yaml"), defaultRaw, 0o600))
 	shipped, err := dungeons.NewFileRegistry(dir, dungeonstest.Projector(s.T()))
 	s.Require().NoError(err)
 	s.orch, err = authoringorch.New(&authoringorch.Config{Dungeons: dungeonstest.Join(s.T(), shipped, true)})

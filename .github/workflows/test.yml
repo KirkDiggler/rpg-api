@@ -26,6 +26,9 @@ jobs:
     - name: Verify published release pins
       run: ./scripts/verify-release-pin.sh
 
+    - name: Verify the content/ allowlist
+      run: ./scripts/verify-content-allowlist.sh
+
     - name: Install dependencies
       run: |
         go mod download

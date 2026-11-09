@@ -2,9 +2,11 @@
 // the session stack needs to start a game in it: a world, the cells the
 // party walks in on, and the monsters standing in it.
 //
-// It holds NO content. The reference tomb is content/reference-tomb.yaml at
-// the repo root, loaded by internal/dungeons' file registry alongside every
-// other dungeon under RPG_CONTENT_DIR (rpg-api#806, rpg-project#256). This
+// It holds NO content. The shipped dungeons are content/*.yaml at the repo
+// root (the castle, the keep), loaded by internal/dungeons' file registry
+// alongside every other dungeon under RPG_CONTENT_DIR (rpg-api#806,
+// rpg-project#256); retired walk sites the tests play live in
+// internal/dungeons/testdata/sites (rpg-api#1205). This
 // package is "compile bytes -> world" and nothing else.
 //
 // # Why this package is thin, and where the one conversion lives

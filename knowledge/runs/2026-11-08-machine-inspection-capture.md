@@ -6,6 +6,7 @@
 
 ## Decided
 
+- Retain current dev's shipped-content reduction and the reviewed optional session checkpoint fence during readiness catch-up; do not duplicate the other session's unmerged Redis adapter or restore retired shipped fixtures — [content closure](https://github.com/KirkDiggler/rpg-api/pull/1206#pullrequestreview-5819805298).
 - Keep the record broker and capture independent consumers of one SDK batch, because a slow/failed log export must not suppress browser delivery or reinterpret game decisions — [R5–R7](https://github.com/KirkDiggler/rpg-project/pull/902).
 - Use a64-commit bounded worker with detached accepted bytes, fail-stop overflow and explicit start/drained/incomplete status; a clean drain covers accepted batches, never invented prior history — [R6–R8](https://github.com/KirkDiggler/rpg-project/pull/902).
 - Keep capture lifecycle with the server and leave Orchestrator.Drain/continuation/cache implementation unchanged, because the concurrent resident-instance work owns that path — [coordination](https://github.com/KirkDiggler/rpg-project/issues/879#issuecomment-6725835021).
@@ -13,6 +14,7 @@
 
 ## Found
 
+- The joined checkpoint/inspection provider and current content layout pass the real asynchronous behavior/capture suite and full API gates; incoming production changes merged without a source conflict — [#900](https://github.com/KirkDiggler/rpg-project/issues/900).
 - Capture tests preserve raw false/zero/empty/large-integer/HTML values, reject bad configuration, copy accepted payloads, avoid blocking on a stalled writer, report overflow/short writes/failures/panics and drain with a deadline — [#900](https://github.com/KirkDiggler/rpg-project/issues/900).
 - Real compiler/Redis/handlers/production continuation test captures two original actor configurations across manager reload and source edit, four actual choices, normal guarded completion after early answers, and the same record IDs/fields as GetRecord; no browser subscription is required — [#900](https://github.com/KirkDiggler/rpg-project/issues/900).
 - Handler and actual server-registration wiring tests refuse diagnostic reads in release mode before storage/subscription; normal gameplay still reads, and development mode remains inspectable — [#900](https://github.com/KirkDiggler/rpg-project/issues/900).

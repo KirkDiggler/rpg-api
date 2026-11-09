@@ -14,7 +14,7 @@ import (
 
 // heirloomPath is the shipped dungeon that declares intel: the reference tomb
 // plus the vault, the heirloom, and a record the captain holds.
-var heirloomPath = filepath.Join("..", "..", "content", "reference-tomb-heirloom.yaml")
+var heirloomPath = filepath.Join("..", "dungeons", "testdata", "sites", "reference-tomb-heirloom.yaml")
 
 // TestTheIntelTableIsConstructionTruth is the fact compiled field carries
 // and nothing else would notice going wrong (rpg-project#372).
