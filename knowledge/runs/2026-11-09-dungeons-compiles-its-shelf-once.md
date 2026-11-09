@@ -13,7 +13,7 @@ Issue [rpg-project#911](https://github.com/KirkDiggler/rpg-project/issues/911), 
 - The shared shelf compiles in `TestMain`, eagerly, so its cost lands on no test and the budget does not depend on which suite asks first. A focused `-run` pays one compile. — this PR
 - The shelf directory outlives each test. A test that proves a save never writes it compares against the files as staged, never a before-snapshot of its own: an earlier save of the same bytes hides a write from a snapshot. `TestMain` fails the binary when any test changed the shelf. — this PR
 - Tests about construction (a broken file, a missing default, a misnamed key, the seed) keep building their own registry over their own directory. — this PR
-- The script is copied, not shared. Switching to a shared copy later is one path in the workflow. — this PR
+- The script is copied verbatim from rpg-toolkit#2341 at `82a5970`, not shared. Switching to a shared copy later is one path in the workflow. — this PR
 - The budget step runs last in the job, so a test over budget never skips the coverage report and PR comment. — this PR
 - The bench keep check runs in CI as its own step, without `-race` (the generator is deterministic and the check is byte equality) and outside the `-json` stream the budget judges. It took about 12 s locally. — this PR (review)
 - No assertion was removed. — this PR
@@ -62,12 +62,12 @@ Mutation checks:
 
 ## Allowlist
 
-Sized from CI's own timing, as the budget is judged there: every top-level test over 5 s in the test.json of CI run [42695344817](https://github.com/KirkDiggler/rpg-api/actions/runs/42695344817) (the `test-json` artifact the workflow now uploads), 29 names. Two are in `internal/dungeons` and carry reasons:
+Sized from CI's own timing, as the budget is judged there: every top-level test over 5 s in the test.json of CI run [42695344817](https://github.com/KirkDiggler/rpg-api/actions/runs/42695344817) (the `test-json` artifact the workflow now uploads), 30 entries. Each is package-qualified (`<import path>/<TestName>`), as the toolkit script at `82a5970` requires, so one entry exempts one package's test: `TestTemplatesSuite` has two lines, `TestHandlerSuite` one. Two are in `internal/dungeons` and carry reasons:
 
 - `TestRegistrySuite` (17.4 s on CI): 38 cases in one suite; the seed row compiles the shipped content it seeded, the atlas row reads every shelf atlas.
 - `TestReferenceKeepSuite` (12.3 s on CI): saves and reads back a copy of the 130 KB reference keep, two compiles of the keep the claim is about.
 
-Six are 2.6 to 4.7 s locally and 5.0 to 6.5 s on CI: "over 5 s on CI runners (~1.5x local); rpg-api#1213". The other 21 say "over budget, to be sized: rpg-api#1213". The largest on CI: `TestCharacterCreationSuite` (integration/character) 149 s, `TestSessionStackSuite` (orchestrators/lobby) 93 s, `TestValidateOnlyWireSuite` (authoring handlers) 55 s.
+Seven are 2.6 to 4.7 s locally and 5.0 to 6.5 s on CI: "over 5 s on CI runners (~1.5x local); rpg-api#1213". The other 21 say "over budget, to be sized: rpg-api#1213". The largest on CI: `TestCharacterCreationSuite` (integration/character) 149 s, `TestSessionStackSuite` (orchestrators/lobby) 93 s, `TestValidateOnlyWireSuite` (authoring handlers) 55 s.
 
 ## Budget proof
 
@@ -76,7 +76,7 @@ Six are 2.6 to 4.7 s locally and 5.0 to 6.5 s on CI: "over 5 s on CI runners (~1
 
 ## Found
 
-- CI runs a test up to 1.6 times its local time, so a test at 4 s locally flaps on the 5 s budget. Tests at 3 to 5 s on CI can still flip from run to run.
+- CI runs a test up to about twice its local time, so a test at 4 s locally flaps on the 5 s budget. Tests at 3 to 5 s on CI can still flip from run to run.
 - An allowlist name matches that test in every package: `TestTemplatesSuite` is allowed in `orchestrators/authoring` (10.4 s) and so also in `sessionworld` (4.0 s).
 - Whole-suite local time with CI's flags was 234 s wall before rpg-api#1210 merged. `orchestrators/lobby` (61 s) and `integration/character` (137 s package) are now the largest packages.
 

@@ -1,36 +1,38 @@
 # Top-level tests allowed over the CI test budget (TEST_BUDGET in
-# .github/workflows/test.yml). One test per line, its reason after "#".
-# A slow test is a finding: size the fixture to the cases, or keep it here
-# with a reason (rpg-project#907). The budget is judged on CI's timing: the
-# seconds below are from CI run 42695344817's test.json (the test-json artifact),
-# -race with atomic coverage.
+# .github/workflows/test.yml). One test per line, as its package's import
+# path, a slash and the test name, its reason after "#". An entry exempts
+# that one package's test only. A slow test is a finding: size the fixture
+# to the cases, or keep it here with a reason (rpg-project#907). The budget
+# is judged on CI's timing: the seconds below are from CI run 42695344817's
+# test.json (the test-json artifact), -race with atomic coverage.
 
-TestAcceptance_AnOutOfReachGuardNamesHisApproach  # over budget, to be sized: rpg-api#1213; internal/integration/session 7.93s
-TestAcceptance_TheGateGuardAnswersTheBump  # over budget, to be sized: rpg-api#1213; internal/integration/session 26.01s
-TestAcceptance_TheGateGuardChecksArrivals  # over budget, to be sized: rpg-api#1213; internal/integration/session 30.55s
-TestAcceptance_TheGuardHoldsTheGate  # over budget, to be sized: rpg-api#1213; internal/integration/session 8.72s
-TestAcceptance_TheGuardHoldsTheGatesPassage  # over budget, to be sized: rpg-api#1213; internal/integration/session 11.86s
-TestAcceptance_TheLetterArrivesAtRoundSixAndNotBefore  # over budget, to be sized: rpg-api#1213; internal/integration/session 10.1s
-TestCharacterCreationSuite  # over budget, to be sized: rpg-api#1213; internal/integration/character 148.96s
-TestDivineFavorSuite  # over 5 s on CI runners (~1.5x local); rpg-api#1213; internal/integration/session 5.03s
-TestFaerieFireSuite  # over 5 s on CI runners (~1.5x local); rpg-api#1213; internal/integration/session 6.41s
-TestHairCustomization_PersistsDraftFinalizationAndGetCharacter  # over 5 s on CI runners (~1.5x local); rpg-api#1213; internal/integration/character 6.07s
-TestHandlerSuite  # over budget, to be sized: rpg-api#1213; internal/handlers/dnd5e/lobby/v1alpha1 15.14s
-TestHarness_StartsAndConnects  # over budget, to be sized: rpg-api#1213; internal/integration/harness 10.02s
-TestLevelUpClassesSuite  # over budget, to be sized: rpg-api#1213; internal/integration/character 13.7s
-TestOwnershipGates_AForeignUnprojectableSheetAnswersLikeAMissingOne  # over 5 s on CI runners (~1.5x local); rpg-api#1213; internal/integration/character 5.75s
-TestReferenceKeepSuite  # saves and reads back a copy of the 130 KB reference keep: two compiles of the keep the claim is about; internal/dungeons 12.27s
-TestRegistrySuite  # 38 cases in one suite; the seed row compiles the shipped content it seeded, the atlas row reads every shelf atlas; internal/dungeons 17.39s
-TestSandboxSeedSuite  # over budget, to be sized: rpg-api#1213; internal/integration/character 12.25s
-TestScenerySuite  # over budget, to be sized: rpg-api#1213; internal/orchestrators/authoring 26.77s
-TestSceneryWireSuite  # over budget, to be sized: rpg-api#1213; internal/handlers/dnd5e/authoring/v1alpha1 8.19s
-TestSessionStackSuite  # over budget, to be sized: rpg-api#1213; internal/orchestrators/lobby 93.07s
-TestSharedThrowCrossesServerInstances  # over budget, to be sized: rpg-api#1213; internal/integration/sessionpresentation 22.79s
-TestShieldOfFaithSuite  # over 5 s on CI runners (~1.5x local); rpg-api#1213; internal/integration/session 6.08s
-TestStructuralLayoutWireSuite  # over budget, to be sized: rpg-api#1213; internal/handlers/dnd5e/authoring/v1alpha1 9.21s
-TestTemplatesSuite  # over budget, to be sized: rpg-api#1213; internal/orchestrators/authoring 18.13s, internal/sessionworld 6.46s
-TestTwoStoresWireSuite  # over budget, to be sized: rpg-api#1213; internal/handlers/dnd5e/authoring/v1alpha1 26.61s
-TestUpdateAppearance_HidesForeignDraftExistence  # over 5 s on CI runners (~1.5x local); rpg-api#1213; internal/integration/character 6.48s
-TestValidateOnlyWireSuite  # over budget, to be sized: rpg-api#1213; internal/handlers/dnd5e/authoring/v1alpha1 54.51s
-TestWallGeometryWireSuite  # over budget, to be sized: rpg-api#1213; internal/handlers/dnd5e/authoring/v1alpha1 18.07s
-TestWorldAssetSceneryWireSuite  # over budget, to be sized: rpg-api#1213; internal/handlers/dnd5e/authoring/v1alpha1 8.42s
+github.com/KirkDiggler/rpg-api/internal/dungeons/TestReferenceKeepSuite  # saves and reads back a copy of the 130 KB reference keep: two compiles of the keep the claim is about; 12.27s
+github.com/KirkDiggler/rpg-api/internal/dungeons/TestRegistrySuite  # 38 cases in one suite; the seed row compiles the shipped content it seeded, the atlas row reads every shelf atlas; 17.39s
+github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1/TestSceneryWireSuite  # over budget, to be sized: rpg-api#1213; 8.19s
+github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1/TestStructuralLayoutWireSuite  # over budget, to be sized: rpg-api#1213; 9.21s
+github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1/TestTwoStoresWireSuite  # over budget, to be sized: rpg-api#1213; 26.61s
+github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1/TestValidateOnlyWireSuite  # over budget, to be sized: rpg-api#1213; 54.51s
+github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1/TestWallGeometryWireSuite  # over budget, to be sized: rpg-api#1213; 18.07s
+github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1/TestWorldAssetSceneryWireSuite  # over budget, to be sized: rpg-api#1213; 8.42s
+github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/lobby/v1alpha1/TestHandlerSuite  # over budget, to be sized: rpg-api#1213; 15.14s
+github.com/KirkDiggler/rpg-api/internal/integration/character/TestCharacterCreationSuite  # over budget, to be sized: rpg-api#1213; 148.96s
+github.com/KirkDiggler/rpg-api/internal/integration/character/TestHairCustomization_PersistsDraftFinalizationAndGetCharacter  # over 5 s on CI runners (~1.5x local); rpg-api#1213; 6.07s
+github.com/KirkDiggler/rpg-api/internal/integration/character/TestLevelUpClassesSuite  # over budget, to be sized: rpg-api#1213; 13.7s
+github.com/KirkDiggler/rpg-api/internal/integration/character/TestOwnershipGates_AForeignUnprojectableSheetAnswersLikeAMissingOne  # over 5 s on CI runners (~1.5x local); rpg-api#1213; 5.75s
+github.com/KirkDiggler/rpg-api/internal/integration/character/TestSandboxSeedSuite  # over budget, to be sized: rpg-api#1213; 12.25s
+github.com/KirkDiggler/rpg-api/internal/integration/character/TestUpdateAppearance_HidesForeignDraftExistence  # over 5 s on CI runners (~1.5x local); rpg-api#1213; 6.48s
+github.com/KirkDiggler/rpg-api/internal/integration/harness/TestHarness_StartsAndConnects  # over budget, to be sized: rpg-api#1213; 10.02s
+github.com/KirkDiggler/rpg-api/internal/integration/sessionpresentation/TestSharedThrowCrossesServerInstances  # over budget, to be sized: rpg-api#1213; 22.79s
+github.com/KirkDiggler/rpg-api/internal/integration/session/TestAcceptance_AnOutOfReachGuardNamesHisApproach  # over budget, to be sized: rpg-api#1213; 7.93s
+github.com/KirkDiggler/rpg-api/internal/integration/session/TestAcceptance_TheGateGuardAnswersTheBump  # over budget, to be sized: rpg-api#1213; 26.01s
+github.com/KirkDiggler/rpg-api/internal/integration/session/TestAcceptance_TheGateGuardChecksArrivals  # over budget, to be sized: rpg-api#1213; 30.55s
+github.com/KirkDiggler/rpg-api/internal/integration/session/TestAcceptance_TheGuardHoldsTheGate  # over budget, to be sized: rpg-api#1213; 8.72s
+github.com/KirkDiggler/rpg-api/internal/integration/session/TestAcceptance_TheGuardHoldsTheGatesPassage  # over budget, to be sized: rpg-api#1213; 11.86s
+github.com/KirkDiggler/rpg-api/internal/integration/session/TestAcceptance_TheLetterArrivesAtRoundSixAndNotBefore  # over budget, to be sized: rpg-api#1213; 10.1s
+github.com/KirkDiggler/rpg-api/internal/integration/session/TestDivineFavorSuite  # over 5 s on CI runners (~1.5x local); rpg-api#1213; 5.03s
+github.com/KirkDiggler/rpg-api/internal/integration/session/TestFaerieFireSuite  # over 5 s on CI runners (~1.5x local); rpg-api#1213; 6.41s
+github.com/KirkDiggler/rpg-api/internal/integration/session/TestShieldOfFaithSuite  # over 5 s on CI runners (~1.5x local); rpg-api#1213; 6.08s
+github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring/TestScenerySuite  # over budget, to be sized: rpg-api#1213; 26.77s
+github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring/TestTemplatesSuite  # over budget, to be sized: rpg-api#1213; 18.13s
+github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby/TestSessionStackSuite  # over budget, to be sized: rpg-api#1213; 93.07s
+github.com/KirkDiggler/rpg-api/internal/sessionworld/TestTemplatesSuite  # over 5 s on CI runners (~1.5x local); rpg-api#1213; 6.46s

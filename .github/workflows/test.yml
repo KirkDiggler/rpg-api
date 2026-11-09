@@ -14,7 +14,8 @@ on:
 # fails the job too. A slow test is a finding: size the fixture to the cases
 # it proves, or name it with a reason (rpg-project#907). The script and its
 # cases are copied verbatim from rpg-toolkit scripts/test-budget.sh at
-# c056746 (rpg-toolkit#2341); recopy when it changes there. Locally:
+# 82a5970 (rpg-toolkit#2341); recopy when it changes there. Entries are
+# package-qualified: <import path>/<TestName>  # reason. Locally:
 #   go test -race -json ./... | ./scripts/test-budget.sh check -allow testbudget.allow
 env:
   TEST_BUDGET: 5s
