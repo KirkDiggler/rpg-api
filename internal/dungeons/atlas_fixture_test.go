@@ -95,11 +95,12 @@ func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBefo
 	s.Require().NotEmpty(sites)
 	files = append(files, sites...)
 
-	// Each shipped file's atlas is read off the shipped store's entry: the
+	// Each shipped file's atlas is read off the package's shared shelf
+	// (shelf_test.go), which TestMain compiled over these same files: the
 	// same compile and projection a validate-only Put ran when the fixtures
 	// were captured. A Put under a shipped key is now the reference refusal
 	// (design R20), so the store's own entry is the answer to compare.
-	r := dungeonstest.ShippedStore(s.T())
+	r := shelf.store
 	for _, f := range files {
 		key := strings.TrimSuffix(filepath.Base(f), ".yaml")
 		raw, err := os.ReadFile(f)

@@ -24,6 +24,22 @@ var benchKeys = []string{benchKeep, "bench-keep-30k", "bench-keep-garrison"}
 // benchKeep is the keep-scale fixture.
 const benchKeep = "bench-keep"
 
+// measureOnly skips a bench fixture test unless RPG_MEASURE=1, the knob the
+// measure tests under internal/integration/session use. The bench keeps are
+// the measurement's own input, and checking them costs what measuring does:
+// regenerating the 30k ceiling alone took 28.6 s under -race, and the two
+// tests together 45 s of the package's 199 s (rpg-project#911). A measure
+// run checks its fixtures first:
+//
+//	RPG_MEASURE=1 go test ./internal/dungeons/ -run TestBenchFixtures -count=1
+func measureOnly(t *testing.T) {
+	t.Helper()
+
+	if os.Getenv("RPG_MEASURE") != "1" {
+		t.Skip("bench keep fixtures: set RPG_MEASURE=1 to check them (rpg-project#911)")
+	}
+}
+
 // benchDir is where the fixtures are kept: a subdirectory of the content
 // directory, which NewFileRegistry does not read, so a default boot does not
 // compile and project them. The benchmark harness copies them onto its own
@@ -42,6 +58,8 @@ func benchDir(t *testing.T) string {
 // both files are regenerated with the command in their headers; never edit
 // them by hand.
 func TestBenchFixtures_MatchGenerator(t *testing.T) {
+	measureOnly(t)
+
 	for _, key := range benchKeys {
 		t.Run(key, func(t *testing.T) {
 			file, err := os.ReadFile(filepath.Join(benchDir(t), key+".yaml")) //nolint:gosec // fixed test path
@@ -72,6 +90,8 @@ func TestBenchFixtures_MatchGenerator(t *testing.T) {
 // compile is proven by the generator's own proof in
 // TestBenchFixtures_MatchGenerator, and its listing by the harness (T9).
 func TestBenchFixtures_ListOnAShelf(t *testing.T) {
+	measureOnly(t)
+
 	shelf := t.TempDir()
 	stage := func(src string) {
 		raw, err := os.ReadFile(src) //nolint:gosec // fixed test paths
