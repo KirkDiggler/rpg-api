@@ -12,9 +12,7 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/mock/gomock"
 
-	"github.com/KirkDiggler/rpg-api/internal/apierr"
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	lobbyhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/lobby/v1alpha1"
@@ -22,7 +20,6 @@ import (
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
-	charactermock "github.com/KirkDiggler/rpg-api/internal/repositories/character/mock"
 	lobbyrepo "github.com/KirkDiggler/rpg-api/internal/repositories/lobby"
 	toolkitchar "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/races"
@@ -41,8 +38,7 @@ type HandlerSuite struct {
 
 	ctx       context.Context
 	cancel    context.CancelFunc
-	ctrl      *gomock.Controller
-	charRepo  *charactermock.MockRepository
+	charRepo  characterrepo.Repository
 	lobbyRepo lobbyrepo.Repository
 	broker    *lobbyorch.Broker
 	handler   *lobbyhandler.Handler
@@ -61,14 +57,19 @@ func (s *HandlerSuite) SetupTest() {
 	s.cancel = cancel
 	s.ctx = worldcontext.With(auth.WithPlayerID(base, "alice"), worldcontext.Value{WorldID: testWorldID})
 
-	s.ctrl = gomock.NewController(s.T())
-	s.charRepo = charactermock.NewMockRepository(s.ctrl)
 	s.lobbyRepo = lobbyrepo.NewInMemory()
 	s.broker = lobbyorch.NewBroker()
 
 	mr := miniredis.RunT(s.T())
 	redisClient := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
 	s.T().Cleanup(func() { _ = redisClient.Close() })
+	// The Redis character repository on the session's own Redis, as the
+	// server wires it: the fenced session save lands seated sheets in the
+	// same store as the world (rpg-project#879 S12a), so a mocked character
+	// store would hold sheets the session never sees.
+	charRepo, err := characterrepo.NewRedis(&characterrepo.RedisConfig{Client: redisClient})
+	s.Require().NoError(err)
+	s.charRepo = charRepo
 	sessOrch, err := sessionorch.New(sessionorch.Config{
 		Redis: redisClient, Characters: s.charRepo, TTL: 24 * time.Hour,
 		PresentationIDs: idgen.NewSequential("presentation"),
@@ -94,76 +95,36 @@ func (s *HandlerSuite) SetupTest() {
 	})
 	s.Require().NoError(err)
 	s.handler = h
-
-	// StartEncounter's Phase 1 demo-vendor placement (rpg-api#903) seats a
-	// KindWorld member the SDK's own announcer treats like any other
-	// non-monster participant when building narrative-beat casts: it looks
-	// the ID up as a character, tolerates ErrNoCharacter, and moves on. Armed
-	// suite-wide, the same defensive way expectCharacter's own Update call
-	// is, so no test that reaches StartEncounter has to know this detail.
-	s.expectCharacterNotFound("demo-merchant-1")
 }
 
 func (s *HandlerSuite) TearDownTest() {
 	s.cancel()
-	s.ctrl.Finish()
 }
 
-// expectCharacter arms s.charRepo to return a character owned by playerID
-// with the given display name and HP on any Get(characterID) call — AnyTimes
-// rather than the gomock default of exactly once, because a call this arms
-// for may be read more than once (CreateLobby's resolveCharacter, PLUS the
-// session SDK's own Join, which loads a character's sheet for placement and
-// again for the standing/contact check triggered by arriving in sight of
-// another member — an internal call count this package's tests should not
-// have to pin).
-func (s *HandlerSuite) expectCharacter(characterID, playerID, name string, hp, maxHP int) {
-	s.charRepo.EXPECT().
-		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
-		Return(&characterrepo.GetOutput{
-			Character: &entities.Character{
-				Data: &toolkitchar.Data{
-					// ID as well as the rest, because a repository that
-					// answers Get(id) with a sheet carrying a different id —
-					// or none — has violated its contract, and the session
-					// SDK now says so rather than attaching whatever came
-					// back (rpg-toolkit#1261). This fake had always returned
-					// an ID-less sheet; nothing depended on it, which is
-					// exactly why nothing noticed.
-					ID: characterID,
-					// Level 1, not the zero value. A sheet claiming a level with
-					// no record behind it is refused at load (rpg-toolkit#1766,
-					// R2.7), and level 0 is such a claim -- it says the character
-					// has taken no levels at all. Only level 1 predates the
-					// record and has its single entry synthesized (R2.6), which
-					// is what this minimal fake wants.
-					Level:    1,
-					RaceID:   races.Human,
-					PlayerID: playerID, Name: name, HitPoints: hp, MaxHitPoints: maxHP,
-				},
-			},
-		}, nil).AnyTimes()
-	// Session Join persists each character's provider-owned first-admission
-	// recovery before seating. The handler suite uses the real Manager over
-	// this mock adapter, so arm Update the same AnyTimes way as Get whether or
-	// not a given test reaches StartEncounter.
-	s.charRepo.EXPECT().
-		Update(gomock.Any(), gomock.Any()).
-		Return(&characterrepo.UpdateOutput{Character: &entities.Character{Data: &toolkitchar.Data{ID: characterID, Level: 1}}}, nil).
-		AnyTimes()
-}
-
-func (s *HandlerSuite) expectCharacterNotFound(characterID string) {
-	s.charRepo.EXPECT().
-		Get(gomock.Any(), characterrepo.GetInput{ID: characterID}).
-		Return(nil, apierr.NotFound("character not found")).AnyTimes()
+// seedCharacter stores a character owned by playerID with the given display
+// name and HP, replacing any earlier seed of the same id. Level 1 and an id
+// on the sheet, because the session SDK refuses a sheet without either
+// (rpg-toolkit#1261, rpg-toolkit#1766). A character never seeded is absent,
+// which is every not-found case (the demo vendor's lookup included).
+func (s *HandlerSuite) seedCharacter(characterID, playerID, name string, hp, maxHP int) {
+	char := &entities.Character{Data: &toolkitchar.Data{
+		ID: characterID, Level: 1, RaceID: races.Human,
+		PlayerID: playerID, Name: name, HitPoints: hp, MaxHitPoints: maxHP,
+	}}
+	if _, err := s.charRepo.Get(context.Background(), characterrepo.GetInput{ID: characterID}); err == nil {
+		_, err = s.charRepo.Update(context.Background(), characterrepo.UpdateInput{Character: char})
+		s.Require().NoError(err)
+		return
+	}
+	_, err := s.charRepo.Create(context.Background(), characterrepo.CreateInput{Character: char})
+	s.Require().NoError(err)
 }
 
 // createLobby drives a real CreateLobby RPC (arming the character-repo mock)
 // and returns the resulting lobby_id/join_ref, for tests of the RPCs that
 // need an existing lobby.
 func (s *HandlerSuite) createLobby(playerID, characterID, name string) (lobbyID, joinRef string) {
-	s.expectCharacter(characterID, playerID, name, 12, 12)
+	s.seedCharacter(characterID, playerID, name, 12, 12)
 	ctx := playerCtx(playerID)
 	resp, err := s.handler.CreateLobby(ctx, &lobbyv1alpha1.CreateLobbyRequest{
 		CampaignId: "campaign-1", CharacterId: characterID,

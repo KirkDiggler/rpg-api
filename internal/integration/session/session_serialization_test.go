@@ -38,7 +38,7 @@ func (h *pausedEncounterSave) ProcessPipelineHook(next goredis.ProcessPipelineHo
 
 func (h *pausedEncounterSave) ProcessHook(next goredis.ProcessHook) goredis.ProcessHook {
 	return func(ctx context.Context, cmd goredis.Cmder) error {
-		if cmd.Name() == "set" && len(cmd.Args()) > 1 && cmd.Args()[1] == h.key {
+		if writesKey(cmd, h.key) {
 			h.once.Do(func() {
 				close(h.entered)
 				select {
@@ -49,6 +49,20 @@ func (h *pausedEncounterSave) ProcessHook(next goredis.ProcessHook) goredis.Proc
 		}
 		return next(ctx, cmd)
 	}
+}
+
+// writesKey reports whether cmd writes key: a plain SET of it, or the fenced
+// save's script (EVALSHA/EVAL sha-or-body numkeys key...), whose first key is
+// the encounter blob (rpg-project#879 S12a).
+func writesKey(cmd goredis.Cmder, key string) bool {
+	args := cmd.Args()
+	switch cmd.Name() {
+	case "set":
+		return len(args) > 1 && args[1] == key
+	case "evalsha", "eval":
+		return len(args) > 3 && args[3] == key
+	}
+	return false
 }
 
 type SessionSerializationSuite struct{ suite.Suite }

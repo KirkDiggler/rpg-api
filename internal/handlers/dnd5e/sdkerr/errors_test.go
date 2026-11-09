@@ -193,6 +193,9 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// to wait out, which is what sets this apart from FailedPrecondition.
 		{"ErrStoryTrimmed", sdk.ErrStoryTrimmed, codes.OutOfRange},
 
+		// ABORTED -- a fenced save refused as stale; nothing landed.
+		{"ErrStaleCheckpoint", sdk.ErrStaleCheckpoint, codes.Aborted},
+
 		// UNAVAILABLE -- partial write; retry guidance rides the SaveReport.
 		{"ErrSaveFailed", sdk.ErrSaveFailed, codes.Unavailable},
 
@@ -428,4 +431,20 @@ func TestStatusError_DoorHeldCarriesItsReason(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, codes.FailedPrecondition, st.Code())
 	require.Equal(t, "Guard bars the door", st.Message(), "the reason alone, without the verb's wrap")
+}
+
+// TestStatusError_StaleSaveIsAbortedNotUnavailable pins rpg-project#879 S12a:
+// the SDK's SaveError for a stale fenced save unwraps to BOTH ErrSaveFailed
+// and ErrStaleCheckpoint, and the client must hear ABORTED (nothing landed,
+// retry the verb), never UNAVAILABLE (landed partially).
+func TestStatusError_StaleSaveIsAbortedNotUnavailable(t *testing.T) {
+	stale := fmt.Errorf("move: %w", &sdk.SaveError{
+		Report: sdk.SaveReport{Failed: []string{"encounter:enc-1"}},
+		Err:    fmt.Errorf("saving world: %w", sdk.ErrStaleCheckpoint),
+	})
+	require.ErrorIs(t, stale, sdk.ErrSaveFailed, "the premise: a stale save is also a failed save")
+	st, ok := status.FromError(StatusError(stale))
+	require.True(t, ok)
+	require.Equal(t, codes.Aborted, st.Code())
+	require.Contains(t, st.Message(), "stale checkpoint")
 }
