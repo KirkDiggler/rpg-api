@@ -114,7 +114,15 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 		t.Setenv(sessionorch.ActBufferEnv, v)
 	}
 	const warm = 3
-	const pathLen = 8 // a 30 ft walker pays a world round every six cells
+	// RPG_MEASURE_PATH is the walk's length in cells (default 8; a 30 ft
+	// walker pays a world round every six cells), so a run at 1, 4 and 8
+	// separates what a verb pays once from what each step pays.
+	pathLen := 8
+	if v := os.Getenv("RPG_MEASURE_PATH"); v != "" {
+		_, err := fmt.Sscanf(v, "%d", &pathLen)
+		require.NoError(t, err)
+		require.Positive(t, pathLen, "RPG_MEASURE_PATH")
+	}
 
 	client := goredis.NewClient(&goredis.Options{Addr: addr})
 	t.Cleanup(func() { _ = client.Close() })
@@ -375,7 +383,100 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 	if reloadOn {
 		b.WriteString(reloadTable(reloads, moveTotals))
 	}
+	stepRows := make([]stepRow, 0, len(rows))
+	for _, r := range rows {
+		stepRows = append(stepRows, stepRow{key: r.key, mode: r.mode, answer: r.answer, steps: r.steps, continues: r.continues})
+	}
+	b.WriteString(perStepTable(stepRows, pathLen))
 	t.Log(b.String())
+}
+
+// stepRow is one mode's answers beside the steps each answer covered.
+type stepRow struct {
+	key, mode string
+	answer    []time.Duration
+	steps     []int
+	continues []int
+}
+
+// perStepTable splits each mode's answer by the steps it covered and by
+// whether it continued: p50 per group, and a least-squares line answer =
+// fixed + steps x per-step over the Moves that continued. A continued S1
+// answer is the load plus the walker's own steps up to the step that pays a
+// round, nothing saved, so the slope is the live cost of one non-raising
+// step and the intercept what the verb pays once before its first step. An
+// answer that did not continue (the walk ended before a pace came due, or
+// AnswerWhole) also carries the save and the commit, so it is tabled but
+// left out of the line.
+func perStepTable(rows []stepRow, pathLen int) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "\nper step (path %d cells): answer by steps answered\n", pathLen)
+	fmt.Fprintf(&b, "| keep | mode | steps answered | continued | n | answer p50 | per step (p50 / steps) |\n|---|---|---|---|---|---|---|\n")
+	for _, r := range rows {
+		by := map[[2]int][]time.Duration{}
+		for i := range r.answer {
+			k := [2]int{r.steps[i], r.continues[i]}
+			by[k] = append(by[k], r.answer[i])
+		}
+		groups := make([][2]int, 0, len(by))
+		for k := range by {
+			groups = append(groups, k)
+		}
+		slices.SortFunc(groups, func(a, c [2]int) int {
+			if a[1] != c[1] {
+				return c[1] - a[1]
+			}
+			return a[0] - c[0]
+		})
+		for _, k := range groups {
+			p := pct(by[k], 50)
+			per := "-"
+			if k[0] > 0 {
+				per = ms(p / time.Duration(k[0]))
+			}
+			fmt.Fprintf(&b, "| %s | %s | %d | %v | %d | %s | %s |\n", r.key, r.mode, k[0], k[1] == 1, len(by[k]), ms(p), per)
+		}
+	}
+	fmt.Fprintf(&b, "\n| keep | mode | fit over continued moves: fixed per verb | fit: per step | moves fitted |\n|---|---|---|---|---|\n")
+	for _, r := range rows {
+		var xs []int
+		var ys []time.Duration
+		for i := range r.answer {
+			if r.continues[i] == 1 {
+				xs, ys = append(xs, r.steps[i]), append(ys, r.answer[i])
+			}
+		}
+		fixed, slope, ok := fitLine(xs, ys)
+		if !ok {
+			fmt.Fprintf(&b, "| %s | %s | - | - | %d |\n", r.key, r.mode, len(xs))
+			continue
+		}
+		fmt.Fprintf(&b, "| %s | %s | %.2f ms | %.2f ms | %d |\n", r.key, r.mode, fixed, slope, len(xs))
+	}
+	return b.String()
+}
+
+// fitLine is ordinary least squares of y (ms) on x; ok is false when x does
+// not vary.
+func fitLine(x []int, y []time.Duration) (intercept, slope float64, ok bool) {
+	n := float64(len(x))
+	if n < 2 {
+		return 0, 0, false
+	}
+	var sx, sy, sxx, sxy float64
+	for i := range x {
+		xi, yi := float64(x[i]), float64(y[i])/float64(time.Millisecond)
+		sx += xi
+		sy += yi
+		sxx += xi * xi
+		sxy += xi * yi
+	}
+	d := n*sxx - sx*sx
+	if d == 0 {
+		return 0, 0, false
+	}
+	slope = (n*sxy - sx*sy) / d
+	return (sy - slope*sx) / n, slope, true
 }
 
 // countedRunner is the in-process continuation runner with a count of the
