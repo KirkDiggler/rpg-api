@@ -78,6 +78,10 @@ import (
 // seven doors, 182 for the keep's), every one marked crossing; no doorway was
 // removed and the other eleven files answer their fixtures unchanged.
 //
+// The courtyard ground fold (rpg-project#874) was captured using reviewed API
+// 2355058 with the new Studio-authored castle source. Only region-courtyard's
+// ground field changed; a structural comparison kept every other atlas fact.
+//
 // reference-raider-camp was rebuilt as current source for #866: the same 112
 // floor cells and three regions, now with structural walls/doors and a placed
 // letter. Its atlas was captured with the pre-adoption released dependency

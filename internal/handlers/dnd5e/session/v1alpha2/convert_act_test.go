@@ -274,7 +274,8 @@ func everyBody() map[string]bodyCase {
 }
 
 func perceptionSDK() sdk.Perception {
-	region := sdk.AtlasRegion{ID: "gatehouse", Name: "Gatehouse", Cells: []spatial.Position{cell}, Archetype: "castle", Lighting: sdk.Lighting{Intensity: 0.5}}
+	region := sdk.AtlasRegion{ID: "gatehouse", Name: "Gatehouse", Cells: []spatial.Position{cell}, Archetype: "castle", Lighting: sdk.Lighting{Intensity: 0.5},
+		Ground: &sdk.RegionGround{BaseRef: "grass", Paint: []sdk.GroundPaint{{Ref: "dirt", Cells: []spatial.Position{cell}}}}}
 	prop := sdk.AtlasProp{ID: "brazier", Holdable: true, Ref: "props:brazier", At: cell, BlocksMovement: true, BlocksLineOfSight: false, Facing: "north", Offset: [3]float64{0.1, -0.2, 0.3}}
 	boundary := sdk.AtlasBoundary{From: cell, To: spatial.Position{X: 4, Y: -2}, BlocksMovement: true, BlocksLineOfSight: true, Height: 2}
 	segment := sdk.AtlasSegment{From: sdk.AxialPointF{Q: 0.5, R: 1}, To: sdk.AxialPointF{Q: 1.5, R: 1}, Height: 1.5}
@@ -310,7 +311,8 @@ func perceptionSDK() sdk.Perception {
 
 func perceptionProto() *sessionpb.Perception {
 	cells := []*sessionpb.Position{cellP}
-	region := &sessionpb.AtlasRegion{Id: "gatehouse", Name: "Gatehouse", Cells: cells, Archetype: "castle", Lighting: &sessionpb.Lighting{Intensity: 0.5}}
+	region := &sessionpb.AtlasRegion{Id: "gatehouse", Name: "Gatehouse", Cells: cells, Archetype: "castle", Lighting: &sessionpb.Lighting{Intensity: 0.5},
+		Ground: &sessionpb.RegionGround{BaseRef: "grass", Paint: []*sessionpb.GroundPaint{{Ref: "dirt", Cells: cells}}}}
 	prop := &sessionpb.AtlasProp{Id: "brazier", Holdable: true, Ref: "props:brazier", At: cellP, BlocksMovement: true, Facing: "north", OffsetX: 0.1, OffsetY: -0.2, OffsetZ: 0.3}
 	boundary := &sessionpb.AtlasBoundary{From: cellP, To: &sessionpb.Position{X: 4, Y: -2}, BlocksMovement: true, BlocksLineOfSight: true, Height: 2}
 	segment := &sessionpb.AtlasSegment{From: &sessionpb.AxialPoint{Q: 0.5, R: 1}, To: &sessionpb.AxialPoint{Q: 1.5, R: 1}, Height: 1.5}
