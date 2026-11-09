@@ -17,7 +17,7 @@ rpg-toolkit/encounter` module and everything built on it (see
 [`encounter.md`](./encounter.md), [`authoring.md`](./authoring.md)).
 The world it starts in comes from the content registry (`internal/dungeons`,
 rpg-api#806): `StartEncounterRequest.dungeon_key` picks a registered dungeon
-(empty → `reference-tomb`, unknown → `NotFound`), and
+(empty → `the-mad-king`, the default since rpg-api#1205; unknown → `NotFound`), and
 `LobbyService.ListDungeons` answers from the same registry, ungated — see
 [`authoring-service.md`](./authoring-service.md).
 

@@ -3,9 +3,9 @@ package dungeons_test
 import (
 	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
+
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
@@ -20,31 +20,28 @@ const raiderCampKey = "reference-raider-camp"
 
 // shippedRaiderCamp is the real content file, so these tests run on what
 // the server boots with rather than a fixture that could drift from it.
-var shippedRaiderCamp = filepath.Join("..", "..", "content", raiderCampKey+".yaml")
+var shippedRaiderCamp = filepath.Join("testdata", "sites", raiderCampKey+".yaml")
 
-// TestRaiderCampFixture_IsByteIdenticalToTheToolkits is the heirloom's pin
-// for the camp, for the heirloom's reason: this file and the toolkit's
-// dungeonspec testdata copy are ONE fixture kept in two places, and the walk
-// only means anything if the rules the toolkit proved on its copy are the
-// rules the game boots on this one.
-//
-// Read out of the PINNED module (go list resolves go.mod's own version),
-// never a local checkout — a checkout routinely sits on an unmerged branch,
-// and this must compare against the version actually built.
-func (s *RegistrySuite) TestRaiderCampFixture_IsByteIdenticalToTheToolkits() {
-	ours, err := os.ReadFile(shippedRaiderCamp)
-	s.Require().NoError(err, "the shipped raider camp fixture must exist")
-
-	out, err := exec.CommandContext(s.T().Context(), "go", "list", "-m", "-f", "{{.Dir}}",
-		"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter").Output()
-	s.Require().NoError(err, "resolve the pinned encounter module's directory via go list")
-	theirs, err := os.ReadFile(filepath.Clean(filepath.Join(
-		strings.TrimSpace(string(out)), "dungeonspec", "testdata", raiderCampKey+".yaml")))
-	s.Require().NoError(err, "the pinned encounter module must carry the fixture this one copies")
-
-	s.Equal(string(theirs), string(ours),
-		"the shipped raider camp fixture has drifted from the toolkit's — copy the toolkit's over it, "+
-			"or change both in the same wave")
+// The served camp uses current authored policy, including its reserves. The
+// toolkit's v2 geometry/parser example is historical, not a live-format oracle.
+// The handler-level hold-out acceptance still plays the actual letter and kill
+// paths; this check prevents either from relying on implicit kind defaults.
+func (s *RegistrySuite) TestRaiderCampFixture_AuthorsCombatForRosterAndReserves() {
+	raw, err := os.ReadFile(shippedRaiderCamp)
+	s.Require().NoError(err)
+	compiled, err := dungeonspec.Load(raw)
+	s.Require().NoError(err)
+	s.Require().NotEmpty(compiled.Monsters)
+	for _, actor := range compiled.Monsters {
+		s.Require().NotNil(actor.Behaviors, "%s has explicit policy", actor.ID)
+		s.Require().Len(actor.Behaviors.Instances, 1)
+		instance := actor.Behaviors.Instances[0].Instance
+		s.Equal("combat", instance.ID)
+		s.Equal("site:behaviors:raider-combat", instance.Recipe.Ref.String())
+		s.NotEmpty(instance.Table["time"])
+		s.Empty(actor.Table, "retired policy never crosses launch")
+		s.Nil(actor.Machine)
+	}
 }
 
 // TestRaiderCampFixture_CompilesAndDeclaresItsScenarioEnding drives the

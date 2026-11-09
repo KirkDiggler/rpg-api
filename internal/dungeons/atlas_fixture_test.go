@@ -81,10 +81,23 @@ import (
 // The courtyard ground fold (rpg-project#874) was captured using reviewed API
 // 2355058 with the new Studio-authored castle source. Only region-courtyard's
 // ground field changed; a structural comparison kept every other atlas fact.
+//
+// reference-raider-camp was rebuilt as current source for #866: the same 112
+// floor cells and three regions, now with structural walls/doors and a placed
+// letter. Its atlas was captured with the pre-adoption released dependency
+// graph and policy fields removed, then compared byte-equal to the complete
+// canonical source under the new graph. Projection code was not changed.
 func (s *RegistrySuite) TestPut_EveryShippedDungeonAnswersTheAtlasItAnsweredBeforeTheWave() {
+	// The shipped content and the retired walk sites under testdata/sites
+	// (rpg-api#1205): the test shelf still plays the sites, so their atlases
+	// stay pinned.
 	files, err := filepath.Glob(filepath.Join(dungeonstest.ContentDir(s.T()), "*.yaml"))
 	s.Require().NoError(err)
 	s.Require().NotEmpty(files)
+	sites, err := filepath.Glob(filepath.Join(dungeonstest.SitesDir(s.T()), "*.yaml"))
+	s.Require().NoError(err)
+	s.Require().NotEmpty(sites)
+	files = append(files, sites...)
 
 	// Each shipped file's atlas is read off the shipped store's entry: the
 	// same compile and projection a validate-only Put ran when the fixtures

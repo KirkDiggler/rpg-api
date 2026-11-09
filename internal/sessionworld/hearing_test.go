@@ -16,7 +16,7 @@ import (
 // needs to be true before anybody opens the door.
 
 // referenceHearingPath is the hearing room's shipped file.
-var referenceHearingPath = filepath.Join("..", "..", "content", "reference-hearing.yaml")
+var referenceHearingPath = filepath.Join("..", "dungeons", "testdata", "sites", "reference-hearing.yaml")
 
 type HearingSuite struct {
 	suite.Suite
@@ -28,7 +28,7 @@ func TestHearingSuite(t *testing.T) { suite.Run(t, new(HearingSuite)) }
 
 func (s *HearingSuite) SetupTest() {
 	raw, err := os.ReadFile(referenceHearingPath)
-	s.Require().NoError(err, "the hearing room must exist at content/reference-hearing.yaml")
+	s.Require().NoError(err, "the hearing room must exist at internal/dungeons/testdata/sites/reference-hearing.yaml")
 	compiled, err := Compile(raw)
 	s.Require().NoError(err, "the hearing room must compile")
 	s.hearing = compiled

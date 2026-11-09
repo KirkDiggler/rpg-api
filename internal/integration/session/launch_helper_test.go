@@ -6,6 +6,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/KirkDiggler/rpg-toolkit/core"
+	"github.com/KirkDiggler/rpg-toolkit/mind/behavior"
+	"github.com/KirkDiggler/rpg-toolkit/mind/machine"
+	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+
 	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
@@ -26,7 +31,29 @@ func seatAt(id string, col, row int) partySeat { return partySeat{ID: id, Col: c
 func monsterAt(id, ref string, col, row int) tkdungeonspec.MonsterPlacement {
 	return tkdungeonspec.MonsterPlacement{
 		Ref: ref, ID: id, MemberID: id, At: spatial.Position{X: float64(col), Y: float64(row)},
+		Behaviors: fixtureCombatBehavior(),
 	}
+}
+
+// fixtureCombatBehavior is explicit native test data, not a production kind
+// default. Source acceptance separately loads complete YAML through the compiler.
+func fixtureCombatBehavior() *tkencounter.BehaviorInput {
+	return &tkencounter.BehaviorInput{Instances: []tkencounter.BoundBehavior{{Instance: behavior.InstanceSpec{
+		ID: "combat",
+		Recipe: machine.Recipe{Ref: core.Ref{Module: "test", Type: "behaviors", ID: "combat"}, Initial: "ready",
+			States: map[string]machine.State{"ready": {Transitions: []machine.Transition{
+				{On: "time", Do: []machine.Act{{Pick: "time"}}},
+				{On: "turn", Do: []machine.Act{{Pick: "time"}}},
+			}}}},
+		Table: tkencounter.Table{tkencounter.AnswerTime: {
+			{Weight: 3, When: []tkencounter.When{{Deed: "fled", Within: 3}}, Away: &tkencounter.Selector{Word: tkencounter.SelectorActor}},
+			{Weight: 3, When: []tkencounter.When{{Deed: "attacked", Within: 3}}, Attack: &tkencounter.Selector{Word: tkencounter.SelectorAttacker}},
+			{Weight: 1, When: []tkencounter.When{{Enemy: tkencounter.EnemyReach}}, Attack: &tkencounter.Selector{Word: tkencounter.SelectorEnemy}},
+			{Weight: 1, When: []tkencounter.When{{Enemy: tkencounter.EnemySeen}}, Toward: &tkencounter.Selector{Word: tkencounter.SelectorEnemy}},
+			{Weight: 1, When: []tkencounter.When{{Enemy: tkencounter.EnemyRemembered}}, Toward: &tkencounter.Selector{Word: tkencounter.SelectorEnemy}},
+			{Weight: 1, When: []tkencounter.When{{Enemy: tkencounter.EnemyNone}}, Hold: true},
+		}},
+	}}}}
 }
 
 // withMonsters is dungeon with these monsters placed, leaving dungeon itself
