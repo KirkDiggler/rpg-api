@@ -74,6 +74,13 @@ Seven are 2.6 to 4.7 s locally and 5.0 to 6.5 s on CI: "over 5 s on CI runners (
 - Red: [run 42690637523](https://github.com/KirkDiggler/rpg-api/actions/runs/42690637523) at `6d3c486`, a temporary `TestBudgetProbe_SleepsSixSeconds` in `internal/dungeons`. The budget step failed naming it alone, "took 6s; the budget is 5s", with an error annotation; every other test was within the budget or allowed.
 - Green: [run 42692257625](https://github.com/KirkDiggler/rpg-api/actions/runs/42692257625) at `92451e4`, the probe reverted and the near-budget tests allowed: "every top-level test in rpg-api is within 5s or allowed". The coverage steps and PR comment ran before it. Its `Run tests with coverage` step took 3 min.
 
+## Pipefail proof
+
+A bare `run:` step runs as `bash -e {0}`, without pipefail. With that, `go test -json | tee | test-budget.sh log` exits with the filter's 0, and a failing test goes green unless the budget step fails. The test and bench steps now set `shell: bash`, which runs them as `bash --noprofile --norc -eo pipefail {0}`. Each step also starts with `set -o pipefail`, and that line is the one that matters.
+
+- Red: [run 42698292255](https://github.com/KirkDiggler/rpg-api/actions/runs/42698292255) at `efe9f0a`, with a temporary `TestPipefailProbe_Fails` (`t.Fatal("probe")`). "Run tests with coverage" failed with `--- FAIL: TestPipefailProbe_Fails` and `FAIL github.com/KirkDiggler/rpg-api/internal/dungeons`. The budget step passed, so the red came from the test step.
+- Green: GREEN_RUN
+
 ## Found
 
 - CI runs a test up to about twice its local time, so a test at 4 s locally flaps on the 5 s budget. Tests at 3 to 5 s on CI can still flip from run to run.
