@@ -79,7 +79,7 @@ Seven are 2.6 to 4.7 s locally and 5.0 to 6.5 s on CI: "over 5 s on CI runners (
 A bare `run:` step runs as `bash -e {0}`, without pipefail. With that, `go test -json | tee | test-budget.sh log` exits with the filter's 0, and a failing test goes green unless the budget step fails. The test and bench steps now set `shell: bash`, which runs them as `bash --noprofile --norc -eo pipefail {0}`. Each step also starts with `set -o pipefail`, and that line is the one that matters.
 
 - Red: [run 42698292255](https://github.com/KirkDiggler/rpg-api/actions/runs/42698292255) at `efe9f0a`, with a temporary `TestPipefailProbe_Fails` (`t.Fatal("probe")`). "Run tests with coverage" failed with `--- FAIL: TestPipefailProbe_Fails` and `FAIL github.com/KirkDiggler/rpg-api/internal/dungeons`. The budget step passed, so the red came from the test step.
-- Green: GREEN_RUN
+- Green: [run 42699279512](https://github.com/KirkDiggler/rpg-api/actions/runs/42699279512) at `3176e6a`, the probe reverted.
 
 ## Found
 
