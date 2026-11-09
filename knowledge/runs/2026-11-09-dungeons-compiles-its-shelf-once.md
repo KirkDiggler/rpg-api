@@ -6,14 +6,15 @@ Issue [rpg-project#911](https://github.com/KirkDiggler/rpg-project/issues/911), 
 
 - `internal/dungeons` compiles its content shelf once per test binary. `TestMain` stages `content/`, the retired walk sites and the castle kitchen, and compiles them with the new `dungeonstest.CompileShelf`. The stores, single-room, creature-facts and reference-keep suites join that store with a fresh world store per test. The atlas row reads it. — this PR
 - The bench keep fixture tests (`TestBenchFixtures_*`: 10k, 30k, garrison) run under `RPG_MEASURE=1`, beside the measure tests that use those keeps. — this PR
-- `scripts/test-budget.sh` and its cases, copied from the toolkit's slice 3 (rpg-toolkit#2341) with the same interface, run in `.github/workflows/test.yml`: the suite runs with `-json`, the ten slowest top-level tests go to the job summary, and a test over 5 s under `-race` fails the job unless `testbudget.allow` names it with a reason. — this PR
+- `scripts/test-budget.sh` and its cases, copied verbatim from the toolkit's slice 3 (rpg-toolkit#2341), run in `.github/workflows/test.yml`: the suite runs with `-json`, the ten slowest top-level tests go to the job summary, and a test over 5 s under `-race` fails the job unless `.github/testbudget/rpg-api.allow` names it with a reason. — this PR
 
 ## Decided
 
 - The shared shelf compiles in `TestMain`, eagerly, so its cost lands on no test and the budget does not depend on which suite asks first. A focused `-run` pays one compile. — this PR
 - The shelf directory outlives each test. A test that proves a save never writes it compares against the files as staged, never a before-snapshot of its own: an earlier save of the same bytes hides a write from a snapshot. `TestMain` fails the binary when any test changed the shelf. — this PR
 - Tests about construction (a broken file, a missing default, a misnamed key, the seed) keep building their own registry over their own directory. — this PR
-- The script is copied verbatim from rpg-toolkit#2341 at `82a5970`, not shared. Switching to a shared copy later is one path in the workflow. — this PR
+- The script is copied verbatim from rpg-toolkit#2341 as merged at `e4ac31f8`, not shared. Switching to a shared copy later is one path in the workflow. — this PR
+- The allowlist lives at `.github/testbudget/rpg-api.allow`, where the toolkit keeps its own. rpg-api is one module at the root, and `-module .` would read a file named `..allow`, so the step passes the file with `-allow`. — this PR
 - The budget step runs last in the job, so a test over budget never skips the coverage report and PR comment. — this PR
 - The bench keep check runs in CI as its own step, without `-race` (the generator is deterministic and the check is byte equality) and outside the `-json` stream the budget judges. It took about 12 s locally. — this PR (review)
 - No assertion was removed. — this PR
@@ -62,7 +63,7 @@ Mutation checks:
 
 ## Allowlist
 
-Sized from CI's own timing, as the budget is judged there: every top-level test over 5 s in the test.json of CI run [42695344817](https://github.com/KirkDiggler/rpg-api/actions/runs/42695344817) (the `test-json` artifact the workflow now uploads), 30 entries. Each is package-qualified (`<import path>/<TestName>`), as the toolkit script at `82a5970` requires, so one entry exempts one package's test: `TestTemplatesSuite` has two lines, `TestHandlerSuite` one. Two are in `internal/dungeons` and carry reasons:
+Sized from CI's own timing, as the budget is judged there: every top-level test over 5 s in the test.json of CI run [42695344817](https://github.com/KirkDiggler/rpg-api/actions/runs/42695344817) (the `test-json` artifact the workflow now uploads), 30 entries. Each is package-qualified (`<import path>/<TestName>`), as the toolkit script requires, so one entry exempts one package's test: `TestTemplatesSuite` has two lines, `TestHandlerSuite` one. Two are in `internal/dungeons` and carry reasons:
 
 - `TestRegistrySuite` (17.4 s on CI): 38 cases in one suite; the seed row compiles the shipped content it seeded, the atlas row reads every shelf atlas.
 - `TestReferenceKeepSuite` (12.3 s on CI): saves and reads back a copy of the 130 KB reference keep, two compiles of the keep the claim is about.

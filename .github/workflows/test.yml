@@ -9,14 +9,18 @@ on:
 # The test budget. The suite runs with -json, and scripts/test-budget.sh writes
 # the ten slowest top-level tests to the job summary and fails the job naming
 # each top-level test that takes longer than TEST_BUDGET under -race. A test
-# may stay over the budget only when testbudget.allow names it, one test per
+# may stay over the budget only when .github/testbudget/rpg-api.allow names it,
+# one test per
 # line with its reason after a "#" on the same line; a line without a reason
 # fails the job too. A slow test is a finding: size the fixture to the cases
 # it proves, or name it with a reason (rpg-project#907). The script and its
 # cases are copied verbatim from rpg-toolkit scripts/test-budget.sh at
-# 82a5970 (rpg-toolkit#2341); recopy when it changes there. Entries are
-# package-qualified: <import path>/<TestName>  # reason. Locally:
-#   go test -race -json ./... | ./scripts/test-budget.sh check -allow testbudget.allow
+# e4ac31f8 (rpg-toolkit#2341, merged); recopy when it changes there. Entries
+# are package-qualified: <import path>/<TestName>  # reason. The allowlist
+# sits where the toolkit keeps its own, under .github/testbudget/. rpg-api is
+# one module at the root, which -module would name "..allow", so the step
+# passes the file with -allow. Locally:
+#   go test -race -json ./... | ./scripts/test-budget.sh check -allow .github/testbudget/rpg-api.allow
 env:
   TEST_BUDGET: 5s
 
@@ -214,4 +218,4 @@ jobs:
           exit 0
         fi
         ./scripts/test-budget.sh check -budget "$TEST_BUDGET" \
-          -allow testbudget.allow -label rpg-api < "$RUNNER_TEMP/test.json"
+          -allow .github/testbudget/rpg-api.allow -label rpg-api < "$RUNNER_TEMP/test.json"

@@ -1,4 +1,5 @@
-# Top-level tests allowed over the CI test budget (TEST_BUDGET in
+# rpg-api's allowlist (one module, at the repository root). Top-level tests
+# allowed over the CI test budget (TEST_BUDGET in
 # .github/workflows/test.yml). One test per line, as its package's import
 # path, a slash and the test name, its reason after "#". An entry exempts
 # that one package's test only. A slow test is a finding: size the fixture
