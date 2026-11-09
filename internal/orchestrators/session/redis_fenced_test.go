@@ -228,6 +228,7 @@ func (s *FencedRepoSuite) TestMissingSheet_FailsClosed_WritingNothing() {
 	_, err := s.fenced.SaveFenced(s.ctx, &sdk.SaveFencedInput{
 		Encounter:  "enc-1",
 		Data:       world(2),
+		Session:    &sdk.SessionData{ID: "run-1", Encounter: "enc-1"},
 		Characters: []*tkcharacter.Data{sheet("hero-a", 2), sheet("ghost", 2)},
 		Expected:   loaded,
 	})
@@ -235,9 +236,7 @@ func (s *FencedRepoSuite) TestMissingSheet_FailsClosed_WritingNothing() {
 	a, err := s.chars.GetCharacter(s.ctx, "hero-a")
 	s.Require().NoError(err)
 	s.Equal(10, a.HitPoints)
-	got, err := s.fenced.GetFencedEncounter(s.ctx, &sdk.GetFencedEncounterInput{Encounter: "enc-1"})
-	s.Require().NoError(err)
-	s.Equal(loaded, got.Version)
+	s.assertUntouched("enc-1", loaded)
 }
 
 func (s *FencedRepoSuite) TestSheetMovedToAnotherPlayer_FailsClosed() {
@@ -245,12 +244,11 @@ func (s *FencedRepoSuite) TestSheetMovedToAnotherPlayer_FailsClosed() {
 	moved := sheet("hero-a", 2)
 	moved.PlayerID = "player-2"
 	_, err := s.fenced.SaveFenced(s.ctx, &sdk.SaveFencedInput{
-		Encounter: "enc-1", Data: world(2), Characters: []*tkcharacter.Data{moved}, Expected: loaded,
+		Encounter: "enc-1", Data: world(2), Session: &sdk.SessionData{ID: "run-1", Encounter: "enc-1"},
+		Characters: []*tkcharacter.Data{moved}, Expected: loaded,
 	})
 	s.Require().ErrorIs(err, sdk.ErrBadRepository)
-	got, err := s.fenced.GetFencedEncounter(s.ctx, &sdk.GetFencedEncounterInput{Encounter: "enc-1"})
-	s.Require().NoError(err)
-	s.Equal(loaded, got.Version)
+	s.assertUntouched("enc-1", loaded)
 }
 
 func (s *FencedRepoSuite) TestPlainSave_AdvancesTheVersion() {
@@ -265,4 +263,15 @@ func (s *FencedRepoSuite) TestScriptSurvivesAFlush() {
 	s.Require().NoError(s.client.ScriptFlush(s.ctx).Err())
 	_, err := s.fenced.SaveFenced(s.ctx, &sdk.SaveFencedInput{Encounter: "enc-1", Data: world(2), Expected: loaded})
 	s.Require().NoError(err, "NOSCRIPT falls back to EVAL")
+}
+
+// assertUntouched proves a refused save wrote nothing: the world is still
+// the launch's, the version has not moved and no session record landed.
+func (s *FencedRepoSuite) assertUntouched(enc string, loaded uint64) {
+	got, err := s.fenced.GetFencedEncounter(s.ctx, &sdk.GetFencedEncounterInput{Encounter: enc})
+	s.Require().NoError(err)
+	s.Equal(loaded, got.Version)
+	s.Equal(1, got.Data.Retention, "the world is still the launch's")
+	_, err = s.sessions.GetSession(s.ctx, "run-1")
+	s.Require().ErrorIs(err, sdk.ErrNotFound, "the refused save's session record did not land")
 }

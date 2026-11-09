@@ -2,12 +2,18 @@ package session_test
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
 
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
 
@@ -41,15 +47,28 @@ func TestTheSessionSavesThroughTheFence(t *testing.T) {
 	// what a lease that expired mid-verb allows. Simulated by a hook that
 	// advances the version right before the session's fenced script runs: a
 	// plain path would write over it, the fence refuses it.
-	h.redis.AddHook(lateWriter{redis: h.redis, key: checkpointKey(t, h)})
+	h.redis.AddHook(lateWriter{redis: h.redis, key: checkpointKey(t, h), fired: new(bool)})
 	before, err := h.redis.Get(context.Background(), checkpointKey(t, h)).Result()
 	require.NoError(t, err)
 	_, err = h.handler.Move(ctx, &sessionpb.MoveRequest{
 		Session: "fenced-run", Member: "alice", Path: []*sessionpb.Position{pbAt(3, 1)},
 	})
 	require.Error(t, err, "a save whose checkpoint moved under it is refused")
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	require.Equal(t, codes.Aborted, st.Code(), "nothing landed: the client retries, not UNAVAILABLE (landed partially)")
+	require.Contains(t, st.Message(), "stale checkpoint")
 	after := checkpointVersion(t, h)
 	require.Equal(t, mustUint(t, before)+1, after, "only the late writer's save advanced the checkpoint")
+
+	// The same race under the SDK directly: the verb's error IS the stale
+	// checkpoint, not some other failure the hook happened to cause.
+	h.redis.AddHook(lateWriter{redis: h.redis, key: checkpointKey(t, h), fired: new(bool)})
+	_, err = h.manager.Manager.Move(context.Background(), &sdk.MoveInput{
+		Session: "fenced-run", Member: "alice", Path: []spatial.Position{at(3, 1)},
+	})
+	require.True(t, errors.Is(err, sdk.ErrStaleCheckpoint), "want ErrStaleCheckpoint, got %v", err)
+	require.Equal(t, after+1, checkpointVersion(t, h), "again only the late writer's save advanced it")
 }
 
 func mustUint(t *testing.T, s string) uint64 {
@@ -61,9 +80,12 @@ func mustUint(t *testing.T, s string) uint64 {
 
 // lateWriter advances the checkpoint once, just before the first script
 // (the fenced save) runs: another writer's save landing mid-verb.
+// fired is shared by pointer because go-redis rebuilds the hook chain on
+// every AddHook, calling ProcessHook again.
 type lateWriter struct {
 	redis *goredis.Client
 	key   string
+	fired *bool
 }
 
 func (w lateWriter) DialHook(next goredis.DialHook) goredis.DialHook { return next }
@@ -71,11 +93,10 @@ func (w lateWriter) ProcessPipelineHook(next goredis.ProcessPipelineHook) goredi
 	return next
 }
 func (w lateWriter) ProcessHook(next goredis.ProcessHook) goredis.ProcessHook {
-	fired := false
 	return func(ctx context.Context, cmd goredis.Cmder) error {
 		name := cmd.Name()
-		if !fired && (name == "evalsha" || name == "eval") {
-			fired = true
+		if !*w.fired && (name == "evalsha" || name == "eval") {
+			*w.fired = true
 			if err := w.redis.Incr(ctx, w.key).Err(); err != nil {
 				return err
 			}
