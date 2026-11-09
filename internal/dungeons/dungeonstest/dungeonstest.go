@@ -8,8 +8,10 @@ package dungeonstest
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -41,19 +43,29 @@ func Projector(t testing.TB) dungeons.AtlasProjector {
 	mr := miniredis.RunT(t)
 	client := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = client.Close() })
+	p, err := projectorOver(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return p
+}
+
+// projectorOver is Projector's wiring over a client the caller owns.
+func projectorOver(client *goredis.Client) (dungeons.AtlasProjector, error) {
 	chars, err := characterrepo.NewRedis(&characterrepo.RedisConfig{Client: client})
 	if err != nil {
-		t.Fatalf("dungeonstest: character repo: %v", err)
+		return nil, fmt.Errorf("dungeonstest: character repo: %w", err)
 	}
 	orch, err := sessionorch.New(sessionorch.Config{
 		Redis: client, Characters: chars, TTL: time.Hour,
 		PresentationIDs: idgen.NewSequential("presentation"),
 	})
 	if err != nil {
-		t.Fatalf("dungeonstest: session orchestrator: %v", err)
+		return nil, fmt.Errorf("dungeonstest: session orchestrator: %w", err)
 	}
 
-	return ProjectorFor(orch.Manager)
+	return ProjectorFor(orch.Manager), nil
 }
 
 // ProjectorFor adapts a session Manager to dungeons.AtlasProjector.
@@ -107,34 +119,99 @@ func FixtureContentDir(t testing.TB) string {
 	t.Helper()
 
 	dst := t.TempDir()
-	for _, src := range []string{ContentDir(t), SitesDir(t)} {
-		entries, err := os.ReadDir(src)
-		if err != nil {
-			t.Fatalf("dungeonstest: read %s: %v", src, err)
-		}
-		for _, e := range entries {
-			if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" {
-				continue
-			}
-			copyFile(t, filepath.Join(src, e.Name()), filepath.Join(dst, e.Name()))
-		}
+	if err := stageShelf(dst, ContentDir(t), SitesDir(t)); err != nil {
+		t.Fatalf("dungeonstest: %v", err)
 	}
 
 	return dst
 }
 
-// ShippedStore returns the shipped store over FixtureContentDir: the real
-// content/ plus the retired walk sites. It is never written: the shipped
-// store has no write path.
+// stageShelf copies every yaml file directly under srcs into dst.
+func stageShelf(dst string, srcs ...string) error {
+	for _, src := range srcs {
+		entries, readErr := os.ReadDir(src)
+		if readErr != nil {
+			return fmt.Errorf("read %s: %w", src, readErr)
+		}
+		for _, e := range entries {
+			if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" {
+				continue
+			}
+			raw, err := os.ReadFile(filepath.Join(src, e.Name())) //nolint:gosec // src is a fixture dir, e a ReadDir entry
+			if err != nil {
+				return fmt.Errorf("read %s: %w", e.Name(), err)
+			}
+			//nolint:gosec // dst is a temp dir this package made, e a ReadDir entry
+			if err := os.WriteFile(filepath.Join(dst, e.Name()), raw, 0o600); err != nil {
+				return fmt.Errorf("stage %s: %w", e.Name(), err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// ShippedStore returns the shipped store over FixtureContentDir's shelf:
+// the real content/ plus the retired walk sites. It is never written: the
+// shipped store has no write path.
+//
+// The store is compiled once per test binary and shared, as the server
+// compiles it once at boot and serves every session from it. Compiling the
+// whole shelf costs about a second, and the castle grows it; a suite that
+// built its own per test spent most of its time here and drifted toward the
+// CI job limit (rpg-api#1200). A FileRegistry is read-only after
+// construction, so sharing it leaks nothing between tests.
 func ShippedStore(t testing.TB) *dungeons.FileRegistry {
 	t.Helper()
 
-	r, err := dungeons.NewFileRegistry(FixtureContentDir(t), Projector(t))
-	if err != nil {
-		t.Fatalf("dungeonstest: %v", err)
+	// The directories resolve before the once, never inside it: they report
+	// with t.Fatal, and a Fatal inside once.Do would mark the once done with
+	// no store and no error, so every later test in the binary would fail on
+	// a nil registry instead of the real cause. Inside the once only
+	// compileShipped runs, and its error is kept and reported to every caller.
+	content, sites := ContentDir(t), SitesDir(t)
+	shipped.once.Do(func() {
+		shipped.store, shipped.err = compileShipped(content, sites)
+	})
+	if shipped.err != nil {
+		t.Fatalf("dungeonstest: shipped store failed to compile: %v", shipped.err)
 	}
 
-	return r
+	return shipped.store
+}
+
+// shipped is the one compiled shipped store per test binary.
+var shipped struct {
+	once  sync.Once
+	store *dungeons.FileRegistry
+	err   error
+}
+
+// compileShipped compiles the yaml files of srcs over a projector whose miniredis lives as long
+// as the test binary: the store outlives the test that first asked for it,
+// and the projector it keeps must stay usable for every test after.
+//
+// The shelf is staged into a directory of its own, removed once compiled:
+// the registry reads its directory only while it is constructed.
+func compileShipped(srcs ...string) (*dungeons.FileRegistry, error) {
+	dir, err := os.MkdirTemp("", "dungeonstest-shipped-")
+	if err != nil {
+		return nil, fmt.Errorf("stage shelf: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	if stageErr := stageShelf(dir, srcs...); stageErr != nil {
+		return nil, stageErr
+	}
+	mr, err := miniredis.Run()
+	if err != nil {
+		return nil, fmt.Errorf("start miniredis: %w", err)
+	}
+	p, err := projectorOver(goredis.NewClient(&goredis.Options{Addr: mr.Addr()}))
+	if err != nil {
+		return nil, err
+	}
+
+	return dungeons.NewFileRegistry(dir, p)
 }
 
 // Shipped returns a read-only Registry over FixtureContentDir and
@@ -216,17 +293,6 @@ func Join(t testing.TB, shipped *dungeons.FileRegistry, authoring bool) dungeons
 	}
 
 	return r
-}
-
-// copyFile copies one content file into the scratch directory.
-func copyFile(t testing.TB, src, dst string) {
-	t.Helper()
-
-	raw, err := os.ReadFile(filepath.Clean(src)) //nolint:gosec // src is a ReadDir entry under the repo content dir
-	if err != nil {
-		t.Fatalf("dungeonstest: read %s: %v", src, err)
-	}
-	writeFile(t, dst, raw)
 }
 
 // writeFile writes one content file into a scratch directory.
