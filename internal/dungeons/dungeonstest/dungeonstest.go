@@ -164,11 +164,17 @@ func stageShelf(dst string, srcs ...string) error {
 func ShippedStore(t testing.TB) *dungeons.FileRegistry {
 	t.Helper()
 
+	// The directories resolve before the once, never inside it: they report
+	// with t.Fatal, and a Fatal inside once.Do would mark the once done with
+	// no store and no error, so every later test in the binary would fail on
+	// a nil registry instead of the real cause. Inside the once only
+	// compileShipped runs, and its error is kept and reported to every caller.
+	content, sites := ContentDir(t), SitesDir(t)
 	shipped.once.Do(func() {
-		shipped.store, shipped.err = compileShipped(ContentDir(t), SitesDir(t))
+		shipped.store, shipped.err = compileShipped(content, sites)
 	})
 	if shipped.err != nil {
-		t.Fatalf("dungeonstest: %v", shipped.err)
+		t.Fatalf("dungeonstest: shipped store failed to compile: %v", shipped.err)
 	}
 
 	return shipped.store
