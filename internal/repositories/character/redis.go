@@ -28,6 +28,15 @@ const (
 	errSessionIDEmpty   = "session ID cannot be empty"
 )
 
+// Key is the Redis key a character's record is stored under. It is exported
+// so a writer that must land a sheet inside its own transaction (the session
+// store's fenced save, rpg-project#879 S12a) writes the one key shape this
+// repository reads, never a second one.
+func Key(id string) string { return characterKeyPrefix + id }
+
+// PlayerIndexKey is the Redis set listing a player's character ids.
+func PlayerIndexKey(playerID string) string { return playerIndexPrefix + playerID }
+
 type redisRepository struct {
 	client redisclient.Client
 	clock  clock.Clock
@@ -79,7 +88,7 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 		return nil, apierr.InvalidArgument(errCharacterIDEmpty)
 	}
 
-	key := characterKeyPrefix + input.Character.Data.ID
+	key := Key(input.Character.Data.ID)
 
 	// Check if already exists
 	exists, err := r.client.Exists(ctx, key).Result()
@@ -105,7 +114,7 @@ func (r *redisRepository) Create(ctx context.Context, input CreateInput) (*Creat
 
 	// Add to player index
 	if input.Character.Data.PlayerID != "" {
-		playerKey := playerIndexPrefix + input.Character.Data.PlayerID
+		playerKey := PlayerIndexKey(input.Character.Data.PlayerID)
 		pipe.SAdd(ctx, playerKey, input.Character.Data.ID)
 	}
 
@@ -123,7 +132,7 @@ func (r *redisRepository) Get(ctx context.Context, input GetInput) (*GetOutput, 
 		return nil, apierr.InvalidArgument(errCharacterIDEmpty)
 	}
 
-	key := characterKeyPrefix + input.ID
+	key := Key(input.ID)
 	result, err := r.client.Get(ctx, key).Result()
 	if err != nil {
 		if err == redis.Nil {
@@ -154,7 +163,7 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 		return nil, apierr.InvalidArgument(errCharacterIDEmpty)
 	}
 
-	key := characterKeyPrefix + input.Character.Data.ID
+	key := Key(input.Character.Data.ID)
 
 	// Get existing character to check indexes
 	existingOutput, err := r.Get(ctx, GetInput{ID: input.Character.Data.ID})
@@ -178,11 +187,11 @@ func (r *redisRepository) Update(ctx context.Context, input UpdateInput) (*Updat
 	// Update player index if changed
 	if existing.Data.PlayerID != input.Character.Data.PlayerID {
 		if existing.Data.PlayerID != "" {
-			oldPlayerKey := playerIndexPrefix + existing.Data.PlayerID
+			oldPlayerKey := PlayerIndexKey(existing.Data.PlayerID)
 			pipe.SRem(ctx, oldPlayerKey, input.Character.Data.ID)
 		}
 		if input.Character.Data.PlayerID != "" {
-			newPlayerKey := playerIndexPrefix + input.Character.Data.PlayerID
+			newPlayerKey := PlayerIndexKey(input.Character.Data.PlayerID)
 			pipe.SAdd(ctx, newPlayerKey, input.Character.Data.ID)
 		}
 	}
@@ -217,12 +226,12 @@ func (r *redisRepository) Delete(ctx context.Context, input DeleteInput) (*Delet
 	pipe := r.client.TxPipeline()
 
 	// Delete character
-	key := characterKeyPrefix + input.ID
+	key := Key(input.ID)
 	pipe.Del(ctx, key)
 
 	// Remove from player index
 	if char.Data != nil && char.Data.PlayerID != "" {
-		playerKey := playerIndexPrefix + char.Data.PlayerID
+		playerKey := PlayerIndexKey(char.Data.PlayerID)
 		pipe.SRem(ctx, playerKey, input.ID)
 	}
 
@@ -243,7 +252,7 @@ func (r *redisRepository) ListByPlayerID(
 		return nil, apierr.InvalidArgument(errPlayerIDEmpty)
 	}
 
-	indexKey := playerIndexPrefix + input.PlayerID
+	indexKey := PlayerIndexKey(input.PlayerID)
 	slog.DebugContext(ctx, "listing characters by player index",
 		"player_id", input.PlayerID,
 		"index_key", indexKey)

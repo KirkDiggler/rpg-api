@@ -37,7 +37,7 @@ func (s *HandlerSuite) TestCreateLobby_EmptyCharacterID_InvalidArgument() {
 }
 
 func (s *HandlerSuite) TestCreateLobby_Success_ReturnsLobbyIdentity() {
-	s.expectCharacter("char-alice", "alice", "Alice", 12, 12)
+	s.seedCharacter("char-alice", "alice", "Alice", 12, 12)
 
 	resp, err := s.handler.CreateLobby(s.ctx, &lobbyv1alpha1.CreateLobbyRequest{
 		CampaignId: "campaign-1", CharacterId: "char-alice",
@@ -49,7 +49,7 @@ func (s *HandlerSuite) TestCreateLobby_Success_ReturnsLobbyIdentity() {
 }
 
 func (s *HandlerSuite) TestCreateLobby_CharacterOwnershipMismatch_PermissionDenied() {
-	s.expectCharacter("char-bob", "bob", "Bob", 10, 10)
+	s.seedCharacter("char-bob", "bob", "Bob", 10, 10)
 
 	_, err := s.handler.CreateLobby(s.ctx, &lobbyv1alpha1.CreateLobbyRequest{
 		CampaignId: "campaign-1", CharacterId: "char-bob",
@@ -60,7 +60,7 @@ func (s *HandlerSuite) TestCreateLobby_CharacterOwnershipMismatch_PermissionDeni
 }
 
 func (s *HandlerSuite) TestCreateLobby_CharacterNotFound_NotFound() {
-	s.expectCharacterNotFound("char-missing")
+	// char-missing was never seeded.
 
 	_, err := s.handler.CreateLobby(s.ctx, &lobbyv1alpha1.CreateLobbyRequest{
 		CampaignId: "campaign-1", CharacterId: "char-missing",
