@@ -66,7 +66,7 @@ Seeded from a local run of the whole suite with CI's flags (`-race -covermode=at
 - `TestRegistrySuite`: 38 cases in one suite; the seed row compiles the shipped content it seeded (4.4 s), the atlas row reads every shelf atlas (2.9 s).
 - `TestReferenceKeepSuite`: saves and reads back a copy of the 130 KB reference keep, two compiles of the keep the claim is about.
 
-The other 24 are named "not yet sized" with their package and time. The largest: `TestSessionStackSuite` (orchestrators/lobby) 61 s after rpg-api#1210, `TestCharacterCreationSuite` (integration/character) 87 s, `TestValidateOnlyWireSuite` (authoring handlers) 30 s.
+The other 24 are named "not yet sized" with their package and time. After the first green attempt, five more joined, each "near the budget": 3.7 to 4.7 s locally, 5.6 to 6.1 s on CI run [42691353073](https://github.com/KirkDiggler/rpg-api/actions/runs/42691353073). The file holds 31 entries. The largest: `TestSessionStackSuite` (orchestrators/lobby) 61 s after rpg-api#1210, `TestCharacterCreationSuite` (integration/character) 87 s, `TestValidateOnlyWireSuite` (authoring handlers) 30 s.
 
 ## Budget proof
 
@@ -75,6 +75,8 @@ The other 24 are named "not yet sized" with their package and time. The largest:
 
 ## Found
 
+- CI runs a test up to 1.6 times its local time, so a test at 4 s locally flaps on the 5 s budget. The five near-budget entries are that noise, and more tests at 3 to 4 s locally can still flip.
+- An allowlist name matches that test in every package: `TestTemplatesSuite` is allowed in `orchestrators/authoring` (10.4 s) and so also in `sessionworld` (4.0 s).
 - The bench fixtures' currency check no longer runs in CI. A repin that shifts keepgen's output now fails on the next `RPG_MEASURE=1` run, not on the PR.
 - Whole-suite local time with CI's flags was 234 s wall before rpg-api#1210 merged. `orchestrators/lobby` (61 s) and `integration/character` (137 s package) are now the largest packages.
 
