@@ -31,6 +31,9 @@ import (
 // so the subscriber replaces what it holds instead of appending across a
 // hole (R25, R28).
 func (h *Handler) StreamRecord(req *sessionpb.StreamRecordRequest, stream sessionpb.RecordService_StreamRecordServer) error {
+	if !h.enabled {
+		return errRecordDisabled
+	}
 	ctx := stream.Context()
 	session, member := req.GetSession(), req.GetMember()
 	if err := h.gate.CallerMemberSeated(ctx, session, member); err != nil {
@@ -67,7 +70,7 @@ func (h *Handler) StreamRecord(req *sessionpb.StreamRecordRequest, stream sessio
 	send := func(evt sdk.RecordEvent) error {
 		converted, cerr := recordEventToProto(evt)
 		if cerr != nil {
-			slog.ErrorContext(ctx, "session record: fields not projectable, sent without them",
+			slog.ErrorContext(ctx, "session record: legacy fields not projectable, raw payload retained",
 				"session", session, "id", evt.ID, "beat", evt.Beat, "error", cerr)
 		}
 		if err := stream.Send(&sessionpb.StreamRecordResponse{
