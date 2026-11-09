@@ -25,14 +25,8 @@ func (s *ReferenceKeepSuite) TestShippedKeepCanBeCopiedWithoutChangingTheReferen
 	ctx := context.Background()
 	raw, err := os.ReadFile(filepath.Join(dungeonstest.ContentDir(s.T()), referenceKeepKey+".yaml"))
 	s.Require().NoError(err)
-	shelf := dungeonstest.ScratchDir(s.T())
-	s.Require().NoError(os.WriteFile(filepath.Join(shelf, referenceKeepKey+".yaml"), raw, 0o600))
-	shipped, err := dungeons.NewFileRegistry(shelf, dungeonstest.Projector(s.T()))
-	s.Require().NoError(err)
-	registry, err := dungeons.NewRegistry(&dungeons.RegistryConfig{
-		Shipped: shipped, World: dungeonstest.WorldStore(s.T()), Authoring: true, Projector: dungeonstest.Projector(s.T()),
-	})
-	s.Require().NoError(err)
+	// The shared shelf (shelf_test.go) holds the published file: content/.
+	registry := joinShelf(s.T(), dungeonstest.WorldStore(s.T()), true)
 	original, err := registry.Get(ctx, dungeonstest.Caller, referenceKeepKey)
 	s.Require().NoError(err)
 	s.Equal(dungeons.SourceShipped, original.Source)
