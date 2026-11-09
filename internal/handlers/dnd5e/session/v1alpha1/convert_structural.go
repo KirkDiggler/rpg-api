@@ -16,8 +16,9 @@ func atlasStructuralWallsToProto(walls []sdk.AtlasStructuralWall) []*sessionpb.A
 			From:   &sessionpb.FootprintPoint{X: wall.From.X, Y: wall.From.Y},
 			To:     &sessionpb.FootprintPoint{X: wall.To.X, Y: wall.To.Y},
 			Height: wall.Height, Thickness: wall.Thickness, Elevation: wall.Elevation,
-			Openings:       atlasStructuralOpeningsToProto(wall.Openings),
-			FootprintCells: atlasFootprintCellsToProto(wall.FootprintCells),
+			Openings:          atlasStructuralOpeningsToProto(wall.Openings),
+			FootprintCells:    atlasFootprintCellsToProto(wall.FootprintCells),
+			MaterialOverrides: materialOverridesToProto(wall.MaterialOverrides),
 		})
 	}
 	return out
