@@ -24,7 +24,10 @@
 // holds keys), RPG_MEASURE_ACT_BUFFER (the broker's buffer in commits;
 // the production default when unset), RPG_MEASURE_RELOAD=0 (skips the
 // cold-reload row: after each mode's walk, N rebuilds of that session from
-// the store by stage -- measure_cold_reload_test.go).
+// the store by stage -- measure_cold_reload_test.go), RPG_MEASURE_PATH (the
+// walk's length in cells, default 8; the per-step table fits answer = fixed
+// + steps x per step over the continued Moves, so runs at 1, 4 and 8 cells
+// separate what a verb pays once from what each step pays).
 // Command:
 //
 //	redis-server --port 6491 --save '' --daemonize yes
