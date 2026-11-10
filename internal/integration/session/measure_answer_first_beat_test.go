@@ -27,7 +27,12 @@
 // the store by stage -- measure_cold_reload_test.go), RPG_MEASURE_PATH (the
 // walk's length in cells, default 8; the per-step table fits answer = fixed
 // + steps x per step over the continued Moves, so runs at 1, 4 and 8 cells
-// separate what a verb pays once from what each step pays).
+// separate what a verb pays once from what each step pays),
+// RPG_RESIDENT_ENTRIES (the server's own knob, rpg-project#879 S6: unset
+// keeps each session's encounter resident between verbs at the default
+// bound; -1 keeps none, so every verb loads as before S6; the table counts
+// the measured Moves' resident hits and misses by reason, and the resident's
+// estimated bytes after the first and the last measured Move).
 // Command:
 //
 //	redis-server --port 6491 --save '' --daemonize yes
@@ -160,7 +165,13 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 		// commits is the encounter saves each verb made: one for a whole
 		// verb, one per pace boundary plus a final one for a continued
 		// walk (S13).
-		commits         []int
+		commits []int
+		// hits and misses are the resident copy's over the measured Moves
+		// (rpg-project#879 S6); residentBytes the residency's estimated
+		// bytes after each measured Move.
+		hits            int64
+		misses          map[sdk.MissReason]int64
+		residentBytes   []int64
 		compile, launch time.Duration
 		lagged          bool
 		noBeat          int
@@ -199,6 +210,7 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 				Redis: client, Characters: charRepo, TTL: 24 * time.Hour, Dice: testDice{},
 				PresentationIDs: idgen.NewSequential("presentation"),
 				AnswerWhole:     answerWhole, Continuations: continuations,
+				Residency: measureResidency(t),
 			})
 			require.NoError(t, err)
 			handler, err := sessionhandler.New(&sessionhandler.HandlerConfig{
@@ -257,7 +269,11 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 			// prevRound is the world round the last save named, so a Move
 			// whose save raises it is told from one that does not.
 			prevRound := -1
+			var statsAtStart sessionorch.ResidencyStats
 			for i := 0; i < warm+n; i++ {
+				if i == warm {
+					statsAtStart = orch.Residency.Stats()
+				}
 				if dir == 0 {
 					dir = 1
 				}
@@ -331,6 +347,7 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 				}
 				r.answer = append(r.answer, answered.Sub(t0))
 				r.drained = append(r.drained, drainedAt)
+				r.residentBytes = append(r.residentBytes, orch.Residency.Bytes())
 				shapes, wSaves := written.take()
 				sRest, sLog, sSegments := storedBytes(t, client, run)
 				br.add(shapes, wSaves, prevRound, sRest, sLog, sSegments)
@@ -372,6 +389,7 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 					r.firstAfterAnswer = append(r.firstAfterAnswer, arrivedAfter)
 				}
 			}
+			r.hits, r.misses = residentDelta(statsAtStart, orch.Residency.Stats())
 			series := make([]string, 0, len(r.answer))
 			for j := range r.answer {
 				series = append(series, fmt.Sprintf("%d", r.answer[j].Milliseconds()))
@@ -387,6 +405,11 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 				series = append(series, fmt.Sprintf("%d", r.sinceAnswer[j].Milliseconds()))
 			}
 			t.Logf("%s %s first beat after the answer ms per move, in order: %s", key, mode, strings.Join(series, " "))
+			series = series[:0]
+			for _, rb := range r.residentBytes {
+				series = append(series, fmt.Sprintf("%.1f", float64(rb)/(1<<20)))
+			}
+			t.Logf("%s %s resident estimated MiB after each measured move, in order: %s", key, mode, strings.Join(series, " "))
 			lagged, lastID := sub.Lagged()
 			r.lagged = lagged
 			if lagged {
@@ -399,6 +422,11 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 				// The warm-vs-cold provider pair (rpg-project#879 S5), once per
 				// keep: whole Moves, so one mode is enough.
 				if answerWhole || len(modes) == 1 {
+					// The forced-miss pairs first, on this orchestrator's own
+					// copy; the cold Moves after run on fresh processes.
+					if answerWhole && !orch.Residency.KeepsNone() {
+						measureForcedMiss(t, client, orch, charRepo, run, "alice", n, pathLen, &rr)
+					}
 					measureColdMove(t, client, orch, charRepo, run, "alice", n, pathLen, &rr)
 				}
 				reloads = append(reloads, rr)
@@ -412,10 +440,10 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "\nredis GET floor: p50 %s p95 %s (n=%d)\n", ms(pct(floor, 50)), ms(pct(floor, 95)), len(floor))
-	fmt.Fprintf(&b, "| keep | mode | n | continues | answer p50 | answer p95 | first beat p50 | first beat p95 | first beat after answer p50 | first beat after answer p95 | last beat p50 | last beat p95 | drained p50 | drained p95 | commits/verb | acts/verb | steps answered | no beat | acts arrive after answer | lagged | launch |\n")
-	fmt.Fprintf(&b, "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+	fmt.Fprintf(&b, "| keep | mode | n | continues | answer p50 | answer p95 | first beat p50 | first beat p95 | first beat after answer p50 | first beat after answer p95 | last beat p50 | last beat p95 | drained p50 | drained p95 | commits/verb | acts/verb | steps answered | no beat | acts arrive after answer | lagged | launch | resident hits | resident misses | resident MiB first → last |\n")
+	fmt.Fprintf(&b, "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, r := range rows {
-		fmt.Fprintf(&b, "| %s | %s | %d | %d/%d | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %d | %d/%d | %v | %s |\n",
+		fmt.Fprintf(&b, "| %s | %s | %d | %d/%d | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %d | %d/%d | %v | %s | %d | %s | %s |\n",
 			r.key, r.mode, len(r.answer), sum(r.continues), len(r.continues),
 			ms(pct(r.answer, 50)), ms(pct(r.answer, 95)),
 			ms(pct(r.first, 50)), ms(pct(r.first, 95)),
@@ -423,7 +451,7 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 			ms(pct(r.last, 50)), ms(pct(r.last, 95)),
 			ms(pct(r.drained, 50)), ms(pct(r.drained, 95)),
 			span(r.commits), span(r.acts), span(r.steps), r.noBeat, sum(r.firstAfterAnswer), len(r.firstAfterAnswer), r.lagged,
-			r.launch.Round(time.Millisecond))
+			r.launch.Round(time.Millisecond), r.hits, missText(r.misses), residentSpan(r.residentBytes))
 	}
 	if reloadOn {
 		b.WriteString(reloadTable(reloads, moveTotals))
@@ -579,6 +607,53 @@ func guardFlushable(t *testing.T, client *goredis.Client, addr string) {
 	size, err := client.DBSize(context.Background()).Result()
 	require.NoError(t, err)
 	require.Zero(t, size, "RPG_MEASURE_REDIS %q holds %d keys; the run flushes its store, so point it at an empty one", addr, size)
+}
+
+// measureResidency is the run's residency under RPG_RESIDENT_ENTRIES, the
+// server's own knob: unset is the default bound, -1 keeps none.
+func measureResidency(t *testing.T) *sessionorch.Residency {
+	t.Helper()
+	cfg := &sessionorch.ResidencyConfig{}
+	if v := os.Getenv("RPG_RESIDENT_ENTRIES"); v != "" {
+		_, err := fmt.Sscanf(v, "%d", &cfg.Entries)
+		require.NoError(t, err, "RPG_RESIDENT_ENTRIES")
+	}
+	residency, err := sessionorch.NewResidency(cfg)
+	require.NoError(t, err)
+	t.Logf("session residency: %s", residency.Bounds())
+	return residency
+}
+
+// residentDelta is the hits and misses observed between two snapshots.
+func residentDelta(from, to sessionorch.ResidencyStats) (int64, map[sdk.MissReason]int64) {
+	misses := map[sdk.MissReason]int64{}
+	for reason, c := range to.Misses {
+		if d := c - from.Misses[reason]; d > 0 {
+			misses[reason] = d
+		}
+	}
+	return to.Hits - from.Hits, misses
+}
+
+// missText renders misses by reason, "0" when there were none.
+func missText(misses map[sdk.MissReason]int64) string {
+	if len(misses) == 0 {
+		return "0"
+	}
+	parts := make([]string, 0, len(misses))
+	for reason, c := range misses {
+		parts = append(parts, fmt.Sprintf("%d %s", c, reason))
+	}
+	slices.Sort(parts)
+	return strings.Join(parts, ", ")
+}
+
+// residentSpan is the first and last estimated MiB, "-" when none was kept.
+func residentSpan(bytes []int64) string {
+	if len(bytes) == 0 {
+		return "-"
+	}
+	return fmt.Sprintf("%.1f → %.1f", float64(bytes[0])/(1<<20), float64(bytes[len(bytes)-1])/(1<<20))
 }
 
 func envOr(k, d string) string {

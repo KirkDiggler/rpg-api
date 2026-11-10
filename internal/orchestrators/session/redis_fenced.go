@@ -28,6 +28,7 @@ var (
 	_ sdk.FencedEncounterRepository    = (*redisEncounterRepository)(nil)
 	_ sdk.AppendingEncounterRepository = (*redisEncounterRepository)(nil)
 	_ sdk.PiecesEncounterRepository    = (*redisEncounterRepository)(nil)
+	_ sdk.CheckpointVersionReader      = (*redisEncounterRepository)(nil)
 )
 
 // THE VERSION SHARES THE CHECKPOINT'S LIFETIME. Every script that writes the
@@ -278,6 +279,33 @@ func (r *redisEncounterRepository) GetFencedEncounter(
 		return nil, fmt.Errorf("encounter %q has checkpoint version %q: %w", id, stored.version, sdk.ErrBadRepository)
 	}
 	return &sdk.GetFencedEncounterOutput{Data: stored.data, Version: version, Marks: stored.marks}, nil
+}
+
+// GetCheckpointVersion implements sdk.CheckpointVersionReader
+// (rpg-project#879 S6): one GET of the version key and nothing else, so a
+// write verb holding a resident copy checks it against the store for the
+// price of one round trip. An absent key is 0, which no kept copy holds (a
+// landed save leaves the version at 1 or more), so the verb loads and the
+// load answers as it always has. It does not look for the head beside the
+// version: a version that outlived its head (they share one TTL, so only a
+// hand-deleted head) still differs from any copy saved before, or the load
+// that follows the miss fails closed.
+func (r *redisEncounterRepository) GetCheckpointVersion(ctx context.Context, encounter string) (uint64, error) {
+	if encounter == "" {
+		return 0, errors.New("session: GetCheckpointVersion encounter is required")
+	}
+	raw, err := r.client.Get(ctx, sessionEncVerKeyPrefix+encounter).Result()
+	if errors.Is(err, goredis.Nil) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("read checkpoint version of encounter %q: %w", encounter, err)
+	}
+	version, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("encounter %q has checkpoint version %q: %w", encounter, raw, sdk.ErrBadRepository)
+	}
+	return version, nil
 }
 
 // SaveFenced implements sdk.FencedEncounterRepository for a caller that hands

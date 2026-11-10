@@ -3,6 +3,7 @@ package session_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -273,4 +274,63 @@ func (s *FencedRepoSuite) assertUntouched(enc string, loaded uint64) {
 	s.Equal(1, got.Data.Retention, "the world is still the launch's")
 	_, err = s.sessions.GetSession(s.ctx, "run-1")
 	s.Require().ErrorIs(err, sdk.ErrNotFound, "the refused save's session record did not land")
+}
+
+// TestGetCheckpointVersion_ReadsOnlyTheVersionKey pins the version reader
+// the resident copy is checked by (rpg-project#879 S6): one GET of the
+// version key, nothing else, 0 when the key is absent.
+func (s *FencedRepoSuite) TestGetCheckpointVersion_ReadsOnlyTheVersionKey() {
+	reader, ok := s.plain.(sdk.CheckpointVersionReader)
+	s.Require().True(ok, "the Redis encounter repository must carry the version reader")
+	v1 := s.launch("enc-1")
+	_, err := s.fenced.SaveFenced(s.ctx, &sdk.SaveFencedInput{Encounter: "enc-1", Data: world(2), Expected: v1})
+	s.Require().NoError(err)
+
+	seen := &commandLog{}
+	s.client.(*goredis.Client).AddHook(seen)
+	got, err := reader.GetCheckpointVersion(s.ctx, "enc-1")
+	s.Require().NoError(err)
+	s.Equal(uint64(2), got)
+	s.Equal([]string{"get session-enc-ver:v1alpha1:enc-1"}, seen.commands)
+
+	got, err = reader.GetCheckpointVersion(s.ctx, "never-launched")
+	s.Require().NoError(err)
+	s.Zero(got, "an absent version is 0, which no kept copy holds")
+	s.Len(seen.commands, 2)
+}
+
+func (s *FencedRepoSuite) TestGetCheckpointVersion_Unreadable_FailsClosed() {
+	reader, ok := s.plain.(sdk.CheckpointVersionReader)
+	s.Require().True(ok)
+	s.Require().NoError(s.mr.Set("session-enc-ver:v1alpha1:enc-1", "not-a-number"))
+	_, err := reader.GetCheckpointVersion(s.ctx, "enc-1")
+	s.Require().ErrorIs(err, sdk.ErrBadRepository)
+	_, err = reader.GetCheckpointVersion(s.ctx, "")
+	s.Require().Error(err)
+}
+
+// commandLog records every command the client sends, as "name key".
+type commandLog struct{ commands []string }
+
+func (l *commandLog) DialHook(next goredis.DialHook) goredis.DialHook { return next }
+func (l *commandLog) ProcessPipelineHook(next goredis.ProcessPipelineHook) goredis.ProcessPipelineHook {
+	return func(ctx context.Context, cmds []goredis.Cmder) error {
+		for _, cmd := range cmds {
+			l.record(cmd)
+		}
+		return next(ctx, cmds)
+	}
+}
+func (l *commandLog) ProcessHook(next goredis.ProcessHook) goredis.ProcessHook {
+	return func(ctx context.Context, cmd goredis.Cmder) error {
+		l.record(cmd)
+		return next(ctx, cmd)
+	}
+}
+func (l *commandLog) record(cmd goredis.Cmder) {
+	line := cmd.Name()
+	if args := cmd.Args(); len(args) > 1 {
+		line += " " + fmt.Sprint(args[1])
+	}
+	l.commands = append(l.commands, line)
 }

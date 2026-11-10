@@ -28,6 +28,14 @@
 //     those bytes under a scratch key (the session's own key is never
 //     written).
 //
+//   - resident (rpg-project#879 S6): the version GET a verb holding a kept
+//     copy pays (GetCheckpointVersion), the encounter's Rebind to fresh
+//     capabilities on the instance just loaded, and the warm open they make
+//     with the session record (record fetch + decode + version GET +
+//     Rebind), beside the cold read load whole. The write path's warm open
+//     also binds its standing and write capabilities, unexported, so the
+//     warm open row is its floor.
+//
 // The attach stage (the session's standingFor, read/write capabilities,
 // prepareExploration's sheet staging, OpenAct) is unexported in
 // rulebooks/dnd5e/session, so it is not timed alone: the row reports the
@@ -87,6 +95,9 @@ type reloadRow struct {
 	pieceBytes                        int
 	pieceGet, coldBuild               []time.Duration
 	coldMove, warmMove                []time.Duration
+	// The resident copy's stages and its Move pairs (rpg-project#879 S6).
+	versionGet, rebind, warmOpen []time.Duration
+	residentMove, forcedMiss     []time.Duration
 }
 
 // measureColdReload rebuilds run's encounter from the store n times, by
@@ -102,6 +113,8 @@ func measureColdReload(
 	require.True(t, ok, "the Redis encounter repository carries the fenced capability")
 	var scratchVersion uint64
 	r := reloadRow{key: key, mode: mode, n: n}
+	versions, ok := encRepo.(sdk.CheckpointVersionReader)
+	require.True(t, ok, "the Redis encounter repository carries the version reader")
 
 	// One untimed pass so the first measured rebuild is not the process's
 	// first touch of these code paths.
@@ -156,6 +169,20 @@ func measureColdReload(
 		build := time.Since(s)
 		require.NoError(t, err)
 		r.siteBuild = append(r.siteBuild, build)
+
+		// resident: the version GET and the Rebind a warm verb pays in
+		// place of the fenced read and the load.
+		s = time.Now()
+		_, err = versions.GetCheckpointVersion(ctx, sess.Encounter)
+		versionGet := time.Since(s)
+		require.NoError(t, err)
+		r.versionGet = append(r.versionGet, versionGet)
+		s = time.Now()
+		require.NoError(t, enc.Rebind(&tkencounter.RebindInput{Capabilities: tkencounter.RefusingCapabilities()}))
+		rebind := time.Since(s)
+		r.rebind = append(r.rebind, rebind)
+		r.warmOpen = append(r.warmOpen,
+			r.sessionFetch[len(r.sessionFetch)-1]+r.sessionDecode[len(r.sessionDecode)-1]+versionGet+rebind)
 
 		// The stored site piece, and the load a cold process pays: a fresh
 		// provider, handed the piece, compiles the site once.
@@ -323,7 +350,10 @@ func reloadTable(rows []reloadRow, moves map[string][2][]time.Duration) string {
 		line("3p site piece GetSite (GET + decode)", r.pieceBytes, r.pieceGet)
 		line("3c cold site build (LoadEncounter, fresh provider + piece)", 0, r.coldBuild)
 		line("4 attach (read load − record − 1 − 2 − 3)", 0, r.attach)
-		line("read load whole (Manager.Where)", 0, r.readLoad)
+		line("read load whole (Manager.Where; a cold verb's open)", 0, r.readLoad)
+		line("6v version GET (GetCheckpointVersion)", 0, r.versionGet)
+		line("6r Rebind (kept encounter, fresh capabilities)", 0, r.rebind)
+		line("6 warm open floor (record fetch + decode + 6v + 6r)", 0, r.warmOpen)
 		line("5a ToData", 0, r.toData)
 		line("5b encode (JSON)", r.outBytes, r.encode)
 		line("5c persist (SET)", r.outBytes, r.persist)
@@ -335,7 +365,11 @@ func reloadTable(rows []reloadRow, moves map[string][2][]time.Duration) string {
 		}
 		if len(r.coldMove) > 0 {
 			line("Move whole, cold provider (fresh process, first verb)", 0, r.coldMove)
-			line("Move whole, warm provider (same process, next verb)", 0, r.warmMove)
+			line("Move whole, warm provider (same process, next verb; copy kept)", 0, r.warmMove)
+		}
+		if len(r.forcedMiss) > 0 {
+			line("Move whole, copy warm (version matches)", 0, r.residentMove)
+			line("Move whole, forced miss (version moved: GET + load)", 0, r.forcedMiss)
 		}
 	}
 	return b.String()
@@ -353,12 +387,74 @@ func measureColdMove(
 	run, member string, n, pathLen int, r *reloadRow,
 ) {
 	t.Helper()
+	move := backAndForth(t, orch.Manager, run, member, pathLen)
+	for range n {
+		sites, err := sessionorch.NewSites(nil)
+		require.NoError(t, err)
+		fresh, err := sessionorch.New(sessionorch.Config{
+			Redis: client, Characters: chars, TTL: 24 * time.Hour, Dice: testDice{},
+			PresentationIDs: idgen.NewSequential("presentation"), AnswerWhole: true, Sites: sites,
+		})
+		require.NoError(t, err)
+		h, err := sessionhandler.New(&sessionhandler.HandlerConfig{
+			Manager: fresh.Manager, Characters: chars, Preferences: fresh.Preferences,
+		})
+		require.NoError(t, err)
+		before := sites.Compiles()
+		r.coldMove = append(r.coldMove, move(h, fresh.Manager))
+		require.Equal(t, before+1, sites.Compiles(), "the cold Move compiled the site from the piece")
+		r.warmMove = append(r.warmMove, move(h, fresh.Manager))
+	}
+}
+
+// measureForcedMiss times n pairs of whole Moves on run on orch (rpg-project#879
+// S6): the first with the session's copy warm, the second after the store's
+// checkpoint version was moved under it (an INCR of the version key, as
+// another process's save moves it), so the verb reads the version, misses,
+// and loads. The fence then takes the moved version as the store's, so the
+// save lands. The pair's difference is what a miss costs.
+func measureForcedMiss(
+	t *testing.T, client *goredis.Client, orch *sessionorch.Orchestrator, chars characterrepo.Repository,
+	run, member string, n, pathLen int, r *reloadRow,
+) {
+	t.Helper()
+	ctx := context.Background()
+	h, err := sessionhandler.New(&sessionhandler.HandlerConfig{
+		Manager: orch.Manager, Characters: chars, Preferences: orch.Preferences,
+	})
+	require.NoError(t, err)
+	sessRaw, err := client.Get(ctx, measureSessionKeyPrefix+run).Bytes()
+	require.NoError(t, err)
+	var sess sdk.SessionData
+	require.NoError(t, json.Unmarshal(sessRaw, &sess))
+	walk := backAndForth(t, orch.Manager, run, member, pathLen)
+	// One untimed Move so the copy is this orchestrator's own and warm.
+	walk(h, orch.Manager)
+	before := orch.Residency.Stats()
+	for range n {
+		r.residentMove = append(r.residentMove, walk(h, orch.Manager))
+		require.NoError(t, client.Incr(ctx, "session-enc-ver:v1alpha1:"+sess.Encounter).Err())
+		r.forcedMiss = append(r.forcedMiss, walk(h, orch.Manager))
+	}
+	hits, misses := residentDelta(before, orch.Residency.Stats())
+	require.Equal(t, int64(n), misses[sdk.MissVersionMoved], "every forced Move missed on the version")
+	require.GreaterOrEqual(t, hits, int64(n), "every paired Move ran on the copy")
+}
+
+// backAndForth is a whole Move of pathLen cells along the axial line from
+// where member stands, alternating direction, timed; a Move that does not
+// land whole turns around and tries once more. Position is read after each
+// timed Move, never before, so nothing warms anything ahead of the verb.
+func backAndForth(
+	t *testing.T, m *sdk.Manager, run, member string, pathLen int,
+) func(h *sessionhandler.Handler, m *sdk.Manager) time.Duration {
+	t.Helper()
 	ctx := auth.WithPlayerID(context.Background(), "player-"+member)
-	where, err := orch.Manager.Where(context.Background(), &sdk.WhereInput{Session: run, Member: member})
+	where, err := m.Where(context.Background(), &sdk.WhereInput{Session: run, Member: member})
 	require.NoError(t, err)
 	x, y := int(where.Position.X), int(where.Position.Y)
 	dir := 1
-	move := func(h *sessionhandler.Handler, m *sdk.Manager) time.Duration {
+	return func(h *sessionhandler.Handler, m *sdk.Manager) time.Duration {
 		var took time.Duration
 		for attempt := 0; ; attempt++ {
 			require.Less(t, attempt, 2, "no direction walks whole from (%d,%d)", x, y)
@@ -383,22 +479,5 @@ func measureColdMove(
 				return took
 			}
 		}
-	}
-	for range n {
-		sites, err := sessionorch.NewSites(nil)
-		require.NoError(t, err)
-		fresh, err := sessionorch.New(sessionorch.Config{
-			Redis: client, Characters: chars, TTL: 24 * time.Hour, Dice: testDice{},
-			PresentationIDs: idgen.NewSequential("presentation"), AnswerWhole: true, Sites: sites,
-		})
-		require.NoError(t, err)
-		h, err := sessionhandler.New(&sessionhandler.HandlerConfig{
-			Manager: fresh.Manager, Characters: chars, Preferences: fresh.Preferences,
-		})
-		require.NoError(t, err)
-		before := sites.Compiles()
-		r.coldMove = append(r.coldMove, move(h, fresh.Manager))
-		require.Equal(t, before+1, sites.Compiles(), "the cold Move compiled the site from the piece")
-		r.warmMove = append(r.warmMove, move(h, fresh.Manager))
 	}
 }

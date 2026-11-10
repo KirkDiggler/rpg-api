@@ -98,6 +98,15 @@ const (
 	// (rpg-project#879 S5). Unset is sessionorch.DefaultSiteEntries; it must
 	// be a positive integer when set.
 	envSiteCacheEntries = "RPG_SITE_CACHE_ENTRIES"
+	// envResidentEntries bounds how many sessions' resident encounters the
+	// process keeps between verbs (rpg-project#879 S6). Unset is
+	// sessionorch.DefaultResidentEntries; when set it must be a positive
+	// integer, or -1 to keep none (every verb loads, as before S6).
+	envResidentEntries = "RPG_RESIDENT_ENTRIES"
+	// envResidentMaxMB bounds the resident encounters' estimated memory
+	// together, in MiB. Unset is sessionorch.DefaultResidentMaxMB; it must be
+	// a positive integer when set.
+	envResidentMaxMB = "RPG_RESIDENT_MAX_MB"
 )
 
 var (
@@ -284,12 +293,18 @@ func runServer(_ *cobra.Command, _ []string) error {
 	// projects every shipped dungeon's atlas through this same provider, so
 	// the shelf's sites compile at boot (one "site compiled" line per hash)
 	// and a launch on shipped content compiles nothing.
-	sites, err := newSites()
+	//
+	// ONE RESIDENCY FOR THE PROCESS (rpg-project#879 S6): each session's
+	// write-verb encounter stays in memory between verbs, checked against
+	// the store's checkpoint version on every verb. Nothing stored changes;
+	// a restart starts cold.
+	sites, residency, err := newProcessCaches()
 	if err != nil {
 		return err
 	}
 	sessionOrch, err := sessionorch.New(sessionorch.Config{
 		Sites:             sites,
+		Residency:         residency,
 		RecordCapture:     recordCapture,
 		StaleTargetPolicy: sdk.StaleTargetPolicy(os.Getenv(envStaleTargetPolicy)),
 		Redis:             redisClient,
@@ -739,6 +754,46 @@ func newSites() (*sessionorch.Sites, error) {
 		return nil, fmt.Errorf("site provider: %w", err)
 	}
 	return sites, nil
+}
+
+// newProcessCaches is the process's site provider and residency, the
+// residency's bounds logged.
+func newProcessCaches() (*sessionorch.Sites, *sessionorch.Residency, error) {
+	sites, err := newSites()
+	if err != nil {
+		return nil, nil, err
+	}
+	residency, err := newResidency()
+	if err != nil {
+		return nil, nil, err
+	}
+	log.Printf("session residency: %s", residency.Bounds())
+	return sites, residency, nil
+}
+
+// newResidency is the process's residency, bounded by envResidentEntries and
+// envResidentMaxMB.
+func newResidency() (*sessionorch.Residency, error) {
+	cfg := &sessionorch.ResidencyConfig{}
+	if v := os.Getenv(envResidentEntries); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || (n <= 0 && n != -1) {
+			return nil, fmt.Errorf("%s=%q: want a positive integer, or -1 to keep none", envResidentEntries, v)
+		}
+		cfg.Entries = n
+	}
+	if v := os.Getenv(envResidentMaxMB); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("%s=%q: want a positive integer", envResidentMaxMB, v)
+		}
+		cfg.MaxMB = n
+	}
+	residency, err := sessionorch.NewResidency(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("residency: %w", err)
+	}
+	return residency, nil
 }
 
 // warmShippedSites resolves every shipped dungeon's site through the
