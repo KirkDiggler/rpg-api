@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -76,7 +77,7 @@ func sheet(id string, hp int) *tkcharacter.Data {
 func (s *FencedRepoSuite) launch(id string) uint64 {
 	out, err := s.fenced.SaveFenced(s.ctx, &sdk.SaveFencedInput{Encounter: id, Data: world(1), Expected: 0})
 	s.Require().NoError(err)
-	s.Require().Equal(uint64(1), out.Version)
+	s.Require().Positive(out.Version)
 	return out.Version
 }
 
@@ -211,7 +212,58 @@ func (s *FencedRepoSuite) TestVersionSharesTheBlobsLifetime() {
 	s.mr.FastForward(fencedTTL + time.Second)
 	s.False(s.mr.Exists("session-enc:v1alpha3:enc-1"))
 	s.False(s.mr.Exists("session-enc-ver:v1alpha1:enc-1"))
-	s.launch("enc-1")
+	s.Greater(s.launch("enc-1"), uint64(1), "a relaunch after expiry starts above the id's last version")
+}
+
+// TestARelaunchedIDNeverRepeatsAVersion pins the contract the resident copy
+// relies on (rpg-project#927): one encounter id's checkpoint versions never
+// repeat, across its keys expiring or being deleted and a relaunch under the
+// same id, so a copy kept at version N by another process can never match a
+// new world's N.
+func (s *FencedRepoSuite) TestARelaunchedIDNeverRepeatsAVersion() {
+	const saves = 4
+	life := func() []uint64 {
+		v := s.launch("enc-1")
+		versions := make([]uint64, 0, 1+saves)
+		versions = append(versions, v)
+		for range saves {
+			out, err := s.fenced.SaveFenced(s.ctx, &sdk.SaveFencedInput{Encounter: "enc-1", Data: world(2), Expected: v})
+			s.Require().NoError(err)
+			v = out.Version
+			versions = append(versions, v)
+		}
+		return versions
+	}
+	seen := map[uint64]string{}
+	note := func(name string, versions []uint64) {
+		for _, v := range versions {
+			prev, dup := seen[v]
+			s.False(dup, "version %d of the %s life repeats one of the %s life", v, name, prev)
+			seen[v] = name
+		}
+	}
+	note("first", life())
+
+	// Deleted: every key of the checkpoint, as a hand cleanup would.
+	keys := s.mr.Keys()
+	for _, k := range keys {
+		if strings.HasPrefix(k, "session-enc") && strings.HasSuffix(k, ":enc-1") {
+			s.mr.Del(k)
+		}
+	}
+	s.False(s.mr.Exists("session-enc-ver:v1alpha1:enc-1"))
+	note("second", life())
+
+	// Expired: the checkpoint's TTL runs out.
+	s.mr.FastForward(fencedTTL + time.Second)
+	s.False(s.mr.Exists("session-enc-ver:v1alpha1:enc-1"))
+	note("third", life())
+
+	// Another id's saves raise the same high-water, so its launches never
+	// collide with this id's either.
+	other := s.launch("enc-2")
+	s.Greater(other, uint64(3*(saves+1)), "a launch of another id starts above every version issued")
+	s.Len(seen, 3*(saves+1))
 }
 
 func (s *FencedRepoSuite) TestSessionBlobKeepsTheSessionTTL() {

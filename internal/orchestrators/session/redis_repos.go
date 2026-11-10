@@ -134,7 +134,8 @@ func (r *redisEncounterRepository) SaveEncounter(ctx context.Context, id string,
 	if err != nil {
 		return err
 	}
-	reply, err := savePiecesScript.Run(ctx, r.client, checkpointKeys(id), args...).Slice()
+	keys := append(checkpointKeys(id), sessionEncVerHighKey)
+	reply, err := savePiecesScript.Run(ctx, r.client, keys, args...).Slice()
 	if err != nil {
 		return fmt.Errorf("set encounter %q: %w", id, err)
 	}
