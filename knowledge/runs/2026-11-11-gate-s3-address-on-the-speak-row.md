@@ -5,10 +5,12 @@ Slice [rpg-project#923](https://github.com/KirkDiggler/rpg-project/issues/923) o
 ## Shipped
 
 - Session `Declaration.Address` crosses as proto `Declaration.address` (nil absent, malformed or off-Speak refused Internal) — [rpg-api#1222](https://github.com/KirkDiggler/rpg-api/pull/1222).
-- `content/the-mad-king.yaml` matches the toolkit castle at encounter `3a5428e8` (front-gate approach within 2; captain, gate-1, gate-2 hail rows) — [rpg-api#1222](https://github.com/KirkDiggler/rpg-api/pull/1222).
+- `content/the-mad-king.yaml` matches the toolkit castle at encounter `v0.195.0` (front-gate approach within 2; captain, gate-1, gate-2 hail rows) — [rpg-api#1222](https://github.com/KirkDiggler/rpg-api/pull/1222).
 - A lobby launch refused as `ErrInvalidWorld` answers FAILED_PRECONDITION with the SDK's sentence — [rpg-api#1222](https://github.com/KirkDiggler/rpg-api/pull/1222).
 
 - Session `TableAnswer.To` crosses as v1alpha2 `TableAnswer.to` on the table-answer act and a speak act's answer (zero party absent), after the operator's early look asked that the guard's line say who it is spoken to — [rpg-api#1222](https://github.com/KirkDiggler/rpg-api/pull/1222).
+
+- Pinned on tags: encounter `v0.195.0`, session `v0.181.0`; castle copies and every acceptance test pass unchanged under the two-way sight rule — [rpg-api#1222](https://github.com/KirkDiggler/rpg-api/pull/1222).
 
 ## Decided
 
