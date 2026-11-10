@@ -243,6 +243,9 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 			}
 			r := row{key: key, mode: mode, compile: compileTook, launch: launchTook}
 			br := bytesRow{key: key, mode: mode}
+			// prevRound is the world round the last save named, so a Move
+			// whose save raises it is told from one that does not.
+			prevRound := -1
 			for i := 0; i < warm+n; i++ {
 				if dir == 0 {
 					dir = 1
@@ -256,7 +259,9 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 					highWater = got[len(got)-1].id
 				}
 				mu.Unlock()
-				written.take()
+				if warmShapes, _ := written.take(); warmShapes.round >= 0 {
+					prevRound = warmShapes.round
+				}
 				t0 := time.Now()
 				resp, err := handler.Move(ctx, &sessionpb.MoveRequest{Session: run, Member: "alice", Path: p})
 				answered := time.Now()
@@ -315,15 +320,10 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 				}
 				r.answer = append(r.answer, answered.Sub(t0))
 				r.drained = append(r.drained, drainedAt)
-				wTotal, wRest, wSegment, wSaves := written.take()
+				shapes, wSaves := written.take()
 				sRest, sLog, sSegments := storedBytes(t, client, run)
-				br.write = append(br.write, wTotal)
-				br.rest = append(br.rest, wRest)
-				br.segment = append(br.segment, wSegment)
-				br.saves = append(br.saves, wSaves)
-				br.storedRest = append(br.storedRest, sRest)
-				br.storedLog = append(br.storedLog, sLog)
-				br.segments = append(br.segments, sSegments)
+				br.add(shapes, wSaves, prevRound, sRest, sLog, sSegments)
+				prevRound = shapes.round
 				r.steps = append(r.steps, len(resp.GetSteps()))
 				c := 0
 				if resp.GetContinues() {

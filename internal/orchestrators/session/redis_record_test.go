@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,10 +21,11 @@ import (
 	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
 )
 
-// The keys the appended record lives under (redis_record.go), spelled out so
-// a renamed constant is a failing test rather than a silent move.
+// The keys the appended record and the rest's head live under
+// (redis_record.go, redis_pieces.go), spelled out so a renamed constant is a
+// failing test rather than a silent move.
 const (
-	restKey   = "session-enc:v1alpha2:"
+	restKey   = "session-enc:v1alpha3:"
 	logKey    = "session-enc-log:v1alpha2:"
 	verKey    = "session-enc-ver:v1alpha1:"
 	legacyKey = "session-enc:v1alpha1:"
@@ -154,11 +156,18 @@ func (s *AppendedRecordRepoSuite) TestLaunchThenAppend_GrowsTheListByOne_AndLoad
 	s.Require().NoError(err)
 	s.Equal(s.log.ToData(), plain.Log, "the plain read is whole too")
 
-	var stored tkencounter.EncounterData
-	raw, err := s.client.Get(s.ctx, restKey+"enc-1").Bytes()
+	s.Empty(s.storedHead("enc-1").Log.Entries, "the head never carries the record")
+}
+
+// storedHead is the head piece as stored, its mark prefix stripped.
+func (s *AppendedRecordRepoSuite) storedHead(id string) tkencounter.EncounterData {
+	raw, err := s.client.Get(s.ctx, restKey+id).Result()
 	s.Require().NoError(err)
-	s.Require().NoError(json.Unmarshal(raw, &stored))
-	s.Empty(stored.Log.Entries, "the rest key never carries the record")
+	_, body, ok := strings.Cut(raw, "\n")
+	s.Require().True(ok, "the head carries its mark prefix")
+	var stored tkencounter.EncounterData
+	s.Require().NoError(json.Unmarshal([]byte(body), &stored))
+	return stored
 }
 
 func (s *AppendedRecordRepoSuite) TestBeatlessSave_AppendsNothing_AndStillMovesTheVersion() {
@@ -299,11 +308,7 @@ func (s *AppendedRecordRepoSuite) TestPlainSave_WritesTheSameShape() {
 	s.Require().NoError(s.plain.SaveEncounter(s.ctx, "enc-1", s.whole()))
 
 	s.Equal(int64(1), s.llen("enc-1"))
-	var stored tkencounter.EncounterData
-	raw, err := s.client.Get(s.ctx, restKey+"enc-1").Bytes()
-	s.Require().NoError(err)
-	s.Require().NoError(json.Unmarshal(raw, &stored))
-	s.Empty(stored.Log.Entries, "the plain path stores the rest, not the whole blob")
+	s.Empty(s.storedHead("enc-1").Log.Entries, "the plain path stores the pieces, not the whole blob")
 	got := s.loaded("enc-1")
 	s.Equal(uint64(1), got.Version)
 	s.Equal(s.log.ToData(), got.Data.Log)
@@ -316,11 +321,11 @@ func (s *AppendedRecordRepoSuite) TestCheckpointUnderTheOldKey_IsRefusedByName()
 	s.Require().NoError(s.mr.Set(verKey+"enc-old", "4"))
 
 	_, err = s.appending.GetFencedEncounter(s.ctx, &sdk.GetFencedEncounterInput{Encounter: "enc-old"})
-	s.Require().ErrorIs(err, sessionorch.ErrCheckpointBeforeAppendedRecord)
+	s.Require().ErrorIs(err, sessionorch.ErrCheckpointBeforePieces)
 	s.NotErrorIs(err, sdk.ErrNotFound, "a run that exists is never reported missing")
 
 	_, err = s.plain.GetEncounter(s.ctx, "enc-old")
-	s.Require().ErrorIs(err, sessionorch.ErrCheckpointBeforeAppendedRecord)
+	s.Require().ErrorIs(err, sessionorch.ErrCheckpointBeforePieces)
 }
 
 func (s *AppendedRecordRepoSuite) TestAGapInTheStoredRecord_FailsTheRead() {
@@ -334,7 +339,7 @@ func (s *AppendedRecordRepoSuite) TestAGapInTheStoredRecord_FailsTheRead() {
 
 	_, err = s.appending.GetFencedEncounter(s.ctx, &sdk.GetFencedEncounterInput{Encounter: "enc-1"})
 	s.Require().ErrorIs(err, sdk.ErrBadRepository, "an unbounded record with a hole is refused, never loaded short")
-	s.ErrorIs(err, sessionorch.ErrCheckpointRecordMismatch)
+	s.ErrorIs(err, sessionorch.ErrCheckpointMismatch)
 }
 
 // TestARestWhoseRecordIsGone_FailsClosed is the reviewer's probe: a record
@@ -347,10 +352,10 @@ func (s *AppendedRecordRepoSuite) TestARestWhoseRecordIsGone_FailsClosed() {
 	s.mr.Del(logKey + "enc-1")
 
 	_, err = s.appending.GetFencedEncounter(s.ctx, &sdk.GetFencedEncounterInput{Encounter: "enc-1"})
-	s.Require().ErrorIs(err, sessionorch.ErrCheckpointRecordMismatch)
+	s.Require().ErrorIs(err, sessionorch.ErrCheckpointMismatch)
 	s.ErrorIs(err, sdk.ErrBadRepository)
 	_, err = s.plain.GetEncounter(s.ctx, "enc-1")
-	s.Require().ErrorIs(err, sessionorch.ErrCheckpointRecordMismatch)
+	s.Require().ErrorIs(err, sessionorch.ErrCheckpointMismatch)
 }
 
 func (s *AppendedRecordRepoSuite) TestARecordWithNoRest_FailsClosed() {
@@ -360,7 +365,7 @@ func (s *AppendedRecordRepoSuite) TestARecordWithNoRest_FailsClosed() {
 	s.mr.Del(restKey + "enc-1")
 
 	_, err = s.appending.GetFencedEncounter(s.ctx, &sdk.GetFencedEncounterInput{Encounter: "enc-1"})
-	s.Require().ErrorIs(err, sessionorch.ErrCheckpointRecordMismatch)
+	s.Require().ErrorIs(err, sessionorch.ErrCheckpointMismatch)
 	s.NotErrorIs(err, sdk.ErrNotFound, "a record left behind is not a missing run")
 }
 
@@ -371,7 +376,7 @@ func (s *AppendedRecordRepoSuite) TestARestWithNoFloor_FailsClosed() {
 	s.mr.Del(floorKey + "enc-1")
 
 	_, err = s.appending.GetFencedEncounter(s.ctx, &sdk.GetFencedEncounterInput{Encounter: "enc-1"})
-	s.Require().ErrorIs(err, sessionorch.ErrCheckpointRecordMismatch)
+	s.Require().ErrorIs(err, sessionorch.ErrCheckpointMismatch)
 }
 
 func (s *AppendedRecordRepoSuite) TestTheFloorIsStoredBesideTheRest() {
@@ -420,7 +425,7 @@ func (s *AppendedRecordRepoSuite) TestAMalformedPrefix_RefusesTheSave_AndTheRead
 	s.Equal("1", mustGet(s.mr, verKey+"enc-1"))
 
 	_, err = s.appending.GetFencedEncounter(s.ctx, &sdk.GetFencedEncounterInput{Encounter: "enc-1"})
-	s.Require().ErrorIs(err, sessionorch.ErrCheckpointRecordMismatch, "and the read refuses the element, never skips it")
+	s.Require().ErrorIs(err, sessionorch.ErrCheckpointMismatch, "and the read refuses the element, never skips it")
 }
 
 func (s *AppendedRecordRepoSuite) TestAPrefixThatMisnamesItsSegment_FailsTheRead() {
@@ -432,7 +437,7 @@ func (s *AppendedRecordRepoSuite) TestAPrefixThatMisnamesItsSegment_FailsTheRead
 	s.Require().NoError(s.client.LSet(s.ctx, logKey+"enc-1", 0, "9"+elems[0][1:]).Err())
 
 	_, err = s.appending.GetFencedEncounter(s.ctx, &sdk.GetFencedEncounterInput{Encounter: "enc-1"})
-	s.Require().ErrorIs(err, sessionorch.ErrCheckpointRecordMismatch)
+	s.Require().ErrorIs(err, sessionorch.ErrCheckpointMismatch)
 }
 
 func (s *AppendedRecordRepoSuite) TestARestCarryingEntries_IsRefusedBeforeAnyWrite() {

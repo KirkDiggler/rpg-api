@@ -3,6 +3,7 @@ package session_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -98,10 +99,13 @@ func storedSiteHash(t *testing.T, h *acceptanceHarness, run string) string {
 		Encounter string `json:"encounter"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &record))
-	raw, err = h.redis.Get(context.Background(), "session-enc:v1alpha2:"+record.Encounter).Bytes()
+	// The head piece names the site: "<mark>\n<JSON>" (rpg-project#897 leg b).
+	head, err := h.redis.Get(context.Background(), "session-enc:v1alpha3:"+record.Encounter).Result()
 	require.NoError(t, err)
+	_, body, ok := strings.Cut(head, "\n")
+	require.True(t, ok, "the head carries its mark")
 	var blob map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(raw, &blob))
+	require.NoError(t, json.Unmarshal([]byte(body), &blob))
 	require.NotContains(t, blob, "field", "the checkpoint references its site, never carries it")
 	var hash string
 	require.NoError(t, json.Unmarshal(blob["site_hash"], &hash))

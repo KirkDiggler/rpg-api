@@ -15,19 +15,12 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
 
-// THE CHECKPOINT IS TWO KEYS AND A VERSION (rpg-project#897 leg c). The
-// encounter's REST, the world with its story log reduced to the head (NextSeq
-// and LastID), lives at sessionEncKeyPrefix; the story record lives beside it
-// as a Redis list of SEGMENTS at sessionEncLogKeyPrefix, one per save that
-// wrote beats, each a record.LogData with its own audience table. A save
-// replaces the rest and appends one segment; a read joins them with
-// record.JoinData. The version key (redis_fenced.go) is unchanged.
-//
-// WHY A NEW PREFIX. A rest alone decodes as a legal trimmed-empty record, so a
-// reader of the old single-blob key handed a rest would load an encounter with
-// a silently empty story. The old prefix is never written again, and a
-// checkpoint found only there is refused by name
-// ([ErrCheckpointBeforeAppendedRecord]).
+// THE RECORD IS SEGMENTS BESIDE THE PIECES (rpg-project#897 leg c). The
+// story record lives beside the rest's pieces (redis_pieces.go) as a Redis
+// list of SEGMENTS at sessionEncLogKeyPrefix, one per save that wrote beats,
+// each a record.LogData with its own audience table. A save appends one
+// segment; a read joins them onto the head's log with record.JoinData. The
+// version key (redis_fenced.go) is unchanged.
 const (
 	// sessionEncLogKeyPrefix keys an encounter's record segments: a list, oldest
 	// first, each element "<last seq>\n<segment JSON>" so the save script can
@@ -36,7 +29,7 @@ const (
 
 	// sessionEncFloorKeyPrefix keys an encounter's retention floor: the seq
 	// below which the store may hold nothing, as the last save named it,
-	// written with the rest under the same TTL. The read joins on it, so a
+	// written with the head under the same TTL. The read joins on it, so a
 	// record the store lost at or above it is refused, never loaded short.
 	sessionEncFloorKeyPrefix = "session-enc-floor:v1alpha2:"
 
@@ -45,22 +38,26 @@ const (
 	legacyEncKeyPrefix = "session-enc:v1alpha1:"
 )
 
-// ErrCheckpointBeforeAppendedRecord is a stored encounter found only under
-// the single-blob key every checkpoint used before the appended record
-// (rpg-project#897 leg c). It is refused rather than migrated: pre-playtest,
-// every live session relaunches. The session handlers map it to
-// FAILED_PRECONDITION (sdkerr): the request is well formed and the session
+// ErrCheckpointBeforePieces is a stored encounter found only under a key an
+// earlier store shape wrote: leg (c)'s whole rest (session-enc:v1alpha2) or
+// the single blob before it (session-enc:v1alpha1), with no head under the
+// pieces' key (rpg-project#897 leg b). It is refused rather than migrated:
+// pre-playtest, every live session relaunches. The session handlers map it
+// to FAILED_PRECONDITION (sdkerr): the request is well formed and the session
 // exists, but this server's stored state refuses the verb.
-var ErrCheckpointBeforeAppendedRecord = errors.New(
-	"checkpoint saved before the appended record (rpg-project#897); relaunch the session")
+var ErrCheckpointBeforePieces = errors.New(
+	"checkpoint saved before the rest was stored as pieces (rpg-project#897); relaunch the session")
 
-// ErrCheckpointRecordMismatch is a stored checkpoint whose rest, record
-// list and floor disagree: a record list or floor with no rest, a rest with
-// no floor, a malformed segment, or a record missing a seq at or above the
-// floor (which includes a rest whose list is gone while its next seq is above
-// the floor). The read fails closed rather than load a short or empty story.
-// It is wrapped beside sdk.ErrBadRepository.
-var ErrCheckpointRecordMismatch = errors.New("stored checkpoint and its record disagree")
+// ErrCheckpointMismatch is a stored checkpoint whose keys disagree, named by
+// what is wrong: a piece missing (the roster, knowledge or the journal beside
+// a head, or pieces, a record list or a floor with no head), a piece or mark
+// that does not decode, a hash field that names no piece, a malformed
+// segment, or a record missing a seq at or above the floor. The read fails
+// closed rather than load a world short a shape or a story. It is wrapped
+// beside sdk.ErrBadRepository, and the session handlers map it to
+// FAILED_PRECONDITION (sdkerr): the stored state refuses the verb until the
+// session is relaunched, and retrying as is cannot help.
+var ErrCheckpointMismatch = errors.New("stored checkpoint's pieces disagree")
 
 // ErrRestCarriesRecord is a fenced save whose rest still carries record
 // entries: the record travels only as the appended segment, so a rest with
@@ -70,7 +67,7 @@ var ErrRestCarriesRecord = errors.New("the rest of an appended save carries reco
 // mismatch wraps a disagreement between a checkpoint's pieces by name.
 func mismatch(id, format string, args ...interface{}) error {
 	return fmt.Errorf("encounter %q: %s: %w: %w", id, fmt.Sprintf(format, args...),
-		ErrCheckpointRecordMismatch, sdk.ErrBadRepository)
+		ErrCheckpointMismatch, sdk.ErrBadRepository)
 }
 
 // encodeSegment is one segment as its list element: the last seq it holds, a
@@ -151,28 +148,37 @@ type storedCheckpoint struct {
 	data *tkencounter.EncounterData
 	// version is the raw version key, "" when absent.
 	version string
+	// marks is the mark stored beside every piece.
+	marks map[tkencounter.PieceKey]tkencounter.Mark
 }
 
-// loadCheckpoint reads the rest, the version, the segments and the floor in
-// one MULTI/EXEC, so the version describes exactly the data read, and joins
-// them on the stored floor into one whole world. An encounter stored only
-// under the legacy single-blob key is refused with
-// ErrCheckpointBeforeAppendedRecord; one stored nowhere is sdk.ErrNotFound;
-// pieces that disagree are ErrCheckpointRecordMismatch.
+// loadCheckpoint reads the head, both hashes, the journal, the floor, the
+// version and the segments in one MULTI/EXEC, so the version and the marks
+// describe exactly the data read, joins the pieces (encounter.JoinPieces) and
+// then the record on the stored floor into one whole world. An encounter
+// stored only under an earlier shape's key is refused with
+// ErrCheckpointBeforePieces; one stored nowhere is sdk.ErrNotFound; keys that
+// disagree are ErrCheckpointMismatch, naming the piece.
 func (r *redisEncounterRepository) loadCheckpoint(ctx context.Context, id string) (*storedCheckpoint, error) {
 	var (
-		restCmd   *goredis.StringCmd
-		verCmd    *goredis.StringCmd
-		logCmd    *goredis.StringSliceCmd
-		floorCmd  *goredis.StringCmd
-		legacyCmd *goredis.IntCmd
+		headCmd    *goredis.StringCmd
+		rosterCmd  *goredis.MapStringStringCmd
+		knowCmd    *goredis.MapStringStringCmd
+		journalCmd *goredis.StringCmd
+		floorCmd   *goredis.StringCmd
+		verCmd     *goredis.StringCmd
+		logCmd     *goredis.StringSliceCmd
+		earlierCmd *goredis.IntCmd
 	)
 	_, err := r.client.TxPipelined(ctx, func(pipe goredis.Pipeliner) error {
-		restCmd = pipe.Get(ctx, sessionEncKeyPrefix+id)
+		headCmd = pipe.Get(ctx, sessionEncKeyPrefix+id)
+		rosterCmd = pipe.HGetAll(ctx, sessionEncRosterKeyPrefix+id)
+		knowCmd = pipe.HGetAll(ctx, sessionEncKnowKeyPrefix+id)
+		journalCmd = pipe.Get(ctx, sessionEncJournalKeyPrefix+id)
+		floorCmd = pipe.Get(ctx, sessionEncFloorKeyPrefix+id)
 		verCmd = pipe.Get(ctx, sessionEncVerKeyPrefix+id)
 		logCmd = pipe.LRange(ctx, sessionEncLogKeyPrefix+id, 0, -1)
-		floorCmd = pipe.Get(ctx, sessionEncFloorKeyPrefix+id)
-		legacyCmd = pipe.Exists(ctx, legacyEncKeyPrefix+id)
+		earlierCmd = pipe.Exists(ctx, appendedRestKeyPrefix+id, legacyEncKeyPrefix+id)
 		return nil
 	})
 	if err != nil && !errors.Is(err, goredis.Nil) {
@@ -183,32 +189,81 @@ func (r *redisEncounterRepository) loadCheckpoint(ctx context.Context, id string
 	if err != nil {
 		return nil, fmt.Errorf("get encounter %q record: %w", id, err)
 	}
+	roster, err := rosterCmd.Result()
+	if err != nil {
+		return nil, fmt.Errorf("get encounter %q roster: %w", id, err)
+	}
+	know, err := knowCmd.Result()
+	if err != nil {
+		return nil, fmt.Errorf("get encounter %q knowledge: %w", id, err)
+	}
+	rawJournal, journalErr := journalCmd.Result()
+	if journalErr != nil && !errors.Is(journalErr, goredis.Nil) {
+		return nil, fmt.Errorf("get encounter %q journal: %w", id, journalErr)
+	}
+	hasJournal := journalErr == nil
 	rawFloor, floorErr := floorCmd.Result()
 	if floorErr != nil && !errors.Is(floorErr, goredis.Nil) {
 		return nil, fmt.Errorf("get encounter %q floor: %w", id, floorErr)
 	}
 	hasFloor := floorErr == nil
 
-	rest, err := restCmd.Bytes()
+	rawHead, err := headCmd.Result()
 	if errors.Is(err, goredis.Nil) {
-		if len(elems) > 0 || hasFloor {
-			return nil, mismatch(id, "a record (%d segments, floor stored %v) with no rest", len(elems), hasFloor)
+		if len(elems) > 0 || hasFloor || len(roster) > 0 || len(know) > 0 || hasJournal {
+			return nil, mismatch(id, "pieces or a record with no %s (roster %d, knowledge %d, journal %v, "+
+				"%d segments, floor %v)", tkencounter.PieceHead, len(roster), len(know), hasJournal, len(elems), hasFloor)
 		}
-		if legacyCmd.Val() == 1 {
-			return nil, fmt.Errorf("encounter %q: %w", id, ErrCheckpointBeforeAppendedRecord)
+		if earlierCmd.Val() > 0 {
+			return nil, fmt.Errorf("encounter %q: %w", id, ErrCheckpointBeforePieces)
 		}
 		return nil, fmt.Errorf("encounter %q: %w", id, sdk.ErrNotFound)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get encounter %q: %w", id, err)
 	}
-	var data tkencounter.EncounterData
-	if err = json.Unmarshal(rest, &data); err != nil {
-		return nil, fmt.Errorf("unmarshal stored encounter %q: %w", id, err)
+
+	pieces := map[tkencounter.PieceKey][]byte{}
+	marks := map[tkencounter.PieceKey]tkencounter.Mark{}
+	put := func(key tkencounter.PieceKey, value string) error {
+		mark, body, decodeErr := decodePiece(value)
+		if decodeErr != nil {
+			return mismatch(id, "piece %s: %v", key, decodeErr)
+		}
+		pieces[key], marks[key] = body, mark
+		return nil
+	}
+	if putErr := put(tkencounter.PieceHead, rawHead); putErr != nil {
+		return nil, putErr
+	}
+	if hasJournal {
+		if putErr := put(tkencounter.PieceJournal, rawJournal); putErr != nil {
+			return nil, putErr
+		}
+	}
+	for _, hash := range []struct {
+		shape  tkencounter.PieceShape
+		fields map[string]string
+	}{{tkencounter.ShapeRoster, roster}, {tkencounter.ShapeKnowledge, know}} {
+		for field, value := range hash.fields {
+			key, ok := keyOfField(hash.shape, field)
+			if !ok {
+				return nil, mismatch(id, "%s field %q names no piece", hash.shape, field)
+			}
+			if putErr := put(key, value); putErr != nil {
+				return nil, putErr
+			}
+		}
+	}
+	data, err := tkencounter.JoinPieces(&tkencounter.JoinPiecesInput{Pieces: pieces})
+	if err != nil {
+		// The join names the piece and keeps its cause (ErrMissingPiece,
+		// ErrBadPiece and the decode error) in the chain.
+		return nil, fmt.Errorf("encounter %q: %w: %w: %w", id, err, ErrCheckpointMismatch, sdk.ErrBadRepository)
 	}
 
 	if !hasFloor {
-		return nil, mismatch(id, "a rest with no stored floor")
+		return nil, mismatch(id, "a head with no stored floor")
 	}
 	floor, err := strconv.ParseUint(rawFloor, 10, 64)
 	if err != nil {
@@ -228,7 +283,7 @@ func (r *redisEncounterRepository) loadCheckpoint(ctx context.Context, id string
 	}
 	data.Log = joined
 
-	out := &storedCheckpoint{data: &data}
+	out := &storedCheckpoint{data: data, marks: marks}
 	if v, verErr := verCmd.Result(); verErr == nil {
 		out.version = v
 	} else if !errors.Is(verErr, goredis.Nil) {
