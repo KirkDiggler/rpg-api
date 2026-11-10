@@ -1294,6 +1294,28 @@ func speakOptionsToProto(rows []sdk.SpeakOptionRow) ([]*sessionpb.SpeakOption, e
 	return out, nil
 }
 
+// speakAddressToProto mirrors the Speak row's address (rpg-project#923) as
+// the SDK wrote it. Nil in is nil out: an unaddressed member's row carries no
+// address, and the api never derives one.
+//
+// FAIL CLOSED, the way speakOptionsToProto refuses a row naming no target. An
+// address on a non-Speak row, or one naming no guard or no interaction, is a
+// producer defect; crossing it would open a reply panel on the wrong verb or
+// on nobody.
+func speakAddressToProto(verb sdk.Verb, a *sdk.Address) (*sessionpb.SpeakAddress, error) {
+	if a == nil {
+		return nil, nil
+	}
+	if verb != sdk.VerbSpeak {
+		return nil, fmt.Errorf("declaration %q carries an address; only a Speak row may", verb)
+	}
+	if a.Guard == "" || a.Interaction == "" {
+		return nil, fmt.Errorf("speak address names guard %q and interaction %q; both must be set",
+			a.Guard, a.Interaction)
+	}
+	return &sessionpb.SpeakAddress{GuardMemberId: a.Guard, InteractionId: a.Interaction}, nil
+}
+
 // footprintShapeToProto mirrors the provider's closed outline vocabulary.
 // An unrecognized value reaches UNSPECIFIED, a producer defect.
 func footprintShapeToProto(shape sdk.FootprintShape) sessionpb.FootprintShape {
@@ -1355,6 +1377,10 @@ func declarationToProto(d sdk.Declaration) (*sessionpb.Declaration, error) {
 	if err != nil {
 		return nil, err
 	}
+	address, err := speakAddressToProto(d.Verb, d.Address)
+	if err != nil {
+		return nil, err
+	}
 	out := &sessionpb.Declaration{
 		Verb:       verbToProto(d.Verb),
 		Slot:       slotToProto(d.Slot),
@@ -1377,7 +1403,11 @@ func declarationToProto(d sdk.Declaration) (*sessionpb.Declaration, error) {
 		// line) pair. Empty on every other verb. A Speak request brings back
 		// the option id AND the same target, since an id alone names nothing.
 		SpeakOptions: speakOptions,
-		Footprint:    footprintToProto(d.Footprint),
+		// WHO IS SPEAKING TO THIS MEMBER (rpg-project#923): the guard who
+		// hailed them and the interaction he speaks for, present only on the
+		// addressed member's own Speak row while the address stands.
+		Address:   address,
+		Footprint: footprintToProto(d.Footprint),
 		// WHAT BEARS ON THIS ROW, as the toolkit answered it. Rows never grant
 		// or refuse the declaration; Available and Why above stay the only gate.
 		Effects: effectRowsToProto(d.Effects),
