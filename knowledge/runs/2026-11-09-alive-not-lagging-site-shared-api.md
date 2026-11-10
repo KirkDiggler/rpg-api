@@ -18,6 +18,14 @@ RPG_MEASURE=1 RPG_MEASURE_N=20 RPG_MEASURE_PATH=<1|4|8> RPG_MEASURE_REDIS=127.0.
 - `session.ErrUnknownSite` maps to `FAILED_PRECONDITION`, checked ahead of `ErrInvalidWorld`.
 - The measure harness adds the stored-piece, cold-site and warm-vs-cold Move rows.
 
+## Decided
+
+- The site piece has no TTL, because it is content, not session state: a checkpoint's TTL is refreshed by every save while the piece is written once at launch, so any fixed TTL on the piece could expire under a game still being played. Collecting pieces no checkpoint names is a follow-up · `internal/orchestrators/session/redis_sites.go`
+- The repository returns `sdk.ErrNotFound` on a missing piece, not `session.ErrUnknownSite`, because that is the `SiteRepository` contract in session v0.175.0: the SDK turns a missing piece into `ErrUnknownSite` after its own provider misses, and the api maps that to `FAILED_PRECONDITION`. A corrupt piece is a distinct error, never "not found", so the SDK cannot fall through to compiling from nothing.
+- The in-process cache is bounded at 16 sites by default (`RPG_SITE_CACHE_ENTRIES`), because a site is about 42% of an encounter's heap (rpg-toolkit#2345) and the dev shelf ships three sites; the bound is an operator knob, not a tuned number.
+- A pre-site checkpoint is refused, not migrated, because a migration would guess a start cell for a field the checkpoint never named, and pre-playtest every live session can be relaunched.
+- PutSite is EXISTS then SETNX rather than a plain SET, because the piece is content-addressed and immutable: a repeat launch on the same content neither encodes nor ships 507 KB, and two launches racing on new content write identical bytes once.
+
 ## The table
 
 | row | path 1 before → after | path 4 | path 8 |
@@ -43,6 +51,11 @@ RPG_MEASURE=1 RPG_MEASURE_N=20 RPG_MEASURE_PATH=<1|4|8> RPG_MEASURE_REDIS=127.0.
 ## Deploy note
 
 A checkpoint saved before this head carries a field and no `site_hash`; the api refuses it as `INVALID_ARGUMENT`, named by field. Every session live on the dev env at deploy time has to be relaunched. Pre-playtest, no migration is written.
+
+## Mistaken
+
+- The first PR body described the run record as a command list instead of shipping this file; the review round caught it, and the corrupt-piece decode path had no test until the same round · rpg-api#1216
+- The builder that wrote the leg went quiet after finishing its commit and never pushed it; the commit was recovered from its worktree about an hour later. Builders must push and open the PR before any after-measurement, not after.
 
 ## Verification
 
