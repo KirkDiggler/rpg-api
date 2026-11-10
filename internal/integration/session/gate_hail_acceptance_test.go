@@ -87,6 +87,13 @@ func TestAcceptance_TheGuardHailsTheApproach(t *testing.T) {
 	require.NotEmpty(t, moved.GetSteps(), "she walked until the hail landed")
 	require.Less(t, len(moved.GetSteps()), len(path), "and the rest of the walk was dropped")
 	require.Equal(t, []string{theCaptainsHail}, linesOf(acts, "captain"), "the captain hails her")
+	var hailedTo []string
+	for _, a := range acts {
+		if ans := a.GetTableAnswer(); ans != nil && ans.GetWho().GetId() == "captain" && ans.GetSay() != "" {
+			hailedTo = append(hailedTo, ans.GetTo().GetId())
+		}
+	}
+	require.Equal(t, []string{"alice"}, hailedTo, "his line names who it is spoken to")
 
 	speak := speakRowOf(t, h, run, "alice", "player-alice")
 	require.True(t, speak.GetAvailable())

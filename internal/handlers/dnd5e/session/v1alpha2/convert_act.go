@@ -776,7 +776,9 @@ func restToProto(b sdk.RestAct) (*sessionpb.RestAct, error) {
 func tableAnswerToProto(b sdk.TableAnswer) (*sessionpb.TableAnswer, error) {
 	var p parties
 	out := &sessionpb.TableAnswer{
-		Who: p.one(b.Who), Option: b.Option, Key: b.Key, Word: b.Word, Selector: b.Selector, Say: b.Say,
+		// To is who the line is spoken to (rpg-project#923: the hailed
+		// member); the zero party crosses absent, the way Who does.
+		Who: p.one(b.Who), To: p.one(b.To), Option: b.Option, Key: b.Key, Word: b.Word, Selector: b.Selector, Say: b.Say,
 		Temperament: b.Temperament, Entry: int32(b.Entry), Roll: p.roll(b.Roll), //nolint:gosec // a table row fits int32
 	}
 	for _, c := range b.Candidates {

@@ -74,7 +74,7 @@ var (
 
 func answer() sdk.TableAnswer {
 	return sdk.TableAnswer{
-		Who: gate1, Option: "stand-aside", Key: "persuade", Word: "yield", Selector: "calm", Say: "Go on, then.",
+		Who: gate1, To: alice, Option: "stand-aside", Key: "persuade", Word: "yield", Selector: "calm", Say: "Go on, then.",
 		Temperament: "wary", Entry: 2, Candidates: []sdk.TableCandidate{{Entry: 1, Weight: 2, Percent: 40, Loaded: 1}},
 		Roll: tableDie, Dealt: &sdk.Temper{Faction: guards, Temper: "wary", Roll: *tableDie},
 	}
@@ -82,7 +82,7 @@ func answer() sdk.TableAnswer {
 
 func answerP() *sessionpb.TableAnswer {
 	return &sessionpb.TableAnswer{
-		Who: gate1P, Option: "stand-aside", Key: "persuade", Word: "yield", Selector: "calm", Say: "Go on, then.",
+		Who: gate1P, To: aliceP, Option: "stand-aside", Key: "persuade", Word: "yield", Selector: "calm", Say: "Go on, then.",
 		Temperament: "wary", Entry: 2, Candidates: []*sessionpb.TableCandidate{{Entry: 1, Weight: 2, Percent: 40, Loaded: 1}},
 		Roll: tableDieP, Dealt: &sessionpb.Temper{Faction: guardsP, Temper: "wary", Roll: tableDieP},
 	}
@@ -380,6 +380,26 @@ func (s *ConvertActSuite) TestConvertAbsentPartiesStayAbsent() {
 	s.Require().NoError(err)
 	s.Nil(got.GetDoor().GetBy())
 	s.Nil(got.GetDoor().GetRoll())
+}
+
+// TestTableAnswerToProtoNamesWhoItIsSpokenTo pins rpg-project#923: a line
+// spoken to a member crosses `to` as that member, on the standalone table
+// answer and on a speak act's answer alike; a line spoken to nobody (the
+// zero party) crosses `to` absent.
+func (s *ConvertActSuite) TestTableAnswerToProtoNamesWhoItIsSpokenTo() {
+	hail := sdk.TableAnswer{Who: gate1, To: alice, Say: "Hold up."}
+	got, err := actToProto(sdk.Act{ID: "id-1", Family: sdk.FamilyTableAnswer, Body: hail})
+	s.Require().NoError(err)
+	s.True(proto.Equal(aliceP, got.GetTableAnswer().GetTo()), "the hail names alice")
+
+	spoke, err := actToProto(sdk.Act{ID: "id-2", Family: sdk.FamilyAct, Body: sdk.SpeakAct{By: alice, To: gate1, Answer: &hail}})
+	s.Require().NoError(err)
+	s.True(proto.Equal(aliceP, spoke.GetSpeak().GetAnswer().GetTo()), "a speak act's answer names her too")
+
+	aside, err := actToProto(sdk.Act{ID: "id-3", Family: sdk.FamilyTableAnswer, Body: sdk.TableAnswer{Who: gate1, Say: "Quiet night."}})
+	s.Require().NoError(err)
+	s.Nil(aside.GetTableAnswer().GetTo(), "a line to nobody carries no to")
+	s.True(proto.Equal(gate1P, aside.GetTableAnswer().GetWho()))
 }
 
 // TestBarredToProtoCarriesBothShapes pins rpg-project#842 (R2): a step bump
