@@ -4,8 +4,8 @@
 // within 250 ms after -- on the server path, for both answer shapes.
 //
 // What: per world-clock Move, the answer (handler Move returns), the first
-// beat, the last beat, the drain, acts per verb, and a Redis GET floor; p50
-// and p95. The first beat is the first act the walker receives on the
+// beat (from the verb's start and from its answer), the last beat, the
+// drain, commits and acts per verb, and a Redis GET floor; p50 and p95. The first beat is the first act the walker receives on the
 // ActBroker for this verb -- their own or anyone's they see -- with an id
 // above the last act id received before the Move was issued (and above
 // Through when the answer continues); the last beat is the verb's last act
@@ -35,9 +35,11 @@
 //	  -run TestMeasure_AnswerAndFirstBeat -count=1 -v -timeout 60m
 //
 // Caveats: timing ends at the ActBroker channel -- no gRPC transport,
-// protobuf encoding or network. Acts are per-recipient segments, and a
-// continued verb delivers all its acts (the answered steps' included) after
-// its save, so under S1 the first beat lands with the last. The broker runs
+// protobuf encoding or network. Acts are per-recipient segments. A continued
+// verb delivers its acts (the answered steps' included) only after a save:
+// under S1 alone the first beat landed with the last; with S13 the rest
+// commits at each pace boundary, so the first beat lands with the round's
+// commit and the last with the final one. The broker runs
 // at its production buffer; the table says whether the subscriber lagged.
 // Costs grow with every Move (the record grows), so percentiles depend on N.
 
@@ -150,9 +152,18 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 		key, mode                                string
 		answer, first, last, drained             []time.Duration
 		continues, acts, firstAfterAnswer, steps []int
-		compile, launch                          time.Duration
-		lagged                                   bool
-		noBeat                                   int
+		// sinceAnswer is the first beat measured from the answer, not
+		// from t0 (rpg-project#879 S13): R1's 250 ms bar. A beat that
+		// arrived before the answer returned (a whole verb publishes
+		// before it answers) counts as 0.
+		sinceAnswer []time.Duration
+		// commits is the encounter saves each verb made: one for a whole
+		// verb, one per pace boundary plus a final one for a continued
+		// walk (S13).
+		commits         []int
+		compile, launch time.Duration
+		lagged          bool
+		noBeat          int
 	}
 	rows := make([]row, 0, len(modes)*len(keys))
 	// RPG_MEASURE_RELOAD=0 skips the cold-reload row (measure_cold_reload_test.go).
@@ -243,6 +254,9 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 			}
 			r := row{key: key, mode: mode, compile: compileTook, launch: launchTook}
 			br := bytesRow{key: key, mode: mode}
+			// prevRound is the world round the last save named, so a Move
+			// whose save raises it is told from one that does not.
+			prevRound := -1
 			for i := 0; i < warm+n; i++ {
 				if dir == 0 {
 					dir = 1
@@ -256,7 +270,9 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 					highWater = got[len(got)-1].id
 				}
 				mu.Unlock()
-				written.take()
+				if warmShapes, _ := written.take(); warmShapes.round >= 0 {
+					prevRound = warmShapes.round
+				}
 				t0 := time.Now()
 				resp, err := handler.Move(ctx, &sessionpb.MoveRequest{Session: run, Member: "alice", Path: p})
 				answered := time.Now()
@@ -315,15 +331,11 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 				}
 				r.answer = append(r.answer, answered.Sub(t0))
 				r.drained = append(r.drained, drainedAt)
-				wTotal, wRest, wSegment, wSaves := written.take()
+				shapes, wSaves := written.take()
 				sRest, sLog, sSegments := storedBytes(t, client, run)
-				br.write = append(br.write, wTotal)
-				br.rest = append(br.rest, wRest)
-				br.segment = append(br.segment, wSegment)
-				br.saves = append(br.saves, wSaves)
-				br.storedRest = append(br.storedRest, sRest)
-				br.storedLog = append(br.storedLog, sLog)
-				br.segments = append(br.segments, sSegments)
+				br.add(shapes, wSaves, prevRound, sRest, sLog, sSegments)
+				r.commits = append(r.commits, wSaves)
+				prevRound = shapes.round
 				r.steps = append(r.steps, len(resp.GetSteps()))
 				c := 0
 				if resp.GetContinues() {
@@ -351,6 +363,7 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 					require.False(t, answerWhole, "move %d: no act for the walker after %q; a whole verb always publishes", i, after)
 				} else {
 					r.first = append(r.first, acts[firstIdx].at.Sub(t0))
+					r.sinceAnswer = append(r.sinceAnswer, max(0, acts[firstIdx].at.Sub(answered)))
 					r.last = append(r.last, acts[len(acts)-1].at.Sub(t0))
 					arrivedAfter := 0
 					if acts[0].at.After(answered) {
@@ -369,6 +382,11 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 				series = append(series, fmt.Sprintf("%d", r.first[j].Milliseconds()))
 			}
 			t.Logf("%s %s first-beat ms per move, in order: %s", key, mode, strings.Join(series, " "))
+			series = series[:0]
+			for j := range r.sinceAnswer {
+				series = append(series, fmt.Sprintf("%d", r.sinceAnswer[j].Milliseconds()))
+			}
+			t.Logf("%s %s first beat after the answer ms per move, in order: %s", key, mode, strings.Join(series, " "))
 			lagged, lastID := sub.Lagged()
 			r.lagged = lagged
 			if lagged {
@@ -394,16 +412,17 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "\nredis GET floor: p50 %s p95 %s (n=%d)\n", ms(pct(floor, 50)), ms(pct(floor, 95)), len(floor))
-	fmt.Fprintf(&b, "| keep | mode | n | continues | answer p50 | answer p95 | first beat p50 | first beat p95 | last beat p50 | last beat p95 | drained p50 | drained p95 | acts/verb | steps answered | no beat | acts arrive after answer | lagged | launch |\n")
-	fmt.Fprintf(&b, "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+	fmt.Fprintf(&b, "| keep | mode | n | continues | answer p50 | answer p95 | first beat p50 | first beat p95 | first beat after answer p50 | first beat after answer p95 | last beat p50 | last beat p95 | drained p50 | drained p95 | commits/verb | acts/verb | steps answered | no beat | acts arrive after answer | lagged | launch |\n")
+	fmt.Fprintf(&b, "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, r := range rows {
-		fmt.Fprintf(&b, "| %s | %s | %d | %d/%d | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %d | %d/%d | %v | %s |\n",
+		fmt.Fprintf(&b, "| %s | %s | %d | %d/%d | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %d | %d/%d | %v | %s |\n",
 			r.key, r.mode, len(r.answer), sum(r.continues), len(r.continues),
 			ms(pct(r.answer, 50)), ms(pct(r.answer, 95)),
 			ms(pct(r.first, 50)), ms(pct(r.first, 95)),
+			ms(pct(r.sinceAnswer, 50)), ms(pct(r.sinceAnswer, 95)),
 			ms(pct(r.last, 50)), ms(pct(r.last, 95)),
 			ms(pct(r.drained, 50)), ms(pct(r.drained, 95)),
-			span(r.acts), span(r.steps), r.noBeat, sum(r.firstAfterAnswer), len(r.firstAfterAnswer), r.lagged,
+			span(r.commits), span(r.acts), span(r.steps), r.noBeat, sum(r.firstAfterAnswer), len(r.firstAfterAnswer), r.lagged,
 			r.launch.Round(time.Millisecond))
 	}
 	if reloadOn {

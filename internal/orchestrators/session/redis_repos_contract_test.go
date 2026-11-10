@@ -70,7 +70,10 @@ func (s *RedisReposTestSuite) TestSaveOverwritesOnlyAddressedKey() {
 	s.Require().NoError(s.encs.SaveEncounter(s.ctx, "other-id", populatedStoredEncounter()))
 	first.Dungeon = "new-key"
 	s.Require().NoError(s.sessions.SaveSession(s.ctx, first))
-	replacement := &tkencounter.EncounterData{Retention: 9}
+	// Members empty, not nil: the pieces store a world's members one by one,
+	// and a world with none joins back as the empty roster
+	// (encounter.JoinPieces), which is what every encounter ToData writes.
+	replacement := &tkencounter.EncounterData{Retention: 9, Members: []tkencounter.MemberData{}}
 	s.Require().NoError(s.encs.SaveEncounter(s.ctx, "shared-id", replacement))
 	got, err := s.sessions.GetSession(s.ctx, "shared-id")
 	s.Require().NoError(err)
@@ -105,11 +108,11 @@ func (s *RedisReposTestSuite) TestConfiguredTTLRefreshesOnSave_NotOnGet() {
 	_, err = s.encs.GetEncounter(s.ctx, "shared-id")
 	s.Require().NoError(err)
 	s.Equal(time.Hour, s.miniredis.TTL("session:v1alpha1:shared-id"))
-	s.Equal(time.Hour, s.miniredis.TTL("session-enc:v1alpha2:shared-id"))
+	s.Equal(time.Hour, s.miniredis.TTL("session-enc:v1alpha3:shared-id"))
 	s.Require().NoError(s.sessions.SaveSession(s.ctx, in))
 	s.Require().NoError(s.encs.SaveEncounter(s.ctx, "shared-id", enc))
 	s.Equal(24*time.Hour, s.miniredis.TTL("session:v1alpha1:shared-id"))
-	s.Equal(24*time.Hour, s.miniredis.TTL("session-enc:v1alpha2:shared-id"))
+	s.Equal(24*time.Hour, s.miniredis.TTL("session-enc:v1alpha3:shared-id"))
 	s.miniredis.FastForward(24 * time.Hour)
 	got, err := s.sessions.GetSession(s.ctx, "shared-id")
 	s.ErrorIs(err, sdk.ErrNotFound)
@@ -133,7 +136,9 @@ func (s *RedisReposTestSuite) TestZeroTTLDoesNotExpire() {
 }
 func (s *RedisReposTestSuite) TestMalformedStoredPayloadsPreserveDecodeCause() {
 	s.Require().NoError(s.miniredis.Set("session:v1alpha1:broken", "{"))
-	s.Require().NoError(s.miniredis.Set("session-enc:v1alpha2:broken", "{"))
+	// A head piece whose mark parses and whose JSON does not: the decode
+	// cause survives the join's wrapping.
+	s.Require().NoError(s.miniredis.Set("session-enc:v1alpha3:broken", "1\n{"))
 	session, err := s.sessions.GetSession(s.ctx, "broken")
 	var syntax *json.SyntaxError
 	s.ErrorAs(err, &syntax)

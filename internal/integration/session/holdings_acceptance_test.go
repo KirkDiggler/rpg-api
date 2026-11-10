@@ -1014,18 +1014,22 @@ func TestAcceptance_TheAtlasSaysWhereTheDungeonBeginsAndWhichWay(t *testing.T) {
 		run := startHeirloomRun(t)
 		require.NotNil(t, run.atlas(t, "alice").GetStart(), "it has one to begin with")
 
-		key := "session-enc:v1alpha2:" + heirloomSession
-		raw, err := run.h.redis.Get(context.Background(), key).Bytes()
+		// The head piece names the site (rpg-project#897 leg b): its value is
+		// "<mark>\n<JSON>", aged here and written back with the same mark.
+		key := "session-enc:v1alpha3:" + heirloomSession
+		head, err := run.h.redis.Get(context.Background(), key).Result()
 		require.NoError(t, err)
+		mark, body, ok := strings.Cut(head, "\n")
+		require.True(t, ok, "the head carries its mark")
 		var blob map[string]json.RawMessage
-		require.NoError(t, json.Unmarshal(raw, &blob))
+		require.NoError(t, json.Unmarshal([]byte(body), &blob))
 		require.Contains(t, blob, "site_hash", "the blob names its site before we age it")
 		require.NotContains(t, blob, "field", "the checkpoint carries no field")
 		delete(blob, "site_hash")
 		blob["field"] = json.RawMessage(`{"start":{"x":0,"y":1}}`)
 		aged, err := json.Marshal(blob)
 		require.NoError(t, err)
-		require.NoError(t, run.h.redis.Set(context.Background(), key, aged, time.Hour).Err())
+		require.NoError(t, run.h.redis.Set(context.Background(), key, mark+"\n"+string(aged), time.Hour).Err())
 
 		_, err = run.h.handler.GetAtlas(run.ctxOf("alice"),
 			&sessionpb.GetAtlasRequest{Session: heirloomSession, Member: "alice"})

@@ -64,8 +64,8 @@ import (
 // same bytes they read.
 const (
 	measureSessionKeyPrefix = "session:v1alpha1:"
-	measureEncKeyPrefix     = "session-enc:v1alpha2:"
-	measureEncLogKeyPrefix  = "session-enc-log:v1alpha2:"
+	measureEncKeyPrefix     = measureHeadKeyPrefix
+	measureEncLogKeyPrefix  = measureLogKeyPrefix
 	measureSiteKeyPrefix    = "session-site:v1alpha1:"
 	measureScratchKey       = "measure:reload:scratch"
 	// measureScratchEncounter is the encounter id the fenced-save row writes
@@ -120,19 +120,17 @@ func measureColdReload(
 		r.sessionDecode = append(r.sessionDecode, time.Since(s))
 		r.sessionBytes = len(sessRaw)
 
-		// fetch: the encounter's rest and its record segments.
+		// fetch: the encounter's pieces and its record segments.
 		s = time.Now()
-		raw, elems := fetchCheckpoint(t, client, sess.Encounter)
+		stored := fetchCheckpoint(t, client, sess.Encounter)
 		fetch := time.Since(s)
 		r.fetch = append(r.fetch, fetch)
-		r.encBytes = len(raw)
-		for _, elem := range elems {
-			r.encBytes += len(elem)
-		}
+		r.encBytes = stored.size()
 
-		// decode: bytes into the composition's data type, the record joined.
+		// decode: bytes into the composition's data type, the pieces and the
+		// record joined.
 		s = time.Now()
-		data := decodeCheckpoint(t, raw, elems)
+		data := decodeCheckpoint(t, stored)
 		decode := time.Since(s)
 		r.decode = append(r.decode, decode)
 
@@ -215,38 +213,82 @@ func measureColdReload(
 	}
 	require.NoError(t, client.Del(ctx, measureScratchKey,
 		measureEncKeyPrefix+measureScratchEncounter, measureEncLogKeyPrefix+measureScratchEncounter,
+		measureRosterKeyPrefix+measureScratchEncounter, measureKnowKeyPrefix+measureScratchEncounter,
+		measureJournalKeyPrefix+measureScratchEncounter, "session-enc-floor:v1alpha2:"+measureScratchEncounter,
 		"session-enc-ver:v1alpha1:"+measureScratchEncounter).Err())
 	return r
 }
 
-// fetchCheckpoint reads an encounter's rest and its record segments in one
+// storedPieces is an encounter's checkpoint as the store holds it: every
+// piece's value by key ("<mark>\n<JSON>") and the record's segments.
+type storedPieces struct {
+	pieces   map[tkencounter.PieceKey]string
+	segments []string
+}
+
+// size is the stored bytes read: every piece value and segment.
+func (p storedPieces) size() int {
+	n := 0
+	for _, v := range p.pieces {
+		n += len(v)
+	}
+	for _, e := range p.segments {
+		n += len(e)
+	}
+	return n
+}
+
+// fetchCheckpoint reads an encounter's pieces and its record segments in one
 // MULTI/EXEC, as the repository does.
-func fetchCheckpoint(t *testing.T, client *goredis.Client, encounter string) ([]byte, []string) {
+func fetchCheckpoint(t *testing.T, client *goredis.Client, encounter string) storedPieces {
 	t.Helper()
 	ctx := context.Background()
-	var rest *goredis.StringCmd
+	var head, journal *goredis.StringCmd
+	var roster, know *goredis.MapStringStringCmd
 	var segments *goredis.StringSliceCmd
 	_, err := client.TxPipelined(ctx, func(pipe goredis.Pipeliner) error {
-		rest = pipe.Get(ctx, measureEncKeyPrefix+encounter)
+		head = pipe.Get(ctx, measureEncKeyPrefix+encounter)
+		roster = pipe.HGetAll(ctx, measureRosterKeyPrefix+encounter)
+		know = pipe.HGetAll(ctx, measureKnowKeyPrefix+encounter)
+		journal = pipe.Get(ctx, measureJournalKeyPrefix+encounter)
 		segments = pipe.LRange(ctx, measureEncLogKeyPrefix+encounter, 0, -1)
 		return nil
 	})
 	require.NoError(t, err)
-	raw, err := rest.Bytes()
-	require.NoError(t, err)
-	return raw, segments.Val()
+	out := storedPieces{pieces: map[tkencounter.PieceKey]string{}, segments: segments.Val()}
+	out.pieces[tkencounter.PieceHead] = head.Val()
+	out.pieces[tkencounter.PieceJournal] = journal.Val()
+	for _, hash := range []struct {
+		shared tkencounter.PieceKey
+		fields map[string]string
+	}{{tkencounter.PieceRoster, roster.Val()}, {tkencounter.PieceKnowledge, know.Val()}} {
+		for field, v := range hash.fields {
+			key := tkencounter.PieceKey(field)
+			if field == "_" {
+				key = hash.shared
+			}
+			out.pieces[key] = v
+		}
+	}
+	return out
 }
 
-// decodeCheckpoint decodes a rest and its segments ("<last seq>\n<JSON>")
-// and joins the record, as the repository does for an unbounded run (every
-// launched run is).
-func decodeCheckpoint(t *testing.T, raw []byte, elems []string) tkencounter.EncounterData {
+// decodeCheckpoint strips each piece's mark, joins the pieces and then the
+// record's segments ("<last seq>\n<JSON>"), as the repository does for an
+// unbounded run (every launched run is).
+func decodeCheckpoint(t *testing.T, stored storedPieces) tkencounter.EncounterData {
 	t.Helper()
-	var data tkencounter.EncounterData
-	require.NoError(t, json.Unmarshal(raw, &data))
+	raw := make(map[tkencounter.PieceKey][]byte, len(stored.pieces))
+	for key, v := range stored.pieces {
+		_, body, ok := strings.Cut(v, "\n")
+		require.True(t, ok, "piece %s has its mark prefix", key)
+		raw[key] = []byte(body)
+	}
+	data, err := tkencounter.JoinPieces(&tkencounter.JoinPiecesInput{Pieces: raw})
+	require.NoError(t, err)
 	require.Negative(t, data.Retention, "a launched run keeps its whole record")
-	segments := make([]record.LogData, len(elems))
-	for i, elem := range elems {
+	segments := make([]record.LogData, len(stored.segments))
+	for i, elem := range stored.segments {
 		_, body, ok := strings.Cut(elem, "\n")
 		require.True(t, ok, "segment %d has its last-seq prefix", i)
 		require.NoError(t, json.Unmarshal([]byte(body), &segments[i]))
@@ -254,7 +296,7 @@ func decodeCheckpoint(t *testing.T, raw []byte, elems []string) tkencounter.Enco
 	joined, err := record.JoinData(&record.JoinDataInput{Head: data.Log, Segments: segments})
 	require.NoError(t, err)
 	data.Log = joined
-	return data
+	return *data
 }
 
 // reloadTable renders the reload rows beside the walk's Move totals, p50 and
@@ -274,8 +316,8 @@ func reloadTable(rows []reloadRow, moves map[string][2][]time.Duration) string {
 		}
 		line("session record fetch", r.sessionBytes, r.sessionFetch)
 		line("session record decode", 0, r.sessionDecode)
-		line("1 fetch (rest GET + record LRANGE, bytes rest + log)", r.encBytes, r.fetch)
-		line("2 decode (JSON → EncounterData, record joined)", 0, r.decode)
+		line("1 fetch (pieces GET/HGETALL + record LRANGE, bytes pieces + log)", r.encBytes, r.fetch)
+		line("2 decode (JSON → EncounterData, pieces and record joined)", 0, r.decode)
 		line("1+2 repository GetEncounter", 0, r.repoGet)
 		line("3 site build (LoadEncounter, refusing caps, warm provider)", 0, r.siteBuild)
 		line("3p site piece GetSite (GET + decode)", r.pieceBytes, r.pieceGet)

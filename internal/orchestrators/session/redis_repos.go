@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -23,10 +22,11 @@ import (
 // against the same Redis instance during coexistence.
 const (
 	sessionKeyPrefix = "session:v1alpha1:"
-	// sessionEncKeyPrefix keys an encounter's REST: the world with its story
-	// log reduced to the head; the record lives beside it as segments
-	// (redis_record.go).
-	sessionEncKeyPrefix = "session-enc:v1alpha2:"
+	// sessionEncKeyPrefix keys an encounter's HEAD piece: the clocks, the
+	// story log's head and the site hash, written on every save and the
+	// checkpoint's existence sentinel. The rest's other pieces live beside it
+	// (redis_pieces.go), the record as segments (redis_record.go).
+	sessionEncKeyPrefix = "session-enc:v1alpha3:"
 )
 
 // SessionData and EncounterData are opaque blobs the SDK builds: this
@@ -86,11 +86,13 @@ type redisEncounterRepository struct {
 }
 
 // NewEncounterRepository returns a Redis-backed sdk.EncounterRepository that
-// also carries sdk.FencedEncounterRepository (redis_fenced.go), so the SDK
-// takes the fenced save, and sdk.SiteRepository (redis_sites.go), so a launch
-// stores its site piece once by hash and a cold process loads through it.
-// ttl is the per-key expiration applied on save, to the encounter, its
-// checkpoint version and a fenced save's session record; pass 0 to disable
+// also carries sdk.FencedEncounterRepository and its appending and pieces
+// refinements (redis_fenced.go), so the SDK takes the fenced save and sends
+// only the pieces of the rest that moved, and sdk.SiteRepository
+// (redis_sites.go), so a launch stores its site piece once by hash and a
+// cold process loads through it. ttl is the per-key expiration applied on
+// save, to every piece of the encounter, its record, its checkpoint version
+// and a fenced save's session record; pass 0 to disable
 // expiration. A site piece never expires (redis_sites.go).
 func NewEncounterRepository(client redisclient.Client, ttl time.Duration) sdk.EncounterRepository {
 	return &redisEncounterRepository{client: client, ttl: ttl}
@@ -107,8 +109,10 @@ func (r *redisEncounterRepository) GetEncounter(ctx context.Context, id string) 
 }
 
 // SaveEncounter implements sdk.EncounterRepository: the world split into its
-// rest and its whole record as one segment (splitWhole), the shape every
-// save path leaves in the store.
+// rest and its whole record as one segment (splitWhole), the rest into every
+// piece, the shape every save path leaves in the store. A plain write is
+// still a save that landed, so it advances the checkpoint version a fenced
+// writer compares against (redis_fenced.go).
 func (r *redisEncounterRepository) SaveEncounter(ctx context.Context, id string, data *tkencounter.EncounterData) error {
 	if id == "" {
 		return errors.New("session: SaveEncounter id is required")
@@ -120,26 +124,25 @@ func (r *redisEncounterRepository) SaveEncounter(ctx context.Context, id string,
 	if err != nil {
 		return fmt.Errorf("save encounter %q: %w", id, err)
 	}
-	restBlob, err := json.Marshal(&rest)
+	write, err := splitAll(&rest)
 	if err != nil {
-		return fmt.Errorf("marshal encounter %q: %w", id, err)
+		return fmt.Errorf("save encounter %q: %w", id, err)
 	}
-	hasSegment, segmentElem := "0", []byte(nil)
-	if len(segment.Entries) > 0 {
-		if segmentElem, err = encodeSegment(segment); err != nil {
-			return fmt.Errorf("marshal encounter %q record: %w", id, err)
-		}
-		hasSegment = "1"
+	in := &sdk.SaveAppendedInput{Appended: segment, Since: 1, Floor: floor}
+	in.Encounter = id
+	args, err := r.piecesArgs("", in, write)
+	if err != nil {
+		return err
 	}
-	// A plain write is still a save that landed, so it advances the
-	// checkpoint version a fenced writer compares against (redis_fenced.go).
-	keys := []string{
-		sessionEncKeyPrefix + id, sessionEncVerKeyPrefix + id, sessionEncLogKeyPrefix + id, sessionEncFloorKeyPrefix + id,
-	}
-	err = savePlainScript.Run(ctx, r.client, keys,
-		restBlob, r.ttl.Milliseconds(), hasSegment, segmentElem, strconv.FormatUint(floor, 10)).Err()
+	reply, err := savePiecesScript.Run(ctx, r.client, checkpointKeys(id), args...).Slice()
 	if err != nil {
 		return fmt.Errorf("set encounter %q: %w", id, err)
+	}
+	if len(reply) != 2 {
+		return fmt.Errorf("set encounter %q: reply %v: %w", id, reply, sdk.ErrBadRepository)
+	}
+	if marker, _ := reply[0].(string); marker != "ok" {
+		return fmt.Errorf("set encounter %q: %v: %w", id, reply[1], sdk.ErrBadRepository)
 	}
 	return nil
 }

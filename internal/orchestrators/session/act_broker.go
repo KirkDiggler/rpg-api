@@ -19,9 +19,11 @@ import (
 // its own act), and a buffer of 256 ACTS closed the subscriber on the first
 // verb (rpg-project#894, F15).
 //
-// 64 commits is a client that is truly behind: a verb is one or two commits
-// (the answer, then its continuation), so it is thirty-odd verbs, or a
-// monster round's turns several times over, unread. The ceiling per stalled
+// 64 commits is a client that is truly behind. Delivery is per commit, one
+// unit per PublishActs: a verb is one commit, and a continued walk is one per
+// pace boundary its rest crosses plus a final one (rpg-project#879 R7), so
+// two to four. 64 is sixteen or more verbs, or a monster round's turns
+// several times over, unread. The ceiling per stalled
 // client is therefore about 64 commits times a commit's acts for it (320 on
 // the garrison, so some 20k acts), where it was 256 acts. Held units are the
 // commit's own slices, shared by every subscriber of the recipient, so

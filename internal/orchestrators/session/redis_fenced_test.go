@@ -178,11 +178,10 @@ func (s *FencedRepoSuite) TestGet_Missing_IsNotFound() {
 }
 
 func (s *FencedRepoSuite) TestBlobWithoutVersion_FailsClosed() {
-	b, err := json.Marshal(world(1))
-	s.Require().NoError(err)
-	s.Require().NoError(s.mr.Set("session-enc:v1alpha2:enc-1", string(b)))
+	s.launch("enc-1")
+	s.mr.Del("session-enc-ver:v1alpha1:enc-1")
 
-	_, err = s.fenced.GetFencedEncounter(s.ctx, &sdk.GetFencedEncounterInput{Encounter: "enc-1"})
+	_, err := s.fenced.GetFencedEncounter(s.ctx, &sdk.GetFencedEncounterInput{Encounter: "enc-1"})
 	s.Require().ErrorIs(err, sdk.ErrBadRepository)
 
 	_, err = s.fenced.SaveFenced(s.ctx, &sdk.SaveFencedInput{Encounter: "enc-1", Data: world(2), Expected: 0})
@@ -205,11 +204,11 @@ func (s *FencedRepoSuite) TestLingeringVersionWithoutBlob_DoesNotRefuseALaunch()
 
 func (s *FencedRepoSuite) TestVersionSharesTheBlobsLifetime() {
 	s.launch("enc-1")
-	s.Equal(fencedTTL, s.mr.TTL("session-enc:v1alpha2:enc-1"))
+	s.Equal(fencedTTL, s.mr.TTL("session-enc:v1alpha3:enc-1"))
 	s.Equal(fencedTTL, s.mr.TTL("session-enc-ver:v1alpha1:enc-1"))
 
 	s.mr.FastForward(fencedTTL + time.Second)
-	s.False(s.mr.Exists("session-enc:v1alpha2:enc-1"))
+	s.False(s.mr.Exists("session-enc:v1alpha3:enc-1"))
 	s.False(s.mr.Exists("session-enc-ver:v1alpha1:enc-1"))
 	s.launch("enc-1")
 }
