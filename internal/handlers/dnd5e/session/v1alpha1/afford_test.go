@@ -428,3 +428,83 @@ func TestAfford_MalformedSpeakRowIsRefused(t *testing.T) {
 		})
 	}
 }
+
+// TestAfford_SpeakRowCarriesTheAddress pins the hail's projection
+// (rpg-project#923): the addressed member's Speak row crosses the guard and
+// the interaction as the SDK wrote them; a row with no address crosses none.
+func TestAfford_SpeakRowCarriesTheAddress(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Afford(gomock.Any(), gomock.Any()).Return(&sdk.AffordOutput{
+		Clock: sdk.ClockWorld,
+		Declarations: []sdk.Declaration{
+			{
+				Verb: sdk.VerbSpeak, Slot: sdk.SlotAction, Available: true, ID: "decl-speak",
+				SpeakOptions: []sdk.SpeakOptionRow{
+					{Target: "gate-1", OptionID: "claim-errand", Line: "We're expected.", Available: true},
+				},
+				Address: &sdk.Address{Guard: "gate-1", Interaction: "front-gate"},
+			},
+			{Verb: sdk.VerbMove, Slot: sdk.SlotNone, Available: true, ID: "decl-move"},
+		},
+	}, nil)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
+	require.NoError(t, err)
+	require.Len(t, resp.GetDeclarations(), 2)
+
+	speak := resp.GetDeclarations()[0]
+	require.Equal(t, sessionpb.Verb_VERB_SPEAK, speak.GetVerb())
+	require.NotNil(t, speak.GetAddress())
+	require.Equal(t, "gate-1", speak.GetAddress().GetGuardMemberId())
+	require.Equal(t, "front-gate", speak.GetAddress().GetInteractionId())
+
+	require.Nil(t, resp.GetDeclarations()[1].GetAddress(), "a non-Speak row never carries an address")
+}
+
+// TestAfford_UnaddressedSpeakRowCarriesNoAddress pins absence: nil in is nil
+// out, so the panel opens only when the SDK says a guard is speaking.
+func TestAfford_UnaddressedSpeakRowCarriesNoAddress(t *testing.T) {
+	got, err := declarationToProto(sdk.Declaration{
+		Verb: sdk.VerbSpeak, Slot: sdk.SlotAction, Available: true, ID: "decl-speak",
+		SpeakOptions: []sdk.SpeakOptionRow{{Target: "gate-1", OptionID: "o", Line: "x", Available: true}},
+	})
+	require.NoError(t, err)
+	require.Nil(t, got.GetAddress())
+}
+
+// TestAfford_MalformedAddressIsRefused pins the address's fail-closed rule:
+// an address on a non-Speak row, or naming no guard or no interaction, is a
+// producer defect and the whole Afford read answers Internal.
+func TestAfford_MalformedAddressIsRefused(t *testing.T) {
+	for name, decl := range map[string]sdk.Declaration{
+		"on a move row": {
+			Verb: sdk.VerbMove, Slot: sdk.SlotNone, Available: true, ID: "decl-move",
+			Address: &sdk.Address{Guard: "gate-1", Interaction: "front-gate"},
+		},
+		"no guard": {
+			Verb: sdk.VerbSpeak, Slot: sdk.SlotAction, Available: true, ID: "decl-speak",
+			Address: &sdk.Address{Interaction: "front-gate"},
+		},
+		"no interaction": {
+			Verb: sdk.VerbSpeak, Slot: sdk.SlotAction, Available: true, ID: "decl-speak",
+			Address: &sdk.Address{Guard: "gate-1"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+			mgr.EXPECT().Afford(gomock.Any(), gomock.Any()).Return(&sdk.AffordOutput{
+				Clock: sdk.ClockWorld, Declarations: []sdk.Declaration{decl},
+			}, nil)
+
+			h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+			ctx := auth.WithPlayerID(context.Background(), "alice")
+			resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
+			requireCode(t, err, codes.Internal)
+			require.Nil(t, resp)
+		})
+	}
+}

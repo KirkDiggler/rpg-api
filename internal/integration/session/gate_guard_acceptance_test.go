@@ -101,10 +101,19 @@ func TestAcceptance_TheGuardHoldsTheGate(t *testing.T) {
 
 		beyond := at(1, 9)
 		path := []*sessionpb.Position{{X: her.X, Y: her.Y}, {X: beyond.X, Y: beyond.Y}}
-		moved, err := h.handler.Move(ctx, &sessionpb.MoveRequest{Session: "gate-loop-run", Member: "alice", Path: path})
+		// The first step lands inside the gate's approach in a carrier's
+		// sight, so the hail stops the walk there (rpg-project#923); she walks
+		// on, and the standing address does not stop her again.
+		hailed, err := h.handler.Move(ctx, &sessionpb.MoveRequest{Session: "gate-loop-run", Member: "alice", Path: path})
+		require.NoError(t, err)
+		require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_STOPPED, hailed.GetStatus(), "the hail stops her")
+		require.Len(t, hailed.GetSteps(), 1, "onto her cell, where the hail lands")
+		require.NotNil(t, speakRowOf(t, h, "gate-loop-run", "alice", "player-alice").GetAddress(), "she is addressed")
+
+		moved, err := h.handler.Move(ctx, &sessionpb.MoveRequest{Session: "gate-loop-run", Member: "alice", Path: path[1:]})
 		require.NoError(t, err)
 		require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_COMPLETED, moved.GetStatus(), moved.GetStopReason())
-		require.Len(t, moved.GetSteps(), len(path), "through her cell and beyond it")
+		require.Len(t, moved.GetSteps(), len(path)-1, "through her cell and beyond it")
 	})
 }
 
