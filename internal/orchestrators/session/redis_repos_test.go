@@ -155,3 +155,11 @@ func (s *RedisReposTestSuite) TestSite_RefusesMissingHashOrData() {
 	_, err = repo.PutSite(s.ctx, &sdk.PutSiteInput{Hash: "abc"})
 	s.Require().Error(err)
 }
+
+func (s *RedisReposTestSuite) TestSite_Get_CorruptPiece_FailsLoudly() {
+	s.Require().NoError(s.miniredis.Set("session-site:v1alpha1:abc", "{not json"))
+	got, err := s.siteRepo().GetSite(s.ctx, &sdk.GetSiteInput{Hash: "abc"})
+	s.Require().Error(err, "a stored piece that does not decode is an error, never an empty site")
+	s.NotErrorIs(err, sdk.ErrNotFound, "corrupt is not missing: the SDK must not fall through to compile from nothing")
+	s.Nil(got)
+}
