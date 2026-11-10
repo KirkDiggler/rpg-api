@@ -56,12 +56,24 @@ func toTheCaptain() []*sessionpb.Position {
 	}
 }
 
-// walk moves alice along path and requires every step taken.
+// walk moves alice along path and requires every step taken. A hail
+// (rpg-project#923) stops a walk where it lands and drops the rest; when one
+// does, her Speak row must carry the address, and she walks on with the rest
+// of the path, which the standing address does not stop again.
 func walk(t *testing.T, h *acceptanceHarness, run string, path []*sessionpb.Position, what string) {
 	t.Helper()
 	ctx := auth.WithPlayerID(context.Background(), "player-alice")
 	moved, err := h.handler.Move(ctx, &sessionpb.MoveRequest{Session: run, Member: "alice", Path: path})
 	require.NoError(t, err, what)
+	if moved.GetStatus() == sessionpb.MovementStatus_MOVEMENT_STATUS_STOPPED && moved.GetStopReason() == "" &&
+		len(moved.GetSteps()) > 0 && len(moved.GetSteps()) < len(path) {
+		require.NotNil(t, speakRowOf(t, h, run, "alice", "player-alice").GetAddress(),
+			"%s: a walk stopped with no reason was a hail", what)
+		moved, err = h.handler.Move(ctx, &sessionpb.MoveRequest{
+			Session: run, Member: "alice", Path: path[len(moved.GetSteps()):],
+		})
+		require.NoError(t, err, what)
+	}
 	require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_COMPLETED, moved.GetStatus(), "%s: %s", what, moved.GetStopReason())
 }
 

@@ -9,6 +9,8 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	"github.com/KirkDiggler/rpg-api/internal/worldcontext"
+
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
 
 // lobbyStatusError maps the lobby orchestrator's sentinel errors onto gRPC
@@ -25,6 +27,7 @@ import (
 //   - dungeons.ErrNoCaller → FailedPrecondition
 //   - ErrLobbyAlreadyStarted / ErrLobbyFull / ErrNotAllReady / ErrLobbyNotStarted /
 //     ErrEncounterAlreadyEnded / ErrCharacterSeatedElsewhere → FailedPrecondition
+//   - sdk.ErrInvalidWorld (a launch refusing the dungeon) → FailedPrecondition
 //   - unclassified → Internal
 func lobbyStatusError(err error) error {
 	switch {
@@ -55,6 +58,14 @@ func lobbyStatusError(err error) error {
 	case errors.Is(err, lobbyorch.ErrCharacterSeatedElsewhere):
 		// The wrapped text carries the character and the session that holds
 		// it; that sentence is the whole of what the host needs.
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, sdk.ErrInvalidWorld):
+		// THE LAUNCH REFUSED THE DUNGEON (rpg-project#923): the session judged
+		// the stored content unlaunchable — a party bigger than its seats, an
+		// interaction whose approach is beyond Speak reach. The host's request
+		// is well formed; the dungeon is what must change before a retry, so
+		// FAILED_PRECONDITION, and the SDK's sentence (which names the
+		// interaction or the seat count) is the message the author reads.
 		return status.Error(codes.FailedPrecondition, err.Error())
 	}
 	return status.Errorf(codes.Internal, "lobby: %v", err)

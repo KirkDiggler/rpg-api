@@ -14,6 +14,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
+
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
 
 // TestLobbyStatusError_Table covers every sentinel lobbyStatusError maps,
@@ -42,6 +44,12 @@ func TestLobbyStatusError_Table(t *testing.T) {
 			err:         fmt.Errorf("%w: launch session %q: %w", lobbyorch.ErrCharacterSeatedElsewhere, "enc-new", fmt.Errorf("character %q is seated in session %q: %w", "char-1", "enc-other", errors.New("character is seated in another session"))),
 			wantCode:    codes.FailedPrecondition,
 			msgContains: "enc-other",
+		},
+		{
+			name:        "a launch refusing an approach beyond Speak reach names the interaction",
+			err:         fmt.Errorf("launch session %q: %w: %v", "enc-new", sdk.ErrInvalidWorld, errors.New(`interaction "front-gate" approach within 5 is beyond the reach 3`)),
+			wantCode:    codes.FailedPrecondition,
+			msgContains: `interaction "front-gate" approach within 5 is beyond the reach 3`,
 		},
 		{name: "a launch error that is not a seat refusal stays Internal", err: fmt.Errorf("launch session %q: %w", "enc-new", errors.New("provider unavailable")), wantCode: codes.Internal, msgContains: "provider unavailable"},
 		{name: "unclassified error falls through to Internal", err: errors.New("boom"), wantCode: codes.Internal, msgContains: "boom"},

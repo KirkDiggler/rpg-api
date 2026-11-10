@@ -91,12 +91,13 @@ func TestAcceptance_AnOutOfReachGuardNamesHisApproach(t *testing.T) {
 
 	path := hexLine(&sessionpb.Position{X: start.X, Y: start.Y}, approach)
 	require.Greater(t, len(path), 1, "precondition: the approach is a walk, not a step")
-	moved, err := h.handler.Move(ctx, &sessionpb.MoveRequest{Session: run, Member: "alice", Path: path})
-	require.NoError(t, err, "the Move to the offered cell is not refused")
-	require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_COMPLETED, moved.GetStatus(), moved.GetStopReason())
-	require.Len(t, moved.GetSteps(), len(path), "the whole walk is taken")
-	last := moved.GetSteps()[len(moved.GetSteps())-1].GetPosition()
-	require.True(t, samePosition(approach, last), "the walk ends on the offered cell")
+	// The walk crosses the gate's approach in sight of its carriers, so a hail
+	// stops it once and she walks on (rpg-project#923); walk requires the rest
+	// accepted whole.
+	walk(t, h, run, path, "the Move to the offered cell is not refused")
+	where, err := h.handler.GetWhere(ctx, &sessionpb.GetWhereRequest{Session: run, Member: "alice"})
+	require.NoError(t, err)
+	require.True(t, samePosition(approach, where.GetPosition()), "the walk ends on the offered cell")
 
 	row = attackRow(ctx, t, h, run, "alice")
 	guard = attackCandidate(t, row, gatePosted)
