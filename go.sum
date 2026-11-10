@@ -38,12 +38,12 @@ github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.3 h1:gqbzD6skMbfns82d4SRioMhTGzhf
 github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.3/go.mod h1:IULwBtc9bvB8wQ1CqI8V1Ak3OS8XKRFf/GW52FVx8hE=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.214.0 h1:gwj2tYDffLgjJoj7qRtVGSzv9eUzigqNlRgkEywaFy0=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.214.0/go.mod h1:Lg1nVp0Mui3nr4FgN2N9TEYsITzj5pxF7G2ZQQTV2To=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.190.1-0.20261110062610-2ad3ec2b8362 h1:awRkkyuoQrA9LnusEbY/Jv6HJITO0Z4ueizSziVtctk=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.190.1-0.20261110062610-2ad3ec2b8362/go.mod h1:v/m4PDSiZ5vYkQwOmD9CK2LklSXL7m4/blNFgYnSPJI=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.191.0 h1:w0278qLZ6y+XiVRl4wOkhJ3kfN6VFHuSYv6uFuvCVc8=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.191.0/go.mod h1:v/m4PDSiZ5vYkQwOmD9CK2LklSXL7m4/blNFgYnSPJI=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.75.0 h1:hAGFBrseEtLfUSisOr8JiKnzgleDKt59VZoqs5w/zgA=
 github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.75.0/go.mod h1:xnl2fhLrgj+jL8jCtA0CI5xVakQI874xfAHyKIejkuY=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.175.1-0.20261110065447-00a3694ac3eb h1:E7UX7FPZ0aDFtkcwhMkMAr+EmLtEDqtADIjA50OVs3Q=
-github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.175.1-0.20261110065447-00a3694ac3eb/go.mod h1:qi0meaJWUo4a4VTomQN3JT8NWnsrxF7GeJIYatHTnsU=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.176.1-0.20261110071121-51f79675a6d0 h1:3VjS1324duh8PhABBLS9d35H0wi4lr4CltYWBOxl2Fk=
+github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.176.1-0.20261110071121-51f79675a6d0/go.mod h1:XzN61NdpDw/4AkR1ZzlnxCKAd8kS939sJm8hBLdqM5Q=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.16.3 h1:QiuembruTtSMWSWPkLnVN0G83KWTp1p3jbp6I5tJT/E=
 github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.16.3/go.mod h1:wUfswqKns4MiPSyxl08OSkzHt+zVQWpiiWrtOpbxenU=
 github.com/KirkDiggler/rpg-toolkit/world v0.4.3 h1:5S2nKnnNPJoHJebtoR3wTVkW4xXjGRUD72dVIUvISbg=
