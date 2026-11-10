@@ -38,8 +38,15 @@ var ErrContinuationsDraining = errors.New("session continuations are draining fo
 // WHAT GOES WRONG AFTER THE ANSWER CANNOT BE TOLD TO THE CLIENT YET: the
 // answer has already gone, and the wire has no signal for it (rpg-api#1198).
 // So it is logged, with the session and the verb:
-//   - A failed Continue persists nothing, the answered steps included. The
-//     client's view is stale and it must re-read the session.
+//   - A walk's rest commits at each pace boundary (rpg-project#879 R7): each
+//     round's raise is saved and delivered before the walk's next step. A
+//     failed Continue persists nothing after its last landed commit, and
+//     nothing retries it. With no commit landed, nothing was saved, the
+//     answered steps included, and the client must re-read the session.
+//     With commits landed, the report beside the error names how many and
+//     the newest record id they saved: the store and every client stop
+//     there, and only the steps after it never happened. Logged as "saved
+//     through <id>".
 //   - A panic inside Continue is recovered on the goroutine, with its stack,
 //     so one walk's panic never takes the server down. The SDK's own deferred
 //     release has already given the guard back as the panic unwound, and
@@ -95,6 +102,15 @@ func (r *InProcessContinuationRunner) continueVerb(ctx context.Context, in *sdk.
 	}()
 	report, err := in.Continue(ctx)
 	if err != nil {
+		if report != nil && report.Commits > 0 {
+			r.log().ErrorContext(ctx, "session continuation failed after its answer; saved through "+report.SavedThrough+
+				", the steps after it never happened",
+				append(attrs,
+					slog.Int("commits_landed", report.Commits),
+					slog.String("saved_through", report.SavedThrough),
+					slog.Any("error", err))...)
+			return
+		}
 		r.log().ErrorContext(ctx, "session continuation failed after its answer; nothing saved, the client must re-read",
 			append(attrs, slog.Any("error", err))...)
 		return

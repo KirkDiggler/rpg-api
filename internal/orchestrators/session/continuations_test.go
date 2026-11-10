@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"testing"
@@ -123,6 +124,26 @@ func (s *ContinuationRunnerSuite) TestFailedContinueIsLoggedNotPanicked() {
 	s.Contains(out, "session=sess-9")
 	s.Contains(out, "verb=move")
 	s.Contains(out, "save refused")
+	s.Contains(out, "nothing saved", "no commit landed, so nothing was saved")
+}
+
+// A rest that failed after a pace commit landed (rpg-project#879 R7) is
+// logged as saved through the newest record id that commit holds, with the
+// landed commit count: the store and every client stop there.
+func (s *ContinuationRunnerSuite) TestFailedContinueAfterALandedCommitNamesWhereItStopped() {
+	s.Require().NoError(s.runner.Run(context.Background(), &sdk.RunContinuationInput{
+		Session: "sess-9", Verb: sdk.VerbMove,
+		Continue: func(context.Context) (*sdk.ContinuationReport, error) {
+			return &sdk.ContinuationReport{Commits: 1, SavedThrough: "01REC"}, fmt.Errorf("move: %w", sdk.ErrStaleCheckpoint)
+		},
+	}))
+	s.Require().NoError(s.runner.Drain(context.Background()))
+	out := s.logs.String()
+	s.Contains(out, "saved through 01REC")
+	s.Contains(out, "commits_landed=1")
+	s.Contains(out, "saved_through=01REC")
+	s.Contains(out, "session=sess-9")
+	s.NotContains(out, "nothing saved")
 }
 
 // A panic in the rest of a verb is recovered on the runner's goroutine: the
