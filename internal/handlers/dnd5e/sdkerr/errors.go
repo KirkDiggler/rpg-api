@@ -73,12 +73,22 @@ func StatusError(err error) error {
 	case errors.Is(err, sdk.ErrUnknownSite):
 		return status.Error(codes.FailedPrecondition, err.Error())
 
-	// FAILED_PRECONDITION for the same reason (rpg-project#897 leg c): a
-	// checkpoint saved before the appended record, found only under the old
-	// single-blob key. It is this server's own sentinel, not the SDK's: the
-	// Redis repository refuses it by name rather than load a store shape
-	// nothing writes any more, and the session must be relaunched.
-	case errors.Is(err, sessionorch.ErrCheckpointBeforeAppendedRecord):
+	// FAILED_PRECONDITION for the same reason (rpg-project#897 legs c and
+	// b): a checkpoint saved under an earlier store shape, found only under
+	// its old key. It is this server's own sentinel, not the SDK's: the Redis
+	// repository refuses it by name rather than load a store shape nothing
+	// writes any more, and the session must be relaunched.
+	case errors.Is(err, sessionorch.ErrCheckpointBeforePieces):
+		return status.Error(codes.FailedPrecondition, err.Error())
+
+	// FAILED_PRECONDITION, and ahead of the INTERNAL bucket its
+	// sdk.ErrBadRepository wrap would land in (rpg-project#897 leg b): a
+	// stored checkpoint whose keys disagree (a piece missing or undecodable,
+	// a record short of its floor). Like the two above, the request is well
+	// formed and the session exists; the stored state refuses every verb
+	// until the session is relaunched, so a retry as is cannot help. The
+	// message names the piece.
+	case errors.Is(err, sessionorch.ErrCheckpointMismatch):
 		return status.Error(codes.FailedPrecondition, err.Error())
 
 	// NOT_FOUND -- the caller named something that does not exist.

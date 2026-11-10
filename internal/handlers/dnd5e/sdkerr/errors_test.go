@@ -194,11 +194,16 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrUnknownSite", sdk.ErrUnknownSite, codes.FailedPrecondition},
 		{"ErrUnknownSite beside ErrInvalidWorld", fmt.Errorf("site abc: %w: %w", sdk.ErrInvalidWorld, sdk.ErrUnknownSite), codes.FailedPrecondition},
 
-		// A checkpoint saved before the appended record (rpg-project#897 leg
-		// c): the server's own sentinel, refused by the Redis repository and
-		// passed up through the verb's wrapping.
-		{"ErrCheckpointBeforeAppendedRecord", sessionorch.ErrCheckpointBeforeAppendedRecord, codes.FailedPrecondition},
-		{"ErrCheckpointBeforeAppendedRecord through a verb", fmt.Errorf("move: encounter %q: %w", "e1", sessionorch.ErrCheckpointBeforeAppendedRecord), codes.FailedPrecondition},
+		// A checkpoint saved under an earlier store shape (rpg-project#897
+		// legs c and b): the server's own sentinel, refused by the Redis
+		// repository and passed up through the verb's wrapping.
+		{"ErrCheckpointBeforePieces", sessionorch.ErrCheckpointBeforePieces, codes.FailedPrecondition},
+		{"ErrCheckpointBeforePieces through a verb", fmt.Errorf("move: encounter %q: %w", "e1", sessionorch.ErrCheckpointBeforePieces), codes.FailedPrecondition},
+
+		// A stored checkpoint whose pieces disagree (rpg-project#897 leg b),
+		// in the exact chain the repository returns: beside
+		// sdk.ErrBadRepository, which alone would be INTERNAL.
+		{"ErrCheckpointMismatch", fmt.Errorf("encounter %q: journal missing: %w: %w", "e1", sessionorch.ErrCheckpointMismatch, sdk.ErrBadRepository), codes.FailedPrecondition},
 
 		// ALREADY_EXISTS
 		{"ErrSessionExists", sdk.ErrSessionExists, codes.AlreadyExists},

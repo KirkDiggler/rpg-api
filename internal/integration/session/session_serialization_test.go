@@ -100,7 +100,7 @@ func (s *SessionSerializationSuite) proveSerialization(locker sdk.SessionLocker)
 	h.launch(s.T(), run, buildThreeRoomTomb(s.T()), seatAt("alice", 1, 1))
 
 	hook := &pausedEncounterSave{
-		key: "session-enc:v1alpha2:" + run, entered: make(chan struct{}), resume: make(chan struct{}),
+		key: "session-enc:v1alpha3:" + run, entered: make(chan struct{}), resume: make(chan struct{}),
 	}
 	var resumeOnce sync.Once
 	resume := func() { resumeOnce.Do(func() { close(hook.resume) }) }
@@ -182,7 +182,7 @@ func (s *SessionsDoNotShareAKeySuite) TestTwoSessionsVerbsInterleave() {
 	h.launch(s.T(), fast, buildThreeRoomTomb(s.T()), seatAt("bob", 1, 1))
 
 	hook := &pausedEncounterSave{
-		key: "session-enc:v1alpha2:" + slow, entered: make(chan struct{}), resume: make(chan struct{}),
+		key: "session-enc:v1alpha3:" + slow, entered: make(chan struct{}), resume: make(chan struct{}),
 	}
 	var resumeOnce sync.Once
 	resume := func() { resumeOnce.Do(func() { close(hook.resume) }) }

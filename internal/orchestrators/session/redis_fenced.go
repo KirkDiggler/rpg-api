@@ -22,45 +22,58 @@ import (
 const sessionEncVerKeyPrefix = "session-enc-ver:v1alpha1:"
 
 // The Redis encounter repository carries the session's optional fenced
-// capability and its appending refinement; the SDK finds both by type
-// assertion on Config.Encounters.
+// capability and its appending and pieces refinements; the SDK finds them by
+// type assertion on Config.Encounters.
 var (
 	_ sdk.FencedEncounterRepository    = (*redisEncounterRepository)(nil)
 	_ sdk.AppendingEncounterRepository = (*redisEncounterRepository)(nil)
+	_ sdk.PiecesEncounterRepository    = (*redisEncounterRepository)(nil)
 )
 
 // THE VERSION SHARES THE CHECKPOINT'S LIFETIME. Every script that writes the
-// rest writes the version and the record list in the same call with the same
-// TTL, so the three expire together and nothing deletes one without the
-// others (no code deletes the rest today). Belt and braces: a version found
-// with no rest beside it is treated as no checkpoint (0), so a lingering
-// version key can never refuse a fresh Launch of the same id; a lingering
-// list is dropped by the first save, which always appends from seq 1.
+// head writes the version, the pieces and the record list in the same call
+// with the same TTL, so they expire together and nothing deletes one without
+// the others (no code deletes the head today). Belt and braces: a version
+// found with no head beside it is treated as no checkpoint (0), so a
+// lingering version key can never refuse a fresh Launch of the same id; a
+// lingering list or hash is dropped by the first save, which always carries
+// every piece and appends from seq 1.
 //
 // NOTHING IS WRITTEN UNTIL EVERYTHING IS CHECKED. A Lua script is atomic
 // against other clients but does not roll back a write when a later call in
-// it errors, so the fence, the record's first seq, the stored segments' last
-// seqs, the sheets' existence and their owners are all checked before the
-// first write.
+// it errors, so the fence, the save's wholeness, the record's first seq, the
+// stored segments' last seqs, the sheets' existence and their owners are all
+// checked before the first write.
 
-// saveFencedScript lands one fenced save: the rest replaced, one record
-// segment appended, the segments wholly below the floor dropped, the floor
-// kept beside the rest.
+// savePiecesScript lands one save of a split world (rpg-project#897 legs c
+// and b): the head replaced, the roster and knowledge fields sent written
+// (HSET) and the removed ones dropped (HDEL), the journal replaced when sent,
+// one record segment appended, the segments wholly below the floor dropped,
+// the floor kept beside the head, every piece key's TTL renewed together.
 //
-//	KEYS: rest, version, log, floor, [session], sheet..., seat...
-//	ARGV: expected, ttlMillis, hasSession, nSheets, nSeats, restBlob, since,
-//	      hasSegment, segmentElem, floor, [sessionBlob], sheetBlob...,
-//	      sheetPlayer..., seatBlob...
+//	KEYS: head, version, log, floor, roster, know, journal, [session],
+//	      sheet..., seat...
+//	ARGV: 1 expected ("" for the unfenced plain write), 2 ttlMillis,
+//	      3 hasSession, 4 nSheets, 5 nSeats, 6 headValue, 7 since,
+//	      8 hasSegment, 9 segmentElem, 10 floor, 11 whole, 12 hasJournal,
+//	      13 journalValue, 14 nRosterSet, 15 nRosterDel, 16 nKnowSet,
+//	      17 nKnowDel, then the roster's field/value pairs, its removed
+//	      fields, knowledge's pairs, its removed fields, then [sessionBlob],
+//	      sheetBlob..., sheetPlayer..., seatBlob...
 //
-// since 1 starts the record over: the list is dropped before the append. A
-// first save (no checkpoint yet) must start it over. Each list element is
-// "<last seq>\n<segment JSON>", so the floor drop reads the prefix alone; a
-// stored segment whose last seq equals the floor is kept (it holds the floor
-// itself), and an element whose prefix does not parse refuses the save.
+// A WHOLE save carries every piece the rest has: both hashes are replaced,
+// not written into, so a member or observer the rest lost cannot linger. A
+// first save (no checkpoint yet) and the plain write must be whole and must
+// start the record over (since 1). Each piece value is "<mark>\n<JSON>" and
+// each list element "<last seq>\n<segment JSON>", so the floor drop reads the
+// prefix alone; a stored segment whose last seq equals the floor is kept (it
+// holds the floor itself), and an element whose prefix does not parse
+// refuses the save.
 //
 // Replies {"ok", newVersion}, {"stale", storedVersion}, {"missing", key} or
 // {"bad", reason}.
-var saveFencedScript = goredis.NewScript(`
+var savePiecesScript = goredis.NewScript(`
+local plain = ARGV[1] == ''
 local expected = ARGV[1]
 local ttl = tonumber(ARGV[2])
 local hasSession = ARGV[3] == '1'
@@ -69,20 +82,61 @@ local nSeats = tonumber(ARGV[5])
 local since = tonumber(ARGV[7])
 local hasSegment = ARGV[8] == '1'
 local floor = tonumber(ARGV[10])
+local whole = ARGV[11] == '1'
+local hasJournal = ARGV[12] == '1'
+local nRosterSet = tonumber(ARGV[14])
+local nRosterDel = tonumber(ARGV[15])
+local nKnowSet = tonumber(ARGV[16])
+local nKnowDel = tonumber(ARGV[17])
+
+local p = 18
+local rosterSet = p
+p = p + 2 * nRosterSet
+local rosterDel = p
+p = p + nRosterDel
+local knowSet = p
+p = p + 2 * nKnowSet
+local knowDel = p
+p = p + nKnowDel
 
 local cur = '0'
 if redis.call('EXISTS', KEYS[1]) == 1 then
   local v = redis.call('GET', KEYS[2])
-  if not v then
+  if v then
+    cur = v
+  elseif not plain then
     return {'bad', 'encounter stored without a checkpoint version'}
   end
-  cur = v
 end
-if cur ~= expected then
+if not plain and cur ~= expected then
   return {'stale', cur}
 end
-if cur == '0' and since ~= 1 then
-  return {'bad', 'a first checkpoint must append the record from seq 1, not ' .. ARGV[7]}
+if plain or cur == '0' then
+  if not whole then
+    return {'bad', 'a first checkpoint must carry every piece'}
+  end
+  if since ~= 1 then
+    return {'bad', 'a first checkpoint must append the record from seq 1, not ' .. ARGV[7]}
+  end
+end
+if whole then
+  if not hasJournal then
+    return {'bad', 'a whole save carries no journal'}
+  end
+  local function hasShared(first, n)
+    for i = 0, n - 1 do
+      if ARGV[first + 2 * i] == '_' then
+        return true
+      end
+    end
+    return false
+  end
+  if not hasShared(rosterSet, nRosterSet) then
+    return {'bad', 'a whole save carries no roster'}
+  end
+  if not hasShared(knowSet, nKnowSet) then
+    return {'bad', 'a whole save carries no knowledge'}
+  end
 end
 
 -- The stored segments the floor drops, counted before any write. A save that
@@ -107,11 +161,11 @@ if since ~= 1 and floor > 0 then
   end
 end
 
-local k = 5
-local a = 11
+local k = 8
+local a = p
 if hasSession then
-  k = 6
-  a = 12
+  k = 9
+  a = p + 1
 end
 
 for i = 0, nSheets - 1 do
@@ -149,6 +203,28 @@ local function expireWithTTL(key)
 end
 
 setWithTTL(KEYS[1], ARGV[6])
+if whole then
+  redis.call('DEL', KEYS[5], KEYS[6])
+end
+for i = 0, nRosterSet - 1 do
+  redis.call('HSET', KEYS[5], ARGV[rosterSet + 2 * i], ARGV[rosterSet + 2 * i + 1])
+end
+for i = 0, nRosterDel - 1 do
+  redis.call('HDEL', KEYS[5], ARGV[rosterDel + i])
+end
+for i = 0, nKnowSet - 1 do
+  redis.call('HSET', KEYS[6], ARGV[knowSet + 2 * i], ARGV[knowSet + 2 * i + 1])
+end
+for i = 0, nKnowDel - 1 do
+  redis.call('HDEL', KEYS[6], ARGV[knowDel + i])
+end
+expireWithTTL(KEYS[5])
+expireWithTTL(KEYS[6])
+if hasJournal then
+  setWithTTL(KEYS[7], ARGV[13])
+else
+  expireWithTTL(KEYS[7])
+end
 if since == 1 then
   redis.call('DEL', KEYS[3])
 end
@@ -161,7 +237,7 @@ end
 expireWithTTL(KEYS[3])
 setWithTTL(KEYS[4], ARGV[10])
 if hasSession then
-  setWithTTL(KEYS[5], ARGV[11])
+  setWithTTL(KEYS[8], ARGV[p])
 end
 for i = 0, nSheets - 1 do
   redis.call('SET', KEYS[k + i], ARGV[a + i])
@@ -178,49 +254,11 @@ expireWithTTL(KEYS[2])
 return {'ok', nv}
 `)
 
-// savePlainScript is SaveEncounter: the rest written unconditionally with the
-// whole record as its one segment, and the version advanced with them,
-// because a plain write is a save that landed and a fenced writer that
-// loaded before it must see the checkpoint move.
-//
-//	KEYS: rest, version, log, floor
-//	ARGV: restBlob, ttlMillis, hasSegment, segmentElem, floor
-var savePlainScript = goredis.NewScript(`
-local ttl = tonumber(ARGV[2])
-local had = redis.call('EXISTS', KEYS[1]) == 1
-local function expireWithTTL(key)
-  if ttl > 0 then
-    redis.call('PEXPIRE', key, ttl)
-  else
-    redis.call('PERSIST', key)
-  end
-end
-local function setWithTTL(key, value)
-  if ttl > 0 then
-    redis.call('SET', key, value, 'PX', ttl)
-  else
-    redis.call('SET', key, value)
-  end
-end
-setWithTTL(KEYS[1], ARGV[1])
-setWithTTL(KEYS[4], ARGV[5])
-redis.call('DEL', KEYS[3])
-if ARGV[3] == '1' then
-  redis.call('RPUSH', KEYS[3], ARGV[4])
-  expireWithTTL(KEYS[3])
-end
-if not had then
-  redis.call('DEL', KEYS[2])
-end
-redis.call('INCR', KEYS[2])
-expireWithTTL(KEYS[2])
-return 1
-`)
-
-// GetFencedEncounter implements sdk.FencedEncounterRepository: the rest, its
-// version and its record segments in one MULTI/EXEC (loadCheckpoint), so the
-// version describes exactly the data returned, joined into one whole world. A
-// rest with no version beside it fails closed.
+// GetFencedEncounter implements sdk.FencedEncounterRepository: the pieces,
+// their marks, the version and the record segments in one MULTI/EXEC
+// (loadCheckpoint), so the version and the marks describe exactly the data
+// returned, joined into one whole world. A head with no version beside it
+// fails closed.
 func (r *redisEncounterRepository) GetFencedEncounter(
 	ctx context.Context, in *sdk.GetFencedEncounterInput,
 ) (*sdk.GetFencedEncounterOutput, error) {
@@ -239,12 +277,13 @@ func (r *redisEncounterRepository) GetFencedEncounter(
 	if err != nil || version == 0 {
 		return nil, fmt.Errorf("encounter %q has checkpoint version %q: %w", id, stored.version, sdk.ErrBadRepository)
 	}
-	return &sdk.GetFencedEncounterOutput{Data: stored.data, Version: version}, nil
+	return &sdk.GetFencedEncounterOutput{Data: stored.data, Version: version, Marks: stored.marks}, nil
 }
 
 // SaveFenced implements sdk.FencedEncounterRepository for a caller that hands
-// the whole world: it is split here (splitWhole) and saved as the record from
-// seq 1, so the store holds one shape whichever path wrote it.
+// the whole world: it is split here (splitWhole), its rest into every piece,
+// and saved as the record from seq 1, so the store holds one shape whichever
+// path wrote it.
 func (r *redisEncounterRepository) SaveFenced(ctx context.Context, in *sdk.SaveFencedInput) (*sdk.SaveFencedOutput, error) {
 	if in == nil || in.Encounter == "" {
 		return nil, errors.New("session: SaveFenced encounter is required")
@@ -258,17 +297,12 @@ func (r *redisEncounterRepository) SaveFenced(ctx context.Context, in *sdk.SaveF
 	}
 	split := *in
 	split.Data = &rest
-	return r.saveFenced(ctx, &sdk.SaveAppendedInput{SaveFencedInput: split, Appended: segment, Since: 1, Floor: floor})
+	return r.SaveAppended(ctx, &sdk.SaveAppendedInput{SaveFencedInput: split, Appended: segment, Since: 1, Floor: floor})
 }
 
-// SaveAppended implements sdk.AppendingEncounterRepository: the rest, the
-// session record when given, the touched sheets and the written seats, under
-// the keys their own repositories use, and the record segment appended, in
-// one script fenced on in.Expected.
-//
-// The session record takes this repository's TTL; the orchestrator builds the
-// session and encounter repositories with the same one (orchestrator.go).
-// Sheets and seats carry no TTL, as their repositories write them.
+// SaveAppended implements sdk.AppendingEncounterRepository for a caller that
+// hands the rest whole: every piece of it is written (a whole save), with the
+// segment appended, in the one fenced script.
 func (r *redisEncounterRepository) SaveAppended(
 	ctx context.Context, in *sdk.SaveAppendedInput,
 ) (*sdk.SaveFencedOutput, error) {
@@ -278,36 +312,98 @@ func (r *redisEncounterRepository) SaveAppended(
 	if in.Data == nil {
 		return nil, errors.New("session: SaveAppended data is required")
 	}
-	return r.saveFenced(ctx, in)
+	if n := len(in.Data.Log.Entries); n > 0 {
+		return nil, fmt.Errorf("save of encounter %q: the rest carries %d record entries: %w",
+			in.Encounter, n, ErrRestCarriesRecord)
+	}
+	write, err := splitAll(in.Data)
+	if err != nil {
+		return nil, fmt.Errorf("save of encounter %q: %w", in.Encounter, err)
+	}
+	return r.saveFenced(ctx, in, write)
 }
 
-// saveFenced runs saveFencedScript for one split save.
-func (r *redisEncounterRepository) saveFenced(
-	ctx context.Context, in *sdk.SaveAppendedInput,
+// SavePieces implements sdk.PiecesEncounterRepository: the pieces whose mark
+// moved, the removed ones dropped, the session record when given, the
+// touched sheets and the written seats, under the keys their own
+// repositories use, and the record segment appended, in one script fenced on
+// in.Expected. A save that carries every piece its marks name is whole: the
+// hashes are replaced rather than written into.
+//
+// The session record takes this repository's TTL; the orchestrator builds the
+// session and encounter repositories with the same one (orchestrator.go).
+// Sheets and seats carry no TTL, as their repositories write them.
+func (r *redisEncounterRepository) SavePieces(
+	ctx context.Context, in *sdk.SavePiecesInput,
 ) (*sdk.SaveFencedOutput, error) {
-	id := in.Encounter
-	if n := len(in.Data.Log.Entries); n > 0 {
-		return nil, fmt.Errorf("save of encounter %q: the rest carries %d record entries: %w", id, n, ErrRestCarriesRecord)
+	if in == nil || in.Encounter == "" {
+		return nil, errors.New("session: SavePieces encounter is required")
 	}
-	keys := []string{
-		sessionEncKeyPrefix + id, sessionEncVerKeyPrefix + id, sessionEncLogKeyPrefix + id, sessionEncFloorKeyPrefix + id,
+	if len(in.Marks) == 0 {
+		return nil, fmt.Errorf("save of encounter %q: SavePieces carries no marks: %w", in.Encounter, sdk.ErrBadRepository)
 	}
-	restBlob, err := json.Marshal(in.Data)
+	write, err := piecesWriteOf(in.Pieces, in.Removed, isWhole(in.Pieces, in.Marks))
 	if err != nil {
-		return nil, fmt.Errorf("marshal encounter %q: %w", id, err)
+		return nil, fmt.Errorf("save of encounter %q: %w: %w", in.Encounter, err, sdk.ErrBadRepository)
 	}
+	return r.saveFenced(ctx, &in.SaveAppendedInput, write)
+}
+
+// checkpointKeys is an encounter's checkpoint keys in the script's order:
+// head, version, log, floor, roster, knowledge, journal.
+func checkpointKeys(id string) []string {
+	return []string{
+		sessionEncKeyPrefix + id, sessionEncVerKeyPrefix + id, sessionEncLogKeyPrefix + id,
+		sessionEncFloorKeyPrefix + id, sessionEncRosterKeyPrefix + id, sessionEncKnowKeyPrefix + id,
+		sessionEncJournalKeyPrefix + id,
+	}
+}
+
+// piecesArgs is the script's arguments from ARGV[1] through the pieces:
+// expected ("" for the plain write), the TTL, the session/sheet/seat counts,
+// the head, the record's since, segment and floor, then the pieces.
+func (r *redisEncounterRepository) piecesArgs(
+	expected string, in *sdk.SaveAppendedInput, write *piecesWrite,
+) ([]interface{}, error) {
 	hasSegment, segmentElem := "0", []byte(nil)
 	if len(in.Appended.Entries) > 0 {
+		var err error
 		if segmentElem, err = encodeSegment(in.Appended); err != nil {
-			return nil, fmt.Errorf("marshal encounter %q record segment: %w", id, err)
+			return nil, fmt.Errorf("marshal encounter %q record segment: %w", in.Encounter, err)
 		}
 		hasSegment = "1"
 	}
-	args := []interface{}{
-		strconv.FormatUint(in.Expected, 10), r.ttl.Milliseconds(), "0",
-		len(in.Characters), len(in.Seats), restBlob,
-		strconv.FormatUint(in.Since, 10), hasSegment, segmentElem,
-		strconv.FormatUint(in.Floor, 10),
+	whole, hasJournal := "0", "0"
+	if write.whole {
+		whole = "1"
+	}
+	if write.journal != nil {
+		hasJournal = "1"
+	}
+	args := make([]interface{}, 0,
+		17+len(write.rosterSet)+len(write.rosterDel)+len(write.knowSet)+len(write.knowDel))
+	args = append(args,
+		expected, r.ttl.Milliseconds(), "0", len(in.Characters), len(in.Seats), write.head,
+		strconv.FormatUint(in.Since, 10), hasSegment, segmentElem, strconv.FormatUint(in.Floor, 10),
+		whole, hasJournal, write.journal,
+		len(write.rosterSet)/2, len(write.rosterDel), len(write.knowSet)/2, len(write.knowDel),
+	)
+	args = append(args, write.rosterSet...)
+	args = append(args, write.rosterDel...)
+	args = append(args, write.knowSet...)
+	args = append(args, write.knowDel...)
+	return args, nil
+}
+
+// saveFenced runs savePiecesScript for one fenced save.
+func (r *redisEncounterRepository) saveFenced(
+	ctx context.Context, in *sdk.SaveAppendedInput, write *piecesWrite,
+) (*sdk.SaveFencedOutput, error) {
+	id := in.Encounter
+	keys := checkpointKeys(id)
+	args, err := r.piecesArgs(strconv.FormatUint(in.Expected, 10), in, write)
+	if err != nil {
+		return nil, err
 	}
 	if in.Session != nil {
 		if in.Session.ID == "" {
@@ -350,7 +446,7 @@ func (r *redisEncounterRepository) saveFenced(
 		args = append(args, b)
 	}
 
-	reply, err := saveFencedScript.Run(ctx, r.client, keys, args...).Slice()
+	reply, err := savePiecesScript.Run(ctx, r.client, keys, args...).Slice()
 	if err != nil {
 		return nil, fmt.Errorf("fenced save of encounter %q: %w", id, err)
 	}
