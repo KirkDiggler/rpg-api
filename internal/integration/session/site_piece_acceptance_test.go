@@ -98,7 +98,7 @@ func storedSiteHash(t *testing.T, h *acceptanceHarness, run string) string {
 		Encounter string `json:"encounter"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &record))
-	raw, err = h.redis.Get(context.Background(), "session-enc:v1alpha1:"+record.Encounter).Bytes()
+	raw, err = h.redis.Get(context.Background(), "session-enc:v1alpha2:"+record.Encounter).Bytes()
 	require.NoError(t, err)
 	var blob map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(raw, &blob))

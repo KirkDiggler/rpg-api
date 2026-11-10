@@ -4,10 +4,13 @@
 // test just walked, it times a rebuild from Redis by stage, outside any verb,
 // with the same functions the session's load path calls:
 //
-//   - fetch: the GET of the session-enc blob (the encounter repository's
-//     read, without its decode), and the session record's GET beside it;
-//   - decode: the blob's JSON into encounter.EncounterData (the repository's
-//     own json.Unmarshal);
+//   - fetch: the GET of the encounter's rest and the LRANGE of its record
+//     segments in one MULTI/EXEC (the encounter repository's read, without
+//     its decode; rpg-project#897 leg c), and the session record's GET
+//     beside it;
+//   - decode: the rest's and every segment's JSON, joined into one
+//     encounter.EncounterData with record.JoinData (the repository's own
+//     decode);
 //   - site build: encounter.LoadEncounter over the decoded data with
 //     encounter.RefusingCapabilities -- the composition's own load (field
 //     compile, partitions, doors, members) with no session seam attached.
@@ -51,6 +54,7 @@ import (
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
+	"github.com/KirkDiggler/rpg-toolkit/play/record"
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
@@ -60,7 +64,8 @@ import (
 // same bytes they read.
 const (
 	measureSessionKeyPrefix = "session:v1alpha1:"
-	measureEncKeyPrefix     = "session-enc:v1alpha1:"
+	measureEncKeyPrefix     = "session-enc:v1alpha2:"
+	measureEncLogKeyPrefix  = "session-enc-log:v1alpha2:"
 	measureSiteKeyPrefix    = "session-site:v1alpha1:"
 	measureScratchKey       = "measure:reload:scratch"
 	// measureScratchEncounter is the encounter id the fenced-save row writes
@@ -115,18 +120,19 @@ func measureColdReload(
 		r.sessionDecode = append(r.sessionDecode, time.Since(s))
 		r.sessionBytes = len(sessRaw)
 
-		// fetch: the encounter blob.
+		// fetch: the encounter's rest and its record segments.
 		s = time.Now()
-		raw, err := client.Get(ctx, measureEncKeyPrefix+sess.Encounter).Bytes()
+		raw, elems := fetchCheckpoint(t, client, sess.Encounter)
 		fetch := time.Since(s)
-		require.NoError(t, err)
 		r.fetch = append(r.fetch, fetch)
 		r.encBytes = len(raw)
+		for _, elem := range elems {
+			r.encBytes += len(elem)
+		}
 
-		// decode: bytes into the composition's data type.
-		var data tkencounter.EncounterData
+		// decode: bytes into the composition's data type, the record joined.
 		s = time.Now()
-		require.NoError(t, json.Unmarshal(raw, &data))
+		data := decodeCheckpoint(t, raw, elems)
 		decode := time.Since(s)
 		r.decode = append(r.decode, decode)
 
@@ -136,8 +142,8 @@ func measureColdReload(
 		r.repoGet = append(r.repoGet, time.Since(s))
 		require.NoError(t, err)
 
-		// The fenced read the session takes: blob and version in one MGET,
-		// plus decode.
+		// The fenced read the session takes: rest, version and record in one
+		// MULTI/EXEC, plus decode and the record's join.
 		s = time.Now()
 		_, err = fenced.GetFencedEncounter(ctx, &sdk.GetFencedEncounterInput{Encounter: sess.Encounter})
 		r.fencedGet = append(r.fencedGet, time.Since(s))
@@ -208,8 +214,47 @@ func measureColdReload(
 		r.attach = append(r.attach, whole-sessCost-fetch-decode-build)
 	}
 	require.NoError(t, client.Del(ctx, measureScratchKey,
-		measureEncKeyPrefix+measureScratchEncounter, "session-enc-ver:v1alpha1:"+measureScratchEncounter).Err())
+		measureEncKeyPrefix+measureScratchEncounter, measureEncLogKeyPrefix+measureScratchEncounter,
+		"session-enc-ver:v1alpha1:"+measureScratchEncounter).Err())
 	return r
+}
+
+// fetchCheckpoint reads an encounter's rest and its record segments in one
+// MULTI/EXEC, as the repository does.
+func fetchCheckpoint(t *testing.T, client *goredis.Client, encounter string) ([]byte, []string) {
+	t.Helper()
+	ctx := context.Background()
+	var rest *goredis.StringCmd
+	var segments *goredis.StringSliceCmd
+	_, err := client.TxPipelined(ctx, func(pipe goredis.Pipeliner) error {
+		rest = pipe.Get(ctx, measureEncKeyPrefix+encounter)
+		segments = pipe.LRange(ctx, measureEncLogKeyPrefix+encounter, 0, -1)
+		return nil
+	})
+	require.NoError(t, err)
+	raw, err := rest.Bytes()
+	require.NoError(t, err)
+	return raw, segments.Val()
+}
+
+// decodeCheckpoint decodes a rest and its segments ("<last seq>\n<JSON>")
+// and joins the record, as the repository does for an unbounded run (every
+// launched run is).
+func decodeCheckpoint(t *testing.T, raw []byte, elems []string) tkencounter.EncounterData {
+	t.Helper()
+	var data tkencounter.EncounterData
+	require.NoError(t, json.Unmarshal(raw, &data))
+	require.Negative(t, data.Retention, "a launched run keeps its whole record")
+	segments := make([]record.LogData, len(elems))
+	for i, elem := range elems {
+		_, body, ok := strings.Cut(elem, "\n")
+		require.True(t, ok, "segment %d has its last-seq prefix", i)
+		require.NoError(t, json.Unmarshal([]byte(body), &segments[i]))
+	}
+	joined, err := record.JoinData(data.Log, segments...)
+	require.NoError(t, err)
+	data.Log = joined
+	return data
 }
 
 // reloadTable renders the reload rows beside the walk's Move totals, p50 and
@@ -229,8 +274,8 @@ func reloadTable(rows []reloadRow, moves map[string][2][]time.Duration) string {
 		}
 		line("session record fetch", r.sessionBytes, r.sessionFetch)
 		line("session record decode", 0, r.sessionDecode)
-		line("1 fetch (enc blob GET)", r.encBytes, r.fetch)
-		line("2 decode (JSON → EncounterData)", 0, r.decode)
+		line("1 fetch (rest GET + record LRANGE, bytes rest + log)", r.encBytes, r.fetch)
+		line("2 decode (JSON → EncounterData, record joined)", 0, r.decode)
 		line("1+2 repository GetEncounter", 0, r.repoGet)
 		line("3 site build (LoadEncounter, refusing caps, warm provider)", 0, r.siteBuild)
 		line("3p site piece GetSite (GET + decode)", r.pieceBytes, r.pieceGet)
@@ -240,7 +285,7 @@ func reloadTable(rows []reloadRow, moves map[string][2][]time.Duration) string {
 		line("5a ToData", 0, r.toData)
 		line("5b encode (JSON)", r.outBytes, r.encode)
 		line("5c persist (SET)", r.outBytes, r.persist)
-		line("1+2 fenced GetFencedEncounter (MGET + decode)", 0, r.fencedGet)
+		line("1+2 fenced GetFencedEncounter (MULTI/EXEC + decode + join)", 0, r.fencedGet)
 		line("5b+5d fenced SaveFenced (encode + script)", r.outBytes, r.fencedSave)
 		if m, ok := moves[r.key+"|"+r.mode]; ok {
 			line("Move answer (walk above)", 0, m[0])

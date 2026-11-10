@@ -21,8 +21,11 @@ import (
 // footprints never collide even though they run in the same process and
 // against the same Redis instance during coexistence.
 const (
-	sessionKeyPrefix    = "session:v1alpha1:"
-	sessionEncKeyPrefix = "session-enc:v1alpha1:"
+	sessionKeyPrefix = "session:v1alpha1:"
+	// sessionEncKeyPrefix keys an encounter's REST: the world with its story
+	// log reduced to the head; the record lives beside it as segments
+	// (redis_record.go).
+	sessionEncKeyPrefix = "session-enc:v1alpha2:"
 )
 
 // SessionData and EncounterData are opaque blobs the SDK builds: this
@@ -92,23 +95,19 @@ func NewEncounterRepository(client redisclient.Client, ttl time.Duration) sdk.En
 	return &redisEncounterRepository{client: client, ttl: ttl}
 }
 
-// GetEncounter implements sdk.EncounterRepository.
+// GetEncounter implements sdk.EncounterRepository: the rest and its record
+// segments read together and joined into one whole world (loadCheckpoint).
 func (r *redisEncounterRepository) GetEncounter(ctx context.Context, id string) (*tkencounter.EncounterData, error) {
-	b, err := r.client.Get(ctx, sessionEncKeyPrefix+id).Bytes()
+	stored, err := r.loadCheckpoint(ctx, id)
 	if err != nil {
-		if errors.Is(err, goredis.Nil) {
-			return nil, fmt.Errorf("encounter %q: %w", id, sdk.ErrNotFound)
-		}
-		return nil, fmt.Errorf("get encounter %q: %w", id, err)
+		return nil, err
 	}
-	var out tkencounter.EncounterData
-	if err := json.Unmarshal(b, &out); err != nil {
-		return nil, fmt.Errorf("unmarshal stored encounter %q: %w", id, err)
-	}
-	return &out, nil
+	return stored.data, nil
 }
 
-// SaveEncounter implements sdk.EncounterRepository.
+// SaveEncounter implements sdk.EncounterRepository: the world split into its
+// rest and its whole record as one segment (splitWhole), the shape every
+// save path leaves in the store.
 func (r *redisEncounterRepository) SaveEncounter(ctx context.Context, id string, data *tkencounter.EncounterData) error {
 	if id == "" {
 		return errors.New("session: SaveEncounter id is required")
@@ -116,14 +115,26 @@ func (r *redisEncounterRepository) SaveEncounter(ctx context.Context, id string,
 	if data == nil {
 		return errors.New("session: SaveEncounter data is required")
 	}
-	b, err := json.Marshal(data)
+	rest, segment, err := splitWhole(data)
+	if err != nil {
+		return fmt.Errorf("save encounter %q: %w", id, err)
+	}
+	restBlob, err := json.Marshal(&rest)
 	if err != nil {
 		return fmt.Errorf("marshal encounter %q: %w", id, err)
 	}
+	hasSegment, segmentElem := "0", []byte(nil)
+	if len(segment.Entries) > 0 {
+		if segmentElem, err = encodeSegment(segment); err != nil {
+			return fmt.Errorf("marshal encounter %q record: %w", id, err)
+		}
+		hasSegment = "1"
+	}
 	// A plain write is still a save that landed, so it advances the
 	// checkpoint version a fenced writer compares against (redis_fenced.go).
-	keys := []string{sessionEncKeyPrefix + id, sessionEncVerKeyPrefix + id}
-	if err := savePlainScript.Run(ctx, r.client, keys, b, r.ttl.Milliseconds()).Err(); err != nil {
+	keys := []string{sessionEncKeyPrefix + id, sessionEncVerKeyPrefix + id, sessionEncLogKeyPrefix + id}
+	err = savePlainScript.Run(ctx, r.client, keys, restBlob, r.ttl.Milliseconds(), hasSegment, segmentElem).Err()
+	if err != nil {
 		return fmt.Errorf("set encounter %q: %w", id, err)
 	}
 	return nil

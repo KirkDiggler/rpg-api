@@ -9,7 +9,6 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
-	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	"github.com/KirkDiggler/rpg-api/internal/entities"
@@ -23,26 +22,37 @@ import (
 const sessionEncVerKeyPrefix = "session-enc-ver:v1alpha1:"
 
 // The Redis encounter repository carries the session's optional fenced
-// capability; the SDK finds it by type assertion on Config.Encounters.
-var _ sdk.FencedEncounterRepository = (*redisEncounterRepository)(nil)
+// capability and its appending refinement; the SDK finds both by type
+// assertion on Config.Encounters.
+var (
+	_ sdk.FencedEncounterRepository    = (*redisEncounterRepository)(nil)
+	_ sdk.AppendingEncounterRepository = (*redisEncounterRepository)(nil)
+)
 
-// THE VERSION SHARES THE BLOB'S LIFETIME. Every script that writes the blob
-// writes the version in the same call with the same TTL, so the two expire
-// together and nothing deletes one without the other (no code deletes the
-// blob today). Belt and braces: a version found with no blob beside it is
-// treated as no checkpoint (0), so a lingering version key can never refuse
-// a fresh Launch of the same id.
+// THE VERSION SHARES THE CHECKPOINT'S LIFETIME. Every script that writes the
+// rest writes the version and the record list in the same call with the same
+// TTL, so the three expire together and nothing deletes one without the
+// others (no code deletes the rest today). Belt and braces: a version found
+// with no rest beside it is treated as no checkpoint (0), so a lingering
+// version key can never refuse a fresh Launch of the same id; a lingering
+// list is dropped by the first save, which always appends from seq 1.
 //
 // NOTHING IS WRITTEN UNTIL EVERYTHING IS CHECKED. A Lua script is atomic
 // against other clients but does not roll back a write when a later call in
-// it errors, so the fence, the sheets' existence and their owners are all
-// checked before the first SET.
+// it errors, so the fence, the record's first seq, the sheets' existence and
+// their owners are all checked before the first write.
 
-// saveFencedScript lands one fenced save.
+// saveFencedScript lands one fenced save: the rest replaced, one record
+// segment appended, the segments wholly below the floor dropped.
 //
-//	KEYS: encounter, version, [session], sheet..., seat...
-//	ARGV: expected, ttlMillis, hasSession, nSheets, nSeats, encounterBlob,
-//	      [sessionBlob], sheetBlob..., sheetPlayer..., seatBlob...
+//	KEYS: rest, version, log, [session], sheet..., seat...
+//	ARGV: expected, ttlMillis, hasSession, nSheets, nSeats, restBlob, since,
+//	      hasSegment, segmentElem, floor, [sessionBlob], sheetBlob...,
+//	      sheetPlayer..., seatBlob...
+//
+// since 1 starts the record over: the list is dropped before the append. A
+// first save (no checkpoint yet) must start it over. Each list element is
+// "<last seq>\n<segment JSON>", so the floor drop reads the prefix alone.
 //
 // Replies {"ok", newVersion}, {"stale", storedVersion}, {"missing", key} or
 // {"bad", reason}.
@@ -52,6 +62,9 @@ local ttl = tonumber(ARGV[2])
 local hasSession = ARGV[3] == '1'
 local nSheets = tonumber(ARGV[4])
 local nSeats = tonumber(ARGV[5])
+local since = tonumber(ARGV[7])
+local hasSegment = ARGV[8] == '1'
+local floor = tonumber(ARGV[10])
 
 local cur = '0'
 if redis.call('EXISTS', KEYS[1]) == 1 then
@@ -64,12 +77,15 @@ end
 if cur ~= expected then
   return {'stale', cur}
 end
+if cur == '0' and since ~= 1 then
+  return {'bad', 'a first checkpoint must append the record from seq 1, not ' .. ARGV[7]}
+end
 
-local k = 3
-local a = 7
+local k = 4
+local a = 11
 if hasSession then
-  k = 4
-  a = 8
+  k = 5
+  a = 12
 end
 
 for i = 0, nSheets - 1 do
@@ -98,10 +114,37 @@ local function setWithTTL(key, value)
     redis.call('SET', key, value)
   end
 end
+local function expireWithTTL(key)
+  if ttl > 0 then
+    redis.call('PEXPIRE', key, ttl)
+  else
+    redis.call('PERSIST', key)
+  end
+end
 
 setWithTTL(KEYS[1], ARGV[6])
+if since == 1 then
+  redis.call('DEL', KEYS[3])
+end
+if hasSegment then
+  redis.call('RPUSH', KEYS[3], ARGV[9])
+end
+if floor > 0 then
+  while true do
+    local first = redis.call('LINDEX', KEYS[3], 0)
+    if not first then
+      break
+    end
+    local last = tonumber(string.match(first, '^(%d+)\n'))
+    if last == nil or last >= floor then
+      break
+    end
+    redis.call('LPOP', KEYS[3])
+  end
+end
+expireWithTTL(KEYS[3])
 if hasSession then
-  setWithTTL(KEYS[3], ARGV[7])
+  setWithTTL(KEYS[4], ARGV[11])
 end
 for i = 0, nSheets - 1 do
   redis.call('SET', KEYS[k + i], ARGV[a + i])
@@ -114,43 +157,49 @@ if cur == '0' then
   redis.call('DEL', KEYS[2])
 end
 local nv = redis.call('INCR', KEYS[2])
-if ttl > 0 then
-  redis.call('PEXPIRE', KEYS[2], ttl)
-else
-  redis.call('PERSIST', KEYS[2])
-end
+expireWithTTL(KEYS[2])
 return {'ok', nv}
 `)
 
-// savePlainScript is SaveEncounter: the blob written unconditionally, and the
-// version advanced with it, because a plain write is a save that landed and a
-// fenced writer that loaded before it must see the checkpoint move.
+// savePlainScript is SaveEncounter: the rest written unconditionally with the
+// whole record as its one segment, and the version advanced with them,
+// because a plain write is a save that landed and a fenced writer that
+// loaded before it must see the checkpoint move.
 //
-//	KEYS: encounter, version
-//	ARGV: encounterBlob, ttlMillis
+//	KEYS: rest, version, log
+//	ARGV: restBlob, ttlMillis, hasSegment, segmentElem
 var savePlainScript = goredis.NewScript(`
 local ttl = tonumber(ARGV[2])
 local had = redis.call('EXISTS', KEYS[1]) == 1
+local function expireWithTTL(key)
+  if ttl > 0 then
+    redis.call('PEXPIRE', key, ttl)
+  else
+    redis.call('PERSIST', key)
+  end
+end
 if ttl > 0 then
   redis.call('SET', KEYS[1], ARGV[1], 'PX', ttl)
 else
   redis.call('SET', KEYS[1], ARGV[1])
 end
+redis.call('DEL', KEYS[3])
+if ARGV[3] == '1' then
+  redis.call('RPUSH', KEYS[3], ARGV[4])
+  expireWithTTL(KEYS[3])
+end
 if not had then
   redis.call('DEL', KEYS[2])
 end
 redis.call('INCR', KEYS[2])
-if ttl > 0 then
-  redis.call('PEXPIRE', KEYS[2], ttl)
-else
-  redis.call('PERSIST', KEYS[2])
-end
+expireWithTTL(KEYS[2])
 return 1
 `)
 
-// GetFencedEncounter implements sdk.FencedEncounterRepository: the blob and
-// its version in one MGET, so the version describes exactly the data
-// returned. A blob with no version beside it fails closed.
+// GetFencedEncounter implements sdk.FencedEncounterRepository: the rest, its
+// version and its record segments in one MULTI/EXEC (loadCheckpoint), so the
+// version describes exactly the data returned, joined into one whole world. A
+// rest with no version beside it fails closed.
 func (r *redisEncounterRepository) GetFencedEncounter(
 	ctx context.Context, in *sdk.GetFencedEncounterInput,
 ) (*sdk.GetFencedEncounterOutput, error) {
@@ -158,39 +207,23 @@ func (r *redisEncounterRepository) GetFencedEncounter(
 		return nil, errors.New("session: GetFencedEncounter encounter is required")
 	}
 	id := in.Encounter
-	vals, err := r.client.MGet(ctx, sessionEncKeyPrefix+id, sessionEncVerKeyPrefix+id).Result()
+	stored, err := r.loadCheckpoint(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("get fenced encounter %q: %w", id, err)
+		return nil, err
 	}
-	if len(vals) != 2 {
-		return nil, fmt.Errorf("get fenced encounter %q: MGET returned %d values: %w", id, len(vals), sdk.ErrBadRepository)
-	}
-	blob, ok := vals[0].(string)
-	if !ok {
-		return nil, fmt.Errorf("encounter %q: %w", id, sdk.ErrNotFound)
-	}
-	rawVersion, ok := vals[1].(string)
-	if !ok {
+	if stored.version == "" {
 		return nil, fmt.Errorf("encounter %q is stored without a checkpoint version: %w", id, sdk.ErrBadRepository)
 	}
-	version, err := strconv.ParseUint(rawVersion, 10, 64)
+	version, err := strconv.ParseUint(stored.version, 10, 64)
 	if err != nil || version == 0 {
-		return nil, fmt.Errorf("encounter %q has checkpoint version %q: %w", id, rawVersion, sdk.ErrBadRepository)
+		return nil, fmt.Errorf("encounter %q has checkpoint version %q: %w", id, stored.version, sdk.ErrBadRepository)
 	}
-	var data tkencounter.EncounterData
-	if err := json.Unmarshal([]byte(blob), &data); err != nil {
-		return nil, fmt.Errorf("unmarshal stored encounter %q: %w", id, err)
-	}
-	return &sdk.GetFencedEncounterOutput{Data: &data, Version: version}, nil
+	return &sdk.GetFencedEncounterOutput{Data: stored.data, Version: version}, nil
 }
 
-// SaveFenced implements sdk.FencedEncounterRepository: the world, the session
-// record when given, the touched sheets and the written seats, under the keys
-// their own repositories use, in one script fenced on in.Expected.
-//
-// The session record takes this repository's TTL; the orchestrator builds the
-// session and encounter repositories with the same one (orchestrator.go).
-// Sheets and seats carry no TTL, as their repositories write them.
+// SaveFenced implements sdk.FencedEncounterRepository for a caller that hands
+// the whole world: it is split here (splitWhole) and saved as the record from
+// seq 1, so the store holds one shape whichever path wrote it.
 func (r *redisEncounterRepository) SaveFenced(ctx context.Context, in *sdk.SaveFencedInput) (*sdk.SaveFencedOutput, error) {
 	if in == nil || in.Encounter == "" {
 		return nil, errors.New("session: SaveFenced encounter is required")
@@ -198,16 +231,57 @@ func (r *redisEncounterRepository) SaveFenced(ctx context.Context, in *sdk.SaveF
 	if in.Data == nil {
 		return nil, errors.New("session: SaveFenced data is required")
 	}
-	id := in.Encounter
+	rest, segment, err := splitWhole(in.Data)
+	if err != nil {
+		return nil, fmt.Errorf("fenced save of encounter %q: %w", in.Encounter, err)
+	}
+	split := *in
+	split.Data = &rest
+	return r.saveFenced(ctx, &sdk.SaveAppendedInput{SaveFencedInput: split, Appended: segment, Since: 1})
+}
 
-	keys := []string{sessionEncKeyPrefix + id, sessionEncVerKeyPrefix + id}
-	encBlob, err := json.Marshal(in.Data)
+// SaveAppended implements sdk.AppendingEncounterRepository: the rest, the
+// session record when given, the touched sheets and the written seats, under
+// the keys their own repositories use, and the record segment appended, in
+// one script fenced on in.Expected.
+//
+// The session record takes this repository's TTL; the orchestrator builds the
+// session and encounter repositories with the same one (orchestrator.go).
+// Sheets and seats carry no TTL, as their repositories write them.
+func (r *redisEncounterRepository) SaveAppended(
+	ctx context.Context, in *sdk.SaveAppendedInput,
+) (*sdk.SaveFencedOutput, error) {
+	if in == nil || in.Encounter == "" {
+		return nil, errors.New("session: SaveAppended encounter is required")
+	}
+	if in.Data == nil {
+		return nil, errors.New("session: SaveAppended data is required")
+	}
+	return r.saveFenced(ctx, in)
+}
+
+// saveFenced runs saveFencedScript for one split save.
+func (r *redisEncounterRepository) saveFenced(
+	ctx context.Context, in *sdk.SaveAppendedInput,
+) (*sdk.SaveFencedOutput, error) {
+	id := in.Encounter
+	keys := []string{sessionEncKeyPrefix + id, sessionEncVerKeyPrefix + id, sessionEncLogKeyPrefix + id}
+	restBlob, err := json.Marshal(in.Data)
 	if err != nil {
 		return nil, fmt.Errorf("marshal encounter %q: %w", id, err)
 	}
+	hasSegment, segmentElem := "0", []byte(nil)
+	if len(in.Appended.Entries) > 0 {
+		if segmentElem, err = encodeSegment(in.Appended); err != nil {
+			return nil, fmt.Errorf("marshal encounter %q record segment: %w", id, err)
+		}
+		hasSegment = "1"
+	}
 	args := []interface{}{
 		strconv.FormatUint(in.Expected, 10), r.ttl.Milliseconds(), "0",
-		len(in.Characters), len(in.Seats), encBlob,
+		len(in.Characters), len(in.Seats), restBlob,
+		strconv.FormatUint(in.Since, 10), hasSegment, segmentElem,
+		strconv.FormatUint(in.Floor, 10),
 	}
 	if in.Session != nil {
 		if in.Session.ID == "" {

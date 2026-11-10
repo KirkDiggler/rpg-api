@@ -15,6 +15,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+
+	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 )
 
 // StatusError is THE ONE error-translation table design rule 7 requires:
@@ -69,6 +71,14 @@ func StatusError(err error) error {
 	// refusing the verb until the piece is restored, which is the
 	// FAILED_PRECONDITION contract: do not retry as is.
 	case errors.Is(err, sdk.ErrUnknownSite):
+		return status.Error(codes.FailedPrecondition, err.Error())
+
+	// FAILED_PRECONDITION for the same reason (rpg-project#897 leg c): a
+	// checkpoint saved before the appended record, found only under the old
+	// single-blob key. It is this server's own sentinel, not the SDK's: the
+	// Redis repository refuses it by name rather than load a store shape
+	// nothing writes any more, and the session must be relaunched.
+	case errors.Is(err, sessionorch.ErrCheckpointBeforeAppendedRecord):
 		return status.Error(codes.FailedPrecondition, err.Error())
 
 	// NOT_FOUND -- the caller named something that does not exist.

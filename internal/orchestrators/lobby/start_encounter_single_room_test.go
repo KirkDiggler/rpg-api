@@ -312,9 +312,12 @@ func (s *SessionStackSuite) TestStartEncounter_SingleRoomInsufficientSeatsWrites
 	sessionKeys, err := s.redisClient.Keys(s.ctx, "session:v1alpha1:*").Result()
 	s.Require().NoError(err)
 	s.Empty(sessionKeys, "no session record was written")
-	encounterKeys, err := s.redisClient.Keys(s.ctx, "session-enc:v1alpha1:*").Result()
+	encounterKeys, err := s.redisClient.Keys(s.ctx, "session-enc:v1alpha2:*").Result()
 	s.Require().NoError(err)
 	s.Empty(encounterKeys, "no encounter world was written")
+	recordKeys, err := s.redisClient.Keys(s.ctx, "session-enc-log:v1alpha2:*").Result()
+	s.Require().NoError(err)
+	s.Empty(recordKeys, "no encounter record was written")
 
 	data, err := s.lobbyRepo.Get(s.ctx, "lobby-1")
 	s.Require().NoError(err)

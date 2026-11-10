@@ -15,6 +15,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+
+	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 )
 
 // TestStatusError_CoversEverySDKSentinel is the single test that enforces
@@ -191,6 +193,12 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// exact chain, pinning that it is matched before INVALID_ARGUMENT.
 		{"ErrUnknownSite", sdk.ErrUnknownSite, codes.FailedPrecondition},
 		{"ErrUnknownSite beside ErrInvalidWorld", fmt.Errorf("site abc: %w: %w", sdk.ErrInvalidWorld, sdk.ErrUnknownSite), codes.FailedPrecondition},
+
+		// A checkpoint saved before the appended record (rpg-project#897 leg
+		// c): the server's own sentinel, refused by the Redis repository and
+		// passed up through the verb's wrapping.
+		{"ErrCheckpointBeforeAppendedRecord", sessionorch.ErrCheckpointBeforeAppendedRecord, codes.FailedPrecondition},
+		{"ErrCheckpointBeforeAppendedRecord through a verb", fmt.Errorf("move: encounter %q: %w", "e1", sessionorch.ErrCheckpointBeforeAppendedRecord), codes.FailedPrecondition},
 
 		// ALREADY_EXISTS
 		{"ErrSessionExists", sdk.ErrSessionExists, codes.AlreadyExists},
