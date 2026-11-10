@@ -94,6 +94,10 @@ const (
 	// Unset defaults to refuse in the session orchestrator; attempt opts in
 	// to paid misses. Invalid values fail manager construction.
 	envStaleTargetPolicy = "RPG_STALE_TARGET_POLICY"
+	// envSiteCacheEntries bounds how many compiled sites the process holds
+	// (rpg-project#879 S5). Unset is sessionorch.DefaultSiteEntries; it must
+	// be a positive integer when set.
+	envSiteCacheEntries = "RPG_SITE_CACHE_ENTRIES"
 )
 
 var (
@@ -275,7 +279,17 @@ func runServer(_ *cobra.Command, _ []string) error {
 			log.Printf("session record capture not drained cleanly: %v", captureErr)
 		}
 	}()
+	// ONE SITE PROVIDER FOR THE PROCESS (rpg-project#879 S5): every game on
+	// one content shares one compiled site. The content registry below
+	// projects every shipped dungeon's atlas through this same provider, so
+	// the shelf's sites compile at boot (one "site compiled" line per hash)
+	// and a launch on shipped content compiles nothing.
+	sites, err := newSites()
+	if err != nil {
+		return err
+	}
 	sessionOrch, err := sessionorch.New(sessionorch.Config{
+		Sites:             sites,
 		RecordCapture:     recordCapture,
 		StaleTargetPolicy: sdk.StaleTargetPolicy(os.Getenv(envStaleTargetPolicy)),
 		Redis:             redisClient,
@@ -440,6 +454,9 @@ func runServer(_ *cobra.Command, _ []string) error {
 	load := shippedStore.LoadReport()
 	//nolint:gosec // LoadReport.String prints only a file count and a duration
 	log.Printf("content registry: %s", load)
+	if warmErr := warmShippedSites(context.Background(), shippedStore, sites); warmErr != nil {
+		return fmt.Errorf("content registry: %w", warmErr)
+	}
 	worldDungeons, err := worlddungeons.NewRedis(&worlddungeons.RedisConfig{Client: redisClient})
 	if err != nil {
 		return fmt.Errorf("world dungeon store: %w", err)
@@ -704,6 +721,49 @@ func mustRedisClient() redis.Client {
 
 	slog.Info("successfully connected to Redis", "address", redisAddr)
 	return client
+}
+
+// newSites is the process's site provider, bounded by envSiteCacheEntries,
+// logging each compile.
+func newSites() (*sessionorch.Sites, error) {
+	entries := 0
+	if v := os.Getenv(envSiteCacheEntries); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("%s=%q: want a positive integer", envSiteCacheEntries, v)
+		}
+		entries = n
+	}
+	sites, err := sessionorch.NewSites(&sessionorch.SitesConfig{Entries: entries, Logf: log.Printf})
+	if err != nil {
+		return nil, fmt.Errorf("site provider: %w", err)
+	}
+	return sites, nil
+}
+
+// warmShippedSites resolves every shipped dungeon's site through the
+// process's provider and logs which hash each key plays on (rpg-project#879
+// S5). The registry's atlas projection has already compiled them, so this
+// compiles nothing unless that path stopped going through the provider, and
+// the "site compiled" lines above it would say so.
+func warmShippedSites(ctx context.Context, store *dungeons.FileRegistry, sites *sessionorch.Sites) error {
+	shipped, err := store.List(ctx)
+	if err != nil {
+		return fmt.Errorf("list shipped dungeons: %w", err)
+	}
+	for _, s := range shipped {
+		entry, err := store.Get(ctx, s.Key)
+		if err != nil {
+			return fmt.Errorf("shipped dungeon %q: %w", s.Key, err)
+		}
+		hash, err := sites.Warm(ctx, &entry.Dungeon.Spec.Field)
+		if err != nil {
+			return fmt.Errorf("site of shipped dungeon %q: %w", s.Key, err)
+		}
+		//nolint:gosec // shipped dungeon keys match [a-z0-9-]+ and a hash is hex
+		log.Printf("content registry: %s plays on site %s", s.Key, hash)
+	}
+	return nil
 }
 
 // registryProjector adapts *session.Manager's AtlasOf (which takes the SDK's

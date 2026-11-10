@@ -2,6 +2,7 @@ package session_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -995,30 +998,40 @@ func TestAcceptance_TheAtlasSaysWhereTheDungeonBeginsAndWhichWay(t *testing.T) {
 	// on the next deploy.
 	//
 	// It cannot come from authoring: dungeonspec REFUSES a file without a
-	// start ("the dungeon does not say where the party starts"). What it
-	// comes from is a STORED ENCOUNTER written before starts were carried,
-	// which the toolkit made a pointer with omitempty precisely to allow --
-	// and every session already in Redis is one of those. So this scene ages
-	// a live encounter backwards: it strips the start from the blob the way
-	// an older server would have written it, and asks what the atlas says.
+	// start ("the dungeon does not say where the party starts"). It used to
+	// come from a STORED ENCOUNTER written before starts were carried, and
+	// this row aged a live blob backwards by stripping its start. Since
+	// rpg-project#879 S5 the start is SITE content: the checkpoint names its
+	// site by hash and carries no field, so there is no start in the blob to
+	// strip, and a blob from before the site tier (its field inline, no
+	// hash) is refused by name rather than served. So the row ages the blob
+	// back past the site tier and asks what the atlas says.
 	//
-	// The answer has to be NOTHING. A zero-valued start would claim the
-	// party arrives at [0,0] looking nowhere, which is a real dungeon
-	// somebody could author and therefore a lie about this one.
-	t.Run("an encounter stored before starts existed says nothing", func(t *testing.T) {
+	// The answer has to be a REFUSAL, never a zero-valued start: that would
+	// claim the party arrives at [0,0] looking nowhere, which is a real
+	// dungeon somebody could author and therefore a lie about this one.
+	t.Run("an encounter stored before the site tier is refused, never given a start", func(t *testing.T) {
 		run := startHeirloomRun(t)
 		require.NotNil(t, run.atlas(t, "alice").GetStart(), "it has one to begin with")
 
-		encounters := sessionorch.NewEncounterRepository(run.h.redis, time.Hour)
-		stored, err := encounters.GetEncounter(context.Background(), heirloomSession)
+		key := "session-enc:v1alpha1:" + heirloomSession
+		raw, err := run.h.redis.Get(context.Background(), key).Bytes()
 		require.NoError(t, err)
-		require.NotNil(t, stored.Field.Start, "the blob carries one before we age it")
-		stored.Field.Start = nil
-		require.NoError(t, encounters.SaveEncounter(context.Background(), heirloomSession, stored))
+		var blob map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(raw, &blob))
+		require.Contains(t, blob, "site_hash", "the blob names its site before we age it")
+		require.NotContains(t, blob, "field", "the checkpoint carries no field")
+		delete(blob, "site_hash")
+		blob["field"] = json.RawMessage(`{"start":{"x":0,"y":1}}`)
+		aged, err := json.Marshal(blob)
+		require.NoError(t, err)
+		require.NoError(t, run.h.redis.Set(context.Background(), key, aged, time.Hour).Err())
 
-		require.Nil(t, run.atlas(t, "alice").GetStart(),
-			"absence is spelled as an absent message, never as a zero-valued one")
-		require.Nil(t, run.atlas(t, "bob").GetStart())
+		_, err = run.h.handler.GetAtlas(run.ctxOf("alice"),
+			&sessionpb.GetAtlasRequest{Session: heirloomSession, Member: "alice"})
+		require.Error(t, err, "a pre-site checkpoint is refused, not served a guessed start")
+		require.Equal(t, codes.InvalidArgument, status.Code(err), "%v", err)
+		require.Contains(t, err.Error(), "site_hash", "refused by name")
 	})
 }
 

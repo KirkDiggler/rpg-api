@@ -165,7 +165,7 @@ func (r *campRun) factions(t *testing.T) map[string]string {
 	require.NoError(t, err)
 	caps := tkencounter.RefusingCapabilities()
 	caps.Participation, caps.Sheets = allStanding{}, standStillSheets{}
-	world, err := tkencounter.LoadEncounter(&tkencounter.LoadEncounterInput{Data: *data, Capabilities: caps})
+	world, err := tkencounter.LoadEncounter(&tkencounter.LoadEncounterInput{Data: *data, Capabilities: caps, Sites: r.h.manager.Sites})
 	require.NoError(t, err)
 	members, err := world.Members()
 	require.NoError(t, err)

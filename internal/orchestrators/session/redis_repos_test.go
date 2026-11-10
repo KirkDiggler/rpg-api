@@ -105,3 +105,53 @@ func (s *RedisReposTestSuite) TestKeyPrefixes_AreDistinctFromOldEncounterPath() 
 		s.NotContains(k, "enc:v2:", "session-stack keys must not collide with the old encounter path's enc:v2: prefix")
 	}
 }
+
+// THE SITE PIECE (rpg-project#879 S5): stored under its hash, never expiring,
+// written once.
+
+func (s *RedisReposTestSuite) siteRepo() sdk.SiteRepository {
+	repo, ok := s.encs.(sdk.SiteRepository)
+	s.Require().True(ok, "the Redis encounter repository carries the site capability")
+	return repo
+}
+
+func (s *RedisReposTestSuite) TestSite_PutThenGet_RoundTrips_WithNoExpiry() {
+	repo := s.siteRepo()
+	piece := &tkencounter.SiteData{Version: "v-test", Field: tkencounter.FieldData{Scenery: []tkencounter.PositionData{{X: 7, Y: -2}}}}
+	_, err := repo.PutSite(s.ctx, &sdk.PutSiteInput{Hash: "abc", Data: piece})
+	s.Require().NoError(err)
+
+	got, err := repo.GetSite(s.ctx, &sdk.GetSiteInput{Hash: "abc"})
+	s.Require().NoError(err)
+	s.Equal(piece, got.Data)
+	s.True(s.miniredis.Exists("session-site:v1alpha1:abc"))
+	s.Zero(s.miniredis.TTL("session-site:v1alpha1:abc"), "a site piece is content: no expiry")
+}
+
+func (s *RedisReposTestSuite) TestSite_Put_IsIdempotent_FirstWriteStands() {
+	repo := s.siteRepo()
+	first := &tkencounter.SiteData{Version: "first"}
+	_, err := repo.PutSite(s.ctx, &sdk.PutSiteInput{Hash: "abc", Data: first})
+	s.Require().NoError(err)
+	_, err = repo.PutSite(s.ctx, &sdk.PutSiteInput{Hash: "abc", Data: &tkencounter.SiteData{Version: "second"}})
+	s.Require().NoError(err, "a hash already stored is a no-op success")
+
+	got, err := repo.GetSite(s.ctx, &sdk.GetSiteInput{Hash: "abc"})
+	s.Require().NoError(err)
+	s.Equal(first, got.Data, "a piece is never rewritten")
+}
+
+func (s *RedisReposTestSuite) TestSite_Get_Missing_IsSDKNotFound() {
+	_, err := s.siteRepo().GetSite(s.ctx, &sdk.GetSiteInput{Hash: "nope"})
+	s.Require().ErrorIs(err, sdk.ErrNotFound)
+}
+
+func (s *RedisReposTestSuite) TestSite_RefusesMissingHashOrData() {
+	repo := s.siteRepo()
+	_, err := repo.GetSite(s.ctx, &sdk.GetSiteInput{})
+	s.Require().Error(err)
+	_, err = repo.PutSite(s.ctx, &sdk.PutSiteInput{Data: &tkencounter.SiteData{}})
+	s.Require().Error(err)
+	_, err = repo.PutSite(s.ctx, &sdk.PutSiteInput{Hash: "abc"})
+	s.Require().Error(err)
+}
