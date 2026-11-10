@@ -27,6 +27,7 @@ const (
 	logKey    = "session-enc-log:v1alpha2:"
 	verKey    = "session-enc-ver:v1alpha1:"
 	legacyKey = "session-enc:v1alpha1:"
+	floorKey  = "session-enc-floor:v1alpha2:"
 )
 
 // AppendedRecordRepoSuite pins the Redis encounter repository's appending
@@ -237,8 +238,8 @@ func (s *AppendedRecordRepoSuite) TestFloor_DropsSegmentsWhollyBelowIt() {
 }
 
 // TestABoundedRecord_LoadsFromWhatTheFloorKept: a bounded record whose
-// oldest segments the floor dropped loads from the oldest seq the store
-// still holds, never refused as a hole.
+// oldest segments the floor dropped loads from the floor its last save
+// stored, never refused as a hole and never longer than the window.
 func (s *AppendedRecordRepoSuite) TestABoundedRecord_LoadsFromWhatTheFloorKept() {
 	bounded := func() *tkencounter.EncounterData {
 		w := s.rest()
@@ -260,7 +261,7 @@ func (s *AppendedRecordRepoSuite) TestABoundedRecord_LoadsFromWhatTheFloorKept()
 	saveBounded(7, 5, 2)
 
 	got := s.loaded("enc-1")
-	s.Equal(s.from(4), got.Data.Log, "the join starts at the oldest seq the store kept")
+	s.Equal(s.from(5), got.Data.Log, "the join starts at the stored floor: the straddler's seq 4 is dropped")
 }
 
 func (s *AppendedRecordRepoSuite) TestTheRecordSharesTheCheckpointsLifetime() {
@@ -333,6 +334,117 @@ func (s *AppendedRecordRepoSuite) TestAGapInTheStoredRecord_FailsTheRead() {
 
 	_, err = s.appending.GetFencedEncounter(s.ctx, &sdk.GetFencedEncounterInput{Encounter: "enc-1"})
 	s.Require().ErrorIs(err, sdk.ErrBadRepository, "an unbounded record with a hole is refused, never loaded short")
+	s.ErrorIs(err, sessionorch.ErrCheckpointRecordMismatch)
+}
+
+// TestARestWhoseRecordIsGone_FailsClosed is the reviewer's probe: a record
+// saved through seq 4 whose list is lost would join as an empty story with
+// next seq 5. The stored floor says seqs 1-4 must be there, so it is refused.
+func (s *AppendedRecordRepoSuite) TestARestWhoseRecordIsGone_FailsClosed() {
+	s.beats(4)
+	_, err := s.save("enc-1", 1, 0, 0)
+	s.Require().NoError(err)
+	s.mr.Del(logKey + "enc-1")
+
+	_, err = s.appending.GetFencedEncounter(s.ctx, &sdk.GetFencedEncounterInput{Encounter: "enc-1"})
+	s.Require().ErrorIs(err, sessionorch.ErrCheckpointRecordMismatch)
+	s.ErrorIs(err, sdk.ErrBadRepository)
+	_, err = s.plain.GetEncounter(s.ctx, "enc-1")
+	s.Require().ErrorIs(err, sessionorch.ErrCheckpointRecordMismatch)
+}
+
+func (s *AppendedRecordRepoSuite) TestARecordWithNoRest_FailsClosed() {
+	s.beats(4)
+	_, err := s.save("enc-1", 1, 0, 0)
+	s.Require().NoError(err)
+	s.mr.Del(restKey + "enc-1")
+
+	_, err = s.appending.GetFencedEncounter(s.ctx, &sdk.GetFencedEncounterInput{Encounter: "enc-1"})
+	s.Require().ErrorIs(err, sessionorch.ErrCheckpointRecordMismatch)
+	s.NotErrorIs(err, sdk.ErrNotFound, "a record left behind is not a missing run")
+}
+
+func (s *AppendedRecordRepoSuite) TestARestWithNoFloor_FailsClosed() {
+	s.beats(2)
+	_, err := s.save("enc-1", 1, 0, 0)
+	s.Require().NoError(err)
+	s.mr.Del(floorKey + "enc-1")
+
+	_, err = s.appending.GetFencedEncounter(s.ctx, &sdk.GetFencedEncounterInput{Encounter: "enc-1"})
+	s.Require().ErrorIs(err, sessionorch.ErrCheckpointRecordMismatch)
+}
+
+func (s *AppendedRecordRepoSuite) TestTheFloorIsStoredBesideTheRest() {
+	s.beats(3)
+	_, err := s.save("enc-1", 1, 0, 0)
+	s.Require().NoError(err)
+	s.Equal("0", mustGet(s.mr, floorKey+"enc-1"))
+	s.Equal(fencedTTL, s.mr.TTL(floorKey+"enc-1"), "the floor shares the checkpoint's TTL")
+	s.beats(3)
+	_, err = s.save("enc-1", 4, 3, 1)
+	s.Require().NoError(err)
+	s.Equal("3", mustGet(s.mr, floorKey+"enc-1"))
+}
+
+func (s *AppendedRecordRepoSuite) TestASegmentEndingAtTheFloor_IsKept() {
+	s.beats(3) // 1-3
+	_, err := s.save("enc-1", 1, 0, 0)
+	s.Require().NoError(err)
+	s.beats(3) // 4-6
+	_, err = s.save("enc-1", 4, 0, 1)
+	s.Require().NoError(err)
+	s.beats(3) // 7-9
+	_, err = s.save("enc-1", 7, 6, 2)
+	s.Require().NoError(err)
+
+	elems, err := s.client.LRange(s.ctx, logKey+"enc-1", 0, -1).Result()
+	s.Require().NoError(err)
+	s.Require().Len(elems, 2, "1-3 ends below 6 and is dropped; 4-6 ends AT 6 and holds it")
+	s.Regexp(`^6\n`, elems[0])
+}
+
+func (s *AppendedRecordRepoSuite) TestAMalformedPrefix_RefusesTheSave_AndTheRead() {
+	s.beats(3)
+	_, err := s.save("enc-1", 1, 0, 0)
+	s.Require().NoError(err)
+	elems, err := s.client.LRange(s.ctx, logKey+"enc-1", 0, -1).Result()
+	s.Require().NoError(err)
+	s.Require().NoError(s.client.LSet(s.ctx, logKey+"enc-1", 0, "x"+elems[0]).Err())
+	rest := mustGet(s.mr, restKey+"enc-1")
+
+	since := s.next()
+	s.beats(2)
+	_, err = s.save("enc-1", since, 2, 1)
+	s.Require().ErrorIs(err, sdk.ErrBadRepository, "the floor scan reads the prefix before any write")
+	s.Equal(rest, mustGet(s.mr, restKey+"enc-1"), "nothing was written")
+	s.Equal("1", mustGet(s.mr, verKey+"enc-1"))
+
+	_, err = s.appending.GetFencedEncounter(s.ctx, &sdk.GetFencedEncounterInput{Encounter: "enc-1"})
+	s.Require().ErrorIs(err, sessionorch.ErrCheckpointRecordMismatch, "and the read refuses the element, never skips it")
+}
+
+func (s *AppendedRecordRepoSuite) TestAPrefixThatMisnamesItsSegment_FailsTheRead() {
+	s.beats(3)
+	_, err := s.save("enc-1", 1, 0, 0)
+	s.Require().NoError(err)
+	elems, err := s.client.LRange(s.ctx, logKey+"enc-1", 0, -1).Result()
+	s.Require().NoError(err)
+	s.Require().NoError(s.client.LSet(s.ctx, logKey+"enc-1", 0, "9"+elems[0][1:]).Err())
+
+	_, err = s.appending.GetFencedEncounter(s.ctx, &sdk.GetFencedEncounterInput{Encounter: "enc-1"})
+	s.Require().ErrorIs(err, sessionorch.ErrCheckpointRecordMismatch)
+}
+
+func (s *AppendedRecordRepoSuite) TestARestCarryingEntries_IsRefusedBeforeAnyWrite() {
+	s.beats(3)
+	_, err := s.appending.SaveAppended(s.ctx, &sdk.SaveAppendedInput{
+		SaveFencedInput: sdk.SaveFencedInput{Encounter: "enc-1", Data: s.whole()},
+		Appended:        s.from(1), Since: 1,
+	})
+	s.Require().ErrorIs(err, sessionorch.ErrRestCarriesRecord)
+	s.False(s.mr.Exists(restKey + "enc-1"))
+	s.False(s.mr.Exists(logKey + "enc-1"))
+	s.False(s.mr.Exists(verKey + "enc-1"))
 }
 
 // mustGet reads a string key from miniredis, "" when absent.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -115,7 +116,7 @@ func (r *redisEncounterRepository) SaveEncounter(ctx context.Context, id string,
 	if data == nil {
 		return errors.New("session: SaveEncounter data is required")
 	}
-	rest, segment, err := splitWhole(data)
+	rest, segment, floor, err := splitWhole(data)
 	if err != nil {
 		return fmt.Errorf("save encounter %q: %w", id, err)
 	}
@@ -132,8 +133,11 @@ func (r *redisEncounterRepository) SaveEncounter(ctx context.Context, id string,
 	}
 	// A plain write is still a save that landed, so it advances the
 	// checkpoint version a fenced writer compares against (redis_fenced.go).
-	keys := []string{sessionEncKeyPrefix + id, sessionEncVerKeyPrefix + id, sessionEncLogKeyPrefix + id}
-	err = savePlainScript.Run(ctx, r.client, keys, restBlob, r.ttl.Milliseconds(), hasSegment, segmentElem).Err()
+	keys := []string{
+		sessionEncKeyPrefix + id, sessionEncVerKeyPrefix + id, sessionEncLogKeyPrefix + id, sessionEncFloorKeyPrefix + id,
+	}
+	err = savePlainScript.Run(ctx, r.client, keys,
+		restBlob, r.ttl.Milliseconds(), hasSegment, segmentElem, strconv.FormatUint(floor, 10)).Err()
 	if err != nil {
 		return fmt.Errorf("set encounter %q: %w", id, err)
 	}

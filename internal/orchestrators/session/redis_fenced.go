@@ -39,20 +39,24 @@ var (
 //
 // NOTHING IS WRITTEN UNTIL EVERYTHING IS CHECKED. A Lua script is atomic
 // against other clients but does not roll back a write when a later call in
-// it errors, so the fence, the record's first seq, the sheets' existence and
-// their owners are all checked before the first write.
+// it errors, so the fence, the record's first seq, the stored segments' last
+// seqs, the sheets' existence and their owners are all checked before the
+// first write.
 
 // saveFencedScript lands one fenced save: the rest replaced, one record
-// segment appended, the segments wholly below the floor dropped.
+// segment appended, the segments wholly below the floor dropped, the floor
+// kept beside the rest.
 //
-//	KEYS: rest, version, log, [session], sheet..., seat...
+//	KEYS: rest, version, log, floor, [session], sheet..., seat...
 //	ARGV: expected, ttlMillis, hasSession, nSheets, nSeats, restBlob, since,
 //	      hasSegment, segmentElem, floor, [sessionBlob], sheetBlob...,
 //	      sheetPlayer..., seatBlob...
 //
 // since 1 starts the record over: the list is dropped before the append. A
 // first save (no checkpoint yet) must start it over. Each list element is
-// "<last seq>\n<segment JSON>", so the floor drop reads the prefix alone.
+// "<last seq>\n<segment JSON>", so the floor drop reads the prefix alone; a
+// stored segment whose last seq equals the floor is kept (it holds the floor
+// itself), and an element whose prefix does not parse refuses the save.
 //
 // Replies {"ok", newVersion}, {"stale", storedVersion}, {"missing", key} or
 // {"bad", reason}.
@@ -81,10 +85,32 @@ if cur == '0' and since ~= 1 then
   return {'bad', 'a first checkpoint must append the record from seq 1, not ' .. ARGV[7]}
 end
 
-local k = 4
+-- The stored segments the floor drops, counted before any write. A save that
+-- starts the record over drops them all anyway.
+local drop = 0
+if since ~= 1 and floor > 0 then
+  local n = redis.call('LLEN', KEYS[3])
+  while drop < n do
+    local elem = redis.call('LINDEX', KEYS[3], drop)
+    local prefix = string.match(elem, '^(%d+)\n')
+    local last = nil
+    if prefix then
+      last = tonumber(prefix)
+    end
+    if last == nil then
+      return {'bad', 'record segment ' .. drop .. ' has no last-seq prefix'}
+    end
+    if last >= floor then
+      break
+    end
+    drop = drop + 1
+  end
+end
+
+local k = 5
 local a = 11
 if hasSession then
-  k = 5
+  k = 6
   a = 12
 end
 
@@ -126,25 +152,16 @@ setWithTTL(KEYS[1], ARGV[6])
 if since == 1 then
   redis.call('DEL', KEYS[3])
 end
+if drop > 0 then
+  redis.call('LTRIM', KEYS[3], drop, -1)
+end
 if hasSegment then
   redis.call('RPUSH', KEYS[3], ARGV[9])
 end
-if floor > 0 then
-  while true do
-    local first = redis.call('LINDEX', KEYS[3], 0)
-    if not first then
-      break
-    end
-    local last = tonumber(string.match(first, '^(%d+)\n'))
-    if last == nil or last >= floor then
-      break
-    end
-    redis.call('LPOP', KEYS[3])
-  end
-end
 expireWithTTL(KEYS[3])
+setWithTTL(KEYS[4], ARGV[10])
 if hasSession then
-  setWithTTL(KEYS[4], ARGV[11])
+  setWithTTL(KEYS[5], ARGV[11])
 end
 for i = 0, nSheets - 1 do
   redis.call('SET', KEYS[k + i], ARGV[a + i])
@@ -166,8 +183,8 @@ return {'ok', nv}
 // because a plain write is a save that landed and a fenced writer that
 // loaded before it must see the checkpoint move.
 //
-//	KEYS: rest, version, log
-//	ARGV: restBlob, ttlMillis, hasSegment, segmentElem
+//	KEYS: rest, version, log, floor
+//	ARGV: restBlob, ttlMillis, hasSegment, segmentElem, floor
 var savePlainScript = goredis.NewScript(`
 local ttl = tonumber(ARGV[2])
 local had = redis.call('EXISTS', KEYS[1]) == 1
@@ -178,11 +195,15 @@ local function expireWithTTL(key)
     redis.call('PERSIST', key)
   end
 end
-if ttl > 0 then
-  redis.call('SET', KEYS[1], ARGV[1], 'PX', ttl)
-else
-  redis.call('SET', KEYS[1], ARGV[1])
+local function setWithTTL(key, value)
+  if ttl > 0 then
+    redis.call('SET', key, value, 'PX', ttl)
+  else
+    redis.call('SET', key, value)
+  end
 end
+setWithTTL(KEYS[1], ARGV[1])
+setWithTTL(KEYS[4], ARGV[5])
 redis.call('DEL', KEYS[3])
 if ARGV[3] == '1' then
   redis.call('RPUSH', KEYS[3], ARGV[4])
@@ -231,13 +252,13 @@ func (r *redisEncounterRepository) SaveFenced(ctx context.Context, in *sdk.SaveF
 	if in.Data == nil {
 		return nil, errors.New("session: SaveFenced data is required")
 	}
-	rest, segment, err := splitWhole(in.Data)
+	rest, segment, floor, err := splitWhole(in.Data)
 	if err != nil {
 		return nil, fmt.Errorf("fenced save of encounter %q: %w", in.Encounter, err)
 	}
 	split := *in
 	split.Data = &rest
-	return r.saveFenced(ctx, &sdk.SaveAppendedInput{SaveFencedInput: split, Appended: segment, Since: 1})
+	return r.saveFenced(ctx, &sdk.SaveAppendedInput{SaveFencedInput: split, Appended: segment, Since: 1, Floor: floor})
 }
 
 // SaveAppended implements sdk.AppendingEncounterRepository: the rest, the
@@ -265,7 +286,12 @@ func (r *redisEncounterRepository) saveFenced(
 	ctx context.Context, in *sdk.SaveAppendedInput,
 ) (*sdk.SaveFencedOutput, error) {
 	id := in.Encounter
-	keys := []string{sessionEncKeyPrefix + id, sessionEncVerKeyPrefix + id, sessionEncLogKeyPrefix + id}
+	if n := len(in.Data.Log.Entries); n > 0 {
+		return nil, fmt.Errorf("save of encounter %q: the rest carries %d record entries: %w", id, n, ErrRestCarriesRecord)
+	}
+	keys := []string{
+		sessionEncKeyPrefix + id, sessionEncVerKeyPrefix + id, sessionEncLogKeyPrefix + id, sessionEncFloorKeyPrefix + id,
+	}
 	restBlob, err := json.Marshal(in.Data)
 	if err != nil {
 		return nil, fmt.Errorf("marshal encounter %q: %w", id, err)
