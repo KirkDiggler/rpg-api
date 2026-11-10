@@ -1,6 +1,6 @@
 # Run — 2026-11-10 — the rest stored as pieces in Redis
 
-Base: `rpg-api` `dev` at 83082f15. Story: [rpg-project#879](https://github.com/KirkDiggler/rpg-project/issues/879), card [rpg-project#897](https://github.com/KirkDiggler/rpg-project/issues/897) leg (b), PR 4 of 4. Upstream: encounter [rpg-toolkit#2362](https://github.com/KirkDiggler/rpg-toolkit/pull/2362) at its pushed commit 8d4793d8 and session [rpg-toolkit#2363](https://github.com/KirkDiggler/rpg-toolkit/pull/2363) at 7330e6c0, by pseudo-version; re-pinned at their tags before merge.
+Base: `rpg-api` `dev` at 83082f15. Story: [rpg-project#879](https://github.com/KirkDiggler/rpg-project/issues/879), card [rpg-project#897](https://github.com/KirkDiggler/rpg-project/issues/897) leg (b), PR 4 of 4. Upstream: encounter [rpg-toolkit#2362](https://github.com/KirkDiggler/rpg-toolkit/pull/2362) developed against pushed commits by pseudo-version and pinned at its tag v0.192.0, and session [rpg-toolkit#2363](https://github.com/KirkDiggler/rpg-toolkit/pull/2363) pinned at its tag v0.178.0 (main 56ab0946).
 
 ## Shipped
 
@@ -30,7 +30,8 @@ Base: `rpg-api` `dev` at 83082f15. Story: [rpg-project#879](https://github.com/K
 
 ## Verification
 
-- `go test -race -count=1 ./...`: see the PR body for the result at head.
+- `go test -race -count=1 ./...` at the tag pins (encounter v0.192.0, session v0.178.0): green, no failures.
+- `make ci-check` at the tag pins: all CI checks passed; release pins verified, no replace.
 - `golangci-lint` on the changed packages: 0 issues.
 - Mutants: dropping the whole-save DEL fails `TestAWholeSave_ReplacesTheHashes`; dropping the roster PEXPIRE fails `TestEveryKey_SharesTheCheckpointsTTL`.
 - Measure: `RPG_MEASURE=1 RPG_MEASURE_REDIS=127.0.0.1:6512 RPG_MEASURE_N=30 RPG_MEASURE_PATH=4 RPG_MEASURE_RELOAD=0 go test ./internal/integration/session/ -run 'TestMeasure_AnswerAndFirstBeat$' -count=1 -v`, on a private Redis; before on dev 83082f15 on another.
