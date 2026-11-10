@@ -46,12 +46,13 @@ var ErrContinuationsDraining = errors.New("session continuations are draining fo
 //     With commits landed, the report beside the error names how many and
 //     the newest record id they saved: the store and every client stop
 //     there, and only the steps after it never happened. Logged as "saved
-//     through <id>".
+//     through its last pace commit", with the id in saved_through.
 //   - A panic inside Continue is recovered on the goroutine, with its stack,
 //     so one walk's panic never takes the server down. The SDK's own deferred
 //     release has already given the guard back as the panic unwound, and
-//     nothing was saved: the session is as it was before the Move, and the
-//     client must re-read.
+//     nothing was saved after its last pace commit, if any: the session is
+//     as that commit left it (or as it was before the Move), and the client
+//     must re-read.
 //   - A report whose Saved.Failed or Delivery.Failed is not empty: part of the
 //     rest was not stored, or did not reach the stream.
 //
@@ -96,15 +97,15 @@ func (r *InProcessContinuationRunner) continueVerb(ctx context.Context, in *sdk.
 	attrs := []any{slog.String("session", in.Session), slog.String("verb", string(in.Verb))}
 	defer func() {
 		if p := recover(); p != nil {
-			r.log().ErrorContext(ctx, "session continuation panicked after its answer; nothing saved, the client must re-read",
+			r.log().ErrorContext(ctx,
+				"session continuation panicked after its answer; nothing saved after its last pace commit, if any, the client must re-read",
 				append(attrs, slog.String("panic", fmt.Sprint(p)), slog.String("stack", string(debug.Stack())))...)
 		}
 	}()
 	report, err := in.Continue(ctx)
 	if err != nil {
 		if report != nil && report.Commits > 0 {
-			r.log().ErrorContext(ctx, "session continuation failed after its answer; saved through "+report.SavedThrough+
-				", the steps after it never happened",
+			r.log().ErrorContext(ctx, "session continuation failed after its answer; saved through its last pace commit, the steps after it never happened",
 				append(attrs,
 					slog.Int("commits_landed", report.Commits),
 					slog.String("saved_through", report.SavedThrough),

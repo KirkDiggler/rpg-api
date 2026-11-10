@@ -139,7 +139,7 @@ func (s *ContinuationRunnerSuite) TestFailedContinueAfterALandedCommitNamesWhere
 	}))
 	s.Require().NoError(s.runner.Drain(context.Background()))
 	out := s.logs.String()
-	s.Contains(out, "saved through 01REC")
+	s.Contains(out, "saved through its last pace commit")
 	s.Contains(out, "commits_landed=1")
 	s.Contains(out, "saved_through=01REC")
 	s.Contains(out, "session=sess-9")

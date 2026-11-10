@@ -1,11 +1,11 @@
 # Run — 2026-11-10 — the continuation commits at each pace boundary (api)
 
-Base: `rpg-api` `dev` at cc470ea0 (session v0.178.0, encounter v0.192.0). Story: [rpg-project#879](https://github.com/KirkDiggler/rpg-project/issues/879), card [rpg-project#926](https://github.com/KirkDiggler/rpg-project/issues/926) (S13, ruling R7 option D), PR 2 of 2. Upstream: session [rpg-toolkit#2364](https://github.com/KirkDiggler/rpg-toolkit/pull/2364), pinned at its pushed commit 04b3e1c6 by pseudo-version; re-pinned at its tag when it merges.
+Base: `rpg-api` `dev` at cc470ea0 (session v0.178.0, encounter v0.192.0). Story: [rpg-project#879](https://github.com/KirkDiggler/rpg-project/issues/879), card [rpg-project#926](https://github.com/KirkDiggler/rpg-project/issues/926) (S13, ruling R7 option D), PR 2 of 2. Upstream: session [rpg-toolkit#2364](https://github.com/KirkDiggler/rpg-toolkit/pull/2364), developed against its pushed commit 04b3e1c6 by pseudo-version (measured there), then pinned at its tag v0.179.0 (main 6d4d6c5a) with encounter v0.192.0 and record v0.4.0, no replace, go.sum tidy.
 
 ## Shipped
 
 - The session pin. A continued walk commits at each pace boundary, so the walker's listener hears a round's raise before the walk ends.
-- The continuation runner logs "saved through <record id>" with `commits_landed` and `saved_through` when a rest fails after a commit landed. "Nothing saved" stays for a rest with no landed commit.
+- The continuation runner logs "saved through its last pace commit" with `commits_landed` and `saved_through` (the id rides the attribute only) when a rest fails after a commit landed; its doc and panic log say nothing is saved after the last pace commit, if any. "Nothing saved" stays for a rest with no landed commit.
 - The act broker's doc: delivery is one unit per commit; a continued walk is two to four.
 - The R1 harness: "first beat after answer" p50 and p95, and "commits/verb".
 - `TestAcceptance_AWalkCommitsAtItsPaceBoundary`: two fenced saves for a one-raise walk; the round's unit arrives while the walk still steps.
