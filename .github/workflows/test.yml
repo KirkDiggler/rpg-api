@@ -18,7 +18,7 @@ on:
 # fails the job too. A slow test is a finding: size the fixture to the cases
 # it proves, or name it with a reason (rpg-project#907). The script and its
 # cases are copied verbatim from rpg-toolkit scripts/test-budget.sh at
-# 839da633 (rpg-toolkit#2347); recopy when it changes there. Entries
+# f5027135 (rpg-toolkit#2347, merged); recopy when it changes there. Entries
 # are package-qualified: <import path>/<TestName>  # reason. The allowlist
 # sits where the toolkit keeps its own, under .github/testbudget/. rpg-api is
 # one module at the root, which -module would name "..allow", so the step
