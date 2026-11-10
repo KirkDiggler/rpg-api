@@ -251,7 +251,7 @@ func decodeCheckpoint(t *testing.T, raw []byte, elems []string) tkencounter.Enco
 		require.True(t, ok, "segment %d has its last-seq prefix", i)
 		require.NoError(t, json.Unmarshal([]byte(body), &segments[i]))
 	}
-	joined, err := record.JoinData(data.Log, segments...)
+	joined, err := record.JoinData(&record.JoinDataInput{Head: data.Log, Segments: segments})
 	require.NoError(t, err)
 	data.Log = joined
 	return data

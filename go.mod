@@ -13,12 +13,12 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/npc v0.2.1
 	github.com/KirkDiggler/rpg-toolkit/play/clock v0.1.0
 	github.com/KirkDiggler/rpg-toolkit/play/interrupt v0.1.0
-	github.com/KirkDiggler/rpg-toolkit/play/record v0.3.1-0.20261110050631-121095d52d3c
+	github.com/KirkDiggler/rpg-toolkit/play/record v0.4.0
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.3
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.214.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.188.1-0.20261110051716-bbddc9441a48
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.189.0
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.75.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.175.1-0.20261110053513-940ffad4f48a
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.175.1-0.20261110060015-c56ff0c4d473
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.16.3
 	github.com/KirkDiggler/rpg-toolkit/world v0.4.3
 	github.com/alicebob/miniredis/v2 v2.35.0

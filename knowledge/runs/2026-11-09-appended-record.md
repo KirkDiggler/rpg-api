@@ -1,6 +1,6 @@
 # Run — 2026-11-09 — the record appended in Redis
 
-Base: `rpg-api` `dev` at 2be23860. Story: [rpg-project#879](https://github.com/KirkDiggler/rpg-project/issues/879), card [rpg-project#897](https://github.com/KirkDiggler/rpg-project/issues/897) leg (c), PR 4 of 4. Upstream, pinned by pseudo-version: record [rpg-toolkit#2352](https://github.com/KirkDiggler/rpg-toolkit/pull/2352) at 121095d5, encounter [rpg-toolkit#2353](https://github.com/KirkDiggler/rpg-toolkit/pull/2353) at bbddc944, session [rpg-toolkit#2354](https://github.com/KirkDiggler/rpg-toolkit/pull/2354) at 940ffad4.
+Base: `rpg-api` `dev` at 2be23860. Story: [rpg-project#879](https://github.com/KirkDiggler/rpg-project/issues/879), card [rpg-project#897](https://github.com/KirkDiggler/rpg-project/issues/897) leg (c), PR 4 of 4. Upstream: record [rpg-toolkit#2352](https://github.com/KirkDiggler/rpg-toolkit/pull/2352) at play/record v0.4.0, encounter [rpg-toolkit#2353](https://github.com/KirkDiggler/rpg-toolkit/pull/2353) at v0.189.0, session [rpg-toolkit#2354](https://github.com/KirkDiggler/rpg-toolkit/pull/2354) at c56ff0c4 by pseudo-version until its tag. The bytes below were measured on the earlier pre-tag pins; the re-pin changed only call shapes.
 
 ## Shipped
 
@@ -17,6 +17,7 @@ Base: `rpg-api` `dev` at 2be23860. Story: [rpg-project#879](https://github.com/K
 - The read floor is 0 for an unbounded record and the oldest stored seq for a bounded one, because an unbounded record must refuse any hole while a bounded one has legitimately lost what the floor dropped.
 - The store does not check `Since` against its last stored seq, because that would copy the last segment into Lua on every save. The fence guarantees it, and the join refuses a gap at the next read.
 - The legacy key is refused, not migrated, as S5 did, because the dev env relaunches its sessions.
+- The read passes its floor to `record.JoinData`, which tolerates what the store dropped below it and refuses any hole at or above it. A bounded record whose floor dropped its oldest segments has a test that it loads from the oldest seq kept.
 
 ## Found
 

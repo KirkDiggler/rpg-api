@@ -89,14 +89,18 @@ func splitWhole(data *tkencounter.EncounterData) (tkencounter.EncounterData, rec
 	if err != nil {
 		return tkencounter.EncounterData{}, record.LogData{}, err
 	}
+	head, err := log.DataFrom(&record.DataFromInput{Since: next})
+	if err != nil {
+		return tkencounter.EncounterData{}, record.LogData{}, err
+	}
 	rest := *data
-	rest.Log = log.DataFrom(next)
+	rest.Log = head
 	return rest, data.Log, nil
 }
 
 // joinRecord is the record's join, the one call site of its shape.
-func joinRecord(head record.LogData, _ uint64, segments []record.LogData) (record.LogData, error) {
-	return record.JoinData(head, segments...)
+func joinRecord(head record.LogData, floor uint64, segments []record.LogData) (record.LogData, error) {
+	return record.JoinData(&record.JoinDataInput{Head: head, Floor: floor, Segments: segments})
 }
 
 // storedCheckpoint is one encounter as the store holds it, read together.

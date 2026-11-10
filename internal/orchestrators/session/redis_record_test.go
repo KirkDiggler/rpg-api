@@ -85,12 +85,19 @@ func (s *AppendedRecordRepoSuite) next() uint64 {
 	return next
 }
 
+// from is the record's segment from since, as the encounter emits it.
+func (s *AppendedRecordRepoSuite) from(since uint64) record.LogData {
+	seg, err := s.log.DataFrom(&record.DataFromInput{Since: since})
+	s.Require().NoError(err)
+	return seg
+}
+
 // rest is the world with the record reduced to its head, as the encounter's
 // ToCheckpoint writes it. Retention unbounded, as every launched run is.
 func (s *AppendedRecordRepoSuite) rest() *tkencounter.EncounterData {
 	w := populatedStoredEncounter()
 	w.Retention = tkencounter.RetentionUnbounded
-	w.Log = s.log.DataFrom(s.next())
+	w.Log = s.from(s.next())
 	return w
 }
 
@@ -106,7 +113,7 @@ func (s *AppendedRecordRepoSuite) whole() *tkencounter.EncounterData {
 func (s *AppendedRecordRepoSuite) save(id string, since, floor, expected uint64) (*sdk.SaveFencedOutput, error) {
 	return s.appending.SaveAppended(s.ctx, &sdk.SaveAppendedInput{
 		SaveFencedInput: sdk.SaveFencedInput{Encounter: id, Data: s.rest(), Expected: expected},
-		Appended:        s.log.DataFrom(since),
+		Appended:        s.from(since),
 		Since:           since,
 		Floor:           floor,
 	})
@@ -229,6 +236,33 @@ func (s *AppendedRecordRepoSuite) TestFloor_DropsSegmentsWhollyBelowIt() {
 	s.Regexp(`^9\n`, elems[1])
 }
 
+// TestABoundedRecord_LoadsFromWhatTheFloorKept: a bounded record whose
+// oldest segments the floor dropped loads from the oldest seq the store
+// still holds, never refused as a hole.
+func (s *AppendedRecordRepoSuite) TestABoundedRecord_LoadsFromWhatTheFloorKept() {
+	bounded := func() *tkencounter.EncounterData {
+		w := s.rest()
+		w.Retention = 5
+		return w
+	}
+	saveBounded := func(since, floor, expected uint64) {
+		_, err := s.appending.SaveAppended(s.ctx, &sdk.SaveAppendedInput{
+			SaveFencedInput: sdk.SaveFencedInput{Encounter: "enc-1", Data: bounded(), Expected: expected},
+			Appended:        s.from(since), Since: since, Floor: floor,
+		})
+		s.Require().NoError(err)
+	}
+	s.beats(3) // 1-3
+	saveBounded(1, 0, 0)
+	s.beats(3) // 4-6
+	saveBounded(4, 0, 1)
+	s.beats(3) // 7-9
+	saveBounded(7, 5, 2)
+
+	got := s.loaded("enc-1")
+	s.Equal(s.from(4), got.Data.Log, "the join starts at the oldest seq the store kept")
+}
+
 func (s *AppendedRecordRepoSuite) TestTheRecordSharesTheCheckpointsLifetime() {
 	s.beats(2)
 	_, err := s.save("enc-1", 1, 0, 0)
@@ -253,7 +287,7 @@ func (s *AppendedRecordRepoSuite) TestZeroTTL_PersistsTheRecord() {
 	s.beats(2)
 	_, err := repo.SaveAppended(s.ctx, &sdk.SaveAppendedInput{
 		SaveFencedInput: sdk.SaveFencedInput{Encounter: "enc-1", Data: s.rest()},
-		Appended:        s.log.DataFrom(1), Since: 1,
+		Appended:        s.from(1), Since: 1,
 	})
 	s.Require().NoError(err)
 	s.Equal(time.Duration(0), s.mr.TTL(logKey+"enc-1"))
