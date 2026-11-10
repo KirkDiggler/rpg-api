@@ -10,7 +10,13 @@
 //     own json.Unmarshal);
 //   - site build: encounter.LoadEncounter over the decoded data with
 //     encounter.RefusingCapabilities -- the composition's own load (field
-//     compile, partitions, doors, members) with no session seam attached;
+//     compile, partitions, doors, members) with no session seam attached.
+//     Since rpg-project#879 S5 the checkpoint names its site by hash, so this
+//     load resolves it through the orchestrator's provider (warm: the site
+//     is shared, nothing compiles);
+//   - site piece and cold site: the stored site piece's GET + decode
+//     (GetSite), and the same load on a FRESH provider handed that piece --
+//     what the first load on a cold process pays;
 //   - read load: Manager.Where, the session's whole read-path reload (lock,
 //     session record, driver, fetch, decode, the standing seam and read
 //     capabilities, the encounter's load); its residual after the stages
@@ -39,7 +45,12 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 
+	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/auth"
+	sessionhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha1"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
+	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
+	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
@@ -50,6 +61,7 @@ import (
 const (
 	measureSessionKeyPrefix = "session:v1alpha1:"
 	measureEncKeyPrefix     = "session-enc:v1alpha1:"
+	measureSiteKeyPrefix    = "session-site:v1alpha1:"
 	measureScratchKey       = "measure:reload:scratch"
 	// measureScratchEncounter is the encounter id the fenced-save row writes
 	// (rpg-project#879 S12a): its blob and checkpoint version, never the
@@ -67,6 +79,9 @@ type reloadRow struct {
 	readLoad, attach                  []time.Duration
 	toData, encode, persist           []time.Duration
 	fencedGet, fencedSave             []time.Duration
+	pieceBytes                        int
+	pieceGet, coldBuild               []time.Duration
+	coldMove, warmMove                []time.Duration
 }
 
 // measureColdReload rebuilds run's encounter from the store n times, by
@@ -128,14 +143,35 @@ func measureColdReload(
 		r.fencedGet = append(r.fencedGet, time.Since(s))
 		require.NoError(t, err)
 
-		// site build: the encounter's load with no session seam.
+		// site build: the encounter's load with no session seam, on the
+		// orchestrator's (warm) site provider.
 		s = time.Now()
 		enc, err := tkencounter.LoadEncounter(&tkencounter.LoadEncounterInput{
-			Data: data, Capabilities: tkencounter.RefusingCapabilities(),
+			Data: data, Capabilities: tkencounter.RefusingCapabilities(), Sites: orch.Sites,
 		})
 		build := time.Since(s)
 		require.NoError(t, err)
 		r.siteBuild = append(r.siteBuild, build)
+
+		// The stored site piece, and the load a cold process pays: a fresh
+		// provider, handed the piece, compiles the site once.
+		siteStore, ok := encRepo.(sdk.SiteRepository)
+		require.True(t, ok, "the Redis encounter repository carries the site capability")
+		s = time.Now()
+		piece, err := siteStore.GetSite(ctx, &sdk.GetSiteInput{Hash: data.SiteHash})
+		r.pieceGet = append(r.pieceGet, time.Since(s))
+		require.NoError(t, err)
+		pieceLen, err := client.StrLen(ctx, measureSiteKeyPrefix+string(data.SiteHash)).Result()
+		require.NoError(t, err)
+		r.pieceBytes = int(pieceLen)
+		coldSites, err := sessionorch.NewSites(nil)
+		require.NoError(t, err)
+		s = time.Now()
+		_, err = tkencounter.LoadEncounter(&tkencounter.LoadEncounterInput{
+			Data: data, Capabilities: tkencounter.RefusingCapabilities(), Sites: coldSites, Site: piece.Data,
+		})
+		r.coldBuild = append(r.coldBuild, time.Since(s))
+		require.NoError(t, err)
 
 		// write: ToData, encode, persist (scratch key).
 		s = time.Now()
@@ -196,7 +232,9 @@ func reloadTable(rows []reloadRow, moves map[string][2][]time.Duration) string {
 		line("1 fetch (enc blob GET)", r.encBytes, r.fetch)
 		line("2 decode (JSON → EncounterData)", 0, r.decode)
 		line("1+2 repository GetEncounter", 0, r.repoGet)
-		line("3 site build (LoadEncounter, refusing caps)", 0, r.siteBuild)
+		line("3 site build (LoadEncounter, refusing caps, warm provider)", 0, r.siteBuild)
+		line("3p site piece GetSite (GET + decode)", r.pieceBytes, r.pieceGet)
+		line("3c cold site build (LoadEncounter, fresh provider + piece)", 0, r.coldBuild)
 		line("4 attach (read load − record − 1 − 2 − 3)", 0, r.attach)
 		line("read load whole (Manager.Where)", 0, r.readLoad)
 		line("5a ToData", 0, r.toData)
@@ -208,6 +246,72 @@ func reloadTable(rows []reloadRow, moves map[string][2][]time.Duration) string {
 			line("Move answer (walk above)", 0, m[0])
 			line("Move drained (walk above)", 0, m[1])
 		}
+		if len(r.coldMove) > 0 {
+			line("Move whole, cold provider (fresh process, first verb)", 0, r.coldMove)
+			line("Move whole, warm provider (same process, next verb)", 0, r.warmMove)
+		}
 	}
 	return b.String()
+}
+
+// measureColdMove times n pairs of whole Moves on run: the first on a fresh
+// orchestrator with a fresh site provider (a cold process: the site comes
+// from the stored piece and compiles inside the verb), the second on the same
+// orchestrator right after (the provider warm). Both answer whole, so each
+// covers the load, the walk and the save. The walk goes back and forth along
+// the axial line from where the member stands; position is read after each
+// timed Move, never before, so nothing warms the provider ahead of the verb.
+func measureColdMove(
+	t *testing.T, client *goredis.Client, orch *sessionorch.Orchestrator, chars characterrepo.Repository,
+	run, member string, n, pathLen int, r *reloadRow,
+) {
+	t.Helper()
+	ctx := auth.WithPlayerID(context.Background(), "player-"+member)
+	where, err := orch.Manager.Where(context.Background(), &sdk.WhereInput{Session: run, Member: member})
+	require.NoError(t, err)
+	x, y := int(where.Position.X), int(where.Position.Y)
+	dir := 1
+	move := func(h *sessionhandler.Handler, m *sdk.Manager) time.Duration {
+		var took time.Duration
+		for attempt := 0; ; attempt++ {
+			require.Less(t, attempt, 2, "no direction walks whole from (%d,%d)", x, y)
+			p := make([]*sessionpb.Position, 0, pathLen)
+			for i := 1; i <= pathLen; i++ {
+				p = append(p, &sessionpb.Position{X: float64(x + dir*i), Y: float64(y)})
+			}
+			s := time.Now()
+			_, err := h.Move(ctx, &sessionpb.MoveRequest{Session: run, Member: member, Path: p})
+			took = time.Since(s)
+			dir = -dir
+			if err != nil {
+				continue
+			}
+			got, err := m.Where(context.Background(), &sdk.WhereInput{Session: run, Member: member})
+			require.NoError(t, err)
+			nx, ny := int(got.Position.X), int(got.Position.Y)
+			end := p[len(p)-1]
+			landed := nx == int(end.GetX()) && ny == int(end.GetY())
+			x, y = nx, ny
+			if landed {
+				return took
+			}
+		}
+	}
+	for range n {
+		sites, err := sessionorch.NewSites(nil)
+		require.NoError(t, err)
+		fresh, err := sessionorch.New(sessionorch.Config{
+			Redis: client, Characters: chars, TTL: 24 * time.Hour, Dice: testDice{},
+			PresentationIDs: idgen.NewSequential("presentation"), AnswerWhole: true, Sites: sites,
+		})
+		require.NoError(t, err)
+		h, err := sessionhandler.New(&sessionhandler.HandlerConfig{
+			Manager: fresh.Manager, Characters: chars, Preferences: fresh.Preferences,
+		})
+		require.NoError(t, err)
+		before := sites.Compiles()
+		r.coldMove = append(r.coldMove, move(h, fresh.Manager))
+		require.Equal(t, before+1, sites.Compiles(), "the cold Move compiled the site from the piece")
+		r.warmMove = append(r.warmMove, move(h, fresh.Manager))
+	}
 }

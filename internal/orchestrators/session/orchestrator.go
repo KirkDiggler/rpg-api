@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/KirkDiggler/rpg-toolkit/dice"
+	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
@@ -70,6 +71,15 @@ type Config struct {
 	// InProcessContinuationRunner, which Orchestrator.Drain waits on. A test
 	// injects its own to observe or script the hand-off.
 	Continuations sdk.ContinuationRunner
+
+	// Sites resolves every compiled site by its content hash (rpg-project#879
+	// S5): one per process, shared by every game, every reload and every map
+	// preview this orchestrator's Manager builds. The server constructs it
+	// once (NewSites, bound from its config) and injects it here. Optional:
+	// nil gives this orchestrator a provider of its own at DefaultSiteEntries,
+	// never the toolkit's package-level default, so two orchestrators in one
+	// test process do not share a cache by accident.
+	Sites tkencounter.SiteProvider
 
 	// AnswerWhole hands the SDK no runner at all, so every verb runs whole
 	// before it answers and the answer carries the verb's Saved and Delivery,
@@ -141,6 +151,10 @@ type Orchestrator struct {
 	// Preferences writes character configuration under the character guard
 	// of the same locker Manager uses.
 	Preferences *Preferences
+
+	// Sites is the site provider Manager resolves every site through:
+	// Config.Sites, or the one New built when that was nil.
+	Sites tkencounter.SiteProvider
 
 	// continuations is what Manager hands the rest of a verb to; nil when
 	// Config.AnswerWhole is set.
@@ -236,6 +250,15 @@ func New(cfg Config) (*Orchestrator, error) {
 		}
 	}
 
+	sites := cfg.Sites
+	if sites == nil {
+		own, err := NewSites(nil)
+		if err != nil {
+			return nil, fmt.Errorf("site provider: %w", err)
+		}
+		sites = own
+	}
+
 	recordBroker := NewRecordBroker(0)
 	var recordStream sdk.RecordStream = recordBroker
 	if cfg.RecordCapture != nil {
@@ -245,6 +268,7 @@ func New(cfg Config) (*Orchestrator, error) {
 	mgr, err := sdk.NewManager(&sdk.Config{
 		Locker:            locker,
 		Continuations:     continuations,
+		Sites:             sites,
 		CharacterConfig:   &characterConfigReader{repo: configs},
 		StaleTargetPolicy: policy,
 		PresentationIDs:   presentationIDs,
@@ -264,6 +288,7 @@ func New(cfg Config) (*Orchestrator, error) {
 	return &Orchestrator{
 		Manager: mgr, RecordBroker: recordBroker, ActBroker: actBroker,
 		Preferences:   &Preferences{locker: locker, repo: configs},
+		Sites:         sites,
 		continuations: continuations,
 	}, nil
 }

@@ -83,9 +83,11 @@ type redisEncounterRepository struct {
 
 // NewEncounterRepository returns a Redis-backed sdk.EncounterRepository that
 // also carries sdk.FencedEncounterRepository (redis_fenced.go), so the SDK
-// takes the fenced save. ttl is the per-key expiration applied on save, to the
-// encounter, its checkpoint version and a fenced save's session record; pass
-// 0 to disable expiration.
+// takes the fenced save, and sdk.SiteRepository (redis_sites.go), so a launch
+// stores its site piece once by hash and a cold process loads through it.
+// ttl is the per-key expiration applied on save, to the encounter, its
+// checkpoint version and a fenced save's session record; pass 0 to disable
+// expiration. A site piece never expires (redis_sites.go).
 func NewEncounterRepository(client redisclient.Client, ttl time.Duration) sdk.EncounterRepository {
 	return &redisEncounterRepository{client: client, ttl: ttl}
 }

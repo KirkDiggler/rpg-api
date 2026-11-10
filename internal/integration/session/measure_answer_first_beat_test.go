@@ -361,7 +361,13 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 			require.NoError(t, sub.Close())
 			<-done
 			if reloadOn {
-				reloads = append(reloads, measureColdReload(t, client, orch, run, "alice", key, mode, n))
+				rr := measureColdReload(t, client, orch, run, "alice", key, mode, n)
+				// The warm-vs-cold provider pair (rpg-project#879 S5), once per
+				// keep: whole Moves, so one mode is enough.
+				if answerWhole || len(modes) == 1 {
+					measureColdMove(t, client, orch, charRepo, run, "alice", n, pathLen, &rr)
+				}
+				reloads = append(reloads, rr)
 				moveTotals[key+"|"+mode] = [2][]time.Duration{r.answer, r.drained}
 			}
 			require.NoError(t, client.FlushDB(context.Background()).Err())

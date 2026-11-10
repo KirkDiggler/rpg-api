@@ -58,6 +58,19 @@ func StatusError(err error) error {
 	}
 
 	switch {
+	// FAILED_PRECONDITION, AHEAD OF EVERY OTHER CASE (rpg-project#879 S5): a
+	// stored world names a compiled site that neither this process's site
+	// provider nor the stored site pieces hold. The SDK wraps it beside
+	// ErrInvalidWorld so a host matching on that still catches it, which is
+	// why it is checked before the INVALID_ARGUMENT bucket below: the caller's
+	// request is well formed and names a session that exists, so it is not
+	// INVALID_ARGUMENT and not NOT_FOUND (a client told "no such session"
+	// would drop a seat that is still real). It is this server's stored state
+	// refusing the verb until the piece is restored, which is the
+	// FAILED_PRECONDITION contract: do not retry as is.
+	case errors.Is(err, sdk.ErrUnknownSite):
+		return status.Error(codes.FailedPrecondition, err.Error())
+
 	// NOT_FOUND -- the caller named something that does not exist.
 	case errors.Is(err, sdk.ErrNoSession),
 		errors.Is(err, sdk.ErrNoEncounter),

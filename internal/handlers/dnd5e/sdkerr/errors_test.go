@@ -186,6 +186,12 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// that is not a lie.
 		{"ErrCannotActivate", sdk.ErrCannotActivate, codes.FailedPrecondition},
 
+		// A stored world naming a site nobody holds (rpg-project#879 S5).
+		// The SDK wraps it beside ErrInvalidWorld; the second row is that
+		// exact chain, pinning that it is matched before INVALID_ARGUMENT.
+		{"ErrUnknownSite", sdk.ErrUnknownSite, codes.FailedPrecondition},
+		{"ErrUnknownSite beside ErrInvalidWorld", fmt.Errorf("site abc: %w: %w", sdk.ErrInvalidWorld, sdk.ErrUnknownSite), codes.FailedPrecondition},
+
 		// ALREADY_EXISTS
 		{"ErrSessionExists", sdk.ErrSessionExists, codes.AlreadyExists},
 
