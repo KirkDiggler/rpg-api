@@ -1014,7 +1014,7 @@ func TestAcceptance_TheAtlasSaysWhereTheDungeonBeginsAndWhichWay(t *testing.T) {
 		run := startHeirloomRun(t)
 		require.NotNil(t, run.atlas(t, "alice").GetStart(), "it has one to begin with")
 
-		key := "session-enc:v1alpha1:" + heirloomSession
+		key := "session-enc:v1alpha2:" + heirloomSession
 		raw, err := run.h.redis.Get(context.Background(), key).Bytes()
 		require.NoError(t, err)
 		var blob map[string]json.RawMessage

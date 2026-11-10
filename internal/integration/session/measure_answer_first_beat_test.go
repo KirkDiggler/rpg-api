@@ -131,6 +131,11 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 	t.Cleanup(func() { _ = client.Close() })
 	require.NoError(t, client.Ping(context.Background()).Err(), "redis at %s", addr)
 	guardFlushable(t, client, addr)
+	// Bytes per Move (rpg-project#897 leg c): what each Move's saves hand
+	// Redis, and what the store holds after it (measure_save_bytes_test.go).
+	written := &saveBytes{}
+	client.AddHook(written)
+	bytesRows := make([]bytesRow, 0, len(modes)*len(keys))
 
 	// The floor: a trivial GET round trip.
 	require.NoError(t, client.Set(context.Background(), "measure:floor", "x", 0).Err())
@@ -237,6 +242,7 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 				return p
 			}
 			r := row{key: key, mode: mode, compile: compileTook, launch: launchTook}
+			br := bytesRow{key: key, mode: mode}
 			for i := 0; i < warm+n; i++ {
 				if dir == 0 {
 					dir = 1
@@ -250,6 +256,7 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 					highWater = got[len(got)-1].id
 				}
 				mu.Unlock()
+				written.take()
 				t0 := time.Now()
 				resp, err := handler.Move(ctx, &sessionpb.MoveRequest{Session: run, Member: "alice", Path: p})
 				answered := time.Now()
@@ -308,6 +315,15 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 				}
 				r.answer = append(r.answer, answered.Sub(t0))
 				r.drained = append(r.drained, drainedAt)
+				wTotal, wRest, wSegment, wSaves := written.take()
+				sRest, sLog, sSegments := storedBytes(t, client, run)
+				br.write = append(br.write, wTotal)
+				br.rest = append(br.rest, wRest)
+				br.segment = append(br.segment, wSegment)
+				br.saves = append(br.saves, wSaves)
+				br.storedRest = append(br.storedRest, sRest)
+				br.storedLog = append(br.storedLog, sLog)
+				br.segments = append(br.segments, sSegments)
 				r.steps = append(r.steps, len(resp.GetSteps()))
 				c := 0
 				if resp.GetContinues() {
@@ -372,6 +388,7 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 			}
 			require.NoError(t, client.FlushDB(context.Background()).Err())
 			rows = append(rows, r)
+			bytesRows = append(bytesRows, br)
 		}
 	}
 
@@ -397,6 +414,7 @@ func TestMeasure_AnswerAndFirstBeat(t *testing.T) {
 		stepRows = append(stepRows, stepRow{key: r.key, mode: r.mode, answer: r.answer, steps: r.steps, continues: r.continues})
 	}
 	b.WriteString(perStepTable(stepRows, pathLen))
+	b.WriteString(bytesTable(bytesRows))
 	t.Log(b.String())
 }
 
