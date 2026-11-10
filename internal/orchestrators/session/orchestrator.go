@@ -81,6 +81,14 @@ type Config struct {
 	// test process do not share a cache by accident.
 	Sites tkencounter.SiteProvider
 
+	// Residency keeps each session's write-verb encounter resident between
+	// verbs, a cache of the store checked by the checkpoint version
+	// (rpg-project#879 S6, residency.go): one per process, bounded from the
+	// server's config and injected here, as Sites is. Optional: nil gives
+	// this orchestrator a residency of its own at the defaults, so two
+	// orchestrators in one test process never share copies by accident.
+	Residency *Residency
+
 	// AnswerWhole hands the SDK no runner at all, so every verb runs whole
 	// before it answers and the answer carries the verb's Saved and Delivery,
 	// exactly as before rpg-project#879. New refuses it together with a
@@ -155,6 +163,10 @@ type Orchestrator struct {
 	// Sites is the site provider Manager resolves every site through:
 	// Config.Sites, or the one New built when that was nil.
 	Sites tkencounter.SiteProvider
+
+	// Residency is the residency Manager keeps its resident copies in:
+	// Config.Residency, or the one New built when that was nil.
+	Residency *Residency
 
 	// continuations is what Manager hands the rest of a verb to; nil when
 	// Config.AnswerWhole is set.
@@ -259,6 +271,15 @@ func New(cfg Config) (*Orchestrator, error) {
 		sites = own
 	}
 
+	residency := cfg.Residency
+	if residency == nil {
+		own, err := NewResidency(nil)
+		if err != nil {
+			return nil, fmt.Errorf("residency: %w", err)
+		}
+		residency = own
+	}
+
 	recordBroker := NewRecordBroker(0)
 	var recordStream sdk.RecordStream = recordBroker
 	if cfg.RecordCapture != nil {
@@ -269,6 +290,8 @@ func New(cfg Config) (*Orchestrator, error) {
 		Locker:            locker,
 		Continuations:     continuations,
 		Sites:             sites,
+		Residency:         residency,
+		ResidencyObserver: residency,
 		CharacterConfig:   &characterConfigReader{repo: configs},
 		StaleTargetPolicy: policy,
 		PresentationIDs:   presentationIDs,
@@ -289,6 +312,7 @@ func New(cfg Config) (*Orchestrator, error) {
 		Manager: mgr, RecordBroker: recordBroker, ActBroker: actBroker,
 		Preferences:   &Preferences{locker: locker, repo: configs},
 		Sites:         sites,
+		Residency:     residency,
 		continuations: continuations,
 	}, nil
 }

@@ -21,6 +21,25 @@ import (
 // it, so the fenced save can compare it without decoding the world.
 const sessionEncVerKeyPrefix = "session-enc-ver:v1alpha1:"
 
+// sessionEncVerHighKey is the highest checkpoint version the store has ever
+// issued to any encounter (rpg-project#927): one key, never expiring, raised
+// by every save. A launch seeds its first version above it.
+const sessionEncVerHighKey = "session-enc-ver-high:v1alpha1"
+
+// A VERSION NEVER REPEATS FOR AN ENCOUNTER ID (rpg-project#879 S6, R6). The
+// resident copy a process keeps is checked by equality with the store's
+// version (GetCheckpointVersion), so a version must name one landed state
+// for the life of the id, across its keys expiring or being deleted and the
+// session relaunched under the same id: otherwise a copy another process
+// kept at version N could match a new world's N by coincidence. Within one
+// checkpoint each save adds one; the FIRST save of a checkpoint (no head
+// stored) starts one above the high-water key, which every save raises to
+// its own version and which nothing expires. So every version a relaunched
+// id issues is above every version the id ever had. Only a store that loses
+// the high-water key with everything else (FLUSHALL, a fresh Redis) restarts
+// the count, and a process holding copies across that must restart too: no
+// production path flushes.
+
 // The Redis encounter repository carries the session's optional fenced
 // capability and its appending and pieces refinements; the SDK finds them by
 // type assertion on Config.Encounters.
@@ -28,6 +47,7 @@ var (
 	_ sdk.FencedEncounterRepository    = (*redisEncounterRepository)(nil)
 	_ sdk.AppendingEncounterRepository = (*redisEncounterRepository)(nil)
 	_ sdk.PiecesEncounterRepository    = (*redisEncounterRepository)(nil)
+	_ sdk.CheckpointVersionReader      = (*redisEncounterRepository)(nil)
 )
 
 // THE VERSION SHARES THE CHECKPOINT'S LIFETIME. Every script that writes the
@@ -52,7 +72,7 @@ var (
 // the floor kept beside the head, every piece key's TTL renewed together.
 //
 //	KEYS: head, version, log, floor, roster, know, journal, [session],
-//	      sheet..., seat...
+//	      sheet..., seat..., the version high-water (always last)
 //	ARGV: 1 expected ("" for the unfenced plain write), 2 ttlMillis,
 //	      3 hasSession, 4 nSheets, 5 nSeats, 6 headValue, 7 since,
 //	      8 hasSegment, 9 segmentElem, 10 floor, 11 whole, 12 hasJournal,
@@ -246,11 +266,18 @@ for j = 0, nSeats - 1 do
   redis.call('SET', KEYS[k + nSheets + j], ARGV[a + 2 * nSheets + j])
 end
 
+local high = KEYS[#KEYS]
+local nv
 if cur == '0' then
-  redis.call('DEL', KEYS[2])
+  nv = tonumber(redis.call('GET', high) or '0') + 1
+  redis.call('SET', KEYS[2], string.format('%.0f', nv))
+else
+  nv = redis.call('INCR', KEYS[2])
 end
-local nv = redis.call('INCR', KEYS[2])
 expireWithTTL(KEYS[2])
+if nv > tonumber(redis.call('GET', high) or '0') then
+  redis.call('SET', high, string.format('%.0f', nv))
+end
 return {'ok', nv}
 `)
 
@@ -278,6 +305,35 @@ func (r *redisEncounterRepository) GetFencedEncounter(
 		return nil, fmt.Errorf("encounter %q has checkpoint version %q: %w", id, stored.version, sdk.ErrBadRepository)
 	}
 	return &sdk.GetFencedEncounterOutput{Data: stored.data, Version: version, Marks: stored.marks}, nil
+}
+
+// GetCheckpointVersion implements sdk.CheckpointVersionReader
+// (rpg-project#879 S6): one GET of the version key and nothing else, so a
+// write verb holding a resident copy checks it against the store for the
+// price of one round trip. THE RESIDENT COPY RELIES ON THE VERSION NEVER
+// REPEATING FOR AN ID (see sessionEncVerHighKey): equality with a copy's
+// version is the whole check. An absent key is 0, which no kept copy holds (a
+// landed save leaves the version at 1 or more), so the verb loads and the
+// load answers as it always has. It does not look for the head beside the
+// version: a version that outlived its head (they share one TTL, so only a
+// hand-deleted head) still differs from any copy saved before, or the load
+// that follows the miss fails closed.
+func (r *redisEncounterRepository) GetCheckpointVersion(ctx context.Context, encounter string) (uint64, error) {
+	if encounter == "" {
+		return 0, errors.New("session: GetCheckpointVersion encounter is required")
+	}
+	raw, err := r.client.Get(ctx, sessionEncVerKeyPrefix+encounter).Result()
+	if errors.Is(err, goredis.Nil) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("read checkpoint version of encounter %q: %w", encounter, err)
+	}
+	version, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("encounter %q has checkpoint version %q: %w", encounter, raw, sdk.ErrBadRepository)
+	}
+	return version, nil
 }
 
 // SaveFenced implements sdk.FencedEncounterRepository for a caller that hands
@@ -446,6 +502,7 @@ func (r *redisEncounterRepository) saveFenced(
 		args = append(args, b)
 	}
 
+	keys = append(keys, sessionEncVerHighKey)
 	reply, err := savePiecesScript.Run(ctx, r.client, keys, args...).Slice()
 	if err != nil {
 		return nil, fmt.Errorf("fenced save of encounter %q: %w", id, err)

@@ -3,6 +3,8 @@ package session_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -75,7 +77,7 @@ func sheet(id string, hp int) *tkcharacter.Data {
 func (s *FencedRepoSuite) launch(id string) uint64 {
 	out, err := s.fenced.SaveFenced(s.ctx, &sdk.SaveFencedInput{Encounter: id, Data: world(1), Expected: 0})
 	s.Require().NoError(err)
-	s.Require().Equal(uint64(1), out.Version)
+	s.Require().Positive(out.Version)
 	return out.Version
 }
 
@@ -210,7 +212,58 @@ func (s *FencedRepoSuite) TestVersionSharesTheBlobsLifetime() {
 	s.mr.FastForward(fencedTTL + time.Second)
 	s.False(s.mr.Exists("session-enc:v1alpha3:enc-1"))
 	s.False(s.mr.Exists("session-enc-ver:v1alpha1:enc-1"))
-	s.launch("enc-1")
+	s.Greater(s.launch("enc-1"), uint64(1), "a relaunch after expiry starts above the id's last version")
+}
+
+// TestARelaunchedIDNeverRepeatsAVersion pins the contract the resident copy
+// relies on (rpg-project#927): one encounter id's checkpoint versions never
+// repeat, across its keys expiring or being deleted and a relaunch under the
+// same id, so a copy kept at version N by another process can never match a
+// new world's N.
+func (s *FencedRepoSuite) TestARelaunchedIDNeverRepeatsAVersion() {
+	const saves = 4
+	life := func() []uint64 {
+		v := s.launch("enc-1")
+		versions := make([]uint64, 0, 1+saves)
+		versions = append(versions, v)
+		for range saves {
+			out, err := s.fenced.SaveFenced(s.ctx, &sdk.SaveFencedInput{Encounter: "enc-1", Data: world(2), Expected: v})
+			s.Require().NoError(err)
+			v = out.Version
+			versions = append(versions, v)
+		}
+		return versions
+	}
+	seen := map[uint64]string{}
+	note := func(name string, versions []uint64) {
+		for _, v := range versions {
+			prev, dup := seen[v]
+			s.False(dup, "version %d of the %s life repeats one of the %s life", v, name, prev)
+			seen[v] = name
+		}
+	}
+	note("first", life())
+
+	// Deleted: every key of the checkpoint, as a hand cleanup would.
+	keys := s.mr.Keys()
+	for _, k := range keys {
+		if strings.HasPrefix(k, "session-enc") && strings.HasSuffix(k, ":enc-1") {
+			s.mr.Del(k)
+		}
+	}
+	s.False(s.mr.Exists("session-enc-ver:v1alpha1:enc-1"))
+	note("second", life())
+
+	// Expired: the checkpoint's TTL runs out.
+	s.mr.FastForward(fencedTTL + time.Second)
+	s.False(s.mr.Exists("session-enc-ver:v1alpha1:enc-1"))
+	note("third", life())
+
+	// Another id's saves raise the same high-water, so its launches never
+	// collide with this id's either.
+	other := s.launch("enc-2")
+	s.Greater(other, uint64(3*(saves+1)), "a launch of another id starts above every version issued")
+	s.Len(seen, 3*(saves+1))
 }
 
 func (s *FencedRepoSuite) TestSessionBlobKeepsTheSessionTTL() {
@@ -273,4 +326,63 @@ func (s *FencedRepoSuite) assertUntouched(enc string, loaded uint64) {
 	s.Equal(1, got.Data.Retention, "the world is still the launch's")
 	_, err = s.sessions.GetSession(s.ctx, "run-1")
 	s.Require().ErrorIs(err, sdk.ErrNotFound, "the refused save's session record did not land")
+}
+
+// TestGetCheckpointVersion_ReadsOnlyTheVersionKey pins the version reader
+// the resident copy is checked by (rpg-project#879 S6): one GET of the
+// version key, nothing else, 0 when the key is absent.
+func (s *FencedRepoSuite) TestGetCheckpointVersion_ReadsOnlyTheVersionKey() {
+	reader, ok := s.plain.(sdk.CheckpointVersionReader)
+	s.Require().True(ok, "the Redis encounter repository must carry the version reader")
+	v1 := s.launch("enc-1")
+	_, err := s.fenced.SaveFenced(s.ctx, &sdk.SaveFencedInput{Encounter: "enc-1", Data: world(2), Expected: v1})
+	s.Require().NoError(err)
+
+	seen := &commandLog{}
+	s.client.(*goredis.Client).AddHook(seen)
+	got, err := reader.GetCheckpointVersion(s.ctx, "enc-1")
+	s.Require().NoError(err)
+	s.Equal(uint64(2), got)
+	s.Equal([]string{"get session-enc-ver:v1alpha1:enc-1"}, seen.commands)
+
+	got, err = reader.GetCheckpointVersion(s.ctx, "never-launched")
+	s.Require().NoError(err)
+	s.Zero(got, "an absent version is 0, which no kept copy holds")
+	s.Len(seen.commands, 2)
+}
+
+func (s *FencedRepoSuite) TestGetCheckpointVersion_Unreadable_FailsClosed() {
+	reader, ok := s.plain.(sdk.CheckpointVersionReader)
+	s.Require().True(ok)
+	s.Require().NoError(s.mr.Set("session-enc-ver:v1alpha1:enc-1", "not-a-number"))
+	_, err := reader.GetCheckpointVersion(s.ctx, "enc-1")
+	s.Require().ErrorIs(err, sdk.ErrBadRepository)
+	_, err = reader.GetCheckpointVersion(s.ctx, "")
+	s.Require().Error(err)
+}
+
+// commandLog records every command the client sends, as "name key".
+type commandLog struct{ commands []string }
+
+func (l *commandLog) DialHook(next goredis.DialHook) goredis.DialHook { return next }
+func (l *commandLog) ProcessPipelineHook(next goredis.ProcessPipelineHook) goredis.ProcessPipelineHook {
+	return func(ctx context.Context, cmds []goredis.Cmder) error {
+		for _, cmd := range cmds {
+			l.record(cmd)
+		}
+		return next(ctx, cmds)
+	}
+}
+func (l *commandLog) ProcessHook(next goredis.ProcessHook) goredis.ProcessHook {
+	return func(ctx context.Context, cmd goredis.Cmder) error {
+		l.record(cmd)
+		return next(ctx, cmd)
+	}
+}
+func (l *commandLog) record(cmd goredis.Cmder) {
+	line := cmd.Name()
+	if args := cmd.Args(); len(args) > 1 {
+		line += " " + fmt.Sprint(args[1])
+	}
+	l.commands = append(l.commands, line)
 }
