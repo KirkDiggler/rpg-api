@@ -19,6 +19,7 @@ func atlasStructuralWallsToProto(walls []sdk.AtlasStructuralWall) []*sessionpb.A
 			Openings:          atlasStructuralOpeningsToProto(wall.Openings),
 			FootprintCells:    atlasFootprintCellsToProto(wall.FootprintCells),
 			MaterialOverrides: materialOverridesToProto(wall.MaterialOverrides),
+			FaceFinishes:      wallFaceFinishesToProto(wall.FaceFinishes),
 		})
 	}
 	return out

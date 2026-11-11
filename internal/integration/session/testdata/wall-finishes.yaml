@@ -1,0 +1,52 @@
+version: 5
+key: wall-finish-walk
+play: {void: transparent, lighting: bright, standing: centre-covered}
+room:
+  version: 3
+  id: wall-finish
+  name: Wall finish walk
+  coordinateFrame:
+    horizontalPlane: world-xz
+    verticalAxis: world-y-up
+    distanceUnit: world-scene-unit
+    hexRadius: 1
+    footprintFrame: owner-local-xz
+  scene:
+    version: 7
+    id: wall-finish-scene
+    name: Wall finish walk
+    groups: []
+    items: []
+    wallFinishes:
+      courtyard-wall:
+        positive-z: dnd5e:material:fantasy-kingdom:wall_brick_01
+        negative-z: dnd5e:material:fantasy-kingdom:wall_stucco_01
+  room:
+    implicitRegionId: courtyard
+    regions:
+      - id: courtyard
+        name: Courtyard
+        lighting: {intensity: 1}
+        cells:
+          - {r: -1, q: [[-2, 2]]}
+          - {r: 0, q: [[-2, 2]]}
+          - {r: 1, q: [[-2, 2]]}
+          - {r: 2, q: [[-1, 1]]}
+    walls:
+      - id: courtyard-wall
+        label: Masonry wall
+        line: {start: {x: -3, z: -0.75}, end: {x: 3, z: -0.75}}
+        openings: []
+        appearance:
+          assetRef: dnd5e:env:fantasy-kingdom:castle_wall_fit_01
+          height: 3
+          thickness: 0.3
+          elevation: 0
+        blocker:
+          footprint: {width: 6, depth: 0.3, offsetX: 0, offsetZ: 0}
+          blocksMovement: false
+          blocksLineOfSight: false
+    propDeclarations: {}
+    arrangementDeclarations: {}
+    partyStart: {q: 0, r: 2}
+    monsterDeclarations: []
