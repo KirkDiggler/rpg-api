@@ -17,7 +17,11 @@ import (
 // question at the first bump, and the shorter one while he is challenged.
 const (
 	theGuardsQuestion = "Whoa there, buddy. Can I help you?"
-	theGuardsRepeat   = "I said, can I help you?"
+
+	// theCaptainsBar is the captain's answer to a bump at the gate he holds
+	// (rpg-project#928).
+	theCaptainsBar  = "Not one step further without my say."
+	theGuardsRepeat = "I said, can I help you?"
 )
 
 // barredActs is every bump in acts.
@@ -150,12 +154,14 @@ func TestAcceptance_TheGateGuardAnswersTheBump(t *testing.T) {
 		requireAnsweredUnderTheBump(t, acts, gatePosted)
 	})
 
-	t.Run("a hand on the gate he holds is refused by his name and heard", func(t *testing.T) {
+	t.Run("a hand on the held gate is refused by the nearest holder's name and heard", func(t *testing.T) {
 		h := newAcceptanceHarnessWithDice(t, standAsideDice{})
 		const run = "gate-bump-door-run"
 		out := launchTheMadKing(t, h, run, -1, 7)
 		require.Empty(t, out.Formed, "precondition: nobody fights")
-		guard := launched(t, out, gatePosted)
+		// Every gate guard holds the gate (rpg-project#928); the captain stands
+		// nearest the opening's gatehouse side, so the hand is his to answer.
+		nearest := launched(t, out, gateCaptain)
 
 		var openErr error
 		acts := watchActs(ctx, t, h, run, "alice", func() {
@@ -164,15 +170,15 @@ func TestAcceptance_TheGateGuardAnswersTheBump(t *testing.T) {
 		st, ok := status.FromError(openErr)
 		require.True(t, ok)
 		require.Equal(t, codes.FailedPrecondition, st.Code(), "a refused door verb never crosses as a success")
-		require.Equal(t, guard.Name+" bars the door", st.Message())
+		require.Equal(t, nearest.Name+" bars the door", st.Message())
 
 		bumps := barredActs(acts)
 		require.Len(t, bumps, 1, "the stream carries the bump")
 		require.Equal(t, castleGateDoor, bumps[0].GetDoor(), "naming the door")
 		require.Nil(t, bumps[0].GetCell(), "and no cell")
-		require.Equal(t, gatePosted, bumps[0].GetBarrier().GetId())
-		require.Equal(t, []string{theGuardsQuestion}, linesOf(acts, gatePosted))
-		requireAnsweredUnderTheBump(t, acts, gatePosted)
+		require.Equal(t, gateCaptain, bumps[0].GetBarrier().GetId())
+		require.Equal(t, []string{theCaptainsBar}, linesOf(acts, gateCaptain), "he answers the hand on his gate")
+		requireAnsweredUnderTheBump(t, acts, gateCaptain)
 
 		doors, err := h.handler.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: run, Member: "alice"})
 		require.NoError(t, err)
