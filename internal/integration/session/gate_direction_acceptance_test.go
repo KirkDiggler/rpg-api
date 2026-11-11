@@ -78,13 +78,14 @@ func walk(t *testing.T, h *acceptanceHarness, run string, path []*sessionpb.Posi
 }
 
 // TestAcceptance_TheGateGuardChecksArrivals is S1c of the guard holds the
-// gate on the server (rpg-project#857, R6): gate-1's post holds the gate
-// `against: entering` with `pass: troupe-admitted`. The view tells a viewer
+// gate on the server (rpg-project#857, R6; #928): every gate guard's post
+// holds the gate `against: entering`, letting through whom he recognizes as
+// admitted (`pass: { recognized: admitted }`). The view tells a viewer
 // in sight of the gate which door he holds, the direction, and the post's
 // side cells. An arrival is barred at the opening and at the door; a party
 // inside walks out past him unchallenged and is barred on the way back in;
-// and the troupe the captain let through is told no hold and crosses in
-// while he stays posted.
+// and the troupe the captain let through, whom every gate guard now
+// recognizes, is told no hold and crosses in while gate-1 stays posted.
 func TestAcceptance_TheGateGuardChecksArrivals(t *testing.T) {
 	ctx := auth.WithPlayerID(context.Background(), "player-alice")
 
@@ -93,7 +94,7 @@ func TestAcceptance_TheGateGuardChecksArrivals(t *testing.T) {
 		const run = "gate-direction-seen-run"
 		out := launchTheMadKing(t, h, run, -1, 7)
 		require.Empty(t, out.Formed, "precondition: the gate guards are neutral, nobody fights")
-		guard := launched(t, out, gatePosted)
+		nearest := launched(t, out, gateCaptain)
 
 		view, err := h.handler.GetView(ctx, &sessionpb.GetViewRequest{Session: run, Member: "alice"})
 		require.NoError(t, err)
@@ -108,14 +109,14 @@ func TestAcceptance_TheGateGuardChecksArrivals(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_STOPPED, moved.GetStatus(), "the walk in is an arrival")
-		require.Equal(t, guard.Name+" bars the way", moved.GetStopReason())
+		require.Equal(t, nearest.Name+" bars the way", moved.GetStopReason(), "the nearest holder, the captain, is named")
 
 		_, err = h.handler.OpenDoor(ctx, &sessionpb.OpenDoorRequest{Session: run, Member: "alice", Door: castleGateDoor})
 		require.Error(t, err)
 		st, ok := status.FromError(err)
 		require.True(t, ok)
 		require.Equal(t, codes.FailedPrecondition, st.Code())
-		require.Equal(t, guard.Name+" bars the door", st.Message(), "the door verb from outside is refused by his name")
+		require.Equal(t, nearest.Name+" bars the door", st.Message(), "the door verb from outside is refused by the nearest holder's name")
 	})
 
 	t.Run("a party inside walks out past him unchallenged and is barred on the way back in", func(t *testing.T) {
@@ -124,7 +125,7 @@ func TestAcceptance_TheGateGuardChecksArrivals(t *testing.T) {
 		// Seated in the courtyard past the shut gate, pastTheGate's offset cell.
 		out := launchTheMadKing(t, h, run, 0, 6)
 		require.Empty(t, out.Formed, "precondition: nobody fights")
-		guard := launched(t, out, gatePosted)
+		nearest := launched(t, out, gateCaptain)
 
 		// The post holds against entering, so her hand on the gate from inside
 		// is not refused.
@@ -149,7 +150,7 @@ func TestAcceptance_TheGateGuardChecksArrivals(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_STOPPED, back.GetStatus(), "the way back in is an arrival")
-		require.Equal(t, guard.Name+" bars the way", back.GetStopReason())
+		require.Equal(t, nearest.Name+" bars the way", back.GetStopReason(), "the nearest holder, the captain, is named")
 	})
 
 	t.Run("the troupe is told no hold and crosses in while he stays posted", func(t *testing.T) {
@@ -174,7 +175,7 @@ func TestAcceptance_TheGateGuardChecksArrivals(t *testing.T) {
 		require.NoError(t, err)
 		requireOnTheGatePost(t, view, "the troupe's word leaves him on his post")
 		seen := sightingOf(t, view, gatePosted)
-		require.Empty(t, seen.GetHoldsDoor(), "she knows the pass, so he holds nothing against her")
+		require.Empty(t, seen.GetHoldsDoor(), "he recognizes her as admitted, so he holds nothing against her")
 		require.Empty(t, seen.GetHoldsAgainst(), "and no direction is told")
 		require.Empty(t, seen.GetHoldsSide(), "and no side")
 

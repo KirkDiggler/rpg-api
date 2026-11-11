@@ -25,6 +25,12 @@ const (
 	madKingKey = "the-mad-king"
 	gatePosted = "gate-1"
 	gateLoop   = "gate-2"
+
+	// gateCaptain is the captain, the third gate guard. Every gate guard
+	// holds the gate (rpg-project#928), and he stands nearest the opening's
+	// gatehouse side, so a stop or a refusal there names him: the stop names
+	// the nearest holder its mover sees.
+	gateCaptain = "captain"
 )
 
 // launchTheMadKing compiles the shipped castle the way the lobby does and
@@ -148,6 +154,7 @@ func TestAcceptance_TheGuardHoldsTheGatesPassage(t *testing.T) {
 	guard := launched(t, out, gatePosted)
 	require.True(t, samePosition(beneathTheGate(), &sessionpb.Position{X: guard.Position.X, Y: guard.Position.Y}),
 		"precondition: he stands his post beneath the gate")
+	nearest := launched(t, out, gateCaptain)
 
 	t.Run("the door list carries the gate with its state", func(t *testing.T) {
 		doors, err := h.handler.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: run, Member: "alice"})
@@ -193,7 +200,7 @@ func TestAcceptance_TheGuardHoldsTheGatesPassage(t *testing.T) {
 		}
 	})
 
-	t.Run("the opening's other cell is barred by his name", func(t *testing.T) {
+	t.Run("the opening's other cell is barred by the nearest holder's name", func(t *testing.T) {
 		view, err := h.handler.GetView(ctx, &sessionpb.GetViewRequest{Session: run, Member: "alice"})
 		require.NoError(t, err)
 		require.Equal(t, castleGateDoor, sightingOf(t, view, gatePosted).GetHoldsDoor(), "her sighting of him names the door he holds")
@@ -204,7 +211,7 @@ func TestAcceptance_TheGuardHoldsTheGatesPassage(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_STOPPED, moved.GetStatus(), "the held opening stops the walk")
 		require.Empty(t, moved.GetSteps(), "no step was taken")
-		require.Equal(t, guard.Name+" bars the way", moved.GetStopReason(), "and the reason names the guard")
+		require.Equal(t, nearest.Name+" bars the way", moved.GetStopReason(), "and the reason names the nearest holder, the captain")
 
 		where, err := h.handler.GetWhere(ctx, &sessionpb.GetWhereRequest{Session: run, Member: "alice"})
 		require.NoError(t, err)
@@ -213,18 +220,18 @@ func TestAcceptance_TheGuardHoldsTheGatesPassage(t *testing.T) {
 
 	// R7 (lane #835): a held door refuses its verbs. Opening the gate from
 	// beside him is refused by his name, and is the client's to show.
-	t.Run("opening the held gate is refused by his name", func(t *testing.T) {
+	t.Run("opening the held gate is refused by the nearest holder's name", func(t *testing.T) {
 		_, err := h.handler.OpenDoor(ctx, &sessionpb.OpenDoorRequest{Session: run, Member: "alice", Door: castleGateDoor})
 		require.Error(t, err)
 		st, ok := status.FromError(err)
 		require.True(t, ok)
 		require.Equal(t, codes.FailedPrecondition, st.Code())
-		require.Equal(t, guard.Name+" bars the door", st.Message(), "the refusal names the guard")
+		require.Equal(t, nearest.Name+" bars the door", st.Message(), "the refusal names the nearest holder, the captain")
 	})
 
 	// The captain stands beside her (offset (0,8)). A stand-aside he hears
-	// cows gate-1, and a cowed guard holds nothing: the door opens and the
-	// walk crosses.
+	// cows every gate guard, and a cowed guard holds nothing: the door opens
+	// and the walk crosses.
 	t.Run("once he is cowed, the gate opens and the walk crosses", func(t *testing.T) {
 		_, err := speakAsOffered(ctx, t, h, run, "alice", "captain", "stand-aside")
 		require.NoError(t, err)
