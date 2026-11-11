@@ -1272,10 +1272,17 @@ func speakOptionsToProto(rows []sdk.SpeakOptionRow) ([]*sessionpb.SpeakOption, e
 	}
 	out := make([]*sessionpb.SpeakOption, len(rows))
 	for i, row := range rows {
+		if err := speakOptionHoldConsistent(row); err != nil {
+			return nil, err
+		}
 		option := &sessionpb.SpeakOption{
-			OptionId:  row.OptionID,
-			Line:      row.Line,
-			Available: row.Available,
+			OptionId:          row.OptionID,
+			Line:              row.Line,
+			Available:         row.Available,
+			InteractionId:     row.Interaction,
+			Revision:          row.Revision,
+			Pending:           row.Pending,
+			PendingOnMemberId: row.PendingOn,
 		}
 		switch {
 		case row.Target != "" && row.Prop == "":
@@ -1292,6 +1299,33 @@ func speakOptionsToProto(rows []sdk.SpeakOptionRow) ([]*sessionpb.SpeakOption, e
 		out[i] = option
 	}
 	return out, nil
+}
+
+// speakOptionHoldConsistent refuses a Speak row whose conversation fields
+// (rpg-project#924) contradict each other in a way the row alone shows. Every
+// check is the SDK's own documented law for the row, read back, never a rule
+// of the game:
+//
+//   - PendingOn is named only on a pending row.
+//   - A pending row is not available: sending it is ErrLineReserved.
+//   - A pending row reads an interaction; nothing else can be held.
+//   - A revision belongs to an interaction; a line touching none carries zero.
+//
+// FAIL CLOSED, the way speakOptionsToProto refuses a row naming no target.
+// Crossing such a row would offer a line as open that the server will refuse,
+// or name a holder for a line nobody holds.
+func speakOptionHoldConsistent(row sdk.SpeakOptionRow) error {
+	switch {
+	case row.PendingOn != "" && !row.Pending:
+		return fmt.Errorf("speak option %q names %q as its holder but is not pending", row.OptionID, row.PendingOn)
+	case row.Pending && row.Available:
+		return fmt.Errorf("speak option %q is pending and available; a pending line is never available", row.OptionID)
+	case row.Pending && row.Interaction == "":
+		return fmt.Errorf("speak option %q is pending but reads no interaction", row.OptionID)
+	case row.Revision != 0 && row.Interaction == "":
+		return fmt.Errorf("speak option %q carries revision %d but reads no interaction", row.OptionID, row.Revision)
+	}
+	return nil
 }
 
 // speakAddressToProto mirrors the Speak row's address (rpg-project#923) as
@@ -1469,6 +1503,11 @@ func shortfallReasonToProto(r sdk.ShortfallReason) sessionpb.ShortfallReason {
 		// collapsing it into NO_BUDGET would tell a raging barbarian to come
 		// back next turn.
 		return sessionpb.ShortfallReason_SHORTFALL_REASON_UNAVAILABLE
+	case sdk.ShortfallLineReserved:
+		// A pending Speak line (rpg-project#924): somebody's checked line
+		// holds the conversation, waiting on their roll. The row's own
+		// pending/pending_on_member_id name who it waits on.
+		return sessionpb.ShortfallReason_SHORTFALL_REASON_LINE_RESERVED
 	case sdk.ShortfallWindowOpen:
 		// The freeze (rpg-project#316 rung 3). Somebody at this table is
 		// being asked whether they react, and until that answer arrives

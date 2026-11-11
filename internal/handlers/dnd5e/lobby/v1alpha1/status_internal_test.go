@@ -51,6 +51,12 @@ func TestLobbyStatusError_Table(t *testing.T) {
 			wantCode:    codes.FailedPrecondition,
 			msgContains: `interaction "front-gate" approach within 5 is beyond the reach 3`,
 		},
+		{
+			name:        "abandoning while a roll waits is the window-open refusal",
+			err:         fmt.Errorf("end session %q: %w", "enc-1", fmt.Errorf("end: %w: waiting on alice", sdk.ErrWindowOpen)),
+			wantCode:    codes.FailedPrecondition,
+			msgContains: "waiting on alice",
+		},
 		{name: "a launch error that is not a seat refusal stays Internal", err: fmt.Errorf("launch session %q: %w", "enc-new", errors.New("provider unavailable")), wantCode: codes.Internal, msgContains: "provider unavailable"},
 		{name: "unclassified error falls through to Internal", err: errors.New("boom"), wantCode: codes.Internal, msgContains: "boom"},
 	}

@@ -506,7 +506,15 @@ func StatusError(err error) error {
 		// it becomes legal once the holder leaves his post (cowed, drawn off,
 		// down). Its *sdk.DoorHeldError detail is answered above with the
 		// reason alone; this case is the bare sentinel's.
-		errors.Is(err, sdk.ErrDoorHeld):
+		errors.Is(err, sdk.ErrDoorHeld),
+		// ErrLineReserved (rpg-project#924) -- a Speak line that is pending:
+		// somebody's checked line holds the conversation it reads, waiting on
+		// their roll. The line is real and offered; it becomes legal once the
+		// roll settles or the hold is let go. Afford already marks the row
+		// pending (SpeakOption.pending), so the only caller who reaches this
+		// is one who sent it anyway. NOT the ABORTED stale reply below: the
+		// conversation has not moved, it is waiting.
+		errors.Is(err, sdk.ErrLineReserved):
 		return status.Error(codes.FailedPrecondition, err.Error())
 
 	// PERMISSION_DENIED -- the authenticated principal is real but owns no
@@ -544,6 +552,17 @@ func StatusError(err error) error {
 	case errors.Is(err, sdk.ErrStaleCheckpoint):
 		return status.Error(codes.Aborted,
 			"stale checkpoint: another save landed first and nothing of this verb was written; retry it: "+err.Error())
+
+	// ABORTED -- a Speak reply from an older revision of the conversation,
+	// or a React answering a waiting line whose hold is already gone
+	// (ErrStaleOption, rpg-project#924). The same optimistic-concurrency
+	// story as the stale checkpoint above: nothing was spent, rolled or
+	// recorded, and the client refreshes the panel and picks again. NOT
+	// FAILED_PRECONDITION's ErrStaleDeclaration: the line still exists and
+	// may still be offered; it is the revision the reply carried that lost
+	// the race, which is ABORTED's meaning in gRPC's own table.
+	case errors.Is(err, sdk.ErrStaleOption):
+		return status.Error(codes.Aborted, err.Error())
 
 	// UNAVAILABLE -- a write landed only partially. Retry guidance lives in
 	// the SaveReport carried by the SDK's SaveError (design rule 7); errors.As

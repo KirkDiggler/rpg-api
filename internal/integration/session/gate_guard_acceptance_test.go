@@ -226,9 +226,7 @@ func TestAcceptance_TheGuardHoldsTheGatesPassage(t *testing.T) {
 	// cows gate-1, and a cowed guard holds nothing: the door opens and the
 	// walk crosses.
 	t.Run("once he is cowed, the gate opens and the walk crosses", func(t *testing.T) {
-		_, err := h.handler.Speak(ctx, &sessionpb.SpeakRequest{
-			Session: run, Member: "alice", Target: &sessionpb.SpeakRequest_MemberId{MemberId: "captain"}, OptionId: "stand-aside",
-		})
+		_, err := speakAsOffered(ctx, t, h, run, "alice", "captain", "stand-aside")
 		require.NoError(t, err)
 		view, err := h.handler.GetView(ctx, &sessionpb.GetViewRequest{Session: run, Member: "alice"})
 		require.NoError(t, err)

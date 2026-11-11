@@ -105,6 +105,27 @@ func TestReactMapsAStaleWindowToFailedPrecondition(t *testing.T) {
 	requireCode(t, err, codes.FailedPrecondition)
 }
 
+// TestReactMapsAGoneHoldToAborted pins gate slice 4 (rpg-project#924): an
+// answer to a waiting Speak line whose hold is already gone is the session's
+// ErrStaleOption, and crosses as ABORTED -- nothing was spent, the client
+// refreshes.
+func TestReactMapsAGoneHoldToAborted(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().React(gomock.Any(), gomock.Any()).
+		Return(nil, fmt.Errorf("react: %w", sdk.ErrStaleOption))
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	resp, err := h.React(ctx, &sessionpb.ReactRequest{
+		Session: "sess-1", Member: "char-1", DeclarationId: "decl-react-1",
+		Choice: sessionpb.ReactChoice_REACT_CHOICE_STRIKE,
+	})
+
+	require.Nil(t, resp)
+	requireCode(t, err, codes.Aborted)
+}
+
 // AN UNSET CHOICE IS INVALID_ARGUMENT AND NEVER REACHES THE SDK, and the
 // manager mock with no expectations is the real assertion: gomock fails on any
 // call, so a handler that defaulted the empty enum to hold -- declining a

@@ -508,3 +508,88 @@ func TestAfford_MalformedAddressIsRefused(t *testing.T) {
 		})
 	}
 }
+
+// TestAfford_SpeakRowCarriesRevisionAndPending pins gate slice 4 (reserve
+// before dice, rpg-project#924): each Speak row crosses the interaction it
+// reads, that interaction's revision, and whether it is pending on somebody's
+// roll -- copied as the SDK wrote them. A line touching no interaction crosses
+// none of the four.
+func TestAfford_SpeakRowCarriesRevisionAndPending(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Afford(gomock.Any(), gomock.Any()).Return(&sdk.AffordOutput{
+		Clock: sdk.ClockWorld,
+		Declarations: []sdk.Declaration{{
+			Verb: sdk.VerbSpeak, Slot: sdk.SlotAction, Available: true, ID: "decl-speak",
+			SpeakOptions: []sdk.SpeakOptionRow{
+				{
+					Target: "gate-1", OptionID: "guest", Line: "We're expected.", Available: false,
+					Interaction: "front-gate", Revision: 7, Pending: true, PendingOn: "char-alice",
+					Why: &sdk.Shortfall{Reason: sdk.ShortfallLineReserved, Text: "this line waits on somebody's roll"},
+				},
+				{
+					Target: "gate-1", OptionID: "stand-aside", Line: "Stand aside.", Available: true,
+					Interaction: "front-gate", Revision: 7,
+				},
+				{Target: "gate-1", OptionID: "greet", Line: "Evening.", Available: true},
+			},
+		}},
+	}, nil)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	resp, err := h.Afford(ctx, &sessionpb.AffordRequest{Session: "sess-1", Member: "char-1"})
+	require.NoError(t, err)
+	menu := resp.GetDeclarations()[0].GetSpeakOptions()
+	require.Len(t, menu, 3)
+
+	pending := menu[0]
+	require.False(t, pending.GetAvailable())
+	require.True(t, pending.GetPending())
+	require.Equal(t, "char-alice", pending.GetPendingOnMemberId())
+	require.Equal(t, "front-gate", pending.GetInteractionId())
+	require.Equal(t, uint64(7), pending.GetRevision())
+	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_LINE_RESERVED, pending.GetShortfall())
+
+	open := menu[1]
+	require.True(t, open.GetAvailable())
+	require.False(t, open.GetPending())
+	require.Empty(t, open.GetPendingOnMemberId())
+	require.Equal(t, "front-gate", open.GetInteractionId())
+	require.Equal(t, uint64(7), open.GetRevision())
+
+	plain := menu[2]
+	require.True(t, plain.GetAvailable())
+	require.False(t, plain.GetPending())
+	require.Empty(t, plain.GetInteractionId())
+	require.Zero(t, plain.GetRevision())
+}
+
+// TestSpeakOptionsToProto_InconsistentHoldIsRefused pins the fail-closed
+// rule for the conversation fields (rpg-project#924): a row whose fields
+// contradict the SDK's own law for them is a producer defect, refused rather
+// than crossed.
+func TestSpeakOptionsToProto_InconsistentHoldIsRefused(t *testing.T) {
+	for name, row := range map[string]sdk.SpeakOptionRow{
+		"holder named but not pending": {
+			Target: "gate-1", OptionID: "guest", Line: "x", Available: true,
+			Interaction: "front-gate", Revision: 3, PendingOn: "char-alice",
+		},
+		"pending and available": {
+			Target: "gate-1", OptionID: "guest", Line: "x", Available: true,
+			Interaction: "front-gate", Revision: 3, Pending: true,
+		},
+		"pending on no interaction": {
+			Target: "gate-1", OptionID: "guest", Line: "x",
+			Pending: true, Why: &sdk.Shortfall{Reason: sdk.ShortfallLineReserved},
+		},
+		"revision on no interaction": {
+			Target: "gate-1", OptionID: "greet", Line: "x", Available: true, Revision: 3,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := speakOptionsToProto([]sdk.SpeakOptionRow{row})
+			require.Error(t, err)
+		})
+	}
+}

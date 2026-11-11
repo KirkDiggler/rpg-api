@@ -262,6 +262,8 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrArmorInFight", sdk.ErrArmorInFight, codes.FailedPrecondition},
 		{"ErrSeatedElsewhere", sdk.ErrSeatedElsewhere, codes.FailedPrecondition},
 		{"ErrDoorHeld", sdk.ErrDoorHeld, codes.FailedPrecondition},
+		{"ErrLineReserved", sdk.ErrLineReserved, codes.FailedPrecondition},
+		{"ErrStaleOption", sdk.ErrStaleOption, codes.Aborted},
 		// Already in the pinned SDK before this feature (v0.21.4) and unmapped
 		// until this audit: this package's OWN adapter vocabulary going stale
 		// against itself, not a caller mistake.

@@ -166,9 +166,7 @@ func TestAcceptance_TheGateGuardChecksArrivals(t *testing.T) {
 		})
 		require.NoError(t, err, "the stranger tells of the feast")
 		walk(t, h, run, toTheCaptain(), "to the captain")
-		_, err = h.handler.Speak(ctx, &sessionpb.SpeakRequest{
-			Session: run, Member: "alice", Target: &sessionpb.SpeakRequest_MemberId{MemberId: "captain"}, OptionId: troupeOptionID,
-		})
+		_, err = speakAsOffered(ctx, t, h, run, "alice", "captain", troupeOptionID)
 		require.NoError(t, err, "the captain lets the troupe through")
 		walk(t, h, run, []*sessionpb.Position{pbAt(-1, 8), besideTheGate()}, "to the gate")
 
