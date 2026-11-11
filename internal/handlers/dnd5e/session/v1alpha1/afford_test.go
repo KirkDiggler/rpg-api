@@ -549,9 +549,7 @@ func TestAfford_SpeakRowCarriesRevisionAndPending(t *testing.T) {
 	require.Equal(t, "char-alice", pending.GetPendingOnMemberId())
 	require.Equal(t, "front-gate", pending.GetInteractionId())
 	require.Equal(t, uint64(7), pending.GetRevision())
-	// TODO(rpg-project#924): SHORTFALL_REASON_LINE_RESERVED once
-	// rpg-api-protos v0.1.268 lands it.
-	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_UNSPECIFIED, pending.GetShortfall())
+	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_LINE_RESERVED, pending.GetShortfall())
 
 	open := menu[1]
 	require.True(t, open.GetAvailable())

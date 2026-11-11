@@ -1506,11 +1506,8 @@ func shortfallReasonToProto(r sdk.ShortfallReason) sessionpb.ShortfallReason {
 	case sdk.ShortfallLineReserved:
 		// A pending Speak line (rpg-project#924): somebody's checked line
 		// holds the conversation, waiting on their roll. The row's own
-		// pending/pending_on_member_id say so on the wire already.
-		// TODO(rpg-project#924): map to SHORTFALL_REASON_LINE_RESERVED once
-		// rpg-api-protos v0.1.268 lands it. Until then it crosses as
-		// UNSPECIFIED, this function's existing fail-closed arm.
-		return sessionpb.ShortfallReason_SHORTFALL_REASON_UNSPECIFIED
+		// pending/pending_on_member_id name who it waits on.
+		return sessionpb.ShortfallReason_SHORTFALL_REASON_LINE_RESERVED
 	case sdk.ShortfallWindowOpen:
 		// The freeze (rpg-project#316 rung 3). Somebody at this table is
 		// being asked whether they react, and until that answer arrives

@@ -118,7 +118,9 @@ func speakAsOffered(
 // check pauses on her die. While it waits, bob beside her sees the gate's
 // claim pending on alice and the greeting open; sending the pending claim is
 // FAILED_PRECONDITION; replying from the menu he read before her claim is
-// ABORTED; the greeting is spoken; and alice's React settles the claim once.
+// ABORTED; the greeting is spoken. Alice's own panel is the frozen one -- her
+// REACT row, her Speak blocked WINDOW_OPEN -- and her React settles the claim
+// once.
 func TestAcceptance_AWaitingClaimHoldsTheGate(t *testing.T) {
 	aliceCtx := auth.WithPlayerID(context.Background(), "player-alice")
 	h := newAcceptanceHarnessWithDice(t, standAsideDice{})
@@ -173,9 +175,20 @@ func TestAcceptance_AWaitingClaimHoldsTheGate(t *testing.T) {
 	_, err = sayToCaptain(h, run, "bob", "player-bob", greet)
 	require.NoError(t, err, "the table is not frozen: the greeting is said")
 
-	// Alice settles once. Her REACT row sits beside a full panel.
+	// The holder's own panel is the frozen one: her REACT row, and her Speak
+	// row blocked by the open window. Her other verbs are refused the
+	// window-open error; she may walk, React or leave.
 	react := reactRowOf(t, h, run, "alice", "player-alice")
 	require.NotNil(t, react, "alice is asked about her die")
+	held := speakRowOf(t, h, run, "alice", "player-alice")
+	require.False(t, held.GetAvailable(), "the holder's Speak waits on her answer")
+	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_WINDOW_OPEN, held.GetWhy().GetReason())
+	// Her frozen row lists no lines, so she sends the greeting bob was
+	// offered: it reads no conversation, so it is offered at revision zero.
+	_, err = sayToCaptain(h, run, "alice", "player-alice", greet)
+	require.Equal(t, codes.FailedPrecondition, status.Code(err), "the holder speaks nothing else meanwhile: %v", err)
+
+	// Alice settles once.
 	_, err = h.handler.React(aliceCtx, &sessionpb.ReactRequest{
 		Session: run, Member: "alice", DeclarationId: react.GetId(),
 		Choice: sessionpb.ReactChoice_REACT_CHOICE_STRIKE,
