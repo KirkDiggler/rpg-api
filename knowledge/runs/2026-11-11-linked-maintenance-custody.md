@@ -13,6 +13,7 @@
 
 ## Found
 
+- Joined review found private SourceMember carried the coordinator's application key. Real v2 acceptance reproduced the incorrect value before root 87602d8f; the API now pins that fix and asserts the actual caster member, not the invocation. Conversion remains field-for-field — [finding](https://github.com/KirkDiggler/rpg-toolkit/pull/2329#discussion_r4542938014).
 - The old string-only ref envelope silently discarded every object-ref linked condition; the new converter test first observed zero projected rows. Current provider data now reaches the wire byte-for-byte — [S14](https://github.com/KirkDiggler/rpg-project/issues/904).
 - Native v2 private-sheet acceptance caught Character.StatusView still using the generic registry label after v1 conversion was fixed. Root 678e9d74 supplies the same instance-aware maintenance description to both, without API-side rules — [root PR](https://github.com/KirkDiggler/rpg-toolkit/pull/2329).
 

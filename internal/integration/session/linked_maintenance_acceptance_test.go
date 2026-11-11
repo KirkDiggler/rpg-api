@@ -68,6 +68,8 @@ func (s *LinkedMaintenanceAcceptanceSuite) TestNativeCreationCastReloadAndConcen
 		if condition.GetName() == "Concentrating on Bless" {
 			named = true
 			s.Contains(condition.GetDetail(), "turn ends")
+			s.Equal(id, condition.GetSourceMember(), "private source member is the caster, never the application key")
+			s.NotEqual(application, condition.GetSourceMember())
 		}
 	}
 	s.True(named, "the native v2 private sheet must receive the same provider-owned maintenance description")
