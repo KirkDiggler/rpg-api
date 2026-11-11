@@ -28,6 +28,7 @@ import (
 //   - ErrLobbyAlreadyStarted / ErrLobbyFull / ErrNotAllReady / ErrLobbyNotStarted /
 //     ErrEncounterAlreadyEnded / ErrCharacterSeatedElsewhere → FailedPrecondition
 //   - sdk.ErrInvalidWorld (a launch refusing the dungeon) → FailedPrecondition
+//   - sdk.ErrWindowOpen (abandoning while a roll waits) → FailedPrecondition
 //   - unclassified → Internal
 func lobbyStatusError(err error) error {
 	switch {
@@ -66,6 +67,13 @@ func lobbyStatusError(err error) error {
 		// is well formed; the dungeon is what must change before a retry, so
 		// FAILED_PRECONDITION, and the SDK's sentence (which names the
 		// interaction or the seat count) is the message the author reads.
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, sdk.ErrWindowOpen):
+		// ABANDONING WHILE A ROLL WAITS (rpg-project#924): the session refuses
+		// End while any window is open, a waiting Speak check included. The
+		// host's request becomes legal once the roll is answered, so
+		// FAILED_PRECONDITION, and the SDK's sentence names who the table
+		// waits on.
 		return status.Error(codes.FailedPrecondition, err.Error())
 	}
 	return status.Errorf(codes.Internal, "lobby: %v", err)

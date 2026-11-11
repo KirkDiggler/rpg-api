@@ -15,6 +15,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
 
 // The front gate's lines this test speaks (the-mad-king.yaml): `guest` is a
@@ -187,6 +188,11 @@ func TestAcceptance_AWaitingClaimHoldsTheGate(t *testing.T) {
 	// offered: it reads no conversation, so it is offered at revision zero.
 	_, err = sayToCaptain(h, run, "alice", "player-alice", greet)
 	require.Equal(t, codes.FailedPrecondition, status.Code(err), "the holder speaks nothing else meanwhile: %v", err)
+
+	// Nobody ends the run while her roll waits: the session refuses End
+	// with the window-open error.
+	_, err = h.handler.End(aliceCtx, &sessionpb.EndRequest{Session: run, Ending: sdk.EndingWithdrawn})
+	require.Equal(t, codes.FailedPrecondition, status.Code(err), "the run does not end while a roll waits: %v", err)
 
 	// Alice settles once.
 	_, err = h.handler.React(aliceCtx, &sessionpb.ReactRequest{
