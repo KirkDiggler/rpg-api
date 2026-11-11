@@ -903,11 +903,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_WithConditions() {
 		Level: 5,
 		Conditions: []json.RawMessage{
 			s.currentRagingJSON("test-char"),
-			json.RawMessage(`{
-				"ref": "dnd5e:conditions:blessed",
-				"source": "bless_spell",
-				"duration": 6
-			}`),
+			s.currentBlessedJSON("test-char"),
 		},
 	}
 
@@ -931,8 +927,8 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_WithConditions() {
 	blessedCondition := result.ActiveConditions[1]
 	assert.Equal(s.T(), dnd5ev1alpha1.ConditionId_CONDITION_ID_UNSPECIFIED, blessedCondition.Id)
 	assert.Equal(s.T(), "Blessed", blessedCondition.Name)
-	assert.Equal(s.T(), "bless_spell", blessedCondition.Source)
-	assert.Equal(s.T(), int32(6), blessedCondition.Duration)
+	assert.Equal(s.T(), refs.Spells.Bless().String(), blessedCondition.Source)
+	assert.Zero(s.T(), blessedCondition.Duration, "recipient data does not own its maintainer countdown")
 }
 
 // TestConvertCharacterDataToProto_ProjectsStoredProtectionFightingStyle
@@ -995,13 +991,9 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_InvalidConditionJS
 		},
 	}
 
-	// Convert to proto - should skip invalid condition and include valid one
-	result := s.convertWithArmorClass(testData)
-
-	// Verify only valid condition is included
-	require.NotNil(s.T(), result, "Result should not be nil")
-	assert.Len(s.T(), result.ActiveConditions, 1, "Should have 1 valid condition")
-	assert.Equal(s.T(), "Prone", result.ActiveConditions[0].Name)
+	result, err := ConvertCharacterDataToProto(&CharacterProtoInput{Data: testData, ArmorClass: &dnd5ecombat.ACBreakdown{Total: 13}})
+	s.Require().Error(err)
+	s.Nil(result, "invalid conditions must not silently disappear from the sheet")
 }
 
 func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionNameComesFromTheRegistry() {
@@ -1010,11 +1002,7 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionNameComes
 		Name:  "Barbarian",
 		Level: 3,
 		Conditions: []json.RawMessage{
-			json.RawMessage(`{
-				"ref": "dnd5e:conditions:raging",
-				"source": "rage",
-				"duration": 5
-			}`),
+			s.currentRagingJSON("test-char"),
 		},
 	}
 
@@ -1050,13 +1038,13 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_UnknownConditionRe
 }
 
 func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionWithNoRef() {
-	// Create test data with condition missing ref - should be skipped
+	// A condition without identity is refused, not silently omitted.
 	testData := &toolkitchar.Data{
 		ID:    "test-char",
 		Name:  "Fighter",
 		Level: 2,
 		Conditions: []json.RawMessage{
-			// Condition with no ref - should be skipped
+			// Condition with no ref invalidates the conversion.
 			json.RawMessage(`{
 				"source": "unknown",
 				"duration": 2
@@ -1070,13 +1058,9 @@ func (s *ConvertersTestSuite) TestConvertCharacterDataToProto_ConditionWithNoRef
 		},
 	}
 
-	// Convert to proto
-	result := s.convertWithArmorClass(testData)
-
-	// Verify condition with no ref is skipped
-	require.NotNil(s.T(), result, "Result should not be nil")
-	assert.Len(s.T(), result.ActiveConditions, 1, "Should skip condition with no ref")
-	assert.Equal(s.T(), "Dodging", result.ActiveConditions[0].Name)
+	result, err := ConvertCharacterDataToProto(&CharacterProtoInput{Data: testData, ArmorClass: &dnd5ecombat.ACBreakdown{Total: 13}})
+	s.Require().Error(err)
+	s.Nil(result, "missing identity cannot be projected as a sheet with fewer effects")
 }
 
 func (s *ConvertersTestSuite) TestGetFeatureActionType() {
