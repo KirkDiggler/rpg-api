@@ -73,6 +73,10 @@ func speakInputFromProto(req *sessionpb.SpeakRequest) (*sdk.SpeakInput, error) {
 		Session:  req.GetSession(),
 		Member:   req.GetMember(),
 		OptionID: req.GetOptionId(),
+		// The revision the line was offered at (rpg-project#924), echoed
+		// from the row. Copied, never checked here: whether it is current
+		// is the SDK's answer (ErrStaleOption).
+		Revision: req.GetRevision(),
 	}
 	switch target := req.GetTarget().(type) {
 	case *sessionpb.SpeakRequest_MemberId:

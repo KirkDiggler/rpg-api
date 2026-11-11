@@ -304,3 +304,50 @@ func TestSpeak_NoOption_IsAWorldRefusal(t *testing.T) {
 	})
 	requireCode(t, err, codes.FailedPrecondition)
 }
+
+// TestSpeak_RevisionReachesTheSDK pins gate slice 4 (reserve before dice,
+// rpg-project#924): the revision the row was offered at is copied onto
+// SpeakInput.Revision, never checked here.
+func TestSpeak_RevisionReachesTheSDK(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().Speak(gomock.Any(), &sdk.SpeakInput{
+		Session: "sess-1", Member: "char-1", Target: "gate-1", OptionID: "guest", Revision: 7,
+	}).Return(&sdk.SpeakOutput{}, nil)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	_, err := h.Speak(ctx, &sessionpb.SpeakRequest{
+		Session: "sess-1", Member: "char-1", Target: &sessionpb.SpeakRequest_MemberId{MemberId: "gate-1"},
+		OptionId: "guest", Revision: 7,
+	})
+	require.NoError(t, err)
+}
+
+// TestSpeak_StaleAndReservedReplies pins the two refusals of gate slice 4
+// (rpg-project#924) at the Speak seam: a reply from an older revision is
+// ABORTED (refresh and pick again), a pending line is FAILED_PRECONDITION
+// (the line waits on a roll).
+func TestSpeak_StaleAndReservedReplies(t *testing.T) {
+	for name, tc := range map[string]struct {
+		err  error
+		code codes.Code
+	}{
+		"stale":    {sdk.ErrStaleOption, codes.Aborted},
+		"reserved": {sdk.ErrLineReserved, codes.FailedPrecondition},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+			mgr.EXPECT().Speak(gomock.Any(), gomock.Any()).Return(nil, tc.err)
+
+			h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+			ctx := auth.WithPlayerID(context.Background(), "alice")
+			_, err := h.Speak(ctx, &sessionpb.SpeakRequest{
+				Session: "sess-1", Member: "char-1", Target: &sessionpb.SpeakRequest_MemberId{MemberId: "gate-1"},
+				OptionId: "guest", Revision: 3,
+			})
+			requireCode(t, err, tc.code)
+		})
+	}
+}
