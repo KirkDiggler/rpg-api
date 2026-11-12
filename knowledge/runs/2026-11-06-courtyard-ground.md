@@ -1,5 +1,7 @@
 # Run — 2026-11-06 — Courtyard S2 API ground
 
+processed: 2026-11-12T165555Z
+
 Slice [#874](https://github.com/KirkDiggler/rpg-project/issues/874), story [#867](https://github.com/KirkDiggler/rpg-project/issues/867). Base: `dev` at `590a201`.
 
 ## Shipped

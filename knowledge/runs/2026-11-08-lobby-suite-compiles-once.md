@@ -1,5 +1,7 @@
 # Run — 2026-11-08 — the lobby handler suite compiles its fixtures once
 
+processed: 2026-11-12T165555Z
+
 Issue [rpg-api#1200](https://github.com/KirkDiggler/rpg-api/issues/1200). Cut from `rpg-api` `dev` at [`aff1c72`](https://github.com/KirkDiggler/rpg-api/commit/aff1c72), merged up to [`5711f56f`](https://github.com/KirkDiggler/rpg-api/commit/5711f56f).
 
 ## Shipped
