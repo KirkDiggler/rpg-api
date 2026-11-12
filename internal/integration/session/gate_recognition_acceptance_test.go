@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+
 	"github.com/stretchr/testify/require"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
@@ -75,8 +77,15 @@ func sayTo(t *testing.T, h *acceptanceHarness, run, member, player, target, opti
 // has alice win the guest claim.
 func admittedWithBobOnTheRoad(t *testing.T, run string) *acceptanceHarness {
 	t.Helper()
+	return admittedWithBobOnTheRoadRolling(t, run, standAsideDice{})
+}
+
+// admittedWithBobOnTheRoadRolling is [admittedWithBobOnTheRoad] on the
+// dice given; the guest claim must still win on them.
+func admittedWithBobOnTheRoadRolling(t *testing.T, run string, dice sdk.Roller) *acceptanceHarness {
+	t.Helper()
 	ctx := auth.WithPlayerID(context.Background(), "player-alice")
-	h := newAcceptanceHarnessWithDice(t, standAsideDice{})
+	h := newAcceptanceHarnessWithDice(t, dice)
 	for _, c := range []struct{ id, player string }{{"alice", "player-alice"}, {"bob", "player-bob"}} {
 		_, err := h.charRepo.Create(ctx, characterrepo.CreateInput{
 			Character: &entities.Character{Data: armedFighter(c.id, c.player)},

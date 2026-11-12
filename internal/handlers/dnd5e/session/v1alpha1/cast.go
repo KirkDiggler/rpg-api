@@ -92,7 +92,7 @@ func (h *Handler) Cast(
 	// -- the gate's saving throw -- and the wire's `saved` field is the
 	// persistence one in both responses.
 	return &sessionpb.CastResponse{
-		Saved:         saveReportToProto(out.Persisted),
+		Saved:         saveReportToProto(ctx, req.GetSession(), out.Persisted),
 		Delivery:      deliveryReportToProto(out.Delivery),
 		Caught:        caughtMembersToProto(out.Caught),
 		WardedTargets: append([]string(nil), out.WardedTargets...),

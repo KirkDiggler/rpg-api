@@ -31,7 +31,7 @@ func (h *Handler) Join(ctx context.Context, req *sessionpb.JoinRequest) (*sessio
 		Discovered: discoveriesToProto(out.Discovered),
 		Outcome:    outcomeToProto(out.Outcome),
 		Formed:     formedToProto(out.Formed),
-		Saved:      saveReportToProto(out.Saved),
+		Saved:      saveReportToProto(ctx, req.GetSession(), out.Saved),
 		Delivery:   deliveryReportToProto(out.Delivery),
 	}, nil
 }

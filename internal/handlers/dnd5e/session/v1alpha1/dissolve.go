@@ -33,7 +33,7 @@ func (h *Handler) Dissolve(ctx context.Context, req *sessionpb.DissolveRequest) 
 	return &sessionpb.DissolveResponse{
 		Members:  out.Members,
 		Cause:    dissolveKindToProto(out.Cause),
-		Saved:    saveReportToProto(out.Saved),
+		Saved:    saveReportToProto(ctx, req.GetSession(), out.Saved),
 		Delivery: deliveryReportToProto(out.Delivery),
 	}, nil
 }

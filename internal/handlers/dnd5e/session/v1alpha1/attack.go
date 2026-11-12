@@ -59,7 +59,7 @@ func (h *Handler) Attack(ctx context.Context, req *sessionpb.AttackRequest) (*se
 		Paused:      out.Paused,
 		Warded:      out.Warded,
 		WardedBy:    out.WardedBy,
-		Saved:       saveReportToProto(out.Saved),
+		Saved:       saveReportToProto(ctx, req.GetSession(), out.Saved),
 		Delivery:    deliveryReportToProto(out.Delivery),
 		Attack:      attackRefToProto(out.Attack),
 		Calculation: calculation,

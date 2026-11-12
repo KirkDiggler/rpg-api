@@ -34,7 +34,7 @@ func (h *Handler) Unpack(ctx context.Context, req *sessionpb.UnpackRequest) (*se
 	}
 
 	return &sessionpb.UnpackResponse{
-		Saved:    saveReportToProto(out.Saved),
+		Saved:    saveReportToProto(ctx, req.GetSession(), out.Saved),
 		Delivery: deliveryReportToProto(out.Delivery),
 	}, nil
 }

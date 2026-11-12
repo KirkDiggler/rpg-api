@@ -50,7 +50,7 @@ func (h *Handler) Hold(ctx context.Context, req *sessionpb.HoldRequest) (*sessio
 	}
 
 	return &sessionpb.HoldResponse{
-		Saved:    saveReportToProto(out.Saved),
+		Saved:    saveReportToProto(ctx, req.GetSession(), out.Saved),
 		Delivery: deliveryReportToProto(out.Delivery),
 	}, nil
 }

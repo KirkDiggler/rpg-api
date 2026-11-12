@@ -42,7 +42,7 @@ func (h *Handler) Activate(
 	}
 
 	return &sessionpb.ActivateResponse{
-		Saved:    saveReportToProto(out.Saved),
+		Saved:    saveReportToProto(ctx, req.GetSession(), out.Saved),
 		Delivery: deliveryReportToProto(out.Delivery),
 	}, nil
 }

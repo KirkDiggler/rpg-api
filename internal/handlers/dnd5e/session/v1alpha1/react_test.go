@@ -68,6 +68,28 @@ func TestReactMapsHoldToDecline(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// A KEPT ROLL IS SAID (rpg-project#938): the SDK's RollKept reaches the
+// wire's roll_kept, and a fault the commit absorbed does not.
+func TestReactCarriesRollKept(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	mgr.EXPECT().React(gomock.Any(), gomock.Any()).Return(&sdk.ReactOutput{
+		RollKept: true,
+		Saved:    sdk.SaveReport{Written: []string{"session:sess-1"}, Faults: []string{"a fault the host logs"}},
+	}, nil)
+
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	ctx := auth.WithPlayerID(context.Background(), "alice")
+	resp, err := h.React(ctx, &sessionpb.ReactRequest{
+		Session: "sess-1", Member: "char-1", DeclarationId: "decl-react-1",
+		Choice: sessionpb.ReactChoice_REACT_CHOICE_STRIKE,
+	})
+
+	require.NoError(t, err)
+	require.True(t, resp.GetRollKept(), "the client is told the roll was kept")
+	require.NotContains(t, resp.String(), "a fault the host logs", "and never the fault")
+}
+
 // A decline names no option. The manager mock with no expectations is the
 // assertion: the request is refused before the SDK is reached.
 func TestReactRefusesHoldWithAnOption(t *testing.T) {

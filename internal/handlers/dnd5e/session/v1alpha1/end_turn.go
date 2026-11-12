@@ -28,7 +28,7 @@ func (h *Handler) EndTurn(ctx context.Context, req *sessionpb.EndTurnRequest) (*
 	return &sessionpb.EndTurnResponse{
 		Next:         out.Next,
 		RoundWrapped: out.RoundWrapped,
-		Saved:        saveReportToProto(out.Saved),
+		Saved:        saveReportToProto(ctx, req.GetSession(), out.Saved),
 		Delivery:     deliveryReportToProto(out.Delivery),
 	}, nil
 }

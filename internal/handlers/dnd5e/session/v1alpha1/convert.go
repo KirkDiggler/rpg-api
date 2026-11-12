@@ -1,8 +1,10 @@
 package sessionv1alpha1
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/currency"
@@ -622,7 +624,14 @@ func formedToProto(f *sdk.Formed) *sessionpb.Formed {
 	}
 }
 
-func saveReportToProto(r sdk.SaveReport) *sessionpb.SaveReport {
+func saveReportToProto(ctx context.Context, session string, r sdk.SaveReport) *sessionpb.SaveReport {
+	// FAULTS ARE THE HOST'S LOG, NEVER THE CLIENT'S (rpg-project#938): a
+	// fault the SDK's commit absorbed (a kept roll that could not settle and
+	// was released) is logged here, the one place every verb's report crosses
+	// to the wire, and is not copied onto the response.
+	for _, fault := range r.Faults {
+		slog.WarnContext(ctx, "session commit absorbed a fault", "session", session, "fault", fault)
+	}
 	return &sessionpb.SaveReport{Written: r.Written, Failed: r.Failed}
 }
 
