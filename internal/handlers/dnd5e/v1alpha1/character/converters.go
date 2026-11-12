@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/KirkDiggler/rpg-toolkit/core"
 	"github.com/KirkDiggler/rpg-toolkit/core/combat"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/abilities"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/ammunition"
@@ -20,7 +19,6 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/conditions"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/damage"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/equipment"
-	dndevents "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/events"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/features"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/fightingstyles"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/languages"
@@ -1425,48 +1423,35 @@ func ConvertCharacterDataToProto(in *CharacterProtoInput) (*dnd5ev1alpha1.Charac
 	// Convert conditions (active status effects like "raging", "poisoned", etc.)
 	if len(data.Conditions) > 0 {
 		for _, conditionJSON := range data.Conditions {
+			// The toolkit routes its current ref shape and owns all instance meaning.
+			// The API retains only the existing opaque source/duration fields for current
+			// unmigrated payloads; it never reads a linked bag or reconstructs a clock.
 			var conditionData struct {
-				Ref      string                     `json:"ref"`    // Toolkit stores ref as string "dnd5e:conditions:raging"
-				Source   string                     `json:"source"` // Unmigrated conditions keep their existing source field.
-				Origin   *dndevents.ConditionOrigin `json:"origin"` // Composed instances carry source provenance separately.
-				Duration int32                      `json:"duration"`
+				Source   string `json:"source"`
+				Duration int32  `json:"duration"`
 			}
 			if err := json.Unmarshal(conditionJSON, &conditionData); err != nil {
-				continue // Skip invalid conditions
+				return nil, fmt.Errorf("character %s: condition data: %w", data.ID, err)
 			}
-
-			// Skip if no ref
-			if conditionData.Ref == "" {
-				continue
+			loaded, err := conditions.LoadJSON(conditionJSON)
+			if err != nil {
+				return nil, fmt.Errorf("character %s: condition: %w", data.ID, err)
 			}
-
-			// Extract condition ID from ref string (e.g., "dnd5e:conditions:raging" -> "raging")
-			conditionID := extractIDFromRef(conditionData.Ref)
-			if conditionID == "" {
-				continue
+			description, err := conditions.DescribeCondition(&conditions.DescribeConditionInput{Condition: loaded})
+			if err != nil {
+				return nil, fmt.Errorf("character %s: condition description: %w", data.ID, err)
 			}
-
-			// Map to enum and derive display name
+			conditionID := loaded.Ref().ID
 			conditionEnum := conditionIDToEnum(conditionID)
-			// The registry names the condition. A ref it does not know is an
-			// error, not a title-cased guess: the sheet holds a condition no
-			// reader can describe.
-			conditionRef, refErr := core.ParseString(conditionData.Ref)
-			if refErr != nil {
-				return nil, fmt.Errorf("character %s: condition ref %q: %w", data.ID, conditionData.Ref, refErr)
-			}
-			display, known := conditions.DisplayFor(*conditionRef)
-			if !known {
-				return nil, fmt.Errorf("character %s: condition %q has no display name in the registry", data.ID, conditionData.Ref)
-			}
+			display := description.Display
 			conditionName := display.Name
 			if fightingStyle := conditionIDToFightingStyle(conditionID); fightingStyle != dnd5ev1alpha1.FightingStyle_FIGHTING_STYLE_UNSPECIFIED {
 				char.FightingStyles = append(char.FightingStyles, fightingStyle)
 			}
 
 			source := conditionData.Source
-			if conditionData.Origin != nil {
-				source = conditionData.Origin.Ref.String()
+			if description.Origin != nil {
+				source = description.Origin.Ref.String()
 			}
 			char.ActiveConditions = append(char.ActiveConditions, &dnd5ev1alpha1.Condition{
 				Id:            conditionEnum,

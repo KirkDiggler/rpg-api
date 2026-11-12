@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/KirkDiggler/rpg-toolkit/core"
+
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -137,10 +139,10 @@ func conditionRefsOf(t *testing.T, repo characterrepo.Repository, id string) []s
 	out := make([]string, 0, len(sheet.Conditions))
 	for _, raw := range sheet.Conditions {
 		var envelope struct {
-			Ref string `json:"ref"`
+			Ref core.Ref `json:"ref"`
 		}
 		require.NoError(t, json.Unmarshal(raw, &envelope))
-		out = append(out, envelope.Ref)
+		out = append(out, envelope.Ref.String())
 	}
 	return out
 }
