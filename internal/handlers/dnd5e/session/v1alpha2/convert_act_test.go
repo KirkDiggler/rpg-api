@@ -848,3 +848,24 @@ func (s *ConvertActSuite) TestPerceptionMarksAFootprintDoorsCrossings() {
 	s.True(room[0].GetCrossing(), "a room reveal's footprint crossing")
 	s.False(room[1].GetCrossing(), "a room reveal's edge doorway")
 }
+
+// TestTableAnswerToProtoStrippedPickIsOnlyWho pins rpg-project#948: a pick
+// sent to a watcher who caught no words -- no die, no candidates, no word,
+// no temperament -- crosses as a table answer naming who answered (and the
+// activity cue when there is one) with every other field absent, never a
+// zero roll that reads as "rolled 0".
+func (s *ConvertActSuite) TestTableAnswerToProtoStrippedPickIsOnlyWho() {
+	got, err := actToProto(sdk.Act{ID: "id-1", Act: "speak:line-1", Verb: "speak", Family: sdk.FamilyTableAnswer,
+		Body: sdk.TableAnswer{Who: gate1}})
+	s.Require().NoError(err)
+	s.True(proto.Equal(&sessionpb.TableAnswer{Who: gate1P}, got.GetTableAnswer()), "only who: %v", got.GetTableAnswer())
+	s.Nil(got.GetTableAnswer().GetRoll(), "no roll, not a zero roll")
+	s.Empty(got.GetTableAnswer().GetCandidates())
+
+	cue := &sdk.ActivityCue{Ref: "dnd5e:activities:thoughtful", Cycles: 2}
+	got, err = actToProto(sdk.Act{ID: "id-2", Act: "speak:line-1", Verb: "speak", Family: sdk.FamilyTableAnswer,
+		Body: sdk.TableAnswer{Who: gate1, Activity: cue}})
+	s.Require().NoError(err)
+	s.True(proto.Equal(&sessionpb.TableAnswer{Who: gate1P, Activity: &sessionpb.ActivityCue{Ref: cue.Ref, Cycles: cue.Cycles}},
+		got.GetTableAnswer()), "who and the cue: %v", got.GetTableAnswer())
+}
