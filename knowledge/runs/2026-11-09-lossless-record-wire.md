@@ -1,5 +1,7 @@
 # Run — 2026-11-09 — exact diagnostic payload on the live wire
 
+processed: 2026-11-12T165555Z
+
 ## Shipped
 
 - Adopted CI-published proto v0.1.263 and populated fields_json from the original SDK payload, retaining the deprecated Struct only as an approximate projection — [R9 provider](https://github.com/KirkDiggler/rpg-api-protos/pull/426).

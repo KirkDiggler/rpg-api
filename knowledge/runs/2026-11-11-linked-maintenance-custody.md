@@ -1,5 +1,7 @@
 # Current linked maintenance custody
 
+processed: 2026-11-12T165555Z
+
 ## Shipped
 
 - Adopt pushed root/session/resolution maintenance providers while preserving dev's current encounter, checkpoint, site, record and generated SDK graph; no replacement modules or new wire contract — [S3](https://github.com/KirkDiggler/rpg-project/issues/706).

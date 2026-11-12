@@ -1,5 +1,7 @@
 # Run — 2026-11-10 — the entrance remembers S2 castle gate
 
+processed: 2026-11-12T165555Z
+
 Slice [rpg-project#922](https://github.com/KirkDiggler/rpg-project/issues/922) of story [rpg-project#769](https://github.com/KirkDiggler/rpg-project/issues/769). Base: `rpg-api` `dev` at [`83082f15`](https://github.com/KirkDiggler/rpg-api/commit/83082f15).
 
 ## Shipped
