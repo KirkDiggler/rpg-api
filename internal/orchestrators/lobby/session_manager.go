@@ -23,7 +23,6 @@ type SessionManager interface {
 	PlaceNPC(context.Context, *sdk.PlaceNPCInput) (*sdk.PlaceNPCOutput, error)
 	Status(context.Context, *sdk.StatusInput) (*sdk.Status, error)
 	End(context.Context, *sdk.EndInput) (*sdk.EndOutput, error)
-	Seat(context.Context, *sdk.SeatInput) (*sdk.SeatOutput, error)
 }
 
 var _ SessionManager = (*sdk.Manager)(nil)

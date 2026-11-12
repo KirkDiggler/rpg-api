@@ -17,7 +17,6 @@
 package lobby
 
 import (
-	"context"
 	"errors"
 	"time"
 
@@ -73,17 +72,6 @@ type Config struct {
 	// Dungeons is the content registry StartEncounter resolves dungeon_key
 	// against and ListDungeons reads. Required.
 	Dungeons dungeons.Registry
-
-	// UnloadableRuns marks a run whose stored record the SDK refuses as
-	// invalid encounter data, so it holds nobody's seat (rpg-project#942).
-	// Optional: nil marks nothing, and such a run keeps its seats.
-	UnloadableRuns UnloadableRuns
-}
-
-// UnloadableRuns is where the lobby marks a run nobody can load
-// (sessionorch.UnloadableRuns). Mark never deletes or repairs the run.
-type UnloadableRuns interface {
-	Mark(ctx context.Context, session, reason string) error
 }
 
 // Orchestrator is the lobby load -> mutate -> persist -> publish core. One
@@ -106,9 +94,6 @@ type Orchestrator struct {
 
 	// dungeons is Config.Dungeons.
 	dungeons dungeons.Registry
-
-	// unloadable is Config.UnloadableRuns, or nil.
-	unloadable UnloadableRuns
 }
 
 // New constructs an Orchestrator from cfg. Returns an error (never a nil
@@ -165,7 +150,6 @@ func New(cfg *Config) (*Orchestrator, error) {
 		locks:          newKeyedMutex(),
 		sessionManager: cfg.SessionManager,
 		dungeons:       cfg.Dungeons,
-		unloadable:     cfg.UnloadableRuns,
 	}, nil
 }
 

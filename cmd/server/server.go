@@ -487,8 +487,6 @@ func runServer(_ *cobra.Command, _ []string) error {
 		EncounterIDGenerator: idgen.NewUUID(""),
 		SessionManager:       sessionOrch.Manager,
 		Dungeons:             registry,
-		// A run nobody can load holds no seat (rpg-project#942).
-		UnloadableRuns: sessionorch.NewUnloadableRuns(redisClient),
 	}
 	lobbyOrch, err := lobbyorch.New(lobbyCfg)
 	if err != nil {

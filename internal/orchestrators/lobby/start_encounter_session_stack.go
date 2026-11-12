@@ -148,7 +148,7 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 	// board. The ordering, id and ending rules this function used to carry
 	// (garrison first, one id one member, withdrawn/boss-down) are the SDK's,
 	// and the monster member ids are the compile's own.
-	launch := &sdk.LaunchInput{
+	if _, err := o.sessionManager.Launch(ctx, &sdk.LaunchInput{
 		Session: encID,
 		// The RESOLVED key, after the default fallback above -- what this
 		// launch actually loaded (rpg-project#479). It reaches a client on
@@ -157,21 +157,7 @@ func (o *Orchestrator) StartEncounter(ctx context.Context, in *StartEncounterInp
 		DungeonKey: key,
 		Dungeon:    dungeon.Spec,
 		Party:      party,
-	}
-	_, err = o.sessionManager.Launch(ctx, launch)
-	// A SEAT HELD BY A RUN NOBODY CAN LOAD IS RELEASED, AND THE LAUNCH TRIED
-	// ONCE MORE (rpg-project#942, unloadable.go). Launch refuses before it
-	// writes anything, so the second try starts from the same nothing.
-	if errors.Is(err, sdk.ErrSeatedElsewhere) && o.unloadable != nil {
-		released, rerr := o.releaseUnloadableSeats(ctx, encID, party)
-		if rerr != nil {
-			return nil, fmt.Errorf("%w: launch session %q: %w (checking the seats: %w)", ErrCharacterSeatedElsewhere, encID, err, rerr)
-		}
-		if released {
-			_, err = o.sessionManager.Launch(ctx, launch)
-		}
-	}
-	if err != nil {
+	}); err != nil {
 		if errors.Is(err, sdk.ErrSeatedElsewhere) {
 			// A precondition, not a fault: surface it as its own sentinel
 			// and keep the SDK's sentence, which names the character and
