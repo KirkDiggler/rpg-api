@@ -40,7 +40,7 @@ func (h *Handler) Loot(ctx context.Context, req *sessionpb.LootRequest) (*sessio
 	}
 
 	return &sessionpb.LootResponse{
-		Saved:    saveReportToProto(out.Saved),
+		Saved:    saveReportToProto(ctx, req.GetSession(), out.Saved),
 		Delivery: deliveryReportToProto(out.Delivery),
 	}, nil
 }

@@ -26,6 +26,8 @@ github.com/KirkDiggler/rpg-api/internal/integration/harness/TestHarness_StartsAn
 github.com/KirkDiggler/rpg-api/internal/integration/sessionpresentation/TestSharedThrowCrossesServerInstances  # over budget, to be sized: rpg-api#1213; 22.79s
 github.com/KirkDiggler/rpg-api/internal/integration/session/TestAcceptance_AnOutOfReachGuardNamesHisApproach  # over budget, to be sized: rpg-api#1213; 7.93s
 github.com/KirkDiggler/rpg-api/internal/integration/session/TestAcceptance_AStragglerMakesTheirOwnCase  # over budget, to be sized: rpg-api#1213; two players launch the castle and walk the gate, as its sibling above (15.33s local, -race)
+github.com/KirkDiggler/rpg-api/internal/integration/session/TestAcceptance_AStragglerHasOneTry  # over budget, to be sized: rpg-api#1213; two players launch the castle and walk the gate, as its siblings above (17.90s local, -race)
+github.com/KirkDiggler/rpg-api/internal/integration/session/TestAcceptance_AStragglerWhoWalksAwayKeepsTheRoll  # over budget, to be sized: rpg-api#1213; two players launch the castle and walk the gate, as its siblings above (16.01s local, -race)
 github.com/KirkDiggler/rpg-api/internal/integration/session/TestAcceptance_TheCaptainRecognizesWhomHeAdmitted  # over budget, to be sized: rpg-api#1213; two players launch the castle and walk the gate (12.96s local)
 github.com/KirkDiggler/rpg-api/internal/integration/session/TestAcceptance_TheGateGuardAnswersTheBump  # over budget, to be sized: rpg-api#1213; 26.01s
 github.com/KirkDiggler/rpg-api/internal/integration/session/TestAcceptance_TheGateGuardChecksArrivals  # over budget, to be sized: rpg-api#1213; 30.55s

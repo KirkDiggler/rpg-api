@@ -56,7 +56,7 @@ func (h *Handler) DeathSave(
 		HpRestored:        int32(out.HPRestored),
 		Continuation:      deathSaveContinuationToProto(out.Continuation),
 		PresentationId:    out.PresentationID,
-		Saved:             saveReportToProto(out.Saved),
+		Saved:             saveReportToProto(ctx, req.GetSession(), out.Saved),
 		Delivery:          deliveryReportToProto(out.Delivery),
 		Calculation:       calculation,
 	}, nil

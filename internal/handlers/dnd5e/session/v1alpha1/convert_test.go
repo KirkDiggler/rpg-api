@@ -1,9 +1,14 @@
 package sessionv1alpha1
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"log/slog"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
@@ -642,9 +647,33 @@ func TestWhereToProto_Populated(t *testing.T) {
 }
 
 func TestSaveReportToProto(t *testing.T) {
-	got := saveReportToProto(sdk.SaveReport{Written: []string{"encounter"}, Failed: []string{"character"}})
+	got := saveReportToProto(context.Background(), "sess", sdk.SaveReport{Written: []string{"encounter"}, Failed: []string{"character"}})
 	require.Equal(t, []string{"encounter"}, got.GetWritten())
 	require.Equal(t, []string{"character"}, got.GetFailed())
+}
+
+// TestSaveReportFaultsAreTheHostsLogOnly: a fault the SDK's commit absorbed
+// (rpg-project#938) is logged at warning level with the session id, and is
+// never on the client's response: the wire report carries nothing of it.
+func TestSaveReportFaultsAreTheHostsLogOnly(t *testing.T) {
+	var logged bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logged, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	fault := "cleric's kept roll on line \"straggler\" could not settle and was released with no verdict: boom"
+	got := saveReportToProto(context.Background(), "sess-938", sdk.SaveReport{Written: []string{"encounter"}, Faults: []string{fault}})
+
+	var entry map[string]any
+	require.NoError(t, json.Unmarshal(logged.Bytes(), &entry), "one warning: %s", logged.String())
+	require.Equal(t, "WARN", entry["level"])
+	require.Equal(t, "sess-938", entry["session"])
+	require.Equal(t, fault, entry["fault"])
+
+	wire, err := protojson.Marshal(got)
+	require.NoError(t, err)
+	require.NotContains(t, string(wire), "kept roll", "the fault is not on the response")
+	require.NotContains(t, string(wire), "boom")
 }
 
 func TestDeliveryReportToProto(t *testing.T) {

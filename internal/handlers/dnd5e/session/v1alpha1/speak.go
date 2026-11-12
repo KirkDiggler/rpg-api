@@ -61,7 +61,7 @@ func (h *Handler) Speak(
 	return &sessionpb.SpeakResponse{
 		Paused:   out.Paused,
 		Roll:     speakRollToProto(out.Roll),
-		Saved:    saveReportToProto(out.Saved),
+		Saved:    saveReportToProto(ctx, req.GetSession(), out.Saved),
 		Delivery: deliveryReportToProto(out.Delivery),
 	}, nil
 }

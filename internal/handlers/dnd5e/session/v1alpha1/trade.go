@@ -47,7 +47,7 @@ func (h *Handler) Trade(ctx context.Context, req *sessionpb.TradeRequest) (*sess
 
 	return &sessionpb.TradeResponse{
 		Descriptor_: descriptor,
-		Saved:       saveReportToProto(out.Saved),
+		Saved:       saveReportToProto(ctx, req.GetSession(), out.Saved),
 		Delivery:    deliveryReportToProto(out.Delivery),
 	}, nil
 }
