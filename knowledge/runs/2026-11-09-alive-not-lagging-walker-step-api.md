@@ -1,5 +1,7 @@
 # Run — 2026-11-09 — alive, not lagging: what one live walker step costs
 
+processed: 2026-11-12T165555Z
+
 Per-step row of the measurement harness for story [rpg-project#879](https://github.com/KirkDiggler/rpg-project/issues/879), finding F23: why a live walker step costs about twice the encounter benchmark's walk step, by bucket, and what a verb pays once against what each step pays.
 
 Measured at `rpg-api` `dev` [`109251fc`](https://github.com/KirkDiggler/rpg-api/commit/109251fc) plus the harness change on `measure/walker-step`. Built on session v0.172.1, encounter v0.185.0, play/record v0.3.0. Keep `bench-keep-garrison` (10k hexes, 99 garrison, 20 patrols, posts listening, neutral to the party), S1 continues mode, 3 warm-up Moves then N measured, Redis 7.2.2 on a private loopback port, CPU AMD Ryzen 9 3950X. Command, once per path length:

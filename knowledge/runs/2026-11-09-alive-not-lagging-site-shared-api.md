@@ -1,5 +1,7 @@
 # Run — 2026-11-09 — alive, not lagging: the site is shared by hash and stored once (api)
 
+processed: 2026-11-12T165555Z
+
 Api leg of slice S5 of story [rpg-project#879](https://github.com/KirkDiggler/rpg-project/issues/879) (card [#914](https://github.com/KirkDiggler/rpg-project/issues/914)): the compiled site is shared by content hash, the checkpoint names it and never carries the field, and the api boots its sites. Toolkit legs rpg-toolkit#2345 (encounter v0.188.0), #2348 (resolution v0.75.0), #2349 (session v0.175.0). PR rpg-api#1216.
 
 Measured before at `rpg-api` `dev` [`2253b33e`](https://github.com/KirkDiggler/rpg-api/commit/2253b33e) on session v0.174.0 / encounter v0.187.x, and after on the PR branch at the tagged pins. Keep `bench-keep-garrison` (10k hexes, 99 garrison, 20 patrols), N=20 per path, Redis on a private loopback port flushed between paths, CPU AMD Ryzen 9 3950X. Command, once per path and per tree:
