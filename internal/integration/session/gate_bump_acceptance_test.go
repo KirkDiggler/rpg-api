@@ -35,12 +35,22 @@ func barredActs(acts []*storypb.Act) []*storypb.BarredAct {
 	return out
 }
 
+// spokenBy is who's Speech act, when the act is one the reader saw them say
+// and caught the words of (rpg-project#934): the words of a creature's line
+// ride the Speech act, never the table answer.
+func spokenBy(a *storypb.Act, who string) *storypb.Speech {
+	if sp := a.GetSpeech(); sp != nil && sp.GetSpeaker().GetId() == who && sp.Words != nil {
+		return sp
+	}
+	return nil
+}
+
 // linesOf is every line who says in acts, in order.
 func linesOf(acts []*storypb.Act, who string) []string {
 	var out []string
 	for _, a := range acts {
-		if ans := a.GetTableAnswer(); ans != nil && ans.GetWho().GetId() == who && ans.GetSay() != "" {
-			out = append(out, ans.GetSay())
+		if sp := spokenBy(a, who); sp != nil {
+			out = append(out, sp.GetWords())
 		}
 	}
 	return out
@@ -57,7 +67,7 @@ func requireAnsweredUnderTheBump(t *testing.T, acts []*storypb.Act, who string) 
 			require.Empty(t, bump, "one bump")
 			bump = a.GetAct()
 		}
-		if ans := a.GetTableAnswer(); ans != nil && ans.GetWho().GetId() == who && ans.GetSay() != "" {
+		if spokenBy(a, who) != nil {
 			require.Empty(t, line, "one line")
 			line = a.GetAct()
 		}

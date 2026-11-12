@@ -121,4 +121,24 @@ func TestAcceptance_AShoutIsHeardUnseen(t *testing.T) {
 	require.Len(t, voices, 1, "the stranger's answer reaches him as a voice")
 	require.Nil(t, voices[0].GetSpeaker())
 	require.Equal(t, storypb.Loudness_LOUDNESS_SPEAK, voices[0].GetLoudness(), "spoken, so its words stay in its room")
+	requireNoRetiredSpeech(t, acts, "bob, who heard it unseen")
+
+	// The speaker's own story of the exchange: her line is a Speech of her
+	// own words, and nothing rides the retired shapes.
+	mine := storyOf(aliceCtx, t, h.story, run, "alice")
+	requireNoRetiredSpeech(t, mine, "alice, who shouted")
+	require.Contains(t, linesOf(mine, "alice"), theShout, "her own line is a Speech")
+}
+
+// requireNoRetiredSpeech requires a stream for a spoken exchange to carry
+// none of the retired speech shapes (rpg-project#934): no `speak` act, and no
+// heard Sound of a voice -- an unseen voice arrives only as a Speech act.
+func requireNoRetiredSpeech(t *testing.T, acts []*storypb.Act, whose string) {
+	t.Helper()
+	for _, a := range acts {
+		require.Nil(t, a.GetSpeak(), "%s: no retired speak act (%s)", whose, a.GetId()) //nolint:staticcheck // asserting the retired body is never sent
+		if h := a.GetPerception().GetHeard(); h != nil {
+			require.NotEqual(t, "voice", h.GetKind(), "%s: a voice arrives as a Speech, never a Sound (%s)", whose, a.GetId())
+		}
+	}
 }

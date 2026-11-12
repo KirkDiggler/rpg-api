@@ -104,10 +104,6 @@ func setBody(out *sessionpb.Act, body sdk.ActBody) error {
 		var v *sessionpb.ActivateAct
 		v, err = activateToProto(b)
 		out.Body = &sessionpb.Act_Activate{Activate: v}
-	case sdk.SpeakAct:
-		var v *sessionpb.SpeakAct //nolint:staticcheck // retired, still sent beside Speech (rpg-project#934)
-		v, err = speakToProto(b)
-		out.Body = &sessionpb.Act_Speak{Speak: v} //nolint:staticcheck // retired, still sent beside Speech (rpg-project#934)
 	case sdk.SpeechAct:
 		var v *sessionpb.Speech
 		v, err = speechToProto(b)
@@ -716,21 +712,6 @@ func activateToProto(b sdk.ActivateAct) (*sessionpb.ActivateAct, error) {
 	return out, p.err
 }
 
-func speakToProto(b sdk.SpeakAct) (*sessionpb.SpeakAct, error) { //nolint:staticcheck // retired, still sent beside Speech (rpg-project#934)
-	var p parties
-	out := &sessionpb.SpeakAct{ //nolint:staticcheck // retired, still sent beside Speech (rpg-project#934)
-		By: p.one(b.By), To: p.one(b.To), Option: b.Option, Line: b.Line, Skill: b.Skill, Roll: p.roll(b.Roll),
-	}
-	if b.Answer != nil {
-		answer, err := tableAnswerToProto(*b.Answer)
-		if err != nil {
-			return nil, err
-		}
-		out.Answer = answer
-	}
-	return out, p.err
-}
-
 // speechToProto spells one perceiver's version of one spoken thing
 // (rpg-project#934, R6) part for part. AN ABSENT PART STAYS ABSENT: no
 // speaker or spoken-to unless seen (never a zero party), no words unless
@@ -842,13 +823,10 @@ func restToProto(b sdk.RestAct) (*sessionpb.RestAct, error) {
 
 func tableAnswerToProto(b sdk.TableAnswer) (*sessionpb.TableAnswer, error) {
 	var p parties
+	// The retired `say` and `to` (rpg-project#934) are never set: the words
+	// and whom they were said to ride the Speech act.
 	out := &sessionpb.TableAnswer{
-		// To is who the line is spoken to (rpg-project#923: the hailed
-		// member); the zero party crosses absent, the way Who does.
-		Who:    p.one(b.Who),
-		To:     p.one(b.To), //nolint:staticcheck // retired `to`, still sent beside Speech (rpg-project#934)
-		Say:    b.Say,       //nolint:staticcheck // retired `say`, still sent beside Speech (rpg-project#934)
-		Option: b.Option, Key: b.Key, Word: b.Word, Selector: b.Selector,
+		Who: p.one(b.Who), Option: b.Option, Key: b.Key, Word: b.Word, Selector: b.Selector,
 		Temperament: b.Temperament, Entry: int32(b.Entry), Roll: p.roll(b.Roll), //nolint:gosec // a table row fits int32
 	}
 	for _, c := range b.Candidates {
