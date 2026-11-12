@@ -82,3 +82,33 @@ func (s *SeatRepositorySuite) TestAStorageFailureIsNotNotFound() {
 	s.Error(err)
 	s.NotErrorIs(err, sdk.ErrNotFound)
 }
+
+// TestASeatLapsesWithARunNobodyCanLoad: a run marked unloadable
+// (rpg-project#942) holds no seat, while its stored record and the seat
+// record stay as they were.
+func (s *SeatRepositorySuite) TestASeatLapsesWithARunNobodyCanLoad() {
+	s.liveSession("run-1")
+	s.Require().NoError(s.repo.SaveSeat(s.ctx, &sdk.SeatData{Character: "alice", Session: "run-1"}))
+	s.Require().NoError(NewUnloadableRuns(s.client).Mark(s.ctx, "run-1", "invalid encounter data: test"))
+	_, err := s.repo.GetSeat(s.ctx, "alice")
+	s.ErrorIs(err, sdk.ErrNotFound)
+	s.True(s.server.Exists(sessionKeyPrefix+"run-1"), "the dead run's data is left in place")
+	s.True(s.server.Exists(seatKeyPrefix+"alice"), "and so is the seat record")
+}
+
+// TestAnUnmarkedRunHoldsItsSeat: only the mark releases a seat; a run that is
+// merely unread holds it.
+func (s *SeatRepositorySuite) TestAnUnmarkedRunHoldsItsSeat() {
+	s.liveSession("run-1")
+	s.liveSession("run-2")
+	s.Require().NoError(s.repo.SaveSeat(s.ctx, &sdk.SeatData{Character: "alice", Session: "run-1"}))
+	s.Require().NoError(NewUnloadableRuns(s.client).Mark(s.ctx, "run-2", "invalid encounter data: test"))
+	got, err := s.repo.GetSeat(s.ctx, "alice")
+	s.Require().NoError(err)
+	s.Equal("run-1", got.Session)
+}
+
+func (s *SeatRepositorySuite) TestMarkingNeedsASession() {
+	s.Error(NewUnloadableRuns(s.client).Mark(s.ctx, "", "why"))
+	s.Empty(s.server.Keys())
+}

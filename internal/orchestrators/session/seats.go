@@ -31,6 +31,12 @@ const seatKeyPrefix = "session-seat:v1alpha1:"
 // so nothing holds the character — and without it a character whose run
 // timed out without Exit or End would be refused every launch forever
 // (ErrSeatedElsewhere naming a run nobody can open).
+//
+// The same holds for a run whose stored record the SDK refuses to load as
+// invalid encounter data (rpg-project#942): once [UnloadableRuns] marks it,
+// GetSeat answers its seats as never seated. A run that merely failed to
+// answer (a lock timeout, a cancelled context, a store outage) is never
+// marked, so its seats hold.
 type redisSeatRepository struct {
 	client redisclient.Client
 }
@@ -65,6 +71,17 @@ func (r *redisSeatRepository) GetSeat(ctx context.Context, character string) (*s
 	}
 	if live == 0 {
 		return nil, fmt.Errorf("seat %q names lapsed session %q: %w", character, out.Session, sdk.ErrNotFound)
+	}
+	// A RUN NOBODY CAN LOAD HOLDS NO SEAT (rpg-project#942): a seat naming a
+	// run marked unloadable ([UnloadableRuns]) is lapsed, exactly as one
+	// naming an expired run is. The seat record and the run stay as stored.
+	dead, err := isUnloadable(ctx, r.client, out.Session)
+	if err != nil {
+		return nil, fmt.Errorf("check run of seat %q: %w", character, err)
+	}
+	if dead {
+		return nil, fmt.Errorf("seat %q names session %q, whose stored record cannot be loaded: %w",
+			character, out.Session, sdk.ErrNotFound)
 	}
 	return &out, nil
 }

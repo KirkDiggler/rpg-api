@@ -94,6 +94,11 @@ func (o *Orchestrator) GetMyActiveLobby(ctx context.Context, in *GetMyActiveLobb
 		if errors.Is(err, sdk.ErrNoSession) || errors.Is(err, sdk.ErrNoEncounter) {
 			return &GetMyActiveLobbyOutput{}, nil
 		}
+		// A run nobody can load is not live, and holds no seat
+		// (rpg-project#942, unloadable.go).
+		if o.unloadableRun(ctx, data.EncounterID, err) {
+			return &GetMyActiveLobbyOutput{}, nil
+		}
 		return nil, fmt.Errorf("check session %q liveness: %w", data.EncounterID, err)
 	}
 	if !status.Open {
