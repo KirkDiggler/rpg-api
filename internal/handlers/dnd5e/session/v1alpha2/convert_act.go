@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	tkencounter "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
@@ -45,7 +46,32 @@ func actToProto(a sdk.Act) (*sessionpb.Act, error) {
 	if err := setBody(out, a.Body); err != nil {
 		return refuse(out, err)
 	}
+	if a.Perceived != nil {
+		perceived, err := perceivedToProto(*a.Perceived)
+		if err != nil {
+			return refuse(out, err)
+		}
+		out.Perceived = perceived
+	}
 	return out, nil
+}
+
+// perceivedToProto spells how an act reached its recipient (rpg-project#934,
+// R6): the senses that delivered it, and whose they were when a friend's.
+func perceivedToProto(p sdk.Perceived) (*sessionpb.Perceived, error) {
+	var parts parties
+	out := &sessionpb.Perceived{Via: parts.many(p.Via)}
+	if len(p.Senses) > 0 {
+		out.Senses = make([]sessionpb.Sense, len(p.Senses))
+		for i, s := range p.Senses {
+			sense, err := lookup(senseToProto, s, "sense")
+			if err != nil {
+				return nil, err
+			}
+			out.Senses[i] = sense
+		}
+	}
+	return out, parts.err
 }
 
 // refuse marks out refused with err's reason and clears any body.
@@ -79,9 +105,13 @@ func setBody(out *sessionpb.Act, body sdk.ActBody) error {
 		v, err = activateToProto(b)
 		out.Body = &sessionpb.Act_Activate{Activate: v}
 	case sdk.SpeakAct:
-		var v *sessionpb.SpeakAct
+		var v *sessionpb.SpeakAct //nolint:staticcheck // retired, still sent beside Speech (rpg-project#934)
 		v, err = speakToProto(b)
-		out.Body = &sessionpb.Act_Speak{Speak: v}
+		out.Body = &sessionpb.Act_Speak{Speak: v} //nolint:staticcheck // retired, still sent beside Speech (rpg-project#934)
+	case sdk.SpeechAct:
+		var v *sessionpb.Speech
+		v, err = speechToProto(b)
+		out.Body = &sessionpb.Act_Speech{Speech: v}
 	case sdk.DeathSaveAct:
 		var v *sessionpb.DeathSaveAct
 		v, err = deathSaveToProto(b)
@@ -191,6 +221,16 @@ var stateKindToProto = map[sdk.StateKind]sessionpb.StateKind{
 	sdk.StateConditionRemoved:   sessionpb.StateKind_STATE_KIND_CONDITION_REMOVED,
 	sdk.StateExperience:         sessionpb.StateKind_STATE_KIND_EXPERIENCE,
 	sdk.StateMachine:            sessionpb.StateKind_STATE_KIND_MACHINE,
+}
+
+// loudnessToProto is how loudly a thing was said (rpg-project#934). The
+// session carries the encounter's word as a string; a word this table does
+// not know refuses the act rather than crossing as UNSPECIFIED.
+var loudnessToProto = map[string]sessionpb.Loudness{
+	string(tkencounter.LoudnessWhisper): sessionpb.Loudness_LOUDNESS_WHISPER,
+	string(tkencounter.LoudnessSpeak):   sessionpb.Loudness_LOUDNESS_SPEAK,
+	string(tkencounter.LoudnessShout):   sessionpb.Loudness_LOUDNESS_SHOUT,
+	string(tkencounter.LoudnessScream):  sessionpb.Loudness_LOUDNESS_SCREAM,
 }
 
 var senseToProto = map[sdk.Sense]sessionpb.Sense{
@@ -676,9 +716,9 @@ func activateToProto(b sdk.ActivateAct) (*sessionpb.ActivateAct, error) {
 	return out, p.err
 }
 
-func speakToProto(b sdk.SpeakAct) (*sessionpb.SpeakAct, error) {
+func speakToProto(b sdk.SpeakAct) (*sessionpb.SpeakAct, error) { //nolint:staticcheck // retired, still sent beside Speech (rpg-project#934)
 	var p parties
-	out := &sessionpb.SpeakAct{
+	out := &sessionpb.SpeakAct{ //nolint:staticcheck // retired, still sent beside Speech (rpg-project#934)
 		By: p.one(b.By), To: p.one(b.To), Option: b.Option, Line: b.Line, Skill: b.Skill, Roll: p.roll(b.Roll),
 	}
 	if b.Answer != nil {
@@ -687,6 +727,33 @@ func speakToProto(b sdk.SpeakAct) (*sessionpb.SpeakAct, error) {
 			return nil, err
 		}
 		out.Answer = answer
+	}
+	return out, p.err
+}
+
+// speechToProto spells one perceiver's version of one spoken thing
+// (rpg-project#934, R6) part for part. AN ABSENT PART STAYS ABSENT: no
+// speaker or spoken-to unless seen (never a zero party), no words unless
+// caught (the optional field unset, never ""), no hops when the speaker was
+// seen.
+func speechToProto(b sdk.SpeechAct) (*sessionpb.Speech, error) {
+	loudness, err := lookup(loudnessToProto, b.Loudness, "loudness")
+	if err != nil {
+		return nil, err
+	}
+	var p parties
+	out := &sessionpb.Speech{
+		Utterance: b.Utterance, Speaker: p.one(b.Speaker), SpokenTo: p.one(b.SpokenTo),
+		Option: b.Option, Place: positionToProto(b.Place), Loudness: loudness,
+		Skill: b.Skill, Roll: p.roll(b.Roll), Fact: b.Fact,
+	}
+	if b.Words != nil {
+		words := *b.Words
+		out.Words = &words
+	}
+	if b.Hops != nil {
+		hops := int32(*b.Hops) //nolint:gosec // a room count fits int32
+		out.Hops = &hops
 	}
 	return out, p.err
 }
@@ -778,7 +845,10 @@ func tableAnswerToProto(b sdk.TableAnswer) (*sessionpb.TableAnswer, error) {
 	out := &sessionpb.TableAnswer{
 		// To is who the line is spoken to (rpg-project#923: the hailed
 		// member); the zero party crosses absent, the way Who does.
-		Who: p.one(b.Who), To: p.one(b.To), Option: b.Option, Key: b.Key, Word: b.Word, Selector: b.Selector, Say: b.Say,
+		Who:    p.one(b.Who),
+		To:     p.one(b.To), //nolint:staticcheck // retired `to`, still sent beside Speech (rpg-project#934)
+		Say:    b.Say,       //nolint:staticcheck // retired `say`, still sent beside Speech (rpg-project#934)
+		Option: b.Option, Key: b.Key, Word: b.Word, Selector: b.Selector,
 		Temperament: b.Temperament, Entry: int32(b.Entry), Roll: p.roll(b.Roll), //nolint:gosec // a table row fits int32
 	}
 	for _, c := range b.Candidates {

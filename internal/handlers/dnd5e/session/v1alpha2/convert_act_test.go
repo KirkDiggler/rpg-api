@@ -108,6 +108,8 @@ func act(family sessionpb.Family, body any) *sessionpb.Act {
 		out.Body = &sessionpb.Act_Activate{Activate: b}
 	case *sessionpb.SpeakAct:
 		out.Body = &sessionpb.Act_Speak{Speak: b}
+	case *sessionpb.Speech:
+		out.Body = &sessionpb.Act_Speech{Speech: b}
 	case *sessionpb.DeathSaveAct:
 		out.Body = &sessionpb.Act_DeathSave{DeathSave: b}
 	case *sessionpb.LootAct:
@@ -203,6 +205,11 @@ func everyBody() map[string]bodyCase {
 		"speak": {sdk.FamilyAct,
 			sdk.SpeakAct{By: alice, To: gate1, Option: "stand-aside", Line: "Stand aside.", Skill: "persuasion", Roll: d20, Answer: &ans},
 			act(sessionpb.Family_FAMILY_ACT, &sessionpb.SpeakAct{By: aliceP, To: gate1P, Option: "stand-aside", Line: "Stand aside.", Skill: "persuasion", Roll: d20P, Answer: answerP()})},
+		"speech": {sdk.FamilyAct,
+			sdk.SpeechAct{Utterance: "u-1", Speaker: alice, SpokenTo: gate1, Words: strp("Stand aside."), Option: "stand-aside",
+				Place: cell, Loudness: "speak", Skill: "persuasion", Roll: d20, Fact: "feast-tonight"},
+			act(sessionpb.Family_FAMILY_ACT, &sessionpb.Speech{Utterance: "u-1", Speaker: aliceP, SpokenTo: gate1P, Words: strp("Stand aside."),
+				Option: "stand-aside", Place: cellP, Loudness: sessionpb.Loudness_LOUDNESS_SPEAK, Skill: "persuasion", Roll: d20P, Fact: "feast-tonight"})},
 		"death_save": {sdk.FamilyAct,
 			sdk.DeathSaveAct{By: alice, Roll: d20, Outcome: "success", SuccessesAdded: 1, FailuresAdded: 0, Successes: 2, Failures: 1,
 				SuccessesNeeded: 1, FailuresRemaining: 2, Stabilized: false, Dead: false, Recovered: true, HPRestored: 1, Continuation: "end_turn", PresentationID: "p"},
