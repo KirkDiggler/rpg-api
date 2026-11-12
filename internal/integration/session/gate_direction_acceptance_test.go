@@ -179,9 +179,17 @@ func TestAcceptance_TheGateGuardChecksArrivals(t *testing.T) {
 		require.Empty(t, seen.GetHoldsAgainst(), "and no direction is told")
 		require.Empty(t, seen.GetHoldsSide(), "and no side")
 
-		opened, err := h.handler.OpenDoor(ctx, &sessionpb.OpenDoorRequest{Session: run, Member: "alice", Door: castleGateDoor})
-		require.NoError(t, err, "the gate opens for the troupe")
-		require.Equal(t, sessionpb.DoorState_DOOR_STATE_OPEN, opened.GetDoor().GetState())
+		// The captain, having admitted someone, goes into the great hall and
+		// opens the gate on his way (rpg-project#929): it stands open already.
+		doors, err := h.handler.GetDoors(ctx, &sessionpb.GetDoorsRequest{Session: run, Member: "alice"})
+		require.NoError(t, err)
+		gateState := sessionpb.DoorState_DOOR_STATE_UNSPECIFIED
+		for _, d := range doors.GetDoors() {
+			if d.GetDoor() == castleGateDoor {
+				gateState = d.GetState()
+			}
+		}
+		require.Equal(t, sessionpb.DoorState_DOOR_STATE_OPEN, gateState, "the captain opened the gate going in")
 
 		moved, err := h.handler.Move(ctx, &sessionpb.MoveRequest{
 			Session: run, Member: "alice", Path: []*sessionpb.Position{pastTheGate()},
