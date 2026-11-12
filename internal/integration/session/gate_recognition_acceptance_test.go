@@ -151,12 +151,31 @@ func TestAcceptance_TheCaptainRecognizesWhomHeAdmitted(t *testing.T) {
 	})
 	require.Error(t, err, "a vouch from out of reach is refused")
 
-	// She comes back to the gate and vouches with bob in gate-1's sight.
-	walkAs(t, h, run, "alice", "player-alice", []*sessionpb.Position{pbAt(0, 4), pbAt(0, 5), pastTheGate()})
-	_, err = sayTo(t, h, run, "alice", "player-alice", gatePosted, vouchLine)
+	// She comes back out to the gate and vouches with bob in gate-1's sight.
+	walkAs(t, h, run, "alice", "player-alice", []*sessionpb.Position{pbAt(0, 4), pbAt(0, 5)})
+	vouchFromTheRoad(t, h, run)
+}
+
+// vouchFromTheRoad has alice, in the courtyard just inside the gate, step
+// back out beside it and vouch for bob, then go back in; bob walks through.
+//
+// THE VOUCH IS SAID OUTSIDE, among the gate guards (rpg-project#933, R9): a
+// line teaches whoever catches its words, and a spoken line does not carry
+// out of the room it is said in. Said from inside the courtyard, gate-1
+// beneath the gate catches it and gate-2 on the road does not, so gate-2
+// still holds the gate against bob. Bob steps back one cell so she can
+// stand beside the gate.
+func vouchFromTheRoad(t *testing.T, h *acceptanceHarness, run string) {
+	t.Helper()
+	back := walkAs(t, h, run, "bob", "player-bob", []*sessionpb.Position{pbAt(-1, 8)})
+	require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_COMPLETED, back.GetStatus(), "bob steps back: %s", back.GetStopReason())
+	out := walkAs(t, h, run, "alice", "player-alice", []*sessionpb.Position{pastTheGate(), besideTheGate()})
+	require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_COMPLETED, out.GetStatus(), "recognized, alice steps out: %s", out.GetStopReason())
+	_, err := sayTo(t, h, run, "alice", "player-alice", gatePosted, vouchLine)
 	require.NoError(t, err, "alice vouches for bob")
-	walkAs(t, h, run, "alice", "player-alice", []*sessionpb.Position{pbAt(0, 5)})
-	through := walkAs(t, h, run, "bob", "player-bob", []*sessionpb.Position{pastTheGate()})
+	in := walkAs(t, h, run, "alice", "player-alice", []*sessionpb.Position{pastTheGate(), pbAt(0, 5)})
+	require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_COMPLETED, in.GetStatus(), "alice goes back in: %s", in.GetStopReason())
+	through := walkAs(t, h, run, "bob", "player-bob", []*sessionpb.Position{besideTheGate(), pastTheGate()})
 	require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_COMPLETED, through.GetStatus(), "vouched for, bob walks through: %s", through.GetStopReason())
 }
 

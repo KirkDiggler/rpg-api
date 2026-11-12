@@ -100,12 +100,7 @@ func TestAcceptance_AStragglerHasOneTry(t *testing.T) {
 	_, err = sayTo(t, h, run, "bob", "player-bob", gatePosted, friendsLine)
 	require.NoError(t, err, "bob asks after his friends and is answered")
 
-	walkAs(t, h, run, "alice", "player-alice", []*sessionpb.Position{pastTheGate()})
-	_, err = sayTo(t, h, run, "alice", "player-alice", gatePosted, vouchLine)
-	require.NoError(t, err, "alice comes back and vouches for bob")
-	walkAs(t, h, run, "alice", "player-alice", []*sessionpb.Position{pbAt(0, 5)})
-	through := walkAs(t, h, run, "bob", "player-bob", []*sessionpb.Position{pastTheGate()})
-	require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_COMPLETED, through.GetStatus(), "vouched for, bob walks through: %s", through.GetStopReason())
+	vouchFromTheRoad(t, h, run)
 }
 
 // TestAcceptance_AStragglerWhoWalksAwayKeepsTheRoll: bob holds a Guidance
