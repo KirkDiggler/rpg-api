@@ -1,5 +1,7 @@
 # Run — 2026-11-07 — alive, not lagging S0 live measure: the answer and the first beat on the garrison keep
 
+processed: 2026-11-12T165555Z
+
 Live half of the measurement harness for story [rpg-project#879](https://github.com/KirkDiggler/rpg-project/issues/879) (S0, R5: the harness is the record), measuring R1 for slice [rpg-project#890](https://github.com/KirkDiggler/rpg-project/issues/890). Base: `rpg-api` `dev` at [`f890674`](https://github.com/KirkDiggler/rpg-api/commit/f890674). Built on session v0.169.0 and encounter v0.184.0.
 
 Measured at `rpg-api` head [`2d8328d`](https://github.com/KirkDiggler/rpg-api/commit/2d8328d) (a merge of dev `f890674`), keep `bench-keep-garrison` (10k hexes, 99 garrison, 20 patrols, neutral to the party), an 8-cell walk, N=30 after 3 warm-up Moves, Redis 7.2.2 on a private loopback port, CPU AMD Ryzen 9 3950X 16-Core (load average 8–9). Command:

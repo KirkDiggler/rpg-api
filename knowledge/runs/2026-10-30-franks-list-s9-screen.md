@@ -1,5 +1,7 @@
 # 2026-10-30 · Frank's list S9 · The ending's result crosses the api
 
+processed: 2026-11-12T165555Z
+
 Story [rpg-project#714](https://github.com/KirkDiggler/rpg-project/issues/714), slice [rpg-project#733](https://github.com/KirkDiggler/rpg-project/issues/733). Contract [rpg-api-protos#408](https://github.com/KirkDiggler/rpg-api-protos/pull/408), session [rpg-toolkit#2180](https://github.com/KirkDiggler/rpg-toolkit/pull/2180), web [rpg-dnd5e-web#1361](https://github.com/KirkDiggler/rpg-dnd5e-web/pull/1361).
 
 ## Shipped

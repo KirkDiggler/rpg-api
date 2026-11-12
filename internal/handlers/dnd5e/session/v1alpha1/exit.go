@@ -33,7 +33,7 @@ func (h *Handler) Exit(ctx context.Context, req *sessionpb.ExitRequest) (*sessio
 		Outcome:  memberOutcomeToProto(out.Outcome),
 		Carry:    carry,
 		Closed:   outcomeToProto(out.Closed),
-		Saved:    saveReportToProto(out.Saved),
+		Saved:    saveReportToProto(ctx, req.GetSession(), out.Saved),
 		Delivery: deliveryReportToProto(out.Delivery),
 	}, nil
 }

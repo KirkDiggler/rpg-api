@@ -29,5 +29,9 @@ func (h *Handler) SetSneaking(ctx context.Context, req *sessionpb.SetSneakingReq
 	if err != nil {
 		return nil, sdkerr.StatusError(err)
 	}
-	return &sessionpb.SetSneakingResponse{Sneaking: out.Sneaking, Saved: saveReportToProto(out.Saved), Delivery: deliveryReportToProto(out.Delivery)}, nil
+	return &sessionpb.SetSneakingResponse{
+		Sneaking: out.Sneaking,
+		Saved:    saveReportToProto(ctx, req.GetSession(), out.Saved),
+		Delivery: deliveryReportToProto(out.Delivery),
+	}, nil
 }

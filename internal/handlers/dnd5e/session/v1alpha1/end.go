@@ -26,7 +26,7 @@ func (h *Handler) End(ctx context.Context, req *sessionpb.EndRequest) (*sessionp
 
 	return &sessionpb.EndResponse{
 		Outcome:  outcomeToProto(&out.Outcome),
-		Saved:    saveReportToProto(out.Saved),
+		Saved:    saveReportToProto(ctx, req.GetSession(), out.Saved),
 		Delivery: deliveryReportToProto(out.Delivery),
 	}, nil
 }

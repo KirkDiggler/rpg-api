@@ -39,7 +39,7 @@ func (h *Handler) Interact(ctx context.Context, req *sessionpb.InteractRequest) 
 
 	return &sessionpb.InteractResponse{
 		Descriptor_: descriptor,
-		Saved:       saveReportToProto(out.Saved),
+		Saved:       saveReportToProto(ctx, req.GetSession(), out.Saved),
 		Delivery:    deliveryReportToProto(out.Delivery),
 	}, nil
 }

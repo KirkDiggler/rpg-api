@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
@@ -74,7 +75,7 @@ var (
 
 func answer() sdk.TableAnswer {
 	return sdk.TableAnswer{
-		Who: gate1, To: alice, Option: "stand-aside", Key: "persuade", Word: "yield", Selector: "calm", Say: "Go on, then.",
+		Who: gate1, Option: "stand-aside", Key: "persuade", Word: "yield", Selector: "calm",
 		Temperament: "wary", Entry: 2, Candidates: []sdk.TableCandidate{{Entry: 1, Weight: 2, Percent: 40, Loaded: 1}},
 		Roll: tableDie, Dealt: &sdk.Temper{Faction: guards, Temper: "wary", Roll: *tableDie},
 	}
@@ -82,7 +83,7 @@ func answer() sdk.TableAnswer {
 
 func answerP() *sessionpb.TableAnswer {
 	return &sessionpb.TableAnswer{
-		Who: gate1P, To: aliceP, Option: "stand-aside", Key: "persuade", Word: "yield", Selector: "calm", Say: "Go on, then.",
+		Who: gate1P, Option: "stand-aside", Key: "persuade", Word: "yield", Selector: "calm",
 		Temperament: "wary", Entry: 2, Candidates: []*sessionpb.TableCandidate{{Entry: 1, Weight: 2, Percent: 40, Loaded: 1}},
 		Roll: tableDieP, Dealt: &sessionpb.Temper{Faction: guardsP, Temper: "wary", Roll: tableDieP},
 	}
@@ -106,8 +107,8 @@ func act(family sessionpb.Family, body any) *sessionpb.Act {
 		out.Body = &sessionpb.Act_Cast{Cast: b}
 	case *sessionpb.ActivateAct:
 		out.Body = &sessionpb.Act_Activate{Activate: b}
-	case *sessionpb.SpeakAct:
-		out.Body = &sessionpb.Act_Speak{Speak: b}
+	case *sessionpb.Speech:
+		out.Body = &sessionpb.Act_Speech{Speech: b}
 	case *sessionpb.DeathSaveAct:
 		out.Body = &sessionpb.Act_DeathSave{DeathSave: b}
 	case *sessionpb.LootAct:
@@ -200,9 +201,11 @@ func everyBody() map[string]bodyCase {
 				}},
 				Saves: []*sessionpb.SaveResult{{Saver: gate1P, Ability: "con", Source: blessP, Roll: d20P}},
 			})},
-		"speak": {sdk.FamilyAct,
-			sdk.SpeakAct{By: alice, To: gate1, Option: "stand-aside", Line: "Stand aside.", Skill: "persuasion", Roll: d20, Answer: &ans},
-			act(sessionpb.Family_FAMILY_ACT, &sessionpb.SpeakAct{By: aliceP, To: gate1P, Option: "stand-aside", Line: "Stand aside.", Skill: "persuasion", Roll: d20P, Answer: answerP()})},
+		"speech": {sdk.FamilyAct,
+			sdk.SpeechAct{Utterance: "u-1", Speaker: alice, SpokenTo: gate1, Words: strp("Stand aside."), Option: "stand-aside",
+				Place: cell, Loudness: "speak", Skill: "persuasion", Roll: d20, Fact: "feast-tonight"},
+			act(sessionpb.Family_FAMILY_ACT, &sessionpb.Speech{Utterance: "u-1", Speaker: aliceP, SpokenTo: gate1P, Words: strp("Stand aside."),
+				Option: "stand-aside", Place: cellP, Loudness: sessionpb.Loudness_LOUDNESS_SPEAK, Skill: "persuasion", Roll: d20P, Fact: "feast-tonight"})},
 		"death_save": {sdk.FamilyAct,
 			sdk.DeathSaveAct{By: alice, Roll: d20, Outcome: "success", SuccessesAdded: 1, FailuresAdded: 0, Successes: 2, Failures: 1,
 				SuccessesNeeded: 1, FailuresRemaining: 2, Stabilized: false, Dead: false, Recovered: true, HPRestored: 1, Continuation: "end_turn", PresentationID: "p"},
@@ -347,6 +350,12 @@ func perceptionProto() *sessionpb.Perception {
 	}
 }
 
+// retiredBodies are the members of Act's body oneof the SDK no longer
+// produces (rpg-project#934: `speak`, whose line and answer ride the Speech
+// act and a standalone table answer). They stay on the wire, deprecated, and
+// this build never sets them.
+var retiredBodies = map[string]bool{"speak": true}
+
 // TestConvertEveryBody: every SDK body spells every one of its fields on the
 // wire — a reaction's ReactionRef and a perception's geometry included — and
 // the table covers every member of Act's body oneof, so a body added to the
@@ -357,9 +366,13 @@ func (s *ConvertActSuite) TestConvertEveryBody() {
 	s.Require().NotNil(oneof)
 	for i := 0; i < oneof.Fields().Len(); i++ {
 		name := string(oneof.Fields().Get(i).Name())
+		if retiredBodies[name] {
+			s.NotContains(cases, name, "the retired body %q is never spelled", name)
+			continue
+		}
 		s.Contains(cases, name, "the body %q has no conversion case", name)
 	}
-	s.Len(cases, oneof.Fields().Len(), "a case names a body the contract does not have")
+	s.Len(cases, oneof.Fields().Len()-len(retiredBodies), "a case names a body the contract does not have")
 
 	for name, c := range cases {
 		s.Run(name, func() {
@@ -382,24 +395,18 @@ func (s *ConvertActSuite) TestConvertAbsentPartiesStayAbsent() {
 	s.Nil(got.GetDoor().GetRoll())
 }
 
-// TestTableAnswerToProtoNamesWhoItIsSpokenTo pins rpg-project#923: a line
-// spoken to a member crosses `to` as that member, on the standalone table
-// answer and on a speak act's answer alike; a line spoken to nobody (the
-// zero party) crosses `to` absent.
-func (s *ConvertActSuite) TestTableAnswerToProtoNamesWhoItIsSpokenTo() {
-	hail := sdk.TableAnswer{Who: gate1, To: alice, Say: "Hold up."}
-	got, err := actToProto(sdk.Act{ID: "id-1", Family: sdk.FamilyTableAnswer, Body: hail})
+// TestTableAnswerToProtoNeverSetsTheRetiredSayOrTo pins rpg-project#934:
+// the words a pick said, and whom it said them to (rpg-project#923's `to`),
+// ride the Speech act; a table answer carries who picked and never the
+// retired `say` or `to`, which stay on the wire deprecated and unset.
+func (s *ConvertActSuite) TestTableAnswerToProtoNeverSetsTheRetiredSayOrTo() {
+	got, err := actToProto(sdk.Act{ID: "id-1", Family: sdk.FamilyTableAnswer, Body: answer()})
 	s.Require().NoError(err)
-	s.True(proto.Equal(aliceP, got.GetTableAnswer().GetTo()), "the hail names alice")
-
-	spoke, err := actToProto(sdk.Act{ID: "id-2", Family: sdk.FamilyAct, Body: sdk.SpeakAct{By: alice, To: gate1, Answer: &hail}})
-	s.Require().NoError(err)
-	s.True(proto.Equal(aliceP, spoke.GetSpeak().GetAnswer().GetTo()), "a speak act's answer names her too")
-
-	aside, err := actToProto(sdk.Act{ID: "id-3", Family: sdk.FamilyTableAnswer, Body: sdk.TableAnswer{Who: gate1, Say: "Quiet night."}})
-	s.Require().NoError(err)
-	s.Nil(aside.GetTableAnswer().GetTo(), "a line to nobody carries no to")
-	s.True(proto.Equal(gate1P, aside.GetTableAnswer().GetWho()))
+	s.True(proto.Equal(gate1P, got.GetTableAnswer().GetWho()))
+	fields := got.GetTableAnswer().ProtoReflect().Descriptor().Fields()
+	for _, name := range []string{"say", "to"} {
+		s.False(got.GetTableAnswer().ProtoReflect().Has(fields.ByName(protoreflect.Name(name))), "the retired %q is never set", name)
+	}
 }
 
 // TestBarredToProtoCarriesBothShapes pins rpg-project#842 (R2): a step bump

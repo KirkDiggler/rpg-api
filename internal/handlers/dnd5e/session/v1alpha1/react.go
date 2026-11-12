@@ -27,6 +27,9 @@ import (
 // (ruling R3: one step asks every player reactor at once), so the id is the
 // only thing that distinguishes them and this handler chooses nothing.
 //
+// roll_kept is set when the answer reached a waiting line its speaker had
+// walked away from (rpg-project#938): settled declined, the die kept.
+//
 // The response is an acknowledgement, on Activate's template: no refreshed
 // declaration list -- a second declaration surface beside Afford would be two
 // reads free to disagree -- and no account of the resumed turn, which reaches
@@ -54,8 +57,12 @@ func (h *Handler) React(ctx context.Context, req *sessionpb.ReactRequest) (*sess
 	}
 
 	return &sessionpb.ReactResponse{
-		Saved:    saveReportToProto(out.Saved),
+		Saved:    saveReportToProto(ctx, req.GetSession(), out.Saved),
 		Delivery: deliveryReportToProto(out.Delivery),
+		// A WALKED-AWAY ROLL IS KEPT (rpg-project#938): the answer reached a
+		// waiting line its speaker had walked away from, so the SDK settled it
+		// declined whatever the answer was. The client says so.
+		RollKept: out.RollKept,
 	}, nil
 }
 

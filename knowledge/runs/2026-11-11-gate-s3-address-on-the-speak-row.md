@@ -1,5 +1,7 @@
 # Run — 2026-11-11 — gate conversation S3 address on the Speak row
 
+processed: 2026-11-12T165555Z
+
 Slice [rpg-project#923](https://github.com/KirkDiggler/rpg-project/issues/923) of story [rpg-project#769](https://github.com/KirkDiggler/rpg-project/issues/769). Base: `rpg-api` `dev` at [`d06228ff`](https://github.com/KirkDiggler/rpg-api/commit/d06228ff).
 
 ## Shipped

@@ -1,5 +1,7 @@
 # Run — 2026-11-08 — alive, not lagging: the cold reload of a session, by stage
 
+processed: 2026-11-12T165555Z
+
 Cold-reload row of the measurement harness for story [rpg-project#879](https://github.com/KirkDiggler/rpg-project/issues/879), in service of ruling R6 on [rpg-project#880](https://github.com/KirkDiggler/rpg-project/issues/880): the resident encounter becomes a cache behind a Redis lease, and a miss rebuilds from the store. This run says what that rebuild costs, by stage, against the Move it sits inside.
 
 Measured at `rpg-api` `dev` [`85c8bcc`](https://github.com/KirkDiggler/rpg-api/commit/85c8bcc) plus the harness change on `feat/measure-cold-reload`. Built on session v0.171.0 and encounter v0.185.0. Keep `bench-keep-garrison` (10k hexes, 99 garrison, 20 patrols, neutral to the party), an 8-cell walk, N=20 after 3 warm-up Moves per mode. After each mode's walk, the same session is rebuilt 20 times from the store. Redis 7.2.2 on a private loopback port. CPU AMD Ryzen 9 3950X, load average 9 to 12. Command:

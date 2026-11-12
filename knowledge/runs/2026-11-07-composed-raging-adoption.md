@@ -1,5 +1,7 @@
 # 2026-11-07 — current composed Raging in native readers
 
+processed: 2026-11-12T165555Z
+
 ## Shipped
 
 - Adopt pushed session 2909290a, resolution 9425c9da and rulebook 3e771a63; metadata conversion carries canonical origin ref and registry description while preserving raw condition bytes — [converter](../../internal/handlers/dnd5e/v1alpha1/character/converters.go).
