@@ -1,5 +1,7 @@
 # Run — 2026-11-09 — inspection on released providers and fenced storage
 
+processed: 2026-11-12T165555Z
+
 ## Shipped
 
 - Prepared API inspection on published machinev0.2.0, behaviorv0.22.0, encounterv0.186.0, sessionv0.173.0 and recordv0.3.0; the official proto v0.1.263 generated commit remains pinned. This is the API candidate, not a production deployment — [API PR](https://github.com/KirkDiggler/rpg-api/pull/1207).

@@ -1,5 +1,7 @@
 # Run — 2026-11-01 — Public keep reference
 
+processed: 2026-11-12T165555Z
+
 ## Shipped
 
 - Prepared `reference-keep`, its usage/limitations guide and a real registry-copy regression; merge/deployment remain separate — [publication scope](https://github.com/KirkDiggler/rpg-project/issues/789).

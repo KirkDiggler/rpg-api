@@ -1,5 +1,7 @@
 # Run — 2026-11-08 — Captured texture choices at the API
 
+processed: 2026-11-12T165555Z
+
 ## Shipped
 
 - API checkpoint transcribes captured wall/prop material overrides in snapshot and act geometry. A native-source/Redis/fresh-host test proves original choices survive later source edits; product texture controls and joined play remain outstanding — [Courtyard S3](https://github.com/KirkDiggler/rpg-project/issues/895).

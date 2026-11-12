@@ -1,5 +1,7 @@
 # Run — 2026-11-09 — the dungeons package compiles its shelf once; the test budget runs on rpg-api
 
+processed: 2026-11-12T165555Z
+
 Issue [rpg-project#911](https://github.com/KirkDiggler/rpg-project/issues/911), story [rpg-project#907](https://github.com/KirkDiggler/rpg-project/issues/907) slice 4. Cut from `rpg-api` `dev` at [`109251f`](https://github.com/KirkDiggler/rpg-api/commit/109251f), merged up to [`e763358`](https://github.com/KirkDiggler/rpg-api/commit/e763358) (rpg-api#1210). PR [rpg-api#1212](https://github.com/KirkDiggler/rpg-api/pull/1212).
 
 ## Shipped

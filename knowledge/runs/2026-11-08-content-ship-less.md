@@ -1,5 +1,7 @@
 # Run — 2026-11-08 — ship only the castle, the keep and the bench keeps
 
+processed: 2026-11-12T165555Z
+
 Issue [rpg-api#1205](https://github.com/KirkDiggler/rpg-api/issues/1205). Ruling (KirkDiggler, 2026-11-08): "We only need the keep and mad king castle. We should do a better job cleaning up the special case reference environments; after they are used to verify, they do not serve a purpose. Ideally they would live in their worktree only."
 
 Built on `rpg-api` `dev` [`3abf710`](https://github.com/KirkDiggler/rpg-api/commit/3abf710), branch `chore/content-ship-less`.

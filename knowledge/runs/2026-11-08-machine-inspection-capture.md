@@ -1,5 +1,7 @@
 # Run — 2026-11-08 — structured machine inspection capture
 
+processed: 2026-11-12T165555Z
+
 ## Shipped
 
 - Implemented independent structured capture of committed records and development-only client record access on the pushed inspection providers; the playtest reader and live walk remain outstanding — [Machine inspection S2](https://github.com/KirkDiggler/rpg-project/issues/900).

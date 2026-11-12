@@ -1,5 +1,7 @@
 # Run — 2026-11-08 — the Redis save is fenced on a checkpoint version
 
+processed: 2026-11-12T165555Z
+
 Story [rpg-project#879](https://github.com/KirkDiggler/rpg-project/issues/879), card [rpg-project#897](https://github.com/KirkDiggler/rpg-project/issues/897) (S12a, the api half). The toolkit half is [rpg-toolkit#2322](https://github.com/KirkDiggler/rpg-toolkit/pull/2322), tagged `rulebooks/dnd5e/session/v0.172.0`.
 
 Built on `rpg-api` `dev` [`5711f56`](https://github.com/KirkDiggler/rpg-api/commit/5711f56), branch `feat/fenced-redis-save`.
