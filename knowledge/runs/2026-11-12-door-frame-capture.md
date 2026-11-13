@@ -15,6 +15,7 @@ Slice [Project #906](https://github.com/KirkDiggler/rpg-project/issues/906), sto
 ## Found
 
 - The native fixture survives a fresh host with an empty site provider reading captured data from Redis after valid source edits; frame looks, wrapped phases, visual cuts and cells remain unchanged — [provider capture](https://github.com/KirkDiggler/rpg-toolkit/pull/2412).
+- Re-pinned encounter to `17ffaea59d76` through session `09924699babc` so cold loads use the reviewed missing/null-phase refusal; both are actual pushed-commit pseudo-versions, not released tags or merge readiness — [persistence fix](https://github.com/KirkDiggler/rpg-toolkit/pull/2412#discussion_r4562032802).
 - Both converter packages pass, `make lint` reports zero issues and final `make test` passes across the API, including cmd/server — [slice](https://github.com/KirkDiggler/rpg-project/issues/906).
 
 ## Mistaken
