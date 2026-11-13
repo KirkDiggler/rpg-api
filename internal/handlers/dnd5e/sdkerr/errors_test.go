@@ -27,11 +27,35 @@ import (
 // but a new sentinel with no explicit case here should get one deliberately
 // rather than silently riding the Internal default.
 func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
-	tests := []struct {
-		name string
-		err  error
-		want codes.Code
-	}{
+	tests := sentinelCases()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Wrapped exactly like the SDK wraps its own sentinels
+			// ("verb: %w") so the table is proven against errors.Is chains,
+			// not bare sentinel identity.
+			wrapped := fmt.Errorf("move: step 1: %w", tt.err)
+			got := StatusError(wrapped)
+			st, ok := status.FromError(got)
+			require.True(t, ok, "statusError must always return a gRPC status error")
+			require.Equal(t, tt.want, st.Code(), "sentinel %s", tt.name)
+		})
+	}
+}
+
+// sentinelCase is one row of the sentinel table: a mapped SDK sentinel and
+// the code it reaches the wire as.
+type sentinelCase struct {
+	name string
+	err  error
+	want codes.Code
+}
+
+// sentinelCases is every SDK sentinel the table maps, with its code: the one
+// list both the code test above and the reason test below iterate, so a
+// sentinel added here is held to both.
+func sentinelCases() []sentinelCase {
+	return []sentinelCase{
 		// NOT_FOUND -- the caller named something that does not exist.
 		{"ErrNoSession", sdk.ErrNoSession, codes.NotFound},
 		{"ErrNoEncounter", sdk.ErrNoEncounter, codes.NotFound},
@@ -116,7 +140,7 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// current world state refuses, the same bucket as the three above.
 		{"ErrNotYourTurn", sdk.ErrNotYourTurn, codes.FailedPrecondition},
 		{"ErrOutOfReach", sdk.ErrOutOfReach, codes.FailedPrecondition},
-		{"ErrStaleDeclaration", sdk.ErrStaleDeclaration, codes.FailedPrecondition},
+		{"ErrStaleDeclaration", sdk.ErrStaleDeclaration, codes.Aborted},
 		// World NPCs (rpg-toolkit#1404): Interact's own reach/sight refusals,
 		// the same shape as ErrOutOfReach above.
 		{"ErrOutOfRange", sdk.ErrOutOfRange, codes.FailedPrecondition},
@@ -286,19 +310,23 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// misread as some caller-facing code.
 		{"ErrNotFound (defensive)", sdk.ErrNotFound, codes.Internal},
 	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Wrapped exactly like the SDK wraps its own sentinels
-			// ("verb: %w") so the table is proven against errors.Is chains,
-			// not bare sentinel identity.
-			wrapped := fmt.Errorf("move: step 1: %w", tt.err)
-			got := StatusError(wrapped)
-			st, ok := status.FromError(got)
-			require.True(t, ok, "statusError must always return a gRPC status error")
-			require.Equal(t, tt.want, st.Code(), "sentinel %s", tt.name)
-		})
+// TestStatusError_OnlyAMovedOnOfferIsAborted pins rpg-project#925: ABORTED
+// is the code that tells a client "what you were offered has moved on --
+// re-read and pick again", so exactly the stale refusals reach it -- a stale
+// declaration, a stale Speak option, and a save that lost its checkpoint
+// race. Every other sentinel in the shared table maps elsewhere, so a future
+// sentinel cannot silently join ABORTED, nor these leave it.
+func TestStatusError_OnlyAMovedOnOfferIsAborted(t *testing.T) {
+	want := map[string]bool{"ErrStaleDeclaration": true, "ErrStaleOption": true, "ErrStaleCheckpoint": true}
+	got := map[string]bool{}
+	for _, tt := range sentinelCases() {
+		if tt.want == codes.Aborted {
+			got[tt.name] = true
+		}
 	}
+	require.Equal(t, want, got)
 }
 
 // errorsGoDefaultCaseSentinels names every SDK sentinel statusError leaves to

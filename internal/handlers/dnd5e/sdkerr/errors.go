@@ -178,8 +178,8 @@ func StatusError(err error) error {
 		// it aimed True Strike at a skeleton is told.
 		//
 		// A target that merely drifted out of range is NOT this: the offer
-		// that named it went stale, so it arrives as ErrStaleDeclaration in
-		// FAILED_PRECONDITION below. The split is what lets a client tell a
+		// that named it went stale, so it arrives as ErrStaleDeclaration,
+		// ABORTED below (rpg-project#925). The split is what lets a client tell a
 		// request it built wrong from a world that moved.
 		errors.Is(err, sdk.ErrBadCast),
 		// A malformed level-up submission: a choice id the level never
@@ -248,9 +248,9 @@ func StatusError(err error) error {
 	//   Afford reports each ruled candidate's own availability and why before
 	//   execution; the API copies those rows without recomputing reach.
 	//
-	//   ErrStaleDeclaration -- an echoed opaque selector no longer names the
-	//   regenerated available offer. The request is shaped correctly, but the
-	//   world changed since Afford, so retry starts from a fresh declaration.
+	//   ErrStaleDeclaration LEFT this bucket for ABORTED (rpg-project#925),
+	//   beside ErrStaleOption: an echoed selector that no longer names the
+	//   regenerated offer is a re-read-and-retry, not a sentence to show.
 	//
 	//   ErrConflictingOffers (rpg-toolkit#1965 R5) -- two of the attacker's
 	//   conditions each offer a replacement for the same swing and none was
@@ -262,7 +262,7 @@ func StatusError(err error) error {
 	//   world NPC exists and the actor is real, the reach or the sightline
 	//   just doesn't hold right now. Speak returns ErrOutOfRange too, for a
 	//   creature beyond its three-hex reach (rpg-project#753 R4), and
-	//   ErrStaleDeclaration for a prop no longer on the speaker's menu. Same shape as ErrOutOfReach above -- a
+	//   ErrStaleDeclaration (ABORTED, below) for a prop no longer on the speaker's menu. Same shape as ErrOutOfReach above -- a
 	//   well-formed call the current world state refuses, not a caller
 	//   naming something that doesn't exist.
 	//
@@ -281,7 +281,6 @@ func StatusError(err error) error {
 		errors.Is(err, sdk.ErrCannotAfford),
 		errors.Is(err, sdk.ErrNotYourTurn),
 		errors.Is(err, sdk.ErrOutOfReach),
-		errors.Is(err, sdk.ErrStaleDeclaration),
 		errors.Is(err, sdk.ErrOutOfRange),
 		errors.Is(err, sdk.ErrNotVisible),
 		// ErrUnwitnessed (rpg-project#454, now Speak) -- the threatened
@@ -314,7 +313,8 @@ func StatusError(err error) error {
 		// is a fact about the world. Afford already withholds that creature
 		// from the row's candidates, so the only caller who reaches this is a
 		// stale one echoing a row from before the world changed -- which is
-		// exactly the case ErrStaleDeclaration is this bucket for.
+		// close to the case ErrStaleDeclaration covers (ABORTED, below), but
+		// the line is simply not offered, so it stays a sentence here.
 		//
 		// NOT NOT_FOUND, and the distinction is the probe law's. The target
 		// is not hidden: the member can see it, its id is on the roster, and
@@ -429,7 +429,7 @@ func StatusError(err error) error {
 		// world, not a defect in the message.
 		//
 		// It is also why this is no longer ErrStaleDeclaration, which it used
-		// to be and which sits above. Stale tells a host to re-read the offers
+		// to be (now ABORTED, below). Stale tells a host to re-read the offers
 		// and try again, and re-reading answers the same thing forever -- the
 		// SDK's candidate universe never contains a world NPC. The sentinel was
 		// split off to end that loop, and giving it its predecessor's code here
@@ -459,7 +459,7 @@ func StatusError(err error) error {
 		//   already, or belonging to a fight that moved on. A STALE answer,
 		//   not a malformed one (the SDK's own doc says a host maps this to
 		//   a stale refusal and ErrNotAudience to a permission one), so it
-		//   sits beside ErrStaleDeclaration above rather than in NOT_FOUND
+		//   sits in this bucket rather than in NOT_FOUND
 		//   -- the id is opaque and a client echoes it back verbatim, so
 		//   "that thing does not exist" would blame the client for a second
 		//   click on a button whose question somebody else already closed.
@@ -563,11 +563,21 @@ func StatusError(err error) error {
 	// or a React answering a waiting line whose hold is already gone
 	// (ErrStaleOption, rpg-project#924). The same optimistic-concurrency
 	// story as the stale checkpoint above: nothing was spent, rolled or
-	// recorded, and the client refreshes the panel and picks again. NOT
-	// FAILED_PRECONDITION's ErrStaleDeclaration: the line still exists and
-	// may still be offered; it is the revision the reply carried that lost
-	// the race, which is ABORTED's meaning in gRPC's own table.
-	case errors.Is(err, sdk.ErrStaleOption):
+	// recorded, and the client refreshes the panel and picks again. The line
+	// still exists and may still be offered; it is the revision the reply
+	// carried that lost the race, which is ABORTED's meaning in gRPC's own
+	// table.
+	//
+	// ErrStaleDeclaration (rpg-project#925) is the same story on every other
+	// verb: an echoed selector no longer names the regenerated offer, because
+	// the world moved between the read and the act. Nothing was spent; the
+	// client re-reads Turn and Afford and picks again -- ABORTED's "retry at a
+	// higher level", and never FAILED_PRECONDITION's "do not retry until the
+	// state is fixed", which is the code of the refusals that are sentences
+	// for the player. One code, then, says "what you were offered has moved
+	// on" on every verb.
+	case errors.Is(err, sdk.ErrStaleOption),
+		errors.Is(err, sdk.ErrStaleDeclaration):
 		return status.Error(codes.Aborted, err.Error())
 
 	// UNAVAILABLE -- a write landed only partially. Retry guidance lives in
