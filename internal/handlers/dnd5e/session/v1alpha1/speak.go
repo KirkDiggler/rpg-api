@@ -55,7 +55,7 @@ func (h *Handler) Speak(
 
 	out, err := h.manager.Speak(ctx, in)
 	if err != nil {
-		return nil, sdkerr.StatusError(err)
+		return nil, sdkerr.StatusErrorFor(err, req.GetMember())
 	}
 
 	return &sessionpb.SpeakResponse{

@@ -29,7 +29,7 @@ func (h *Handler) Interact(ctx context.Context, req *sessionpb.InteractRequest) 
 		Range:   int(req.GetRange()),
 	})
 	if err != nil {
-		return nil, sdkerr.StatusError(err)
+		return nil, sdkerr.StatusErrorFor(err, req.GetActor())
 	}
 
 	descriptor, err := worldNPCDescriptorToProto(out.Descriptor)

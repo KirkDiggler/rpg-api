@@ -38,7 +38,7 @@ func (h *Handler) Activate(
 		Target:        req.GetTarget(),
 	})
 	if err != nil {
-		return nil, sdkerr.StatusError(err)
+		return nil, sdkerr.StatusErrorFor(err, req.GetMember())
 	}
 
 	return &sessionpb.ActivateResponse{

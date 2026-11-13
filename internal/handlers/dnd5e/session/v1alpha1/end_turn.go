@@ -22,7 +22,7 @@ func (h *Handler) EndTurn(ctx context.Context, req *sessionpb.EndTurnRequest) (*
 		DeclarationID: req.GetDeclarationId(),
 	})
 	if err != nil {
-		return nil, sdkerr.StatusError(err)
+		return nil, sdkerr.StatusErrorFor(err, req.GetMember())
 	}
 
 	return &sessionpb.EndTurnResponse{

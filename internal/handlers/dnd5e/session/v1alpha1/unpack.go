@@ -30,7 +30,7 @@ func (h *Handler) Unpack(ctx context.Context, req *sessionpb.UnpackRequest) (*se
 		Quantity: int(req.GetQuantity()),
 	})
 	if err != nil {
-		return nil, sdkerr.StatusError(err)
+		return nil, sdkerr.StatusErrorFor(err, req.GetActor())
 	}
 
 	return &sessionpb.UnpackResponse{

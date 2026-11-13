@@ -21,7 +21,7 @@ func (h *Handler) Exit(ctx context.Context, req *sessionpb.ExitRequest) (*sessio
 		Member:  req.GetMember(),
 	})
 	if err != nil {
-		return nil, sdkerr.StatusError(err)
+		return nil, sdkerr.StatusErrorFor(err, req.GetMember())
 	}
 
 	carry := make([]*sessionpb.Sighting, len(out.Carry))

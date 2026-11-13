@@ -108,6 +108,14 @@ func setBody(out *sessionpb.Act, body sdk.ActBody) error {
 		var v *sessionpb.Speech
 		v, err = speechToProto(b)
 		out.Body = &sessionpb.Act_Speech{Speech: v}
+	case sdk.RelocateAct:
+		var v *sessionpb.RelocateAct
+		v, err = relocateToProto(b)
+		out.Body = &sessionpb.Act_Relocate{Relocate: v}
+	case sdk.ArrestAct:
+		var v *sessionpb.ArrestAct
+		v, err = arrestToProto(b)
+		out.Body = &sessionpb.Act_Arrest{Arrest: v}
 	case sdk.DeathSaveAct:
 		var v *sessionpb.DeathSaveAct
 		v, err = deathSaveToProto(b)
@@ -227,6 +235,14 @@ var loudnessToProto = map[string]sessionpb.Loudness{
 	string(tkencounter.LoudnessSpeak):   sessionpb.Loudness_LOUDNESS_SPEAK,
 	string(tkencounter.LoudnessShout):   sessionpb.Loudness_LOUDNESS_SHOUT,
 	string(tkencounter.LoudnessScream):  sessionpb.Loudness_LOUDNESS_SCREAM,
+}
+
+// relocateEndToProto is which end of a relocation a recipient perceived
+// (rpg-project#925); an end this table does not know refuses the act.
+var relocateEndToProto = map[sdk.RelocateEnd]sessionpb.RelocateEnd{
+	sdk.RelocateBoth:    sessionpb.RelocateEnd_RELOCATE_END_BOTH,
+	sdk.RelocateLeft:    sessionpb.RelocateEnd_RELOCATE_END_LEFT,
+	sdk.RelocateArrived: sessionpb.RelocateEnd_RELOCATE_END_ARRIVED,
 }
 
 var senseToProto = map[sdk.Sense]sessionpb.Sense{
@@ -736,6 +752,34 @@ func speechToProto(b sdk.SpeechAct) (*sessionpb.Speech, error) {
 		hops := int32(*b.Hops) //nolint:gosec // a room count fits int32
 		out.Hops = &hops
 	}
+	return out, p.err
+}
+
+// relocateToProto spells a member set down without walking (rpg-project#925)
+// part for part. AN ABSENT END STAYS ABSENT: from and to cross only when the
+// session's pointer is set, never as the cell (0,0).
+func relocateToProto(b sdk.RelocateAct) (*sessionpb.RelocateAct, error) {
+	end, err := lookup(relocateEndToProto, b.End, "relocate end")
+	if err != nil {
+		return nil, err
+	}
+	var p parties
+	out := &sessionpb.RelocateAct{Mover: p.one(b.Mover), Cause: b.Cause, Words: b.Words, End: end}
+	if b.From != nil {
+		out.From = positionToProto(*b.From)
+	}
+	if b.To != nil {
+		out.To = positionToProto(*b.To)
+	}
+	return out, p.err
+}
+
+// arrestToProto spells a party arrested (rpg-project#925): the interaction
+// that arrested, the members taken as this recipient perceived them, and the
+// cell region. Who is wanted is never on it.
+func arrestToProto(b sdk.ArrestAct) (*sessionpb.ArrestAct, error) {
+	var p parties
+	out := &sessionpb.ArrestAct{Interaction: b.Interaction, Taken: p.many(b.Taken), Cell: b.Cell}
 	return out, p.err
 }
 

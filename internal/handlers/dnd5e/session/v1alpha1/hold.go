@@ -46,7 +46,7 @@ func (h *Handler) Hold(ctx context.Context, req *sessionpb.HoldRequest) (*sessio
 		Range:   int(req.GetRange()),
 	})
 	if err != nil {
-		return nil, sdkerr.StatusError(err)
+		return nil, sdkerr.StatusErrorFor(err, req.GetMember())
 	}
 
 	return &sessionpb.HoldResponse{

@@ -18,7 +18,7 @@ func (h *Handler) CloseDoor(ctx context.Context, req *sessionpb.CloseDoorRequest
 		Session: req.GetSession(), Member: req.GetMember(), Door: req.GetDoor(),
 	})
 	if err != nil {
-		return nil, sdkerr.StatusError(err)
+		return nil, sdkerr.StatusErrorFor(err, req.GetMember())
 	}
 	if out.Refused != nil {
 		return nil, doorRefusalError(out.Refused)

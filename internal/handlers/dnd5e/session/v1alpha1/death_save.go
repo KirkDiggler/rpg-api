@@ -31,7 +31,7 @@ func (h *Handler) DeathSave(
 		DeclarationID: req.GetDeclarationId(),
 	})
 	if err != nil {
-		return nil, sdkerr.StatusError(err)
+		return nil, sdkerr.StatusErrorFor(err, req.GetMember())
 	}
 
 	// The keep record can name a rule this build has never heard of, and the
