@@ -11,8 +11,6 @@ package sdkerr
 import (
 	"errors"
 
-	"google.golang.org/genproto/googleapis/rpc/errdetails"
-
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -180,8 +178,8 @@ func StatusError(err error) error {
 		// it aimed True Strike at a skeleton is told.
 		//
 		// A target that merely drifted out of range is NOT this: the offer
-		// that named it went stale, so it arrives as ErrStaleDeclaration in
-		// FAILED_PRECONDITION below. The split is what lets a client tell a
+		// that named it went stale, so it arrives as ErrStaleDeclaration,
+		// ABORTED below (rpg-project#925). The split is what lets a client tell a
 		// request it built wrong from a world that moved.
 		errors.Is(err, sdk.ErrBadCast),
 		// A malformed level-up submission: a choice id the level never
@@ -207,15 +205,6 @@ func StatusError(err error) error {
 		// is not a record id. Refused rather than read as "caught up".
 		errors.Is(err, sdk.ErrBadRecordID):
 		return status.Error(codes.InvalidArgument, err.Error())
-
-	// FAILED_PRECONDITION WITH A REASON (rpg-project#925): an echoed
-	// selector no longer names the regenerated offer. Same code and message
-	// as the bucket below, which describes it, plus an ErrorInfo detail with
-	// reason STALE_DECLARATION, so a client recognizes "what you were offered
-	// has moved on" without treating every FAILED_PRECONDITION as stale --
-	// the rest of the bucket are sentences for the player.
-	case errors.Is(err, sdk.ErrStaleDeclaration):
-		return withReason(codes.FailedPrecondition, err.Error(), ReasonStaleDeclaration)
 
 	// FAILED_PRECONDITION -- the request is well-formed but the world's
 	// current state refuses it (wrong clock, wrong actor, wrong equipment).
@@ -259,9 +248,9 @@ func StatusError(err error) error {
 	//   Afford reports each ruled candidate's own availability and why before
 	//   execution; the API copies those rows without recomputing reach.
 	//
-	//   ErrStaleDeclaration -- an echoed opaque selector no longer names the
-	//   regenerated available offer. The request is shaped correctly, but the
-	//   world changed since Afford, so retry starts from a fresh declaration.
+	//   ErrStaleDeclaration LEFT this bucket for ABORTED (rpg-project#925),
+	//   beside ErrStaleOption: an echoed selector that no longer names the
+	//   regenerated offer is a re-read-and-retry, not a sentence to show.
 	//
 	//   ErrConflictingOffers (rpg-toolkit#1965 R5) -- two of the attacker's
 	//   conditions each offer a replacement for the same swing and none was
@@ -273,7 +262,7 @@ func StatusError(err error) error {
 	//   world NPC exists and the actor is real, the reach or the sightline
 	//   just doesn't hold right now. Speak returns ErrOutOfRange too, for a
 	//   creature beyond its three-hex reach (rpg-project#753 R4), and
-	//   ErrStaleDeclaration for a prop no longer on the speaker's menu. Same shape as ErrOutOfReach above -- a
+	//   ErrStaleDeclaration (ABORTED, below) for a prop no longer on the speaker's menu. Same shape as ErrOutOfReach above -- a
 	//   well-formed call the current world state refuses, not a caller
 	//   naming something that doesn't exist.
 	//
@@ -324,7 +313,8 @@ func StatusError(err error) error {
 		// is a fact about the world. Afford already withholds that creature
 		// from the row's candidates, so the only caller who reaches this is a
 		// stale one echoing a row from before the world changed -- which is
-		// exactly the case ErrStaleDeclaration is this bucket for.
+		// close to the case ErrStaleDeclaration covers (ABORTED, below), but
+		// the line is simply not offered, so it stays a sentence here.
 		//
 		// NOT NOT_FOUND, and the distinction is the probe law's. The target
 		// is not hidden: the member can see it, its id is on the roster, and
@@ -439,7 +429,7 @@ func StatusError(err error) error {
 		// world, not a defect in the message.
 		//
 		// It is also why this is no longer ErrStaleDeclaration, which it used
-		// to be and which sits above. Stale tells a host to re-read the offers
+		// to be (now ABORTED, below). Stale tells a host to re-read the offers
 		// and try again, and re-reading answers the same thing forever -- the
 		// SDK's candidate universe never contains a world NPC. The sentinel was
 		// split off to end that loop, and giving it its predecessor's code here
@@ -469,7 +459,7 @@ func StatusError(err error) error {
 		//   already, or belonging to a fight that moved on. A STALE answer,
 		//   not a malformed one (the SDK's own doc says a host maps this to
 		//   a stale refusal and ErrNotAudience to a permission one), so it
-		//   sits beside ErrStaleDeclaration above rather than in NOT_FOUND
+		//   sits in this bucket rather than in NOT_FOUND
 		//   -- the id is opaque and a client echoes it back verbatim, so
 		//   "that thing does not exist" would blame the client for a second
 		//   click on a button whose question somebody else already closed.
@@ -573,16 +563,22 @@ func StatusError(err error) error {
 	// or a React answering a waiting line whose hold is already gone
 	// (ErrStaleOption, rpg-project#924). The same optimistic-concurrency
 	// story as the stale checkpoint above: nothing was spent, rolled or
-	// recorded, and the client refreshes the panel and picks again. NOT
-	// FAILED_PRECONDITION's ErrStaleDeclaration: the line still exists and
-	// may still be offered; it is the revision the reply carried that lost
-	// the race, which is ABORTED's meaning in gRPC's own table.
+	// recorded, and the client refreshes the panel and picks again. The line
+	// still exists and may still be offered; it is the revision the reply
+	// carried that lost the race, which is ABORTED's meaning in gRPC's own
+	// table.
 	//
-	// It carries an ErrorInfo detail with reason STALE_OPTION, the stale
-	// declaration's sibling above, so one check recognizes an offer that
-	// moved on whatever verb refused it.
-	case errors.Is(err, sdk.ErrStaleOption):
-		return withReason(codes.Aborted, err.Error(), ReasonStaleOption)
+	// ErrStaleDeclaration (rpg-project#925) is the same story on every other
+	// verb: an echoed selector no longer names the regenerated offer, because
+	// the world moved between the read and the act. Nothing was spent; the
+	// client re-reads Turn and Afford and picks again -- ABORTED's "retry at a
+	// higher level", and never FAILED_PRECONDITION's "do not retry until the
+	// state is fixed", which is the code of the refusals that are sentences
+	// for the player. One code, then, says "what you were offered has moved
+	// on" on every verb.
+	case errors.Is(err, sdk.ErrStaleOption),
+		errors.Is(err, sdk.ErrStaleDeclaration):
+		return status.Error(codes.Aborted, err.Error())
 
 	// UNAVAILABLE -- a write landed only partially. Retry guidance lives in
 	// the SaveReport carried by the SDK's SaveError (design rule 7); errors.As
@@ -683,32 +679,4 @@ func StatusError(err error) error {
 	default:
 		return status.Error(codes.Internal, err.Error())
 	}
-}
-
-// ErrorDomain is the ErrorInfo domain this package's reasons belong to: the
-// session service's proto package, which names the API that refused.
-const ErrorDomain = "dnd5e.api.session.v1alpha1"
-
-// The ErrorInfo reasons a client may key on (rpg-project#925). Each names one
-// refusal whose code is shared with refusals of another meaning.
-const (
-	// ReasonStaleDeclaration: an echoed declaration selector no longer names
-	// the regenerated offer (sdk.ErrStaleDeclaration). Refresh and pick again.
-	ReasonStaleDeclaration = "STALE_DECLARATION"
-	// ReasonStaleOption: a Speak reply from an older revision of the
-	// conversation, or an answer to a waiting line whose hold is gone
-	// (sdk.ErrStaleOption). Refresh and pick again.
-	ReasonStaleOption = "STALE_OPTION"
-)
-
-// withReason is a status of code and message carrying one ErrorInfo detail
-// naming reason in ErrorDomain. Attaching a well-formed ErrorInfo cannot
-// fail; if it ever did, the status without the detail still says what
-// happened, so the code and message are never lost.
-func withReason(code codes.Code, message, reason string) error {
-	st := status.New(code, message)
-	if detailed, err := st.WithDetails(&errdetails.ErrorInfo{Reason: reason, Domain: ErrorDomain}); err == nil {
-		st = detailed
-	}
-	return st.Err()
 }

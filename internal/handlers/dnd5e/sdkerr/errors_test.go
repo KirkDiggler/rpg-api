@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -141,7 +140,7 @@ func sentinelCases() []sentinelCase {
 		// current world state refuses, the same bucket as the three above.
 		{"ErrNotYourTurn", sdk.ErrNotYourTurn, codes.FailedPrecondition},
 		{"ErrOutOfReach", sdk.ErrOutOfReach, codes.FailedPrecondition},
-		{"ErrStaleDeclaration", sdk.ErrStaleDeclaration, codes.FailedPrecondition},
+		{"ErrStaleDeclaration", sdk.ErrStaleDeclaration, codes.Aborted},
 		// World NPCs (rpg-toolkit#1404): Interact's own reach/sight refusals,
 		// the same shape as ErrOutOfReach above.
 		{"ErrOutOfRange", sdk.ErrOutOfRange, codes.FailedPrecondition},
@@ -313,43 +312,21 @@ func sentinelCases() []sentinelCase {
 	}
 }
 
-// TestStatusError_StaleRefusalsCarryTheirReason pins rpg-project#925: the
-// two refusals that mean "what you were offered has moved on" each carry
-// exactly one ErrorInfo detail with its reason in ErrorDomain, beside their
-// unchanged code and message; every other mapped sentinel carries no
-// ErrorInfo, so a client keying on the reason never mistakes a sentence for
-// the player for a stale selector.
-func TestStatusError_StaleRefusalsCarryTheirReason(t *testing.T) {
-	reasons := map[string]string{
-		"ErrStaleDeclaration": ReasonStaleDeclaration,
-		"ErrStaleOption":      ReasonStaleOption,
-	}
-	seen := map[string]bool{}
+// TestStatusError_OnlyAMovedOnOfferIsAborted pins rpg-project#925: ABORTED
+// is the code that tells a client "what you were offered has moved on --
+// re-read and pick again", so exactly the stale refusals reach it -- a stale
+// declaration, a stale Speak option, and a save that lost its checkpoint
+// race. Every other sentinel in the shared table maps elsewhere, so a future
+// sentinel cannot silently join ABORTED, nor these leave it.
+func TestStatusError_OnlyAMovedOnOfferIsAborted(t *testing.T) {
+	want := map[string]bool{"ErrStaleDeclaration": true, "ErrStaleOption": true, "ErrStaleCheckpoint": true}
+	got := map[string]bool{}
 	for _, tt := range sentinelCases() {
-		t.Run(tt.name, func(t *testing.T) {
-			wrapped := fmt.Errorf("move: step 1: %w", tt.err)
-			st, ok := status.FromError(StatusError(wrapped))
-			require.True(t, ok)
-			var infos []*errdetails.ErrorInfo
-			for _, d := range st.Details() {
-				if info, isInfo := d.(*errdetails.ErrorInfo); isInfo {
-					infos = append(infos, info)
-				}
-			}
-			want, stale := reasons[tt.name]
-			if !stale {
-				require.Empty(t, infos, "%s carries no reason", tt.name)
-				return
-			}
-			seen[tt.name] = true
-			require.Equal(t, tt.want, st.Code(), "the code is unchanged")
-			require.Equal(t, wrapped.Error(), st.Message(), "and so is the message")
-			require.Len(t, infos, 1)
-			require.Equal(t, want, infos[0].GetReason())
-			require.Equal(t, ErrorDomain, infos[0].GetDomain())
-		})
+		if tt.want == codes.Aborted {
+			got[tt.name] = true
+		}
 	}
-	require.Len(t, seen, len(reasons), "both stale refusals are in the sentinel table")
+	require.Equal(t, want, got)
 }
 
 // errorsGoDefaultCaseSentinels names every SDK sentinel statusError leaves to

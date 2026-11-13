@@ -393,7 +393,7 @@ func TestAcceptance_DeathSave(t *testing.T) {
 		beforeReplay := s.dice.callCount()
 		beforeState := deathSaveStateSnapshotOf(t, s, s.actor)
 		_, err = s.h.handler.DeathSave(s.ctx, &sessionpb.DeathSaveRequest{Session: s.session, Member: s.actor, DeclarationId: declaration.GetId()})
-		requireGRPCCode(t, err, codes.FailedPrecondition)
+		requireGRPCCode(t, err, codes.Aborted)
 		require.Equal(t, beforeReplay, s.dice.callCount())
 		require.Equal(t, beforeState, deathSaveStateSnapshotOf(t, s, s.actor))
 	})
@@ -508,7 +508,7 @@ func TestAcceptance_DeathSaveAttackTransitionsAndTargetability(t *testing.T) {
 		before := deathSaveStateSnapshotOf(t, s, s.ally)
 		s.dice.reset(20, 8, 8)
 		_, err = s.h.handler.Attack(s.ctx, &sessionpb.AttackRequest{Session: s.session, Attacker: s.actor, Target: s.ally, DeclarationId: attack.GetId()})
-		requireGRPCCode(t, err, codes.FailedPrecondition)
+		requireGRPCCode(t, err, codes.Aborted)
 		require.Zero(t, s.dice.callCount(), "stale target refuses before resolution or dice")
 		require.Equal(t, before, deathSaveStateSnapshotOf(t, s, s.ally), "Dead target refusal preserves the complete target life/death-save state")
 	})
@@ -532,7 +532,7 @@ func TestAcceptance_DeathSaveAttackTransitionsAndTargetability(t *testing.T) {
 		_, err = s.h.handler.Attack(s.ctx, &sessionpb.AttackRequest{
 			Session: s.session, Attacker: s.actor, Target: "skel-1", DeclarationId: attack.GetId(),
 		})
-		requireGRPCCode(t, err, codes.FailedPrecondition)
+		requireGRPCCode(t, err, codes.Aborted)
 		require.Zero(t, s.dice.callCount(), "defeated target is stale before a second resolution")
 	})
 }
