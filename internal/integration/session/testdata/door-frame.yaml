@@ -1,0 +1,65 @@
+version: 5
+key: door-frame-walk
+play: {void: transparent, lighting: bright, standing: centre-covered}
+room:
+  version: 3
+  id: door-frame
+  name: Captured doorway frame
+  coordinateFrame:
+    horizontalPlane: world-xz
+    verticalAxis: world-y-up
+    distanceUnit: world-scene-unit
+    hexRadius: 1
+    footprintFrame: owner-local-xz
+  scene:
+    version: 7
+    id: door-frame-scene
+    name: Captured doorway frame
+    groups: []
+    items: []
+    wallFinishes:
+      courtyard-wall:
+        positive-z: dnd5e:material:fantasy-kingdom:wall_large_brick_01
+        negative-z: dnd5e:material:fantasy-kingdom:wall_large_brick_01
+  room:
+    implicitRegionId: courtyard
+    regions:
+      - id: courtyard
+        name: Courtyard
+        lighting: {intensity: 1}
+        cells:
+          - {r: -1, q: [[-2, 2]]}
+          - {r: 0, q: [[-2, 2]]}
+          - {r: 1, q: [[-2, 2]]}
+          - {r: 2, q: [[-1, 1]]}
+    walls:
+      - id: courtyard-wall
+        label: Masonry wall
+        line: {start: {x: -3, z: -0.75}, end: {x: 3, z: -0.75}}
+        openings:
+          - id: courtyard-opening
+            position: 3
+            width: 0.7687937021255493
+            door:
+              id: courtyard-door
+              assetRef: dnd5e:env:fantasy-kingdom:castle_wall_doorway_single_01
+              framePresentation:
+                span: {before: 1.875007152557373, after: 1.8749926686286926}
+                faceFinishes:
+                  - {side: positive-z, materialRef: 'dnd5e:material:fantasy-kingdom:wall_large_brick_01', phaseU: 0.8}
+                  - {side: negative-z, materialRef: 'dnd5e:material:fantasy-kingdom:wall_large_brick_01', phaseU: 0.2}
+        appearance:
+          assetRef: dnd5e:env:fantasy-kingdom:castle_wall_fit_01
+          height: 3.75
+          thickness: 0.375
+          elevation: 0
+        blocker:
+          footprint: {width: 6, depth: 0.375, offsetX: 0, offsetZ: 0}
+          blocksMovement: false
+          blocksLineOfSight: false
+    doorBindings:
+      courtyard-door: {closed: true}
+    propDeclarations: {}
+    arrangementDeclarations: {}
+    partyStart: {q: 0, r: 2}
+    monsterDeclarations: []

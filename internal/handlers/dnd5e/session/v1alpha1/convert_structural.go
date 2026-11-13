@@ -40,6 +40,7 @@ func atlasStructuralOpeningsToProto(openings []sdk.AtlasStructuralOpening) []*se
 	for _, opening := range openings {
 		out = append(out, &sessionpb.AtlasStructuralOpening{
 			Id: opening.ID, Position: opening.Position, Width: opening.Width,
+			FrameSpan: frameSpanToProto(opening.FrameSpan),
 		})
 	}
 	return out
@@ -50,9 +51,10 @@ func atlasStructuralDoorsToProto(doors []sdk.AtlasStructuralDoor) []*sessionpb.A
 	for _, door := range doors {
 		out = append(out, &sessionpb.AtlasStructuralDoor{
 			Id: door.ID, Ref: door.Ref,
-			From:   &sessionpb.FootprintPoint{X: door.From.X, Y: door.From.Y},
-			To:     &sessionpb.FootprintPoint{X: door.To.X, Y: door.To.Y},
-			Height: door.Height, Thickness: door.Thickness, Elevation: door.Elevation,
+			FramePresentation: doorFrameToProto(door.FramePresentation),
+			From:              &sessionpb.FootprintPoint{X: door.From.X, Y: door.From.Y},
+			To:                &sessionpb.FootprintPoint{X: door.To.X, Y: door.To.Y},
+			Height:            door.Height, Thickness: door.Thickness, Elevation: door.Elevation,
 		})
 	}
 	return out

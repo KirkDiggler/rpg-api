@@ -112,7 +112,7 @@ func exitsToProto(es []sdk.AtlasExit) []*sessionpb.AtlasExit {
 
 func openingsToProto(os []sdk.AtlasStructuralOpening) []*sessionpb.AtlasStructuralOpening {
 	return mapSlice(os, func(o sdk.AtlasStructuralOpening) *sessionpb.AtlasStructuralOpening {
-		return &sessionpb.AtlasStructuralOpening{Id: o.ID, Position: o.Position, Width: o.Width}
+		return &sessionpb.AtlasStructuralOpening{Id: o.ID, Position: o.Position, Width: o.Width, FrameSpan: frameSpanToProto(o.FrameSpan)}
 	})
 }
 
@@ -132,7 +132,8 @@ func structuralDoorsToProto(ds []sdk.AtlasStructuralDoor) []*sessionpb.AtlasStru
 	return mapSlice(ds, func(d sdk.AtlasStructuralDoor) *sessionpb.AtlasStructuralDoor {
 		return &sessionpb.AtlasStructuralDoor{
 			Id: d.ID, Ref: d.Ref, From: footprintPointToProto(d.From), To: footprintPointToProto(d.To),
-			Height: d.Height, Thickness: d.Thickness, Elevation: d.Elevation,
+			FramePresentation: doorFrameToProto(d.FramePresentation),
+			Height:            d.Height, Thickness: d.Thickness, Elevation: d.Elevation,
 		}
 	})
 }
