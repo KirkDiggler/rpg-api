@@ -46,8 +46,26 @@ import (
 // mistake -- and matches the same-bucket sentinels below rather than
 // requiring a distinct case that implies it is expected here.
 func StatusError(err error) error {
+	return StatusErrorFor(err, "")
+}
+
+// StatusErrorFor is [StatusError] for a verb a member makes: viewer is the
+// member acting, so a refusal the session words for whoever is shown it
+// (a held member's custody, rpg-project#925) is worded for them -- in the
+// second person when it is their own character it names. An empty viewer is
+// the third-person form.
+func StatusErrorFor(err error, viewer string) error {
 	if err == nil {
 		return nil
+	}
+
+	// HELD BY THE GUARDS (rpg-project#925): a move imposed on a member the
+	// guards hold. Like the held door below, its sentence is for the player
+	// and is the whole message -- no verb prefix -- worded for the viewer.
+	// It is also ErrInCustody, so it is asked first.
+	var custody *sdk.CustodyMoveError
+	if errors.As(err, &custody) {
+		return status.Error(codes.FailedPrecondition, custody.Sentence(viewer))
 	}
 
 	// A held door's refusal (rpg-project#852, R7) is a sentence for the
@@ -522,6 +540,16 @@ func StatusError(err error) error {
 		// The engine's sentence names the stop.
 		errors.Is(err, sdk.ErrSharingNotBuilt):
 		return status.Error(codes.FailedPrecondition, err.Error())
+
+	// FAILED_PRECONDITION, THE SENTENCE ALONE (rpg-project#925): a member the
+	// guards hold trying to walk away (ErrInCustody), and a line refused
+	// whole because the cells cannot take the party now (ErrJailRefused).
+	// Each sentinel's text is the sentence the player is shown, so it is the
+	// whole message, without the verb's "move: " or "speak: ".
+	case errors.Is(err, sdk.ErrInCustody):
+		return status.Error(codes.FailedPrecondition, sdk.ErrInCustody.Error())
+	case errors.Is(err, sdk.ErrJailRefused):
+		return status.Error(codes.FailedPrecondition, sdk.ErrJailRefused.Error())
 
 	// PERMISSION_DENIED -- the authenticated principal is real but owns no
 	// current player seat in this session. NotFound would expose roster state;

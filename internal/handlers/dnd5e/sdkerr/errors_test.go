@@ -288,6 +288,8 @@ func sentinelCases() []sentinelCase {
 		{"ErrDoorHeld", sdk.ErrDoorHeld, codes.FailedPrecondition},
 		{"ErrLineReserved", sdk.ErrLineReserved, codes.FailedPrecondition},
 		{"ErrSharingNotBuilt", sdk.ErrSharingNotBuilt, codes.FailedPrecondition},
+		{"ErrInCustody", sdk.ErrInCustody, codes.FailedPrecondition},
+		{"ErrJailRefused", sdk.ErrJailRefused, codes.FailedPrecondition},
 		{"ErrStaleOption", sdk.ErrStaleOption, codes.Aborted},
 		// Already in the pinned SDK before this feature (v0.21.4) and unmapped
 		// until this audit: this package's OWN adapter vocabulary going stale
@@ -497,4 +499,28 @@ func TestStatusError_StaleSaveIsAbortedNotUnavailable(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, codes.Aborted, st.Code())
 	require.Contains(t, st.Message(), "stale checkpoint")
+}
+
+// TestStatusError_CustodyRefusalsAreTheSentenceAlone pins rpg-project#925:
+// each custody refusal reaches the player as FAILED_PRECONDITION whose whole
+// message is the session's sentence -- no "move: " or "speak: " -- and a
+// move imposed on a held member is worded for the member acting: in the
+// second person when it is their own character it names.
+func TestStatusError_CustodyRefusalsAreTheSentenceAlone(t *testing.T) {
+	for _, tc := range []struct {
+		name, viewer, want string
+		err                error
+	}{
+		{"walking away", "alice", "The guards hold you; you cannot walk away.", fmt.Errorf("move: %w", sdk.ErrInCustody)},
+		{"the cells refuse", "alice", "The guards cannot take you to the cells now.", fmt.Errorf("speak: %w", sdk.ErrJailRefused)},
+		{"a move imposed on yourself", "alice", "The guards hold you; you cannot be moved.", fmt.Errorf("cast: %w", &sdk.CustodyMoveError{Member: "alice"})},
+		{"a move imposed on another", "bob", "The guards hold alice; they cannot be moved.", fmt.Errorf("attack: %w", &sdk.CustodyMoveError{Member: "alice"})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st, ok := status.FromError(StatusErrorFor(tc.err, tc.viewer))
+			require.True(t, ok)
+			require.Equal(t, codes.FailedPrecondition, st.Code())
+			require.Equal(t, tc.want, st.Message())
+		})
+	}
 }

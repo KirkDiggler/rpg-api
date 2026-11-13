@@ -37,7 +37,7 @@ func (h *Handler) Trade(ctx context.Context, req *sessionpb.TradeRequest) (*sess
 		Receive: tradeOfferFromProto(req.GetReceive()),
 	})
 	if err != nil {
-		return nil, sdkerr.StatusError(err)
+		return nil, sdkerr.StatusErrorFor(err, req.GetActor())
 	}
 
 	descriptor, err := worldNPCDescriptorToProto(out.Descriptor)

@@ -25,7 +25,7 @@ func (h *Handler) OpenDoor(ctx context.Context, req *sessionpb.OpenDoorRequest) 
 		Door:    req.GetDoor(),
 	})
 	if err != nil {
-		return nil, sdkerr.StatusError(err)
+		return nil, sdkerr.StatusErrorFor(err, req.GetMember())
 	}
 	if out.Refused != nil {
 		return nil, doorRefusalError(out.Refused)

@@ -39,7 +39,7 @@ func (h *Handler) Attack(ctx context.Context, req *sessionpb.AttackRequest) (*se
 		DeclarationID: req.GetDeclarationId(),
 	})
 	if err != nil {
-		return nil, sdkerr.StatusError(err)
+		return nil, sdkerr.StatusErrorFor(err, req.GetAttacker())
 	}
 
 	// The keep record can name a rule this build has never heard of, and the

@@ -27,7 +27,7 @@ func (h *Handler) SetSneaking(ctx context.Context, req *sessionpb.SetSneakingReq
 	}
 	out, err := h.manager.SetSneaking(ctx, &sdk.SetSneakingInput{Session: req.GetSession(), Member: req.GetMember(), Sneaking: req.GetSneaking()})
 	if err != nil {
-		return nil, sdkerr.StatusError(err)
+		return nil, sdkerr.StatusErrorFor(err, req.GetMember())
 	}
 	return &sessionpb.SetSneakingResponse{
 		Sneaking: out.Sneaking,
