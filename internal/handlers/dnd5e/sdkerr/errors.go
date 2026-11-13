@@ -514,7 +514,13 @@ func StatusError(err error) error {
 		// pending (SpeakOption.pending), so the only caller who reaches this
 		// is one who sent it anyway. NOT the ABORTED stale reply below: the
 		// conversation has not moved, it is waiting.
-		errors.Is(err, sdk.ErrLineReserved):
+		errors.Is(err, sdk.ErrLineReserved),
+		// ErrSharingNotBuilt (rpg-project#935) -- a launch of a dungeon whose
+		// party's sharing dial is at a stop not built yet (shared knowledge,
+		// rpg-project#937). The dungeon is valid and its author can change
+		// the setting: a precondition, never ErrInvalidWorld's broken world.
+		// The engine's sentence names the stop.
+		errors.Is(err, sdk.ErrSharingNotBuilt):
 		return status.Error(codes.FailedPrecondition, err.Error())
 
 	// PERMISSION_DENIED -- the authenticated principal is real but owns no

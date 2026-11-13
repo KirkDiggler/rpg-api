@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
@@ -54,4 +56,20 @@ func (s *SessionStackSuite) TestStartEncounter_EachTheirOwnLaunches() {
 
 func (s *SessionStackSuite) TestStartEncounter_SharedViewLaunches() {
 	s.Require().NoError(s.launchSharing("view"))
+}
+
+// TestStartEncounter_SharedKnowledgeIsRefused: `knowledge` compiles and
+// saves, and the launch refuses it with the engine's sentence as the
+// session's ErrSharingNotBuilt -- a precondition the author can change, not
+// a broken world -- before any session is written.
+func (s *SessionStackSuite) TestStartEncounter_SharedKnowledgeIsRefused() {
+	err := s.launchSharing("knowledge")
+	s.Require().Error(err)
+	s.ErrorIs(err, sdk.ErrSharingNotBuilt)
+	s.NotErrorIs(err, sdk.ErrInvalidWorld, "the dungeon is valid")
+	s.Contains(err.Error(), "shared knowledge is not built yet")
+
+	sessionKeys, err := s.redisClient.Keys(s.ctx, "session:v1alpha1:*").Result()
+	s.Require().NoError(err)
+	s.Empty(sessionKeys, "no session record was written")
 }

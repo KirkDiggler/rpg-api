@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -237,9 +238,21 @@ func (r *heirloomRun) story(t *testing.T, member string) []*storypb.Act {
 }
 
 // heard reports whether member's story holds an act matching is.
+// heard is whether member's OWN senses gave them an act is matches: at
+// shared view a friend's version also reaches them, marked via the friend
+// (rpg-project#935), and that is not theirs.
 func (r *heirloomRun) heard(t *testing.T, member string, is func(*storypb.Act) bool) bool {
 	t.Helper()
-	return holdoutActIndex(r.story(t, member), is) != -1
+	return holdoutActIndex(ownActs(r.story(t, member)), is) != -1
+}
+
+// shownVia is whether member was shown an act is matches through friend
+// (rpg-project#935, shared view).
+func (r *heirloomRun) shownVia(t *testing.T, member, friend string, is func(*storypb.Act) bool) bool {
+	t.Helper()
+	return holdoutActIndex(r.story(t, member), func(a *storypb.Act) bool {
+		return is(a) && slices.Equal(viaIDs(a), []string{friend})
+	}) != -1
 }
 
 // holdingsIsReveal matches a perception act revealing a concealment: the
@@ -582,6 +595,11 @@ func lootTheCaptain(t *testing.T, captainHolds bool) {
 		"and nobody else's map moves either way -- knowledge is audience-scoped, "+
 			"unlike where things physically are")
 	require.False(t, run.heard(t, "bob", holdingsIsReveal))
+	// AT SHARED VIEW (the default, rpg-project#935) bob is SHOWN alice's
+	// reveal through her -- and his map, which is his knowledge, does not
+	// move: the view is shared, the knowledge is not.
+	require.Equal(t, captainHolds, run.shownVia(t, "bob", "alice", holdingsIsReveal),
+		"bob is shown alice's reveal through her exactly when there was one")
 
 	// EVERYONE PRESENT HEARS THE LOOT ITSELF, and it names looter and body
 	// and nothing of what moved (design P3): a beat that varied with what
@@ -849,6 +867,8 @@ func TestAcceptance_HoldingAScrollTeachesItsHolderAlone(t *testing.T) {
 	require.Empty(t, run.atlas(t, "bob").GetDoorways(),
 		"bob saw the scroll leave the floor and still does not know the way in")
 	require.False(t, run.heard(t, "bob", holdingsIsReveal))
+	require.True(t, run.shownVia(t, "bob", "alice", holdingsIsReveal),
+		"at shared view he is shown her reveal through her, and his map still does not move")
 	require.NotContains(t, propIDs(run.atlas(t, "bob")), dungeonstest.ScrollPropID,
 		"though the scroll is gone from his map too, as every held prop is")
 

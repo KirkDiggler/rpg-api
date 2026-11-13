@@ -103,3 +103,11 @@ func TestSharingAnUnknownWordIsRefusedAtItsPath(t *testing.T) {
 	}
 	require.Nil(t, resp.GetAtlas())
 }
+
+// TestSharingSharedKnowledgeValidatesSavesAndReloads: `knowledge` is designed
+// and not built (rpg-project#937). It is valid content: it grades clean with
+// its atlas, saves, and reloads unchanged; only a launch refuses it.
+func TestSharingSharedKnowledgeValidatesSavesAndReloads(t *testing.T) {
+	h, castle := sharingHandler(t)
+	requireSavesAndReloads(t, h, markedSharing(t, castle, "knowledge"), "knowledge")
+}
