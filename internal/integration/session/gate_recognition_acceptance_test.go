@@ -84,6 +84,13 @@ func admittedWithBobOnTheRoad(t *testing.T, run string) *acceptanceHarness {
 // dice given; the guest claim must still win on them.
 func admittedWithBobOnTheRoadRolling(t *testing.T, run string, dice sdk.Roller) *acceptanceHarness {
 	t.Helper()
+	return admittedWithBobOnTheRoadFrom(t, run, dice, madKingRaw(t))
+}
+
+// admittedWithBobOnTheRoadFrom is [admittedWithBobOnTheRoadRolling] on the
+// castle source given.
+func admittedWithBobOnTheRoadFrom(t *testing.T, run string, dice sdk.Roller, source []byte) *acceptanceHarness {
+	t.Helper()
 	ctx := auth.WithPlayerID(context.Background(), "player-alice")
 	h := newAcceptanceHarnessWithDice(t, dice)
 	for _, c := range []struct{ id, player string }{{"alice", "player-alice"}, {"bob", "player-bob"}} {
@@ -92,7 +99,7 @@ func admittedWithBobOnTheRoadRolling(t *testing.T, run string, dice sdk.Roller) 
 		})
 		require.NoError(t, err)
 	}
-	dungeon, err := sessionworld.Compile(madKingRaw(t))
+	dungeon, err := sessionworld.Compile(source)
 	require.NoError(t, err)
 	out := h.launch(t, run, dungeon.Spec, seatAt("alice", -1, 9), seatAt("bob", 6, 15))
 	require.Empty(t, out.Formed, "precondition: nobody fights")
