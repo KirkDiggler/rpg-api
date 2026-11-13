@@ -16,10 +16,16 @@ import (
 const theGuardsHint = "The troupe? Aye, they’re inside. If one of them comes back and speaks for you, in you go."
 
 // toTheEastYard is the walk from just inside the gate to the east yard
-// (cube 4,0): courtyard floor out of gate-1's sight with the game's real
-// sight. The engine's own route for it, in offset cells.
+// (cube 6,2, offset 7,2): courtyard floor out of both gate guards' sight with
+// the game's real sight (gate-2 drops out of mutual sight two cells in,
+// gate-1 by cube 2,2). The engine's own route for it, in offset cells.
 func toTheEastYard() []*sessionpb.Position {
-	return []*sessionpb.Position{pbAt(1, 4), pbAt(1, 3), pbAt(2, 2), pbAt(2, 1), pbAt(3, 0), pbAt(4, 0)}
+	return []*sessionpb.Position{pbAt(1, 4), pbAt(1, 3), pbAt(2, 2), pbAt(3, 2), pbAt(4, 2), pbAt(5, 2), pbAt(6, 2), pbAt(7, 2)}
+}
+
+// fromTheEastYard is [toTheEastYard] walked back to just inside the gate.
+func fromTheEastYard() []*sessionpb.Position {
+	return []*sessionpb.Position{pbAt(6, 2), pbAt(5, 2), pbAt(4, 2), pbAt(3, 2), pbAt(2, 2), pbAt(1, 3), pbAt(1, 4), pbAt(0, 5)}
 }
 
 // toTheWestYard is the walk from just inside the gate to the west yard
@@ -67,20 +73,20 @@ func hintInTheYard(t *testing.T, run string, path []*sessionpb.Position) (*accep
 // gate-1's sight; bob, the straggler, asks gate-1 after his friends. Gate-1
 // shouts the hint, and alice catches the words without the name: a Speech
 // with the words, no speaker, one room off, by hearing alone. Whom it was
-// said to is bob: from the east yard she sees him in the gate's opening,
-// though not gate-1 beside him (R4: the spoken-to is named exactly when the
-// reader sees them). She walks back, vouches, and bob is admitted.
+// said to is bob: through the open gate she sees him on the gatehouse floor,
+// though not gate-1 (R4: the spoken-to is named exactly when the reader sees
+// them). She walks back, vouches, and bob is admitted.
 func TestAcceptance_TheGuardsHintIsShoutedToTheYard(t *testing.T) {
 	h, hints := hintInTheYard(t, "gate-hint-run", toTheEastYard())
 	sp := hints[0].GetSpeech()
 	require.Nil(t, sp.GetSpeaker(), "without the name: she does not see the guard")
-	require.Equal(t, "bob", sp.GetSpokenTo().GetId(), "she sees bob in the opening, so she is told he was answered")
+	require.Equal(t, "bob", sp.GetSpokenTo().GetId(), "she sees bob through the open gate, so she is told he was answered")
 	require.Equal(t, storypb.Loudness_LOUDNESS_SHOUT, sp.GetLoudness())
 	require.NotNil(t, sp.Hops, "an unseen speaker is placed by rooms")
 	require.Equal(t, int32(1), sp.GetHops(), "one room off")
 	require.Equal(t, []storypb.Sense{storypb.Sense_SENSE_HEARING}, hints[0].GetPerceived().GetSenses())
 
-	back := walkAs(t, h, "gate-hint-run", "alice", "player-alice", []*sessionpb.Position{pbAt(3, 0), pbAt(2, 1), pbAt(2, 2), pbAt(1, 3), pbAt(1, 4), pbAt(0, 5)})
+	back := walkAs(t, h, "gate-hint-run", "alice", "player-alice", fromTheEastYard())
 	require.Equal(t, sessionpb.MovementStatus_MOVEMENT_STATUS_COMPLETED, back.GetStatus(), "alice walks back: %s", back.GetStopReason())
 	vouchFromTheRoad(t, h, "gate-hint-run")
 }
