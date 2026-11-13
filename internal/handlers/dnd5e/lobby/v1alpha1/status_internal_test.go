@@ -57,6 +57,12 @@ func TestLobbyStatusError_Table(t *testing.T) {
 			wantCode:    codes.FailedPrecondition,
 			msgContains: "waiting on alice",
 		},
+		{
+			name:        "a sharing stop not built yet is a precondition with the engine's sentence",
+			err:         fmt.Errorf("launch session %q: %w", "enc-1", fmt.Errorf("the party's sharing is set to shared knowledge, and shared knowledge is not built yet (rpg-project#937): %w", sdk.ErrSharingNotBuilt)),
+			wantCode:    codes.FailedPrecondition,
+			msgContains: "shared knowledge is not built yet",
+		},
 		{name: "a launch error that is not a seat refusal stays Internal", err: fmt.Errorf("launch session %q: %w", "enc-new", errors.New("provider unavailable")), wantCode: codes.Internal, msgContains: "provider unavailable"},
 		{name: "unclassified error falls through to Internal", err: errors.New("boom"), wantCode: codes.Internal, msgContains: "boom"},
 	}

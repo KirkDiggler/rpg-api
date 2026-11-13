@@ -51,7 +51,10 @@ func whisperedStandAside(t *testing.T, run string) (*acceptanceHarness, *gateDic
 	require.Equal(t, 1, bytes.Count(source, standAsideLine), "precondition: the captain's stand-aside, once")
 	whispered := bytes.Replace(source, standAsideLine,
 		append(append([]byte(nil), standAsideLine...), []byte("            loudness: whisper\n")...), 1)
-	dungeon, err := sessionworld.Compile(whispered)
+	// AT EACH THEIR OWN (rpg-project#935): the scene is what bob's own senses
+	// give him. At shared view he is also shown alice's version through her,
+	// the fullest, die and all.
+	dungeon, err := sessionworld.Compile(eachTheirOwn(t, whispered))
 	require.NoError(t, err)
 	out := h.launch(t, run, dungeon.Spec, seatAt("alice", 1, 14), seatAt("bob", bobCol, bobRow))
 	require.Empty(t, out.Formed, "precondition: nobody fights")

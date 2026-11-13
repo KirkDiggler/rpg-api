@@ -138,3 +138,35 @@ func TestAnActWithoutPerceivedCarriesNone(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, got.GetPerceived())
 }
+
+// TestPerceivedRidesEveryBody pins the shared view on the wire
+// (rpg-project#935): the act envelope's Perceived -- senses and via, the
+// friends whose senses they were -- is spelled the same on every body; a
+// perception keeps the observer the act names (the friend who saw), never
+// the reader; and an empty via stays empty.
+func TestPerceivedRidesEveryBody(t *testing.T) {
+	via := &sdk.Perceived{Senses: []sdk.Sense{sdk.SenseSight}, Via: []sdk.Party{gate1}}
+	for name, c := range map[string]struct {
+		family sdk.Family
+		body   sdk.ActBody
+	}{
+		"speech":       {sdk.FamilyAct, sdk.SpeechAct{Utterance: "u", Speaker: gate1, Words: strp("Halt."), Place: cell, Loudness: "shout"}},
+		"perception":   {sdk.FamilyPerception, sdk.Perception{Observer: gate1, Sense: sdk.SenseSight, Sighted: &sdk.SightChange{Gained: []string{"alice"}}}},
+		"walk":         {sdk.FamilyAct, sdk.WalkAct{Mover: gate1, Path: []sdk.WalkStep{{Cell: cell}}}},
+		"table answer": {sdk.FamilyTableAnswer, sdk.TableAnswer{Who: gate1}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := actToProto(sdk.Act{ID: "id-1", Recipient: "alice", Family: c.family, Body: c.body, Perceived: via})
+			require.NoError(t, err)
+			require.True(t, proto.Equal(&sessionpb.Perceived{Senses: []sessionpb.Sense{sessionpb.Sense_SENSE_SIGHT}, Via: []*sessionpb.Party{gate1P}},
+				got.GetPerceived()), "%v", got.GetPerceived())
+			if p := got.GetPerception(); p != nil {
+				require.True(t, proto.Equal(gate1P, p.GetObserver()), "the friend who saw, not the reader")
+			}
+		})
+	}
+	got, err := actToProto(sdk.Act{ID: "id-2", Family: sdk.FamilyAct, Body: sdk.SpeechAct{Utterance: "u", Place: cell, Loudness: "speak"},
+		Perceived: &sdk.Perceived{Senses: []sdk.Sense{sdk.SenseHearing}}})
+	require.NoError(t, err)
+	require.Empty(t, got.GetPerceived().GetVia(), "an empty via stays empty")
+}

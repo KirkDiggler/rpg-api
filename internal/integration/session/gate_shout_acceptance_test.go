@@ -78,6 +78,10 @@ const theShout = "Oi! Pedlar! What have you got to sell?"
 // WHY NOT THE COURTYARD: inside the gate is two rooms from the road, and a
 // shout carries its words one room (R9), so a player there hears nothing of
 // it at all.
+//
+// AT EACH THEIR OWN (rpg-project#935): this is what bob's own ears give him.
+// At shared view he is also shown alice's version through her, speaker and
+// all (TestAcceptance_TheSharingDial).
 func TestAcceptance_AShoutIsHeardUnseen(t *testing.T) {
 	aliceCtx := auth.WithPlayerID(context.Background(), "player-alice")
 	bobCtx := auth.WithPlayerID(context.Background(), "player-bob")
@@ -89,7 +93,7 @@ func TestAcceptance_AShoutIsHeardUnseen(t *testing.T) {
 		})
 		require.NoError(t, err)
 	}
-	dungeon, err := sessionworld.Compile(madKingRaw(t))
+	dungeon, err := sessionworld.Compile(eachTheirOwn(t, madKingRaw(t)))
 	require.NoError(t, err)
 	out := h.launch(t, run, dungeon.Spec, seatAt("alice", 6, 15), seatAt("bob", -1, 9))
 	require.Empty(t, out.Formed, "precondition: nobody fights")

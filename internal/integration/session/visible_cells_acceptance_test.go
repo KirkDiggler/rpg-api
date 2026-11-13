@@ -101,7 +101,9 @@ func (s *StructuralPatchAcceptanceSuite) TestOpeningAGateStreamsEachLearnerItsOw
 	for member, want := range learned {
 		story := storyOf(ctx[member], s.T(), h.story, "learn-run", member)
 		var reveals []*storypb.CellsLearned
-		for _, act := range story[before[member]:] {
+		// Her own learning: a friend's, shown at shared view through the
+		// friend (rpg-project#935), is not.
+		for _, act := range ownActs(story[before[member]:]) {
 			if cells := act.GetPerception().GetCells(); cells != nil {
 				s.Equal(storypb.Family_FAMILY_PERCEPTION, act.GetFamily())
 				s.Equal(storypb.Sense_SENSE_CELLS, act.GetPerception().GetSense())

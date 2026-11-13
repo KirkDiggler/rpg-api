@@ -29,6 +29,7 @@ import (
 //     ErrEncounterAlreadyEnded / ErrCharacterSeatedElsewhere → FailedPrecondition
 //   - sdk.ErrInvalidWorld (a launch refusing the dungeon) → FailedPrecondition
 //   - sdk.ErrWindowOpen (abandoning while a roll waits) → FailedPrecondition
+//   - sdk.ErrSharingNotBuilt (a sharing stop not built yet) → FailedPrecondition
 //   - unclassified → Internal
 func lobbyStatusError(err error) error {
 	switch {
@@ -67,6 +68,13 @@ func lobbyStatusError(err error) error {
 		// is well formed; the dungeon is what must change before a retry, so
 		// FAILED_PRECONDITION, and the SDK's sentence (which names the
 		// interaction or the seat count) is the message the author reads.
+		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, sdk.ErrSharingNotBuilt):
+		// THE PARTY'S SHARING DIAL AT A STOP NOT BUILT (rpg-project#935,
+		// rpg-project#937): the dungeon is valid -- it compiled, previewed and
+		// saved -- and its author can change the setting, so this is a
+		// precondition, not a broken world. The engine's sentence names the
+		// stop and why.
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, sdk.ErrWindowOpen):
 		// ABANDONING WHILE A ROLL WAITS (rpg-project#924): the session refuses
