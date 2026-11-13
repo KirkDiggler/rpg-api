@@ -11,6 +11,8 @@ package sdkerr
 import (
 	"errors"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -206,6 +208,15 @@ func StatusError(err error) error {
 		errors.Is(err, sdk.ErrBadRecordID):
 		return status.Error(codes.InvalidArgument, err.Error())
 
+	// FAILED_PRECONDITION WITH A REASON (rpg-project#925): an echoed
+	// selector no longer names the regenerated offer. Same code and message
+	// as the bucket below, which describes it, plus an ErrorInfo detail with
+	// reason STALE_DECLARATION, so a client recognizes "what you were offered
+	// has moved on" without treating every FAILED_PRECONDITION as stale --
+	// the rest of the bucket are sentences for the player.
+	case errors.Is(err, sdk.ErrStaleDeclaration):
+		return withReason(codes.FailedPrecondition, err.Error(), ReasonStaleDeclaration)
+
 	// FAILED_PRECONDITION -- the request is well-formed but the world's
 	// current state refuses it (wrong clock, wrong actor, wrong equipment).
 	//
@@ -281,7 +292,6 @@ func StatusError(err error) error {
 		errors.Is(err, sdk.ErrCannotAfford),
 		errors.Is(err, sdk.ErrNotYourTurn),
 		errors.Is(err, sdk.ErrOutOfReach),
-		errors.Is(err, sdk.ErrStaleDeclaration),
 		errors.Is(err, sdk.ErrOutOfRange),
 		errors.Is(err, sdk.ErrNotVisible),
 		// ErrUnwitnessed (rpg-project#454, now Speak) -- the threatened
@@ -567,8 +577,12 @@ func StatusError(err error) error {
 	// FAILED_PRECONDITION's ErrStaleDeclaration: the line still exists and
 	// may still be offered; it is the revision the reply carried that lost
 	// the race, which is ABORTED's meaning in gRPC's own table.
+	//
+	// It carries an ErrorInfo detail with reason STALE_OPTION, the stale
+	// declaration's sibling above, so one check recognizes an offer that
+	// moved on whatever verb refused it.
 	case errors.Is(err, sdk.ErrStaleOption):
-		return status.Error(codes.Aborted, err.Error())
+		return withReason(codes.Aborted, err.Error(), ReasonStaleOption)
 
 	// UNAVAILABLE -- a write landed only partially. Retry guidance lives in
 	// the SaveReport carried by the SDK's SaveError (design rule 7); errors.As
@@ -669,4 +683,32 @@ func StatusError(err error) error {
 	default:
 		return status.Error(codes.Internal, err.Error())
 	}
+}
+
+// ErrorDomain is the ErrorInfo domain this package's reasons belong to: the
+// session service's proto package, which names the API that refused.
+const ErrorDomain = "dnd5e.api.session.v1alpha1"
+
+// The ErrorInfo reasons a client may key on (rpg-project#925). Each names one
+// refusal whose code is shared with refusals of another meaning.
+const (
+	// ReasonStaleDeclaration: an echoed declaration selector no longer names
+	// the regenerated offer (sdk.ErrStaleDeclaration). Refresh and pick again.
+	ReasonStaleDeclaration = "STALE_DECLARATION"
+	// ReasonStaleOption: a Speak reply from an older revision of the
+	// conversation, or an answer to a waiting line whose hold is gone
+	// (sdk.ErrStaleOption). Refresh and pick again.
+	ReasonStaleOption = "STALE_OPTION"
+)
+
+// withReason is a status of code and message carrying one ErrorInfo detail
+// naming reason in ErrorDomain. Attaching a well-formed ErrorInfo cannot
+// fail; if it ever did, the status without the detail still says what
+// happened, so the code and message are never lost.
+func withReason(code codes.Code, message, reason string) error {
+	st := status.New(code, message)
+	if detailed, err := st.WithDetails(&errdetails.ErrorInfo{Reason: reason, Domain: ErrorDomain}); err == nil {
+		st = detailed
+	}
+	return st.Err()
 }

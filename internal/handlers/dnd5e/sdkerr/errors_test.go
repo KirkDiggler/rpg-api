@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -27,11 +28,35 @@ import (
 // but a new sentinel with no explicit case here should get one deliberately
 // rather than silently riding the Internal default.
 func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
-	tests := []struct {
-		name string
-		err  error
-		want codes.Code
-	}{
+	tests := sentinelCases()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Wrapped exactly like the SDK wraps its own sentinels
+			// ("verb: %w") so the table is proven against errors.Is chains,
+			// not bare sentinel identity.
+			wrapped := fmt.Errorf("move: step 1: %w", tt.err)
+			got := StatusError(wrapped)
+			st, ok := status.FromError(got)
+			require.True(t, ok, "statusError must always return a gRPC status error")
+			require.Equal(t, tt.want, st.Code(), "sentinel %s", tt.name)
+		})
+	}
+}
+
+// sentinelCase is one row of the sentinel table: a mapped SDK sentinel and
+// the code it reaches the wire as.
+type sentinelCase struct {
+	name string
+	err  error
+	want codes.Code
+}
+
+// sentinelCases is every SDK sentinel the table maps, with its code: the one
+// list both the code test above and the reason test below iterate, so a
+// sentinel added here is held to both.
+func sentinelCases() []sentinelCase {
+	return []sentinelCase{
 		// NOT_FOUND -- the caller named something that does not exist.
 		{"ErrNoSession", sdk.ErrNoSession, codes.NotFound},
 		{"ErrNoEncounter", sdk.ErrNoEncounter, codes.NotFound},
@@ -286,19 +311,45 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// misread as some caller-facing code.
 		{"ErrNotFound (defensive)", sdk.ErrNotFound, codes.Internal},
 	}
+}
 
-	for _, tt := range tests {
+// TestStatusError_StaleRefusalsCarryTheirReason pins rpg-project#925: the
+// two refusals that mean "what you were offered has moved on" each carry
+// exactly one ErrorInfo detail with its reason in ErrorDomain, beside their
+// unchanged code and message; every other mapped sentinel carries no
+// ErrorInfo, so a client keying on the reason never mistakes a sentence for
+// the player for a stale selector.
+func TestStatusError_StaleRefusalsCarryTheirReason(t *testing.T) {
+	reasons := map[string]string{
+		"ErrStaleDeclaration": ReasonStaleDeclaration,
+		"ErrStaleOption":      ReasonStaleOption,
+	}
+	seen := map[string]bool{}
+	for _, tt := range sentinelCases() {
 		t.Run(tt.name, func(t *testing.T) {
-			// Wrapped exactly like the SDK wraps its own sentinels
-			// ("verb: %w") so the table is proven against errors.Is chains,
-			// not bare sentinel identity.
 			wrapped := fmt.Errorf("move: step 1: %w", tt.err)
-			got := StatusError(wrapped)
-			st, ok := status.FromError(got)
-			require.True(t, ok, "statusError must always return a gRPC status error")
-			require.Equal(t, tt.want, st.Code(), "sentinel %s", tt.name)
+			st, ok := status.FromError(StatusError(wrapped))
+			require.True(t, ok)
+			var infos []*errdetails.ErrorInfo
+			for _, d := range st.Details() {
+				if info, isInfo := d.(*errdetails.ErrorInfo); isInfo {
+					infos = append(infos, info)
+				}
+			}
+			want, stale := reasons[tt.name]
+			if !stale {
+				require.Empty(t, infos, "%s carries no reason", tt.name)
+				return
+			}
+			seen[tt.name] = true
+			require.Equal(t, tt.want, st.Code(), "the code is unchanged")
+			require.Equal(t, wrapped.Error(), st.Message(), "and so is the message")
+			require.Len(t, infos, 1)
+			require.Equal(t, want, infos[0].GetReason())
+			require.Equal(t, ErrorDomain, infos[0].GetDomain())
 		})
 	}
+	require.Len(t, seen, len(reasons), "both stale refusals are in the sentinel table")
 }
 
 // errorsGoDefaultCaseSentinels names every SDK sentinel statusError leaves to
