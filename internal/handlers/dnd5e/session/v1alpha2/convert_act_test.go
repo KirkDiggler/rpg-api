@@ -901,3 +901,17 @@ func (s *ConvertActSuite) TestRelocateToProtoKeepsAnAbsentEndAbsent() {
 	s.Require().ErrorIs(err, errUnknownValue)
 	s.True(refused.GetRefused())
 }
+
+// TestArrestToProtoAWitnessIsToldNoCell pins rpg-project#925: at each their
+// own a witness who was not taken is told who was taken and not where they
+// are to be held -- the session's empty cell crosses as empty, never filled.
+func (s *ConvertActSuite) TestArrestToProtoAWitnessIsToldNoCell() {
+	witness, err := actToProto(sdk.Act{ID: "id-1", Family: sdk.FamilyAct, Body: sdk.ArrestAct{Interaction: "front-gate", Taken: []sdk.Party{alice}}})
+	s.Require().NoError(err)
+	s.Empty(witness.GetArrest().GetCell(), "the witness is told no cell")
+	s.Equal([]*sessionpb.Party{aliceP}, witness.GetArrest().GetTaken())
+
+	takenAct, err := actToProto(sdk.Act{ID: "id-2", Family: sdk.FamilyAct, Body: sdk.ArrestAct{Interaction: "front-gate", Taken: []sdk.Party{alice}, Cell: "region-cells"}})
+	s.Require().NoError(err)
+	s.Equal("region-cells", takenAct.GetArrest().GetCell(), "the taken are told the region")
+}
