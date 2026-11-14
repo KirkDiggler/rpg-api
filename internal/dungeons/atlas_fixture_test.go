@@ -78,6 +78,12 @@ import (
 // seven doors, 182 for the keep's), every one marked crossing; no doorway was
 // removed and the other eleven files answer their fixtures unchanged.
 //
+// the-mad-king.atlas.json was recaptured at rpg-toolkit encounter v0.213.0
+// (rpg-project#958, the kitchen passage): the castle places the concealed
+// grate by the kitchen hearth, so `placed` and `prop_presentations` each gain
+// the one `grate` entry. Nothing else in the castle's atlas moved, and the
+// other files answer their fixtures unchanged.
+//
 // The courtyard ground fold (rpg-project#874) was captured using reviewed API
 // 2355058 with the new Studio-authored castle source. Only region-courtyard's
 // ground field changed; a structural comparison kept every other atlas fact.
