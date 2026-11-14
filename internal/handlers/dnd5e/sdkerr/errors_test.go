@@ -290,6 +290,7 @@ func sentinelCases() []sentinelCase {
 		{"ErrSharingNotBuilt", sdk.ErrSharingNotBuilt, codes.FailedPrecondition},
 		{"ErrInCustody", sdk.ErrInCustody, codes.FailedPrecondition},
 		{"ErrJailRefused", sdk.ErrJailRefused, codes.FailedPrecondition},
+		{"ErrNoRoom", sdk.ErrNoRoom, codes.FailedPrecondition},
 		{"ErrStaleOption", sdk.ErrStaleOption, codes.Aborted},
 		// Already in the pinned SDK before this feature (v0.21.4) and unmapped
 		// until this audit: this package's OWN adapter vocabulary going stale
@@ -512,7 +513,8 @@ func TestStatusError_CustodyRefusalsAreTheSentenceAlone(t *testing.T) {
 		err                error
 	}{
 		{"walking away", "alice", "The guards hold you; you cannot walk away.", fmt.Errorf("move: %w", sdk.ErrInCustody)},
-		{"the cells refuse", "alice", "The guards cannot take you to the cells now.", fmt.Errorf("speak: %w", sdk.ErrJailRefused)},
+		{"no room", "alice", "There is no room for you there now.", fmt.Errorf("speak: %w", sdk.ErrNoRoom)},
+		{"the cells refuse, by the alias", "alice", "There is no room for you there now.", fmt.Errorf("speak: %w", sdk.ErrJailRefused)},
 		{"a move imposed on yourself", "alice", "The guards hold you; you cannot be moved.", fmt.Errorf("cast: %w", &sdk.CustodyMoveError{Member: "alice"})},
 		{"a move imposed on another", "bob", "The guards hold alice; they cannot be moved.", fmt.Errorf("attack: %w", &sdk.CustodyMoveError{Member: "alice"})},
 	} {
@@ -521,6 +523,32 @@ func TestStatusError_CustodyRefusalsAreTheSentenceAlone(t *testing.T) {
 			require.True(t, ok)
 			require.Equal(t, codes.FailedPrecondition, st.Code())
 			require.Equal(t, tc.want, st.Message())
+		})
+	}
+}
+
+// TestStatusError_AThingRefusedIsItsSentenceWithItsSentinelsCode pins
+// rpg-project#959: a refusal of something done to a thing reaches the player
+// as the session's sentence alone, with the code its sentinel already maps
+// to -- so a stale offer stays ABORTED and an unknown thing NOT_FOUND.
+func TestStatusError_AThingRefusedIsItsSentenceWithItsSentinelsCode(t *testing.T) {
+	for _, tc := range []struct {
+		sentinel error
+		want     codes.Code
+	}{
+		{sdk.ErrStaleOption, codes.Aborted},
+		{sdk.ErrStaleDeclaration, codes.Aborted},
+		{sdk.ErrNoProp, codes.NotFound},
+		{sdk.ErrNoOption, codes.FailedPrecondition},
+		{sdk.ErrOutOfRange, codes.FailedPrecondition},
+		{sdk.ErrLineReserved, codes.FailedPrecondition},
+	} {
+		t.Run(tc.sentinel.Error(), func(t *testing.T) {
+			err := fmt.Errorf("interact: %w", &sdk.ThingRefusal{Sentence: "You cannot reach that from here.", Err: fmt.Errorf("prop: %w", tc.sentinel)})
+			st, ok := status.FromError(StatusErrorFor(err, "alice"))
+			require.True(t, ok)
+			require.Equal(t, tc.want, st.Code())
+			require.Equal(t, "You cannot reach that from here.", st.Message())
 		})
 	}
 }
