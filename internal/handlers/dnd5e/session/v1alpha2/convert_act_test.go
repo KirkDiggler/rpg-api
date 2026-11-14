@@ -75,7 +75,7 @@ var (
 
 func answer() sdk.TableAnswer {
 	return sdk.TableAnswer{
-		Who: gate1, Option: "stand-aside", Key: "persuade", Word: "yield", Selector: "calm",
+		Who: gate1, Option: "stand-aside", Key: "persuade", Word: "yield", Selector: "calm", Narration: "He steps aside.",
 		Temperament: "wary", Entry: 2, Candidates: []sdk.TableCandidate{{Entry: 1, Weight: 2, Percent: 40, Loaded: 1}},
 		Roll: tableDie, Dealt: &sdk.Temper{Faction: guards, Temper: "wary", Roll: *tableDie},
 	}
@@ -83,7 +83,7 @@ func answer() sdk.TableAnswer {
 
 func answerP() *sessionpb.TableAnswer {
 	return &sessionpb.TableAnswer{
-		Who: gate1P, Option: "stand-aside", Key: "persuade", Word: "yield", Selector: "calm",
+		Who: gate1P, Option: "stand-aside", Key: "persuade", Word: "yield", Selector: "calm", Narration: "He steps aside.",
 		Temperament: "wary", Entry: 2, Candidates: []*sessionpb.TableCandidate{{Entry: 1, Weight: 2, Percent: 40, Loaded: 1}},
 		Roll: tableDieP, Dealt: &sessionpb.Temper{Faction: guardsP, Temper: "wary", Roll: tableDieP},
 	}
@@ -113,6 +113,8 @@ func act(family sessionpb.Family, body any) *sessionpb.Act {
 		out.Body = &sessionpb.Act_Relocate{Relocate: b}
 	case *sessionpb.ArrestAct:
 		out.Body = &sessionpb.Act_Arrest{Arrest: b}
+	case *sessionpb.InteractAct:
+		out.Body = &sessionpb.Act_Interact{Interact: b}
 	case *sessionpb.DeathSaveAct:
 		out.Body = &sessionpb.Act_DeathSave{DeathSave: b}
 	case *sessionpb.LootAct:
@@ -214,6 +216,11 @@ func everyBody() map[string]bodyCase {
 			sdk.RelocateAct{Mover: alice, From: &cell, To: &spatial.Position{X: 4, Y: -2}, Cause: "site:interactions:front-gate", Words: "Come along.", End: sdk.RelocateBoth},
 			act(sessionpb.Family_FAMILY_ACT, &sessionpb.RelocateAct{Mover: aliceP, From: cellP, To: &sessionpb.Position{X: 4, Y: -2},
 				Cause: "site:interactions:front-gate", Words: "Come along.", End: sessionpb.RelocateEnd_RELOCATE_END_BOTH})},
+		"interact": {sdk.FamilyAct,
+			sdk.InteractAct{Actor: alice, Prop: chest, Option: "to-chapel", Words: "You lift the grate.", Place: &cell,
+				Beaten: &beatenTrue, Skill: "investigation", Roll: d20},
+			act(sessionpb.Family_FAMILY_ACT, &sessionpb.InteractAct{Actor: aliceP, Prop: chestP, Option: "to-chapel", Words: "You lift the grate.",
+				Place: cellP, Beaten: &beatenTrue, Skill: "investigation", Roll: d20P})},
 		"arrest": {sdk.FamilyAct,
 			sdk.ArrestAct{Interaction: "front-gate", Taken: []sdk.Party{alice}, Cell: "region-cells"},
 			act(sessionpb.Family_FAMILY_ACT, &sessionpb.ArrestAct{Interaction: "front-gate", Taken: []*sessionpb.Party{aliceP}, Cell: "region-cells"})},
@@ -914,4 +921,20 @@ func (s *ConvertActSuite) TestArrestToProtoAWitnessIsToldNoCell() {
 	takenAct, err := actToProto(sdk.Act{ID: "id-2", Family: sdk.FamilyAct, Body: sdk.ArrestAct{Interaction: "front-gate", Taken: []sdk.Party{alice}, Cell: "region-cells"}})
 	s.Require().NoError(err)
 	s.Equal("region-cells", takenAct.GetArrest().GetCell(), "the taken are told the region")
+}
+
+var beatenTrue = true
+
+// TestInteractToProtoKeepsAbsentPartsAbsent pins rpg-project#959: a watcher
+// who saw the deed and not where, or no check, is sent no place, beaten,
+// skill or roll -- never the cell (0,0) or a false.
+func (s *ConvertActSuite) TestInteractToProtoKeepsAbsentPartsAbsent() {
+	got, err := actToProto(sdk.Act{ID: "id-1", Family: sdk.FamilyAct, Body: sdk.InteractAct{Actor: alice, Prop: chest, Words: "She lifts the grate."}})
+	s.Require().NoError(err)
+	in := got.GetInteract()
+	s.Nil(in.GetPlace(), "no place")
+	s.Nil(in.Beaten, "no verdict")
+	s.Empty(in.GetSkill())
+	s.Nil(in.GetRoll())
+	s.Empty(in.GetOption(), "a watcher is not told which option")
 }

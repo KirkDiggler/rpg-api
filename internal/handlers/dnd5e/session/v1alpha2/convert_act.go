@@ -112,6 +112,10 @@ func setBody(out *sessionpb.Act, body sdk.ActBody) error {
 		var v *sessionpb.RelocateAct
 		v, err = relocateToProto(b)
 		out.Body = &sessionpb.Act_Relocate{Relocate: v}
+	case sdk.InteractAct:
+		var v *sessionpb.InteractAct
+		v, err = interactToProto(b)
+		out.Body = &sessionpb.Act_Interact{Interact: v}
 	case sdk.ArrestAct:
 		var v *sessionpb.ArrestAct
 		v, err = arrestToProto(b)
@@ -774,6 +778,26 @@ func relocateToProto(b sdk.RelocateAct) (*sessionpb.RelocateAct, error) {
 	return out, p.err
 }
 
+// interactToProto spells something done to a prop (rpg-project#959) part
+// for part, each part only when the session's is set: a recipient who saw
+// the deed and not where is sent no place, never the cell (0,0); beaten,
+// skill and roll only when a check was made and the recipient may know it.
+func interactToProto(b sdk.InteractAct) (*sessionpb.InteractAct, error) {
+	var p parties
+	out := &sessionpb.InteractAct{
+		Actor: p.one(b.Actor), Prop: p.one(b.Prop), Option: b.Option, Words: b.Words,
+		Skill: b.Skill, Roll: p.roll(b.Roll),
+	}
+	if b.Place != nil {
+		out.Place = positionToProto(*b.Place)
+	}
+	if b.Beaten != nil {
+		beaten := *b.Beaten
+		out.Beaten = &beaten
+	}
+	return out, p.err
+}
+
 // arrestToProto spells a party arrested (rpg-project#925): the interaction
 // that arrested, the members taken as this recipient perceived them, and the
 // cell region. Who is wanted is never on it.
@@ -871,6 +895,9 @@ func tableAnswerToProto(b sdk.TableAnswer) (*sessionpb.TableAnswer, error) {
 	// and whom they were said to ride the Speech act.
 	out := &sessionpb.TableAnswer{
 		Who: p.one(b.Who), Option: b.Option, Key: b.Key, Word: b.Word, Selector: b.Selector,
+		// A PROP's answer in words (rpg-project#959): a creature's words ride
+		// the Speech act; a thing's ride here.
+		Narration:   b.Narration,
 		Temperament: b.Temperament, Entry: int32(b.Entry), Roll: p.roll(b.Roll), //nolint:gosec // a table row fits int32
 	}
 	for _, c := range b.Candidates {

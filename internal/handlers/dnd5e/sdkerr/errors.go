@@ -68,6 +68,18 @@ func StatusErrorFor(err error, viewer string) error {
 		return status.Error(codes.FailedPrecondition, custody.Sentence(viewer))
 	}
 
+	// SOMETHING DONE TO A THING, REFUSED (rpg-project#959): the session words
+	// the refusal for the player (ThingRefusal.Sentence) and keeps the
+	// sentinel it stands for. The sentence is the whole message, with no verb
+	// prefix; the CODE is the one that sentinel already maps to -- a stale
+	// offer ABORTED, an unknown thing NOT_FOUND, out of reach, not offered
+	// or reserved their own -- so a client branches on the code as it does
+	// for every other verb and shows the sentence as written.
+	var thing *sdk.ThingRefusal
+	if errors.As(err, &thing) {
+		return status.Error(status.Code(StatusErrorFor(thing.Err, viewer)), thing.Sentence)
+	}
+
 	// A held door's refusal (rpg-project#852, R7) is a sentence for the
 	// player: the session wraps it with its verb ("opendoor: ..."), and the
 	// client shows the message as written, so the detail's own reason is the
@@ -548,8 +560,12 @@ func StatusErrorFor(err error, viewer string) error {
 	// whole message, without the verb's "move: " or "speak: ".
 	case errors.Is(err, sdk.ErrInCustody):
 		return status.Error(codes.FailedPrecondition, sdk.ErrInCustody.Error())
-	case errors.Is(err, sdk.ErrJailRefused):
-		return status.Error(codes.FailedPrecondition, sdk.ErrJailRefused.Error())
+	// ErrNoRoom (rpg-project#959): a line or a thing done that would set its
+	// doer down where nobody can stand now -- the cells full, a passage's far
+	// end crowded. ErrJailRefused is its alias, the arrest's name for it.
+	case errors.Is(err, sdk.ErrNoRoom),
+		errors.Is(err, sdk.ErrJailRefused): //nolint:staticcheck // the deprecated alias stays mapped while the SDK exports it
+		return status.Error(codes.FailedPrecondition, sdk.ErrNoRoom.Error())
 
 	// PERMISSION_DENIED -- the authenticated principal is real but owns no
 	// current player seat in this session. NotFound would expose roster state;
