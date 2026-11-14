@@ -143,6 +143,13 @@ func TestAcceptance_InteractIsDoneToAThing(t *testing.T) {
 		X: moved[0].GetRelocate().GetTo().GetX(), Y: moved[0].GetRelocate().GetTo().GetY(),
 	}), "into the chapel")
 
+	// NO GHOST ON THE GRATE (rpg-project#961): bob and carol, who watched
+	// her go, hold alice placed nowhere -- the grate is a cell they can see
+	// is empty. Dan saw none of it.
+	requireNoGhost(t, h, run, "bob", "player-bob", "alice", "bob, who watched")
+	requireNoGhost(t, h, run, "carol", "player-carol", "alice", "carol, who watched")
+	require.Nil(t, sightingIn(t, h, run, "dan", "player-dan", "alice"), "dan holds no sighting of alice at all")
+
 	bobSaw := interactsOn(ownActs(streams["bob"]), kitchenGrate)
 	require.Len(t, bobSaw, 1, "bob saw it done")
 	require.Equal(t, toChapelSeen, bobSaw[0].GetInteract().GetWords(), "the seen version")
