@@ -5,8 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"sync"
+
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec/readback"
 
 	"github.com/KirkDiggler/rpg-api/internal/repositories/worlddungeons"
 )
@@ -37,6 +40,14 @@ type storeRegistry struct {
 	// the same key. Across processes the world store's transaction decides.
 	putMu    sync.Mutex
 	putLocks map[putLockKey]*sync.Mutex
+
+	// readBack says a compiled file back: readback.Of, held as a field only
+	// so a test can stand in a failing or panicking one (export_test.go).
+	readBack func(raw []byte) (*readback.ReadBack, error)
+
+	// fold folds a read-back for a person: (*readback.ReadBack).Folded,
+	// held as a field for the same reason as readBack.
+	fold func(rb *readback.ReadBack) []readback.FoldedSection
 }
 
 type putLockKey struct{ worldID, key string }
@@ -61,6 +72,8 @@ func NewRegistry(cfg *RegistryConfig) (Registry, error) {
 		authoring: cfg.Authoring,
 		projector: cfg.Projector,
 		putLocks:  make(map[putLockKey]*sync.Mutex),
+		readBack:  readback.Of,
+		fold:      (*readback.ReadBack).Folded,
 	}, nil
 }
 
@@ -186,7 +199,11 @@ func (r *storeRegistry) Put(ctx context.Context, in *PutInput) (*PutResult, erro
 	entry.Source = SourceWorld
 	entry.Owner = in.Caller.PlayerID
 	if in.ValidateOnly {
-		return &PutResult{Entry: entry}, nil
+		// The read-back rides the check alone (R25): the studio holds it from
+		// the check before any save, and a save computing it again cost each
+		// castle save seconds under race (rpg-api#1246).
+		rb, folded := r.readBackOf(ctx, in.Key, raw)
+		return &PutResult{Entry: entry, ReadBack: rb, Folded: folded}, nil
 	}
 	// THE GATE IS ON THE WRITE, NOT ON THE GRADE (rpg-project#481).
 	if !r.authoring {
@@ -208,6 +225,38 @@ func (r *storeRegistry) Put(ctx context.Context, in *PutInput) (*PutResult, erro
 	}
 
 	return &PutResult{Entry: entry.clone()}, nil
+}
+
+// readBackOf is the engine's read-back of raw, a file that has just compiled
+// cleanly, and its folded form, or neither. A file below the site dialect is
+// not one the read-back reads (readback.ErrNotASite): neither, and nothing to
+// say about it. Any other failure, a panic included and a panic while
+// folding, is logged and yields neither, so the check that compiled stays a
+// clean check: the read-back runs code the compile did not (a second decode
+// and its own builder), so a clean compile does not prove it cannot fail.
+// Only the ValidateOnly check asks for it (R25); a save never does.
+//
+// readback.Of decodes and compiles the file a second time; that cost is
+// accepted and measured on rpg-project#967, the fold's on #978.
+func (r *storeRegistry) readBackOf(ctx context.Context, key string, raw []byte) (rb *readback.ReadBack, folded []readback.FoldedSection) {
+	defer func() {
+		if p := recover(); p != nil {
+			slog.ErrorContext(ctx, "dungeons: read-back panicked after a clean compile",
+				"key", key, "panic", p)
+			rb, folded = nil, nil
+		}
+	}()
+
+	rb, err := r.readBack(raw)
+	if errors.Is(err, readback.ErrNotASite) {
+		return nil, nil
+	}
+	if err != nil {
+		slog.WarnContext(ctx, "dungeons: read-back failed after a clean compile",
+			"key", key, "error", err)
+		return nil, nil
+	}
+	return rb, r.fold(rb)
 }
 
 // lockKey acquires the per-world, per-key Put lock and returns its unlock.
