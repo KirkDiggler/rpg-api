@@ -238,9 +238,12 @@ type PutResult struct {
 	// a read-back, so none of them pays for one.
 	ReadBack *readback.ReadBack
 
-	// Folded is ReadBack folded for a person (ReadBack.Folded): each line
-	// said once with its requirements under it, every item carrying the
-	// paths of the statements it stands for (rpg-project#978). Present
+	// Folded is ReadBack folded for one thing at a time
+	// (ReadBack.FoldedEach, rpg-project#980): each thing's own lines said
+	// under it, never pointed at another's, each line once with its
+	// requirements under it, a loudness explained once per creature, and
+	// every item carrying the paths of the statements it stands for
+	// (rpg-project#978). The studio shows one thing at a time. Present
 	// exactly when ReadBack is; folded inside the same containment, so a
 	// failure folding yields neither.
 	Folded []readback.FoldedSection

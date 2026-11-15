@@ -9,7 +9,7 @@ func SetReadBack(r Registry, fn func(raw []byte) (*readback.ReadBack, error)) {
 	r.(*storeRegistry).readBack = fn
 }
 
-// SetFold stands fn in for (*readback.ReadBack).Folded on a Registry built
+// SetFold stands fn in for (*readback.ReadBack).FoldedEach on a Registry built
 // by NewRegistry, so a test can reach a panic while folding.
 func SetFold(r Registry, fn func(rb *readback.ReadBack) []readback.FoldedSection) {
 	r.(*storeRegistry).fold = fn

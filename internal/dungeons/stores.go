@@ -45,8 +45,11 @@ type storeRegistry struct {
 	// so a test can stand in a failing or panicking one (export_test.go).
 	readBack func(raw []byte) (*readback.ReadBack, error)
 
-	// fold folds a read-back for a person: (*readback.ReadBack).Folded,
-	// held as a field for the same reason as readBack.
+	// fold folds a read-back for one thing at a time:
+	// (*readback.ReadBack).FoldedEach, held as a field for the same reason
+	// as readBack. The studio shows one thing at a time, so a creature's own
+	// lines are said under it rather than pointed at another's
+	// (rpg-project#980); the whole-file Folded stays the command line's.
 	fold func(rb *readback.ReadBack) []readback.FoldedSection
 }
 
@@ -73,7 +76,7 @@ func NewRegistry(cfg *RegistryConfig) (Registry, error) {
 		projector: cfg.Projector,
 		putLocks:  make(map[putLockKey]*sync.Mutex),
 		readBack:  readback.Of,
-		fold:      (*readback.ReadBack).Folded,
+		fold:      (*readback.ReadBack).FoldedEach,
 	}, nil
 }
 

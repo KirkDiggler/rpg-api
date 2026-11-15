@@ -69,9 +69,9 @@ func BenchmarkReadBack_Castle(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	b.Run("Folded", func(b *testing.B) {
+	b.Run("FoldedEach", func(b *testing.B) {
 		for b.Loop() {
-			_ = rb.Folded()
+			_ = rb.FoldedEach()
 		}
 	})
 	b.Run("PutDungeon validate-only", func(b *testing.B) {
