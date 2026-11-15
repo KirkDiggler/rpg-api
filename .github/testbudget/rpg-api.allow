@@ -9,6 +9,7 @@
 
 github.com/KirkDiggler/rpg-api/internal/dungeons/TestReferenceKeepSuite  # saves and reads back a copy of the 130 KB reference keep: two compiles of the keep the claim is about; 12.27s
 github.com/KirkDiggler/rpg-api/internal/dungeons/TestRegistrySuite  # 38 cases in one suite; the seed row compiles the shipped content it seeded, the atlas row reads every shelf atlas; 17.39s
+github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1/TestReadBackWireSuite  # the castle's check plus its read-back: two compiles of the file the claim is about (rpg-project#967); 5.07s on CI run 43694975074, 2.44s on 43694998321
 github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1/TestSceneryWireSuite  # over budget, to be sized: rpg-api#1213; 8.19s
 github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1/TestStructuralLayoutWireSuite  # over budget, to be sized: rpg-api#1213; 9.21s
 github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1/TestTwoStoresWireSuite  # over budget, to be sized: rpg-api#1213; 26.61s
