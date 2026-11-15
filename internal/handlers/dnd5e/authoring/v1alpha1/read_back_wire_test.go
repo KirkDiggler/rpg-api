@@ -171,7 +171,60 @@ func (s *ReadBackWireSuite) TestPutDungeon_ValidateOnly_CarriesReadBack() {
 		}
 	})
 	s.True(troupe, "the captain's `troupe` line is said under him")
+
+	s.waysOnTheWire(rb, all)
 	s.T().Logf("castle read-back: %d statements, %d folded sections", len(all), len(rb.GetFolded()))
+}
+
+// gateJoin is the castle's gate: the door between the courtyard and the
+// gatehouse, held by the gate guards and the captain.
+const gateJoin = "door:region-courtyard:region-gatehouse:gate-wall-door"
+
+// waysOnTheWire: the castle's ways ride the wire (rpg-project#972). The
+// gate join's `troupe` way names its two checks with their difficulties,
+// and every way statement is the engine's, field for field: no small test
+// site has a way with a difficulty, so the castle's ways are compared to
+// the engine's own JSON of the same bytes, a dropped `value` failing here.
+func (s *ReadBackWireSuite) waysOnTheWire(rb *authoringpb.ReadBack, all []*authoringpb.ReadBackStatement) {
+	asJSON := protojson.MarshalOptions{UseProtoNames: true}
+	var wire []any
+	troupe := map[string]int32{}
+	for _, st := range all {
+		if !strings.HasPrefix(st.GetKind(), "place.way.") {
+			continue
+		}
+		raw, err := asJSON.Marshal(st)
+		s.Require().NoError(err)
+		wire = append(wire, s.decode(raw))
+
+		if !strings.HasSuffix(st.GetAbout().GetId(), ":line:captain:troupe") {
+			continue
+		}
+		for _, c := range st.GetConnects() {
+			if c.GetKind() == "join" {
+				s.Equal(gateJoin, c.GetId(), "the captain's troupe way goes through the gate")
+			}
+			if c.GetKind() == "method" {
+				troupe[c.GetId()] = c.GetValue()
+			}
+		}
+	}
+	s.Require().NotEmpty(wire, "the castle's read-back says its ways")
+	s.Equal(map[string]int32{"skill:performance": 13, "skill:deception": 15}, troupe,
+		"the gate's troupe way names each check with its difficulty")
+
+	engine, err := readback.Of([]byte(s.castle))
+	s.Require().NoError(err)
+	var want []any
+	for _, st := range engine.Statements() {
+		if !strings.HasPrefix(string(st.Kind), "place.way.") {
+			continue
+		}
+		raw, err := json.Marshal(st)
+		s.Require().NoError(err)
+		want = append(want, s.decode(raw))
+	}
+	s.Equal(withoutEmpties(want), withoutEmpties(wire), "the way statements are the engine's, field for field")
 }
 
 // captainBindings is where the castle sets the guard captain's own lines.

@@ -63,7 +63,9 @@ func readBackStatementToProto(st readback.Statement) *authoringpb.ReadBackStatem
 		Connects: make([]*authoringpb.ReadBackConnection, 0, len(st.Connects)),
 	}
 	for _, c := range st.Connects {
-		out.Connects = append(out.Connects, &authoringpb.ReadBackConnection{Kind: c.Kind, Id: c.ID, Role: c.Role})
+		out.Connects = append(out.Connects, &authoringpb.ReadBackConnection{
+			Kind: c.Kind, Id: c.ID, Role: c.Role, Value: int32(c.Value), //nolint:gosec // a check difficulty, far inside int32
+		})
 	}
 	return out
 }
