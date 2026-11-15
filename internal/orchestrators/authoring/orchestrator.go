@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec/readback"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/scenarios"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
@@ -64,6 +65,12 @@ type PutDungeonOutput struct {
 
 	// Atlas is the compiled map, the same shape GetAtlas serves.
 	Atlas *sdk.Atlas
+
+	// ReadBack is the engine's read-back of the compiled file (design R25),
+	// on a ValidateOnly check only; nil on a save, beside Errors, for a file
+	// below the site dialect, or when the read-back failed (logged by the
+	// registry).
+	ReadBack *readback.ReadBack
 }
 
 // PutDungeon compiles and, unless ValidateOnly, stores a dungeon in the
@@ -89,7 +96,7 @@ func (o *Orchestrator) PutDungeon(ctx context.Context, in *PutDungeonInput) (*Pu
 		return &PutDungeonOutput{Errors: res.Errors}, nil
 	}
 
-	return &PutDungeonOutput{Atlas: res.Entry.Atlas}, nil
+	return &PutDungeonOutput{Atlas: res.Entry.Atlas, ReadBack: res.ReadBack}, nil
 }
 
 // GetDungeonInput names a stored dungeon, resolved for the caller: their
