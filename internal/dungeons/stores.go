@@ -40,6 +40,10 @@ type storeRegistry struct {
 	// the same key. Across processes the world store's transaction decides.
 	putMu    sync.Mutex
 	putLocks map[putLockKey]*sync.Mutex
+
+	// readBack says a compiled file back: readback.Of, held as a field only
+	// so a test can stand in a failing or panicking one (export_test.go).
+	readBack func(raw []byte) (*readback.ReadBack, error)
 }
 
 type putLockKey struct{ worldID, key string }
@@ -64,6 +68,7 @@ func NewRegistry(cfg *RegistryConfig) (Registry, error) {
 		authoring: cfg.Authoring,
 		projector: cfg.Projector,
 		putLocks:  make(map[putLockKey]*sync.Mutex),
+		readBack:  readback.Of,
 	}, nil
 }
 
@@ -189,7 +194,7 @@ func (r *storeRegistry) Put(ctx context.Context, in *PutInput) (*PutResult, erro
 	entry.Source = SourceWorld
 	entry.Owner = in.Caller.PlayerID
 	if in.ValidateOnly {
-		return &PutResult{Entry: entry, ReadBack: readBackOf(ctx, in.Key, raw)}, nil
+		return &PutResult{Entry: entry, ReadBack: r.readBackOf(ctx, in.Key, raw)}, nil
 	}
 	// THE GATE IS ON THE WRITE, NOT ON THE GRADE (rpg-project#481).
 	if !r.authoring {
@@ -210,19 +215,29 @@ func (r *storeRegistry) Put(ctx context.Context, in *PutInput) (*PutResult, erro
 		return nil, fmt.Errorf("dungeon %q in world %q: %w", in.Key, in.Caller.WorldID, err)
 	}
 
-	return &PutResult{Entry: entry.clone(), ReadBack: readBackOf(ctx, in.Key, raw)}, nil
+	return &PutResult{Entry: entry.clone(), ReadBack: r.readBackOf(ctx, in.Key, raw)}, nil
 }
 
 // readBackOf is the engine's read-back of raw, a file that has just compiled
 // cleanly, or nil. A file below the site dialect is not one the read-back
 // reads (readback.ErrNotASite): nil, and nothing to say about it. Any other
-// failure is the stack disagreeing with itself, since the same bytes just
-// compiled: logged, and nil, so the check that compiled stays a clean check.
+// failure, a panic included, is logged and nil, so the check that compiled
+// stays a clean check and a save that was written stays a success: the
+// read-back runs code the compile did not (a second decode and its own
+// builder), so a clean compile does not prove it cannot fail.
 //
 // readback.Of decodes and compiles the file a second time; that cost is
 // accepted and measured on rpg-project#967.
-func readBackOf(ctx context.Context, key string, raw []byte) *readback.ReadBack {
-	rb, err := readback.Of(raw)
+func (r *storeRegistry) readBackOf(ctx context.Context, key string, raw []byte) (rb *readback.ReadBack) {
+	defer func() {
+		if p := recover(); p != nil {
+			slog.ErrorContext(ctx, "dungeons: read-back panicked after a clean compile",
+				"key", key, "panic", p)
+			rb = nil
+		}
+	}()
+
+	rb, err := r.readBack(raw)
 	if errors.Is(err, readback.ErrNotASite) {
 		return nil
 	}

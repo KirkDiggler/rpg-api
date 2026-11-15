@@ -2,12 +2,16 @@ package authoringv1alpha1_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
+	"google.golang.org/protobuf/encoding/protojson"
+
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec/readback"
 
 	authoringpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/authoring/v1alpha1"
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
@@ -150,9 +154,11 @@ func (s *ReadBackWireSuite) TestPutDungeon_Save_CarriesReadBack() {
 	s.NotEmpty(statements(resp.GetReadBack()))
 }
 
-// TestPutDungeon_Refused_CarriesNoReadBack: a line that both speaks and
-// acts is refused, and a refused check carries no read-back. A small site
-// takes the break, so the castle compiles once in this suite.
+// TestPutDungeon_Refused_CarriesNoReadBack pins the end behavior: a line
+// that both speaks and acts is refused, and the refused check carries no
+// read-back. It does not prove which guard holds it: without the registry's
+// early return the read-back would refuse the same bytes and still be nil.
+// A small site takes the break, so the castle compiles once in this suite.
 func (s *ReadBackWireSuite) TestPutDungeon_Refused_CarriesNoReadBack() {
 	const fixtureKey = "reference-npc-pacing"
 	const authorKey = "my-npc-pacing"
@@ -171,9 +177,10 @@ func (s *ReadBackWireSuite) TestPutDungeon_Refused_CarriesNoReadBack() {
 	s.Nil(resp.GetAtlas())
 }
 
-// TestPutDungeon_OlderDialect_CarriesNoReadBack: a version 2 file compiles
-// but is not a site document; the read-back does not read it, and that is
-// not an error to the caller.
+// TestPutDungeon_OlderDialect_CarriesNoReadBack pins the end behavior: a
+// version 2 file compiles, is answered with its map and no error, and
+// carries no read-back. It does not prove the ErrNotASite branch: without
+// it the failure branch would also answer nil (and log a warn).
 func (s *ReadBackWireSuite) TestPutDungeon_OlderDialect_CarriesNoReadBack() {
 	raw, err := os.ReadFile(dungeonstest.SitePath(s.T(), frontRoomKey)) //nolint:gosec // repository fixture
 	s.Require().NoError(err)
@@ -183,4 +190,70 @@ func (s *ReadBackWireSuite) TestPutDungeon_OlderDialect_CarriesNoReadBack() {
 	s.Require().Empty(resp.GetErrors(), "the version 2 front room compiles")
 	s.Require().NotNil(resp.GetAtlas(), "and is answered with its map")
 	s.Nil(resp.GetReadBack(), "an older dialect carries no read-back")
+}
+
+// TestPutDungeon_ReadBackMapsFieldForField: the wire read-back is the
+// toolkit's, every field. The toolkit's JSON names are the proto's field
+// names, so the two encodings, empties dropped on both sides, are equal: a
+// field the mapping drops, blanks, adds or reorders fails here. The small
+// site has nothing unsaid, so not_yet_said is compared empty.
+func (s *ReadBackWireSuite) TestPutDungeon_ReadBackMapsFieldForField() {
+	raw, err := os.ReadFile(dungeonstest.SitePath(s.T(), readBackSmallKey)) //nolint:gosec // repository fixture
+	s.Require().NoError(err)
+	yaml := dungeonstest.AsKey(s.T(), raw, readBackSmallKey, "my-creature-facts")
+
+	resp := s.grade("my-creature-facts", string(yaml))
+	s.Require().NotNil(resp.GetReadBack())
+	wire, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(resp.GetReadBack())
+	s.Require().NoError(err)
+
+	engine, err := readback.Of(yaml)
+	s.Require().NoError(err)
+	want, err := json.Marshal(engine)
+	s.Require().NoError(err)
+
+	s.Equal(withoutEmpties(s.decode(want)), withoutEmpties(s.decode(wire)))
+}
+
+func (s *ReadBackWireSuite) decode(raw []byte) any {
+	s.T().Helper()
+
+	var out any
+	s.Require().NoError(json.Unmarshal(raw, &out))
+	return out
+}
+
+// withoutEmpties drops null, "", empty lists and empty objects at every
+// depth: protojson leaves out what the toolkit writes as null or omits, and
+// neither side's empty is a fact.
+func withoutEmpties(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		out := map[string]any{}
+		for k, e := range t {
+			if e = withoutEmpties(e); e != nil {
+				out[k] = e
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	case []any:
+		out := make([]any, 0, len(t))
+		for _, e := range t {
+			out = append(out, withoutEmpties(e))
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	case string:
+		if t == "" {
+			return nil
+		}
+		return t
+	default:
+		return t
+	}
 }
