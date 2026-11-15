@@ -7,14 +7,23 @@ import (
 )
 
 // readBackToProto is the engine's read-back on the wire, field for field
-// (design R25). It adds, drops and rewords nothing: the sentences are the
-// toolkit's, and a consumer keys on Kind.
-func readBackToProto(rb *readback.ReadBack) *authoringpb.ReadBack {
+// (design R25), with its folded form beside it (rpg-project#978). It adds,
+// drops and rewords nothing: the sentences are the toolkit's, and a
+// consumer keys on Kind. folded is computed by the registry, inside the
+// read-back's containment; this only maps it.
+func readBackToProto(rb *readback.ReadBack, folded []readback.FoldedSection) *authoringpb.ReadBack {
 	out := &authoringpb.ReadBack{
 		Key:        rb.Key,
 		Name:       rb.Name,
 		Sections:   make([]*authoringpb.ReadBackSection, 0, len(rb.Sections)),
 		NotYetSaid: make([]*authoringpb.ReadBackUnsaid, 0, len(rb.NotYetSaid)),
+		Folded:     make([]*authoringpb.ReadBackFoldedSection, 0, len(folded)),
+	}
+	for _, sec := range folded {
+		out.Folded = append(out.Folded, &authoringpb.ReadBackFoldedSection{
+			Title: sec.Title,
+			Items: foldedItemsToProto(sec.Items),
+		})
 	}
 	for _, sec := range rb.Sections {
 		out.Sections = append(out.Sections, readBackSectionToProto(sec))
@@ -60,4 +69,18 @@ func readBackStatementToProto(st readback.Statement) *authoringpb.ReadBackStatem
 
 func readBackSubjectToProto(s readback.Subject) *authoringpb.ReadBackSubject {
 	return &authoringpb.ReadBackSubject{Kind: s.Kind, Id: s.ID}
+}
+
+// foldedItemsToProto maps folded items at every depth, order kept.
+func foldedItemsToProto(items []readback.Item) []*authoringpb.ReadBackFoldedItem {
+	out := make([]*authoringpb.ReadBackFoldedItem, 0, len(items))
+	for _, it := range items {
+		out = append(out, &authoringpb.ReadBackFoldedItem{
+			Text:  it.Text,
+			Paths: append([]string(nil), it.Paths...),
+			Base:  it.Base,
+			Items: foldedItemsToProto(it.Items),
+		})
+	}
+	return out
 }
