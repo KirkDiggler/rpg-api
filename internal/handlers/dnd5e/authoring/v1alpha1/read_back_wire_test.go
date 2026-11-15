@@ -133,7 +133,29 @@ func (s *ReadBackWireSuite) TestPutDungeon_ValidateOnly_CarriesReadBack() {
 	s.NotEmpty(captain.GetSentence(), "the statement carries its sentence")
 	s.NotEmpty(captain.GetPath(), "and the path where it is set")
 	s.True(connected, "connections ride the wire with their roles")
-	s.T().Logf("castle read-back: %d statements", len(all))
+
+	// The folded form rides beside the statements, and loses none of them:
+	// every statement's path is carried by some folded item (the engine's
+	// own guarantee, asserted at the wire, rpg-project#978).
+	s.Require().NotEmpty(rb.GetFolded(), "the check carries the folded read-back")
+	carried := map[string]bool{}
+	for _, sec := range rb.GetFolded() {
+		foldedPaths(sec.GetItems(), carried)
+	}
+	for _, st := range all {
+		s.True(carried[st.GetPath()], "the statement at %q is reachable from a folded item", st.GetPath())
+	}
+	s.T().Logf("castle read-back: %d statements, %d folded sections", len(all), len(rb.GetFolded()))
+}
+
+// foldedPaths marks every path any item at any depth carries.
+func foldedPaths(items []*authoringpb.ReadBackFoldedItem, into map[string]bool) {
+	for _, it := range items {
+		for _, p := range it.GetPaths() {
+			into[p] = true
+		}
+		foldedPaths(it.GetItems(), into)
+	}
 }
 
 // TestPutDungeon_Save_CarriesNoReadBack: the read-back rides the check
@@ -201,7 +223,10 @@ func (s *ReadBackWireSuite) TestPutDungeon_OlderDialect_CarriesNoReadBack() {
 // toolkit's, every field. The toolkit's JSON names are the proto's field
 // names, so the two encodings, empties dropped on both sides, are equal: a
 // field the mapping drops, blanks, adds or reorders fails here. The small
-// site has nothing unsaid, so not_yet_said is compared empty.
+// site has nothing unsaid, so not_yet_said is compared empty. The folded
+// form is the engine's Folded(), which its JSON of the read-back does not
+// carry, so it is compared on its own: an item blanked, dropped or
+// reordered at any depth fails.
 func (s *ReadBackWireSuite) TestPutDungeon_ReadBackMapsFieldForField() {
 	raw, err := os.ReadFile(dungeonstest.SitePath(s.T(), readBackSmallKey)) //nolint:gosec // repository fixture
 	s.Require().NoError(err)
@@ -209,15 +234,24 @@ func (s *ReadBackWireSuite) TestPutDungeon_ReadBackMapsFieldForField() {
 
 	resp := s.grade("my-creature-facts", string(yaml))
 	s.Require().NotNil(resp.GetReadBack())
-	wire, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(resp.GetReadBack())
+	asJSON := protojson.MarshalOptions{UseProtoNames: true}
+	folded := resp.GetReadBack().GetFolded()
+	wireFolded, err := asJSON.Marshal(&authoringpb.ReadBack{Folded: folded})
+	s.Require().NoError(err)
+	resp.GetReadBack().Folded = nil
+	wire, err := asJSON.Marshal(resp.GetReadBack())
 	s.Require().NoError(err)
 
 	engine, err := readback.Of(yaml)
 	s.Require().NoError(err)
 	want, err := json.Marshal(engine)
 	s.Require().NoError(err)
+	wantFolded, err := json.Marshal(map[string]any{"folded": engine.Folded()})
+	s.Require().NoError(err)
 
+	s.Require().NotEmpty(folded, "the small site's check carries the folded read-back")
 	s.Equal(withoutEmpties(s.decode(want)), withoutEmpties(s.decode(wire)))
+	s.Equal(withoutEmpties(s.decode(wantFolded)), withoutEmpties(s.decode(wireFolded)))
 }
 
 func (s *ReadBackWireSuite) decode(raw []byte) any {

@@ -237,6 +237,13 @@ type PutResult struct {
 	// and the shelf's boot compile all hold entries and none of them returns
 	// a read-back, so none of them pays for one.
 	ReadBack *readback.ReadBack
+
+	// Folded is ReadBack folded for a person (ReadBack.Folded): each line
+	// said once with its requirements under it, every item carrying the
+	// paths of the statements it stands for (rpg-project#978). Present
+	// exactly when ReadBack is; folded inside the same containment, so a
+	// failure folding yields neither.
+	Folded []readback.FoldedSection
 }
 
 // RenameInput is one RenameDungeon call.

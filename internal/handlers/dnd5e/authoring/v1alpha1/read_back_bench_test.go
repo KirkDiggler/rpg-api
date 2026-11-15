@@ -48,17 +48,30 @@ func BenchmarkReadBack_Castle(b *testing.B) {
 		b.Fatalf("castle check: %v (read-back %v)", err, resp.GetReadBack() != nil)
 	}
 	with := encoded(b, resp)
+	folded := resp.GetReadBack().GetFolded()
+	resp.ReadBack.Folded = nil
+	unfolded := encoded(b, resp)
+	resp.ReadBack.Folded = folded
 	resp.ReadBack = nil
 	without := encoded(b, resp)
-	b.Logf("castle check encoded: %d bytes with the read-back, %d without; gzip %d with, %d without",
-		len(with), len(without), gz(b, with), gz(b, without))
+	b.Logf("castle check encoded: %d bytes with the read-back and its fold, %d without the fold, %d without the read-back; gzip %d, %d, %d",
+		len(with), len(unfolded), len(without), gz(b, with), gz(b, unfolded), gz(b, without))
 
 	castle := []byte(yaml)
 	b.Run("readback.Of", func(b *testing.B) {
 		for b.Loop() {
-			if _, err := readback.Of(castle); err != nil {
-				b.Fatal(err)
+			if _, ofErr := readback.Of(castle); ofErr != nil {
+				b.Fatal(ofErr)
 			}
+		}
+	})
+	rb, err := readback.Of(castle)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Run("Folded", func(b *testing.B) {
+		for b.Loop() {
+			_ = rb.Folded()
 		}
 	})
 	b.Run("PutDungeon validate-only", func(b *testing.B) {

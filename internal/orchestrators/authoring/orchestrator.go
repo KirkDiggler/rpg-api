@@ -71,6 +71,10 @@ type PutDungeonOutput struct {
 	// below the site dialect, or when the read-back failed (logged by the
 	// registry).
 	ReadBack *readback.ReadBack
+
+	// Folded is ReadBack folded for a person; present exactly when ReadBack
+	// is (rpg-project#978).
+	Folded []readback.FoldedSection
 }
 
 // PutDungeon compiles and, unless ValidateOnly, stores a dungeon in the
@@ -96,7 +100,7 @@ func (o *Orchestrator) PutDungeon(ctx context.Context, in *PutDungeonInput) (*Pu
 		return &PutDungeonOutput{Errors: res.Errors}, nil
 	}
 
-	return &PutDungeonOutput{Atlas: res.Entry.Atlas, ReadBack: res.ReadBack}, nil
+	return &PutDungeonOutput{Atlas: res.Entry.Atlas, ReadBack: res.ReadBack, Folded: res.Folded}, nil
 }
 
 // GetDungeonInput names a stored dungeon, resolved for the caller: their

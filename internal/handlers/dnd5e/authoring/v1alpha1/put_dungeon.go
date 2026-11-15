@@ -48,7 +48,7 @@ func (h *Handler) PutDungeon(ctx context.Context, req *authoringpb.PutDungeonReq
 		resp.Atlas = sessionhandler.AtlasToProto(out.Atlas)
 	}
 	if len(out.Errors) == 0 && out.ReadBack != nil {
-		resp.ReadBack = readBackToProto(out.ReadBack)
+		resp.ReadBack = readBackToProto(out.ReadBack, out.Folded)
 	}
 
 	return resp, nil

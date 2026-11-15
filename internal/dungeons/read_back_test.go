@@ -78,6 +78,33 @@ func (s *ReadBackFailureSuite) TestCheck_ReadBackPanics_StaysClean() {
 	s.put(panicking, true)
 }
 
+// TestCheck_FoldPanics_StaysClean: a panic folding the read-back is inside
+// the same containment as the read-back itself: no read-back at all, never
+// an error (rpg-project#978).
+func (s *ReadBackFailureSuite) TestCheck_FoldPanics_StaysClean() {
+	r := dungeonstest.Join(s.T(), s.shipped, true)
+	dungeons.SetFold(r, func(*readback.ReadBack) []readback.FoldedSection { panic("fold panicked") })
+	res, err := r.Put(s.ctx, &dungeons.PutInput{
+		Caller: dungeonstest.Caller, Key: readBackAuthorKey, YAML: s.yaml, ValidateOnly: true,
+	})
+	s.Require().NoError(err, "a fold panic is never an error to the caller")
+	s.Require().Empty(res.Errors, "nor a refusal")
+	s.Require().NotNil(res.Entry)
+	s.Nil(res.ReadBack, "no read-back")
+	s.Nil(res.Folded, "and no folded read-back")
+}
+
+// TestCheck_CarriesTheFold: unbroken, the check carries the fold beside
+// the read-back, so the panic case above is a real absence.
+func (s *ReadBackFailureSuite) TestCheck_CarriesTheFold() {
+	res, err := dungeonstest.Join(s.T(), s.shipped, true).Put(s.ctx, &dungeons.PutInput{
+		Caller: dungeonstest.Caller, Key: readBackAuthorKey, YAML: s.yaml, ValidateOnly: true,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(res.ReadBack)
+	s.NotEmpty(res.Folded)
+}
+
 func (s *ReadBackFailureSuite) TestSave_ReadBackFails_IsStoredWithNone() {
 	r, _ := s.put(failing, false)
 	got, err := r.Get(s.ctx, dungeonstest.Caller, readBackAuthorKey)
