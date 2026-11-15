@@ -12,7 +12,8 @@ Slice [rpg-project#967](https://github.com/KirkDiggler/rpg-project/issues/967) o
 - The read-back is computed in `storeRegistry.Put` and returned on `PutResult`, not on `Entry`, because `compileEntry` also serves Get, launch, boot and Rename, none of which returns a read-back — [rpg-api#1246](https://github.com/KirkDiggler/rpg-api/pull/1246).
 - The toolkit type rides up to the handler and is converted there (`read_back.go`), the same path the atlas takes — [rpg-api#1246](https://github.com/KirkDiggler/rpg-api/pull/1246).
 - On a save the read-back is computed after the write succeeds, so a refused write (authoring off, owned by another) pays nothing for it — [rpg-api#1246](https://github.com/KirkDiggler/rpg-api/pull/1246).
-- A read-back failure after a clean compile is a `slog.WarnContext` line and no read-back, never a refusal (plan Task 2 behaviour); it has no test because only a test seam could reach it — [rpg-api#1246](https://github.com/KirkDiggler/rpg-api/pull/1246).
+- A read-back failure or panic after a clean compile is logged and answered with no read-back, never a refusal, and a written save stays a success; an unexported seam (`export_test.go`) reaches both branches, because the real read-back never fails on a file that compiled — [review](https://github.com/KirkDiggler/rpg-api/pull/1246#discussion_r4577682955), [08b33ec0](https://github.com/KirkDiggler/rpg-api/commit/08b33ec03e3d57a74f71f76aca38241cbed4edfc).
+- The mapping is guarded by comparing the toolkit's JSON with the wire message's protojson (proto names) on the small site; blanking `Section.Title` or `Group.About` fails it — [review](https://github.com/KirkDiggler/rpg-api/pull/1246#discussion_r4577682960).
 - A fourth test, `TestPutDungeon_Save_CarriesReadBack`, covers the save half the plan's behaviour names and its three tests do not — [rpg-api#1246](https://github.com/KirkDiggler/rpg-api/pull/1246).
 
 ## Found
@@ -24,4 +25,5 @@ Slice [rpg-project#967](https://github.com/KirkDiggler/rpg-project/issues/967) o
 
 ## Mistaken
 
+- The first PR head let a panic in `readback.Of` escape, after the write on a save, and guarded the mapping with four spot checks a blanked title passed; one review round found both — [review](https://github.com/KirkDiggler/rpg-api/pull/1246#pullrequestreview-5909868827).
 - The first version of the suite used the whole shared shelf and broke the castle for the refusal probe, 10 s under race against a 5 s budget; it was cut to 3 s before the PR opened — [rpg-api#1246](https://github.com/KirkDiggler/rpg-api/pull/1246).
