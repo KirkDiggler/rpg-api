@@ -5,8 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"sync"
+
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec/readback"
 
 	"github.com/KirkDiggler/rpg-api/internal/repositories/worlddungeons"
 )
@@ -186,7 +189,7 @@ func (r *storeRegistry) Put(ctx context.Context, in *PutInput) (*PutResult, erro
 	entry.Source = SourceWorld
 	entry.Owner = in.Caller.PlayerID
 	if in.ValidateOnly {
-		return &PutResult{Entry: entry}, nil
+		return &PutResult{Entry: entry, ReadBack: readBackOf(ctx, in.Key, raw)}, nil
 	}
 	// THE GATE IS ON THE WRITE, NOT ON THE GRADE (rpg-project#481).
 	if !r.authoring {
@@ -207,7 +210,28 @@ func (r *storeRegistry) Put(ctx context.Context, in *PutInput) (*PutResult, erro
 		return nil, fmt.Errorf("dungeon %q in world %q: %w", in.Key, in.Caller.WorldID, err)
 	}
 
-	return &PutResult{Entry: entry.clone()}, nil
+	return &PutResult{Entry: entry.clone(), ReadBack: readBackOf(ctx, in.Key, raw)}, nil
+}
+
+// readBackOf is the engine's read-back of raw, a file that has just compiled
+// cleanly, or nil. A file below the site dialect is not one the read-back
+// reads (readback.ErrNotASite): nil, and nothing to say about it. Any other
+// failure is the stack disagreeing with itself, since the same bytes just
+// compiled: logged, and nil, so the check that compiled stays a clean check.
+//
+// readback.Of decodes and compiles the file a second time; that cost is
+// accepted and measured on rpg-project#967.
+func readBackOf(ctx context.Context, key string, raw []byte) *readback.ReadBack {
+	rb, err := readback.Of(raw)
+	if errors.Is(err, readback.ErrNotASite) {
+		return nil
+	}
+	if err != nil {
+		slog.WarnContext(ctx, "dungeons: read-back failed after a clean compile",
+			"key", key, "error", err)
+		return nil
+	}
+	return rb
 }
 
 // lockKey acquires the per-world, per-key Put lock and returns its unlock.

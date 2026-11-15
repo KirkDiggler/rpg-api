@@ -41,6 +41,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec/readback"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
@@ -221,6 +222,18 @@ type PutInput struct {
 type PutResult struct {
 	Errors []FieldError
 	Entry  *Entry
+
+	// ReadBack is the engine's own read-back of the file (rpg-toolkit
+	// dungeonspec/readback, design R25): what will run, said in the engine's
+	// sentences, each with the path where it is set. Present only beside an
+	// Entry; nil on a refusal, on a file below the site dialect (version 3),
+	// and when the read-back itself fails, which is logged and never turns a
+	// clean compile into a refusal.
+	//
+	// It lives on the Put answer, not on the Entry: Get, the lobby's launch
+	// and the shelf's boot compile all hold entries and none of them returns
+	// a read-back, so none of them pays for one.
+	ReadBack *readback.ReadBack
 }
 
 // RenameInput is one RenameDungeon call.
