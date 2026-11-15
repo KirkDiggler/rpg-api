@@ -66,9 +66,10 @@ type PutDungeonOutput struct {
 	// Atlas is the compiled map, the same shape GetAtlas serves.
 	Atlas *sdk.Atlas
 
-	// ReadBack is the engine's read-back of the compiled file (design R25);
-	// nil beside Errors, for a file below the site dialect, or when the
-	// read-back failed (logged by the registry).
+	// ReadBack is the engine's read-back of the compiled file (design R25),
+	// on a ValidateOnly check only; nil on a save, beside Errors, for a file
+	// below the site dialect, or when the read-back failed (logged by the
+	// registry).
 	ReadBack *readback.ReadBack
 }
 

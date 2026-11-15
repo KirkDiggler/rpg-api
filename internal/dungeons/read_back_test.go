@@ -22,8 +22,9 @@ const (
 
 // ReadBackFailureSuite reaches the read-back's failure and panic branches
 // through the seam (export_test.go): after a clean compile, neither turns
-// the check into a refusal, and a save is stored and answered as a success
-// with no read-back (rpg-project#967).
+// the check into a refusal. A save never asks for a read-back (R25), so a
+// failing or panicking one cannot touch it: stored, a success, none carried
+// (rpg-project#967).
 type ReadBackFailureSuite struct {
 	suite.Suite
 
@@ -77,16 +78,16 @@ func (s *ReadBackFailureSuite) TestCheck_ReadBackPanics_StaysClean() {
 	s.put(panicking, true)
 }
 
-func (s *ReadBackFailureSuite) TestSave_ReadBackFails_IsStored() {
+func (s *ReadBackFailureSuite) TestSave_ReadBackFails_IsStoredWithNone() {
 	r, _ := s.put(failing, false)
 	got, err := r.Get(s.ctx, dungeonstest.Caller, readBackAuthorKey)
 	s.Require().NoError(err, "the save was written")
 	s.Equal(dungeons.SourceWorld, got.Source)
 }
 
-func (s *ReadBackFailureSuite) TestSave_ReadBackPanics_IsStored() {
+func (s *ReadBackFailureSuite) TestSave_ReadBackPanics_IsStoredWithNone() {
 	r, _ := s.put(panicking, false)
 	got, err := r.Get(s.ctx, dungeonstest.Caller, readBackAuthorKey)
-	s.Require().NoError(err, "the save was written before the read-back panicked")
+	s.Require().NoError(err, "the save was written")
 	s.Equal(dungeons.SourceWorld, got.Source)
 }

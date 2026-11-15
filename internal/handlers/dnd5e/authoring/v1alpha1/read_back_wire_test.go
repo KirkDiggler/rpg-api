@@ -136,22 +136,27 @@ func (s *ReadBackWireSuite) TestPutDungeon_ValidateOnly_CarriesReadBack() {
 	s.T().Logf("castle read-back: %d statements", len(all))
 }
 
-// TestPutDungeon_Save_CarriesReadBack: a save that compiles carries the
-// read-back too, not only the validate-only check.
-func (s *ReadBackWireSuite) TestPutDungeon_Save_CarriesReadBack() {
+// TestPutDungeon_Save_CarriesNoReadBack: the read-back rides the check
+// alone (R25); a clean save is stored and answered with its map and no
+// read-back. The same file's check carries one, so the nil is the save's.
+func (s *ReadBackWireSuite) TestPutDungeon_Save_CarriesNoReadBack() {
 	const authorKey = "my-creature-facts"
 
 	raw, err := os.ReadFile(dungeonstest.SitePath(s.T(), readBackSmallKey)) //nolint:gosec // repository fixture
 	s.Require().NoError(err)
+	yaml := string(dungeonstest.AsKey(s.T(), raw, readBackSmallKey, authorKey))
+	s.Require().NotNil(s.grade(authorKey, yaml).GetReadBack(), "the check of the same file carries one")
 
-	resp, err := s.handler(true).PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{
-		Key: authorKey, Yaml: string(dungeonstest.AsKey(s.T(), raw, readBackSmallKey, authorKey)),
-	})
+	h := s.handler(true)
+	resp, err := h.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{Key: authorKey, Yaml: yaml})
 	s.Require().NoError(err)
 	s.Require().Empty(resp.GetErrors())
-	s.Require().NotNil(resp.GetReadBack(), "a clean save carries the read-back")
-	s.Equal(authorKey, resp.GetReadBack().GetKey())
-	s.NotEmpty(statements(resp.GetReadBack()))
+	s.Require().NotNil(resp.GetAtlas(), "a clean save is answered with its map")
+	s.Nil(resp.GetReadBack(), "and no read-back")
+
+	got, err := h.GetDungeon(s.ctx, &authoringpb.GetDungeonRequest{Key: authorKey})
+	s.Require().NoError(err, "the save was stored")
+	s.Equal(yaml, got.GetYaml())
 }
 
 // TestPutDungeon_Refused_CarriesNoReadBack pins the end behavior: a line

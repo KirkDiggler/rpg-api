@@ -194,6 +194,9 @@ func (r *storeRegistry) Put(ctx context.Context, in *PutInput) (*PutResult, erro
 	entry.Source = SourceWorld
 	entry.Owner = in.Caller.PlayerID
 	if in.ValidateOnly {
+		// The read-back rides the check alone (R25): the studio holds it from
+		// the check before any save, and a save computing it again cost each
+		// castle save seconds under race (rpg-api#1246).
 		return &PutResult{Entry: entry, ReadBack: r.readBackOf(ctx, in.Key, raw)}, nil
 	}
 	// THE GATE IS ON THE WRITE, NOT ON THE GRADE (rpg-project#481).
@@ -215,16 +218,16 @@ func (r *storeRegistry) Put(ctx context.Context, in *PutInput) (*PutResult, erro
 		return nil, fmt.Errorf("dungeon %q in world %q: %w", in.Key, in.Caller.WorldID, err)
 	}
 
-	return &PutResult{Entry: entry.clone(), ReadBack: r.readBackOf(ctx, in.Key, raw)}, nil
+	return &PutResult{Entry: entry.clone()}, nil
 }
 
 // readBackOf is the engine's read-back of raw, a file that has just compiled
 // cleanly, or nil. A file below the site dialect is not one the read-back
 // reads (readback.ErrNotASite): nil, and nothing to say about it. Any other
 // failure, a panic included, is logged and nil, so the check that compiled
-// stays a clean check and a save that was written stays a success: the
-// read-back runs code the compile did not (a second decode and its own
-// builder), so a clean compile does not prove it cannot fail.
+// stays a clean check: the read-back runs code the compile did not (a second
+// decode and its own builder), so a clean compile does not prove it cannot
+// fail. Only the ValidateOnly check asks for it (R25); a save never does.
 //
 // readback.Of decodes and compiles the file a second time; that cost is
 // accepted and measured on rpg-project#967.
