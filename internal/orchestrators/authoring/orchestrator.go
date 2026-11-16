@@ -72,8 +72,8 @@ type PutDungeonOutput struct {
 	// registry).
 	ReadBack *readback.ReadBack
 
-	// Folded is ReadBack folded for a person; present exactly when ReadBack
-	// is (rpg-project#978).
+	// Folded is ReadBack folded for one thing at a time (FoldedEach,
+	// rpg-project#980); present exactly when ReadBack is (rpg-project#978).
 	Folded []readback.FoldedSection
 }
 

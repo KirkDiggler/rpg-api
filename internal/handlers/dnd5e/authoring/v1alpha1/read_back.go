@@ -7,7 +7,8 @@ import (
 )
 
 // readBackToProto is the engine's read-back on the wire, field for field
-// (design R25), with its folded form beside it (rpg-project#978). It adds,
+// (design R25), with its one-thing fold beside it (FoldedEach; rpg-project#978,
+// #980). It adds,
 // drops and rewords nothing: the sentences are the toolkit's, and a
 // consumer keys on Kind. folded is computed by the registry, inside the
 // read-back's containment; this only maps it.
@@ -62,7 +63,9 @@ func readBackStatementToProto(st readback.Statement) *authoringpb.ReadBackStatem
 		Connects: make([]*authoringpb.ReadBackConnection, 0, len(st.Connects)),
 	}
 	for _, c := range st.Connects {
-		out.Connects = append(out.Connects, &authoringpb.ReadBackConnection{Kind: c.Kind, Id: c.ID, Role: c.Role})
+		out.Connects = append(out.Connects, &authoringpb.ReadBackConnection{
+			Kind: c.Kind, Id: c.ID, Role: c.Role, Value: int32(c.Value), //nolint:gosec // a check difficulty, far inside int32
+		})
 	}
 	return out
 }

@@ -145,7 +145,123 @@ func (s *ReadBackWireSuite) TestPutDungeon_ValidateOnly_CarriesReadBack() {
 	for _, st := range all {
 		s.True(carried[st.GetPath()], "the statement at %q is reachable from a folded item", st.GetPath())
 	}
+
+	// The fold is the one-thing fold (rpg-project#980): the studio shows one
+	// thing at a time, so no creature points at another's lines, the
+	// captain's own lines are said under him, and how far a loudness carries
+	// is said once per creature, never on each answer.
+	troupe := false
+	walkFolded(rb.GetFolded(), func(it *authoringpb.ReadBackFoldedItem) {
+		s.NotContains(it.GetText(), "has the same", "a folded item points at another thing's lines")
+		if strings.Contains(it.GetText(), "words reach everyone") {
+			s.True(strings.HasPrefix(it.GetText(), "At `"),
+				"only a loudness item explains what words reach: %q", it.GetText())
+		}
+		if strings.Contains(it.GetText(), "(`troupe`)") && carriesUnder(it, captainBindings) {
+			troupe = true
+		}
+		said := map[string]bool{}
+		for _, child := range it.GetItems() {
+			loud, ok := loudnessOf(child.GetText())
+			if !ok {
+				continue
+			}
+			s.False(said[loud], "the loudness %q is explained twice under %q", loud, it.GetText())
+			said[loud] = true
+		}
+	})
+	s.True(troupe, "the captain's `troupe` line is said under him")
+
+	s.waysOnTheWire(rb, all)
 	s.T().Logf("castle read-back: %d statements, %d folded sections", len(all), len(rb.GetFolded()))
+}
+
+// gateJoin is the castle's gate: the door between the courtyard and the
+// gatehouse, held by the gate guards and the captain.
+const gateJoin = "door:region-courtyard:region-gatehouse:gate-wall-door"
+
+// waysOnTheWire: the castle's ways ride the wire (rpg-project#972). The
+// gate join's `troupe` way names its two checks with their difficulties,
+// and every way statement is the engine's, field for field: no small test
+// site has a way with a difficulty, so the castle's ways are compared to
+// the engine's own JSON of the same bytes, a dropped `value` failing here.
+func (s *ReadBackWireSuite) waysOnTheWire(rb *authoringpb.ReadBack, all []*authoringpb.ReadBackStatement) {
+	asJSON := protojson.MarshalOptions{UseProtoNames: true}
+	var wire []any
+	troupe := map[string]int32{}
+	for _, st := range all {
+		if !strings.HasPrefix(st.GetKind(), "place.way.") {
+			continue
+		}
+		raw, err := asJSON.Marshal(st)
+		s.Require().NoError(err)
+		wire = append(wire, s.decode(raw))
+
+		if !strings.HasSuffix(st.GetAbout().GetId(), ":line:captain:troupe") {
+			continue
+		}
+		for _, c := range st.GetConnects() {
+			if c.GetKind() == "join" {
+				s.Equal(gateJoin, c.GetId(), "the captain's troupe way goes through the gate")
+			}
+			if c.GetKind() == "method" {
+				troupe[c.GetId()] = c.GetValue()
+			}
+		}
+	}
+	s.Require().NotEmpty(wire, "the castle's read-back says its ways")
+	s.Equal(map[string]int32{"skill:performance": 13, "skill:deception": 15}, troupe,
+		"the gate's troupe way names each check with its difficulty")
+
+	engine, err := readback.Of([]byte(s.castle))
+	s.Require().NoError(err)
+	var want []any
+	for _, st := range engine.Statements() {
+		if !strings.HasPrefix(string(st.Kind), "place.way.") {
+			continue
+		}
+		raw, err := json.Marshal(st)
+		s.Require().NoError(err)
+		want = append(want, s.decode(raw))
+	}
+	s.Equal(withoutEmpties(want), withoutEmpties(wire), "the way statements are the engine's, field for field")
+}
+
+// captainBindings is where the castle sets the guard captain's own lines.
+const captainBindings = "room.room.monsterBindings.captain."
+
+// walkFolded calls fn on every folded item at every depth.
+func walkFolded(secs []*authoringpb.ReadBackFoldedSection, fn func(*authoringpb.ReadBackFoldedItem)) {
+	var walk func([]*authoringpb.ReadBackFoldedItem)
+	walk = func(items []*authoringpb.ReadBackFoldedItem) {
+		for _, it := range items {
+			fn(it)
+			walk(it.GetItems())
+		}
+	}
+	for _, sec := range secs {
+		walk(sec.GetItems())
+	}
+}
+
+// carriesUnder reports whether the item carries a path under prefix.
+func carriesUnder(it *authoringpb.ReadBackFoldedItem, prefix string) bool {
+	for _, p := range it.GetPaths() {
+		if strings.HasPrefix(p, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// loudnessOf is the loudness a loudness item explains ("At `speak`, …").
+func loudnessOf(text string) (string, bool) {
+	rest, ok := strings.CutPrefix(text, "At `")
+	if !ok {
+		return "", false
+	}
+	loud, _, ok := strings.Cut(rest, "`")
+	return loud, ok
 }
 
 // foldedPaths marks every path any item at any depth carries.
@@ -224,7 +340,7 @@ func (s *ReadBackWireSuite) TestPutDungeon_OlderDialect_CarriesNoReadBack() {
 // names, so the two encodings, empties dropped on both sides, are equal: a
 // field the mapping drops, blanks, adds or reorders fails here. The small
 // site has nothing unsaid, so not_yet_said is compared empty. The folded
-// form is the engine's Folded(), which its JSON of the read-back does not
+// form is the engine's one-thing fold, FoldedEach(), which its JSON of the read-back does not
 // carry, so it is compared on its own: an item blanked, dropped or
 // reordered at any depth fails.
 func (s *ReadBackWireSuite) TestPutDungeon_ReadBackMapsFieldForField() {
@@ -246,7 +362,7 @@ func (s *ReadBackWireSuite) TestPutDungeon_ReadBackMapsFieldForField() {
 	s.Require().NoError(err)
 	want, err := json.Marshal(engine)
 	s.Require().NoError(err)
-	wantFolded, err := json.Marshal(map[string]any{"folded": engine.Folded()})
+	wantFolded, err := json.Marshal(map[string]any{"folded": engine.FoldedEach()})
 	s.Require().NoError(err)
 
 	s.Require().NotEmpty(folded, "the small site's check carries the folded read-back")
