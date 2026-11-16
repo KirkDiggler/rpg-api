@@ -173,6 +173,7 @@ func (s *ReadBackWireSuite) TestPutDungeon_ValidateOnly_CarriesReadBack() {
 	s.True(troupe, "the captain's `troupe` line is said under him")
 
 	s.waysOnTheWire(rb, all)
+	s.hubsOnTheWire(rb, all)
 	s.T().Logf("castle read-back: %d statements, %d folded sections", len(all), len(rb.GetFolded()))
 }
 
@@ -273,6 +274,65 @@ func (s *ReadBackWireSuite) isKitchenToolsLock(st *authoringpb.ReadBackStatement
 	s.Equal([]any{"method", thievesTools, approachWith, int32(13)},
 		[]any{with.GetKind(), with.GetId(), with.GetRole(), with.GetValue()}, "with thieves' tools, at the same difficulty")
 	return true
+}
+
+// hubsOnTheWire: the read-back's Records and Secrets hubs ride the wire
+// (rpg-project#973), and a way is said as a way exactly once. A way repeated
+// under a hub is a pointer, never a way: the statements that go `through` a
+// join are exactly the `place.way.*` statements, and only a way carries a
+// `method`, so a consumer counting ways by either rule counts each once.
+func (s *ReadBackWireSuite) hubsOnTheWire(rb *authoringpb.ReadBack, all []*authoringpb.ReadBackStatement) {
+	s.Equal([]string{"record.tell"}, s.kindsAbout(rb, "record", "kitchen-way", "record.tell"),
+		"the record kitchen-way has its own hub, saying who tells it")
+	s.Equal([]string{"secret.reveal"}, s.kindsAbout(rb, "concealment", "kitchen-passage", "secret.reveal"),
+		"the concealment kitchen-passage has its own hub, saying once what reveals it")
+
+	ways, through := 0, 0
+	for _, st := range all {
+		isWay := strings.HasPrefix(st.GetKind(), "place.way.")
+		if isWay {
+			ways++
+		}
+		goesThrough := false
+		for _, c := range st.GetConnects() {
+			if c.GetKind() == "join" && c.GetRole() == "through" {
+				goesThrough = true
+			}
+			if c.GetKind() == "method" {
+				s.True(isWay, "only a way carries a method; %q at %q does", st.GetKind(), st.GetPath())
+			}
+		}
+		if goesThrough {
+			through++
+			s.True(isWay, "only a way goes through a join; %q at %q does", st.GetKind(), st.GetPath())
+		}
+	}
+	s.Equal(ways, through, "every way goes through a join, and nothing else does")
+	s.T().Logf("castle ways: %d", ways)
+}
+
+// kindsAbout is the kinds equal to kind among the statements of the groups
+// about {aboutKind, id}, and fails when there is no such group.
+func (s *ReadBackWireSuite) kindsAbout(rb *authoringpb.ReadBack, aboutKind, id, kind string) []string {
+	s.T().Helper()
+
+	var out []string
+	found := false
+	for _, sec := range rb.GetSections() {
+		for _, g := range sec.GetGroups() {
+			if g.GetAbout().GetKind() != aboutKind || g.GetAbout().GetId() != id {
+				continue
+			}
+			found = true
+			for _, st := range g.GetStatements() {
+				if st.GetKind() == kind {
+					out = append(out, st.GetKind())
+				}
+			}
+		}
+	}
+	s.True(found, "a group about {%s, %s}", aboutKind, id)
+	return out
 }
 
 // captainBindings is where the castle sets the guard captain's own lines.
