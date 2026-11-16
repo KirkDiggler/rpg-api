@@ -189,6 +189,7 @@ func (s *ReadBackWireSuite) waysOnTheWire(rb *authoringpb.ReadBack, all []*autho
 	asJSON := protojson.MarshalOptions{UseProtoNames: true}
 	var wire []any
 	troupe := map[string]int32{}
+	toolsWay := false
 	for _, st := range all {
 		if !strings.HasPrefix(st.GetKind(), "place.way.") {
 			continue
@@ -197,6 +198,9 @@ func (s *ReadBackWireSuite) waysOnTheWire(rb *authoringpb.ReadBack, all []*autho
 		s.Require().NoError(err)
 		wire = append(wire, s.decode(raw))
 
+		if s.isKitchenToolsLock(st) {
+			toolsWay = true
+		}
 		if !strings.HasSuffix(st.GetAbout().GetId(), ":line:captain:troupe") {
 			continue
 		}
@@ -206,10 +210,12 @@ func (s *ReadBackWireSuite) waysOnTheWire(rb *authoringpb.ReadBack, all []*autho
 			}
 			if c.GetKind() == "method" {
 				troupe[c.GetId()] = c.GetValue()
+				s.Equal(approachBy, c.GetRole(), "each of the troupe way's checks is an alternative")
 			}
 		}
 	}
 	s.Require().NotEmpty(wire, "the castle's read-back says its ways")
+	s.True(toolsWay, "the kitchen door's lock way rolls Dexterity with thieves' tools as one approach")
 	s.Equal(map[string]int32{"skill:performance": 13, "skill:deception": 15}, troupe,
 		"the gate's troupe way names each check with its difficulty")
 
@@ -225,6 +231,48 @@ func (s *ReadBackWireSuite) waysOnTheWire(rb *authoringpb.ReadBack, all []*autho
 		want = append(want, s.decode(raw))
 	}
 	s.Equal(withoutEmpties(want), withoutEmpties(wire), "the way statements are the engine's, field for field")
+}
+
+const (
+	// kitchenDoor is the castle's locked kitchen door.
+	kitchenDoor = ":kitchen-wall-door"
+	// thievesTools is the tool the kitchen lock is picked with.
+	thievesTools = "tool:dnd5e:item:thieves-tools"
+	// approachBy marks a check that is an alternative of its own; approachWith
+	// marks a part of the approach before it (rpg-toolkit#2445).
+	approachBy   = "by"
+	approachWith = "with"
+)
+
+// isKitchenToolsLock reports whether st is the kitchen door's lock way that
+// picks it with thieves' tools, and asserts the tool rides as a PART of the
+// Dexterity approach: `{method, ability:dex, by, 13}` immediately followed by
+// `{method, thieves-tools, with, 13}` (rpg-project#974). Found by its
+// `through` join and its tool, never by index.
+func (s *ReadBackWireSuite) isKitchenToolsLock(st *authoringpb.ReadBackStatement) bool {
+	if st.GetKind() != "place.way.lock" {
+		return false
+	}
+	through, tool := false, -1
+	cs := st.GetConnects()
+	for i, c := range cs {
+		if c.GetKind() == "join" && c.GetRole() == "through" && strings.HasSuffix(c.GetId(), kitchenDoor) {
+			through = true
+		}
+		if c.GetKind() == "method" && c.GetId() == thievesTools {
+			tool = i
+		}
+	}
+	if !through || tool < 0 {
+		return false
+	}
+	s.Require().Positive(tool, "the tool follows the ability it is used with")
+	dex, with := cs[tool-1], cs[tool]
+	s.Equal([]any{"method", "ability:dex", approachBy, int32(13)},
+		[]any{dex.GetKind(), dex.GetId(), dex.GetRole(), dex.GetValue()}, "the approach rolls Dexterity against 13")
+	s.Equal([]any{"method", thievesTools, approachWith, int32(13)},
+		[]any{with.GetKind(), with.GetId(), with.GetRole(), with.GetValue()}, "with thieves' tools, at the same difficulty")
+	return true
 }
 
 // captainBindings is where the castle sets the guard captain's own lines.
