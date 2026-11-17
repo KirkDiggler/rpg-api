@@ -174,6 +174,7 @@ func (s *ReadBackWireSuite) TestPutDungeon_ValidateOnly_CarriesReadBack() {
 
 	s.waysOnTheWire(rb, all)
 	s.hubsOnTheWire(rb, all)
+	s.machineShapeOnTheWire(all)
 	s.T().Logf("castle read-back: %d statements, %d folded sections", len(all), len(rb.GetFolded()))
 }
 
@@ -309,6 +310,65 @@ func (s *ReadBackWireSuite) hubsOnTheWire(rb *authoringpb.ReadBack, all []*autho
 	}
 	s.Equal(ways, through, "every way goes through a join, and nothing else does")
 	s.T().Logf("castle ways: %d", ways)
+}
+
+// gatePolicy is the castle's gate guard routine, the machine the studio
+// draws first (rpg-project#993).
+const gatePolicy = "gate-1-policy"
+
+// machineShapeOnTheWire: the read-back says a machine's shape as connections
+// on the statements it already makes (rpg-project#994), so the gate guard's
+// machine can be drawn from the wire. The routine says where it starts;
+// twelve of its steps move to another state, and every step says where it
+// starts and the beat that fires it; no state of the routine is final. A
+// machine's state is scoped by the routine named in the statement's path,
+// so the repeats under fact and topic hubs, which carry other kinds, are
+// not counted.
+func (s *ReadBackWireSuite) machineShapeOnTheWire(all []*authoringpb.ReadBackStatement) {
+	routinePath := "behaviorDefinitions." + gatePolicy
+	starts, steps, moves := false, 0, 0
+	for _, st := range all {
+		if st.GetPath() != routinePath && !strings.HasPrefix(st.GetPath(), routinePath+".") {
+			continue
+		}
+		switch st.GetKind() {
+		case "routine":
+			starts = hasConnection(st, "state", "posted", "starts")
+		case "routine.state":
+			s.False(hasRole(st, "state", "final"),
+				"no state of %s is final; the one at %q is", gatePolicy, st.GetPath())
+		case "routine.wake":
+			steps++
+			if hasRole(st, "state", "to") {
+				moves++
+			}
+			s.True(hasRole(st, "state", "from"), "the step at %q says where it starts", st.GetPath())
+			s.True(hasRole(st, "beat", "on"), "the step at %q says the beat that fires it", st.GetPath())
+		}
+	}
+	s.True(starts, "the routine %s starts in the state posted", gatePolicy)
+	s.Equal(12, moves, "twelve steps of %s move to another state", gatePolicy)
+	s.T().Logf("%s: %d steps, %d move", gatePolicy, steps, moves)
+}
+
+// hasConnection reports whether st connects {kind, id} in role.
+func hasConnection(st *authoringpb.ReadBackStatement, kind, id, role string) bool {
+	for _, c := range st.GetConnects() {
+		if c.GetKind() == kind && c.GetId() == id && c.GetRole() == role {
+			return true
+		}
+	}
+	return false
+}
+
+// hasRole reports whether st connects some thing of kind in role.
+func hasRole(st *authoringpb.ReadBackStatement, kind, role string) bool {
+	for _, c := range st.GetConnects() {
+		if c.GetKind() == kind && c.GetRole() == role {
+			return true
+		}
+	}
+	return false
 }
 
 // kindsAbout is the kinds equal to kind among the statements of the groups
