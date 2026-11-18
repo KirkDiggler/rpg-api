@@ -130,7 +130,16 @@ registry could not grade a file at all.
 
 The registry never re-marshals: `GetDungeon` hands back the bytes that were
 `Put`, comments and spacing included (the builder's byte-identity round trip,
-design §5).
+design §5). It reads through `Registry.Source`, which does NOT compile: a
+saved dungeon the engine now refuses (a word retired since it was saved,
+rpg-project#1005) still opens, and the studio's validate-only preview shows
+the engine's sentence. Playing a dungeon reads through `Registry.Get`, which
+compiles.
+
+`cmd/holdingwords` converts dungeons written in the words rpg-project#1005
+retired: a content folder or file in place (original kept as
+`<name>.yaml.before-holding-words`), or every saved dungeon in the world store
+(`--world-store --backup-dir <dir>`); `--dry-run` prints what would change.
 
 `internal/dungeons/dungeonstest` builds registries for tests: `Shipped(t)`
 (the repo's `content/` with an empty world store, authoring off),

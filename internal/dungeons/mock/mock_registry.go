@@ -113,3 +113,18 @@ func (mr *MockRegistryMockRecorder) Rename(ctx, in any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Rename", reflect.TypeOf((*MockRegistry)(nil).Rename), ctx, in)
 }
+
+// Source mocks base method.
+func (m *MockRegistry) Source(ctx context.Context, in *dungeons.SourceInput) (*dungeons.SourceOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Source", ctx, in)
+	ret0, _ := ret[0].(*dungeons.SourceOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Source indicates an expected call of Source.
+func (mr *MockRegistryMockRecorder) Source(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Source", reflect.TypeOf((*MockRegistry)(nil).Source), ctx, in)
+}
