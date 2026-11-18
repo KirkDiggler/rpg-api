@@ -36,7 +36,7 @@ func (h *Handler) Loot(ctx context.Context, req *sessionpb.LootRequest) (*sessio
 		Range:   int(req.GetRange()),
 	})
 	if err != nil {
-		return nil, sdkerr.StatusError(err)
+		return nil, sdkerr.StatusErrorFor(err, req.GetMember())
 	}
 
 	return &sessionpb.LootResponse{

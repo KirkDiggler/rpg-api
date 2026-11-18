@@ -84,7 +84,7 @@ func (h *Handler) Cast(
 		Option: req.GetOption(),
 	})
 	if err != nil {
-		return nil, sdkerr.StatusError(err)
+		return nil, sdkerr.StatusErrorFor(err, req.GetMember())
 	}
 
 	// Persisted, not Saved. The SDK renamed Activate's persistence report to

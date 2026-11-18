@@ -53,7 +53,7 @@ func (h *Handler) React(ctx context.Context, req *sessionpb.ReactRequest) (*sess
 		Answer:        answer,
 	})
 	if err != nil {
-		return nil, sdkerr.StatusError(err)
+		return nil, sdkerr.StatusErrorFor(err, req.GetMember())
 	}
 
 	return &sessionpb.ReactResponse{

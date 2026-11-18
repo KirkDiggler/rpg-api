@@ -311,8 +311,9 @@ func TestAcceptance_DashBanksMovementRatherThanACondition(t *testing.T) {
 }
 
 // A SPENT SELECTOR IS REFUSED, NOT REPLAYED — with the code a client branches
-// on, and without having applied anything a second time.
-func TestAcceptance_ASpentSelectorIsRefusedWithFailedPrecondition(t *testing.T) {
+// on (ABORTED: the offer moved on, re-read and pick again, rpg-project#925),
+// and without having applied anything a second time.
+func TestAcceptance_ASpentSelectorIsRefusedAsStale(t *testing.T) {
 	h, ctx := inAFightWith(t, ragingBarbarian("alice", "player-alice"))
 
 	dodge := activationsFor(ctx, t, h, "alice")["dnd5e:combat_abilities:dodge"]
@@ -327,7 +328,7 @@ func TestAcceptance_ASpentSelectorIsRefusedWithFailedPrecondition(t *testing.T) 
 	require.Error(t, err)
 	st, ok := status.FromError(err)
 	require.True(t, ok, "a refusal must be a status error")
-	require.Equal(t, codes.FailedPrecondition, st.Code())
+	require.Equal(t, codes.Aborted, st.Code())
 
 	// And the panel is told why, in a currency it can name.
 	after := activationsFor(ctx, t, h, "alice")["dnd5e:combat_abilities:dodge"]

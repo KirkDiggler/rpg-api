@@ -35,7 +35,7 @@ func (h *Handler) Move(ctx context.Context, req *sessionpb.MoveRequest) (*sessio
 		Path:          path,
 	})
 	if err != nil {
-		return nil, sdkerr.StatusError(err)
+		return nil, sdkerr.StatusErrorFor(err, req.GetMember())
 	}
 
 	return &sessionpb.MoveResponse{

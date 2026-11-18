@@ -76,7 +76,7 @@ func TestActivate_EveryRefusalIsAStatusCode(t *testing.T) {
 		// another verb.
 		{"ability refused", sdk.ErrCannotActivate, codes.FailedPrecondition},
 		// The offer moved: spent, or the world changed since Afford.
-		{"selector went stale", sdk.ErrStaleDeclaration, codes.FailedPrecondition},
+		{"selector went stale", sdk.ErrStaleDeclaration, codes.Aborted},
 		{"not this member's turn", sdk.ErrNotYourTurn, codes.FailedPrecondition},
 		{"member is downed", sdk.ErrDowned, codes.FailedPrecondition},
 		{"member is not a character", sdk.ErrNotACharacter, codes.FailedPrecondition},

@@ -27,11 +27,35 @@ import (
 // but a new sentinel with no explicit case here should get one deliberately
 // rather than silently riding the Internal default.
 func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
-	tests := []struct {
-		name string
-		err  error
-		want codes.Code
-	}{
+	tests := sentinelCases()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Wrapped exactly like the SDK wraps its own sentinels
+			// ("verb: %w") so the table is proven against errors.Is chains,
+			// not bare sentinel identity.
+			wrapped := fmt.Errorf("move: step 1: %w", tt.err)
+			got := StatusError(wrapped)
+			st, ok := status.FromError(got)
+			require.True(t, ok, "statusError must always return a gRPC status error")
+			require.Equal(t, tt.want, st.Code(), "sentinel %s", tt.name)
+		})
+	}
+}
+
+// sentinelCase is one row of the sentinel table: a mapped SDK sentinel and
+// the code it reaches the wire as.
+type sentinelCase struct {
+	name string
+	err  error
+	want codes.Code
+}
+
+// sentinelCases is every SDK sentinel the table maps, with its code: the one
+// list both the code test above and the reason test below iterate, so a
+// sentinel added here is held to both.
+func sentinelCases() []sentinelCase {
+	return []sentinelCase{
 		// NOT_FOUND -- the caller named something that does not exist.
 		{"ErrNoSession", sdk.ErrNoSession, codes.NotFound},
 		{"ErrNoEncounter", sdk.ErrNoEncounter, codes.NotFound},
@@ -116,7 +140,7 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// current world state refuses, the same bucket as the three above.
 		{"ErrNotYourTurn", sdk.ErrNotYourTurn, codes.FailedPrecondition},
 		{"ErrOutOfReach", sdk.ErrOutOfReach, codes.FailedPrecondition},
-		{"ErrStaleDeclaration", sdk.ErrStaleDeclaration, codes.FailedPrecondition},
+		{"ErrStaleDeclaration", sdk.ErrStaleDeclaration, codes.Aborted},
 		// World NPCs (rpg-toolkit#1404): Interact's own reach/sight refusals,
 		// the same shape as ErrOutOfReach above.
 		{"ErrOutOfRange", sdk.ErrOutOfRange, codes.FailedPrecondition},
@@ -264,6 +288,9 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		{"ErrDoorHeld", sdk.ErrDoorHeld, codes.FailedPrecondition},
 		{"ErrLineReserved", sdk.ErrLineReserved, codes.FailedPrecondition},
 		{"ErrSharingNotBuilt", sdk.ErrSharingNotBuilt, codes.FailedPrecondition},
+		{"ErrInCustody", sdk.ErrInCustody, codes.FailedPrecondition},
+		{"ErrJailRefused", sdk.ErrJailRefused, codes.FailedPrecondition},
+		{"ErrNoRoom", sdk.ErrNoRoom, codes.FailedPrecondition},
 		{"ErrStaleOption", sdk.ErrStaleOption, codes.Aborted},
 		// Already in the pinned SDK before this feature (v0.21.4) and unmapped
 		// until this audit: this package's OWN adapter vocabulary going stale
@@ -286,19 +313,23 @@ func TestStatusError_CoversEverySDKSentinel(t *testing.T) {
 		// misread as some caller-facing code.
 		{"ErrNotFound (defensive)", sdk.ErrNotFound, codes.Internal},
 	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Wrapped exactly like the SDK wraps its own sentinels
-			// ("verb: %w") so the table is proven against errors.Is chains,
-			// not bare sentinel identity.
-			wrapped := fmt.Errorf("move: step 1: %w", tt.err)
-			got := StatusError(wrapped)
-			st, ok := status.FromError(got)
-			require.True(t, ok, "statusError must always return a gRPC status error")
-			require.Equal(t, tt.want, st.Code(), "sentinel %s", tt.name)
-		})
+// TestStatusError_OnlyAMovedOnOfferIsAborted pins rpg-project#925: ABORTED
+// is the code that tells a client "what you were offered has moved on --
+// re-read and pick again", so exactly the stale refusals reach it -- a stale
+// declaration, a stale Speak option, and a save that lost its checkpoint
+// race. Every other sentinel in the shared table maps elsewhere, so a future
+// sentinel cannot silently join ABORTED, nor these leave it.
+func TestStatusError_OnlyAMovedOnOfferIsAborted(t *testing.T) {
+	want := map[string]bool{"ErrStaleDeclaration": true, "ErrStaleOption": true, "ErrStaleCheckpoint": true}
+	got := map[string]bool{}
+	for _, tt := range sentinelCases() {
+		if tt.want == codes.Aborted {
+			got[tt.name] = true
+		}
 	}
+	require.Equal(t, want, got)
 }
 
 // errorsGoDefaultCaseSentinels names every SDK sentinel statusError leaves to
@@ -469,4 +500,55 @@ func TestStatusError_StaleSaveIsAbortedNotUnavailable(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, codes.Aborted, st.Code())
 	require.Contains(t, st.Message(), "stale checkpoint")
+}
+
+// TestStatusError_CustodyRefusalsAreTheSentenceAlone pins rpg-project#925:
+// each custody refusal reaches the player as FAILED_PRECONDITION whose whole
+// message is the session's sentence -- no "move: " or "speak: " -- and a
+// move imposed on a held member is worded for the member acting: in the
+// second person when it is their own character it names.
+func TestStatusError_CustodyRefusalsAreTheSentenceAlone(t *testing.T) {
+	for _, tc := range []struct {
+		name, viewer, want string
+		err                error
+	}{
+		{"walking away", "alice", "The guards hold you; you cannot walk away.", fmt.Errorf("move: %w", sdk.ErrInCustody)},
+		{"no room", "alice", "There is no room for you there now.", fmt.Errorf("speak: %w", sdk.ErrNoRoom)},
+		{"the cells refuse, by the alias", "alice", "There is no room for you there now.", fmt.Errorf("speak: %w", sdk.ErrJailRefused)},
+		{"a move imposed on yourself", "alice", "The guards hold you; you cannot be moved.", fmt.Errorf("cast: %w", &sdk.CustodyMoveError{Member: "alice"})},
+		{"a move imposed on another", "bob", "The guards hold alice; they cannot be moved.", fmt.Errorf("attack: %w", &sdk.CustodyMoveError{Member: "alice"})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st, ok := status.FromError(StatusErrorFor(tc.err, tc.viewer))
+			require.True(t, ok)
+			require.Equal(t, codes.FailedPrecondition, st.Code())
+			require.Equal(t, tc.want, st.Message())
+		})
+	}
+}
+
+// TestStatusError_AThingRefusedIsItsSentenceWithItsSentinelsCode pins
+// rpg-project#959: a refusal of something done to a thing reaches the player
+// as the session's sentence alone, with the code its sentinel already maps
+// to -- so a stale offer stays ABORTED and an unknown thing NOT_FOUND.
+func TestStatusError_AThingRefusedIsItsSentenceWithItsSentinelsCode(t *testing.T) {
+	for _, tc := range []struct {
+		sentinel error
+		want     codes.Code
+	}{
+		{sdk.ErrStaleOption, codes.Aborted},
+		{sdk.ErrStaleDeclaration, codes.Aborted},
+		{sdk.ErrNoProp, codes.NotFound},
+		{sdk.ErrNoOption, codes.FailedPrecondition},
+		{sdk.ErrOutOfRange, codes.FailedPrecondition},
+		{sdk.ErrLineReserved, codes.FailedPrecondition},
+	} {
+		t.Run(tc.sentinel.Error(), func(t *testing.T) {
+			err := fmt.Errorf("interact: %w", &sdk.ThingRefusal{Sentence: "You cannot reach that from here.", Err: fmt.Errorf("prop: %w", tc.sentinel)})
+			st, ok := status.FromError(StatusErrorFor(err, "alice"))
+			require.True(t, ok)
+			require.Equal(t, tc.want, st.Code())
+			require.Equal(t, "You cannot reach that from here.", st.Message())
+		})
+	}
 }

@@ -93,10 +93,10 @@ func TestDeathSave_EmptyInputsAndStateSentinelsMapConsistently(t *testing.T) {
 	}{
 		{name: "missing declaration", err: sdk.ErrNoDeclarationID, code: codes.InvalidArgument},
 		{name: "missing session", err: sdk.ErrNoSession, code: codes.NotFound},
-		{name: "stale declaration", err: sdk.ErrStaleDeclaration, code: codes.FailedPrecondition},
+		{name: "stale declaration", err: sdk.ErrStaleDeclaration, code: codes.Aborted},
 		{name: "not turn", err: sdk.ErrNotYourTurn, code: codes.FailedPrecondition},
-		{name: "not dying", err: sdk.ErrStaleDeclaration, code: codes.FailedPrecondition},
-		{name: "capacity spent", err: sdk.ErrStaleDeclaration, code: codes.FailedPrecondition},
+		{name: "not dying", err: sdk.ErrStaleDeclaration, code: codes.Aborted},
+		{name: "capacity spent", err: sdk.ErrStaleDeclaration, code: codes.Aborted},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

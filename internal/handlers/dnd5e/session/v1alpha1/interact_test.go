@@ -120,3 +120,82 @@ func TestInteract_EmptyActor_IsRefused(t *testing.T) {
 	_, err := h.Interact(ctx, &sessionpb.InteractRequest{Session: "sess-1", Target: "demo-merchant-1"})
 	requireCode(t, err, codes.InvalidArgument)
 }
+
+// TestInteract_NamesExactlyOneThing pins rpg-project#959: a request naming
+// both a world NPC and a prop, or neither, is refused INVALID_ARGUMENT with a
+// sentence before the SDK is asked.
+func TestInteract_NamesExactlyOneThing(t *testing.T) {
+	for name, req := range map[string]*sessionpb.InteractRequest{
+		"both":    {Session: "sess-1", Actor: "char-1", Target: "pedlar", Prop: "grate", OptionId: "to-chapel"},
+		"neither": {Session: "sess-1", Actor: "char-1", OptionId: "to-chapel"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			h := &Handler{manager: sessionv1alpha1mock.NewMockManager(ctrl), characters: anyMemberOwnedBy(ctrl, "alice")}
+			_, err := h.Interact(auth.WithPlayerID(context.Background(), "alice"), req)
+			requireCode(t, err, codes.InvalidArgument)
+		})
+	}
+}
+
+// TestInteract_APropDeedCarriesWhatWasDone pins rpg-project#959: the prop
+// branch passes the prop, option and revision through, and answers with what
+// was done -- no descriptor, the approach only when a check was made, the
+// roll only while the check waits.
+func TestInteract_APropDeedCarriesWhatWasDone(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mgr := sessionv1alpha1mock.NewMockManager(ctrl)
+	roll := 14
+	mgr.EXPECT().Interact(gomock.Any(), &sdk.InteractInput{
+		Session: "sess-1", Actor: "char-1", Prop: "altar", OptionID: "examine", Revision: 4,
+	}).Return(&sdk.InteractOutput{Done: &sdk.DoneOutput{
+		Prop: "altar", OptionID: "examine", Beaten: true, Total: 15, DC: 12,
+		Applied: sdk.DoorApproach{Ability: "religion", DC: 12}, Paused: true, Roll: &roll,
+	}}, nil)
+	h := &Handler{manager: mgr, characters: anyMemberOwnedBy(ctrl, "alice")}
+	resp, err := h.Interact(auth.WithPlayerID(context.Background(), "alice"), &sessionpb.InteractRequest{
+		Session: "sess-1", Actor: "char-1", Prop: "altar", OptionId: "examine", Revision: 4,
+	})
+	require.NoError(t, err)
+	require.Nil(t, resp.GetDescriptor_(), "a prop is not a world NPC")
+	done := resp.GetDone()
+	require.Equal(t, "altar", done.GetProp())
+	require.Equal(t, "examine", done.GetOptionId())
+	require.True(t, done.GetBeaten())
+	require.Equal(t, int32(15), done.GetTotal())
+	require.Equal(t, int32(12), done.GetDc())
+	require.Equal(t, "religion", done.GetApplied().GetAbility())
+	require.True(t, done.GetPaused())
+	require.Equal(t, int32(14), done.GetRoll())
+
+	mgr.EXPECT().Interact(gomock.Any(), gomock.Any()).Return(&sdk.InteractOutput{Done: &sdk.DoneOutput{Prop: "grate", OptionID: "to-chapel", Beaten: true}}, nil)
+	resp, err = h.Interact(auth.WithPlayerID(context.Background(), "alice"), &sessionpb.InteractRequest{
+		Session: "sess-1", Actor: "char-1", Prop: "grate", OptionId: "to-chapel",
+	})
+	require.NoError(t, err)
+	require.Nil(t, resp.GetDone().GetApplied(), "no check, no approach")
+	require.Nil(t, resp.GetDone().Roll, "no waiting check, no roll")
+}
+
+// TestAfford_InteractOptionsCrossOnTheSpeakRow pins rpg-project#959: the
+// things to do on props cross on the declaration as the SDK wrote them --
+// `do` as do_words, the shortfall as its reason only.
+func TestAfford_InteractOptionsCrossOnTheSpeakRow(t *testing.T) {
+	rows := interactOptionsToProto([]sdk.InteractOptionRow{
+		{Prop: "grate", OptionID: "to-chapel", Do: "You lift the grate and take the way up.", Available: true},
+		{Prop: "altar", OptionID: "examine", Do: "You examine the altar.", Interaction: "shrine", Revision: 3, Pending: true, PendingOn: "bob",
+			Why: &sdk.Shortfall{Reason: sdk.ShortfallLineReserved, Text: "waits"}},
+	})
+	require.Len(t, rows, 2)
+	require.Equal(t, "grate", rows[0].GetPropId())
+	require.Equal(t, "to-chapel", rows[0].GetOptionId())
+	require.Equal(t, "You lift the grate and take the way up.", rows[0].GetDoWords())
+	require.True(t, rows[0].GetAvailable())
+	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_UNSPECIFIED, rows[0].GetShortfall())
+	require.Equal(t, sessionpb.ShortfallReason_SHORTFALL_REASON_LINE_RESERVED, rows[1].GetShortfall())
+	require.Equal(t, "shrine", rows[1].GetInteractionId())
+	require.Equal(t, uint64(3), rows[1].GetRevision())
+	require.True(t, rows[1].GetPending())
+	require.Equal(t, "bob", rows[1].GetPendingOnMemberId())
+	require.Nil(t, interactOptionsToProto(nil))
+}

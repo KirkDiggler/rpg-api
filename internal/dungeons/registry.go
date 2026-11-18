@@ -41,6 +41,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	tkdungeonspec "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec/readback"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
@@ -221,6 +222,31 @@ type PutInput struct {
 type PutResult struct {
 	Errors []FieldError
 	Entry  *Entry
+
+	// ReadBack is the engine's own read-back of the file (rpg-toolkit
+	// dungeonspec/readback, design R25): what will run, said in the engine's
+	// sentences, each with the path where it is set. Present only on a
+	// ValidateOnly check that compiled: the read-back rides the check the
+	// studio sends after each edit (R25), and the studio already holds it
+	// when it saves, so a save carries none and pays nothing for it. Nil too
+	// on a refusal, on a file below the site dialect (version 3), and when
+	// the read-back itself fails, which is logged and never turns a clean
+	// compile into a refusal.
+	//
+	// It lives on the Put answer, not on the Entry: Get, the lobby's launch
+	// and the shelf's boot compile all hold entries and none of them returns
+	// a read-back, so none of them pays for one.
+	ReadBack *readback.ReadBack
+
+	// Folded is ReadBack folded for one thing at a time
+	// (ReadBack.FoldedEach, rpg-project#980): each thing's own lines said
+	// under it, never pointed at another's, each line once with its
+	// requirements under it, a loudness explained once per creature, and
+	// every item carrying the paths of the statements it stands for
+	// (rpg-project#978). The studio shows one thing at a time. Present
+	// exactly when ReadBack is; folded inside the same containment, so a
+	// failure folding yields neither.
+	Folded []readback.FoldedSection
 }
 
 // RenameInput is one RenameDungeon call.

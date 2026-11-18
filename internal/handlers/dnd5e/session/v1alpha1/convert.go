@@ -1337,6 +1337,29 @@ func speakOptionHoldConsistent(row sdk.SpeakOptionRow) error {
 	return nil
 }
 
+// interactOptionsToProto mirrors the things a member may do on props
+// (rpg-project#959) field for field: `do` is the words of the deed, the row's
+// shortfall is its reason only. Nil in is nil out, so a row without things
+// to do carries none.
+func interactOptionsToProto(rows []sdk.InteractOptionRow) []*sessionpb.InteractOption {
+	if rows == nil {
+		return nil
+	}
+	out := make([]*sessionpb.InteractOption, len(rows))
+	for i, row := range rows {
+		option := &sessionpb.InteractOption{
+			PropId: row.Prop, OptionId: row.OptionID, DoWords: row.Do, Available: row.Available,
+			InteractionId: row.Interaction, Revision: row.Revision,
+			Pending: row.Pending, PendingOnMemberId: row.PendingOn,
+		}
+		if row.Why != nil {
+			option.Shortfall = shortfallReasonToProto(row.Why.Reason)
+		}
+		out[i] = option
+	}
+	return out
+}
+
 // speakAddressToProto mirrors the Speak row's address (rpg-project#923) as
 // the SDK wrote it. Nil in is nil out: an unaddressed member's row carries no
 // address, and the api never derives one.
@@ -1449,8 +1472,13 @@ func declarationToProto(d sdk.Declaration) (*sessionpb.Declaration, error) {
 		// WHO IS SPEAKING TO THIS MEMBER (rpg-project#923): the guard who
 		// hailed them and the interaction he speaks for, present only on the
 		// addressed member's own Speak row while the address stands.
-		Address:   address,
-		Footprint: footprintToProto(d.Footprint),
+		Address: address,
+		// THE THINGS TO DO ON PROPS (rpg-project#959): one entry per (prop,
+		// option) pair this member may do, on the Speak row beside its lines.
+		// An Interact request brings back the option id, the prop and the
+		// revision.
+		InteractOptions: interactOptionsToProto(d.InteractOptions),
+		Footprint:       footprintToProto(d.Footprint),
 		// WHAT BEARS ON THIS ROW, as the toolkit answered it. Rows never grant
 		// or refuse the declaration; Available and Why above stay the only gate.
 		Effects: effectRowsToProto(d.Effects),

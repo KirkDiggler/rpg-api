@@ -6765,6 +6765,31 @@
    ]
   },
   {
+   "id": "grate",
+   "placement": {
+    "width": 2.3094010767585034,
+    "depth": 2.3094010767585034,
+    "origin": {
+     "x": -95,
+     "y": -60.62177826491071
+    },
+    "facing": -0,
+    "local_offset": {
+     "x": 0,
+     "y": 0
+    }
+   },
+   "blocks_movement": false,
+   "blocks_line_of_sight": false,
+   "holdable": false,
+   "cells": [
+    {
+     "x": -12,
+     "y": -14
+    }
+   ]
+  },
+  {
    "id": "hall-wall",
    "placement": {
     "width": 1.4433756729740645,
@@ -10293,6 +10318,18 @@
    "facing_degrees": -28.64788975654116,
    "height_scale": 1,
    "label": "Altar"
+  },
+  {
+   "id": "grate",
+   "ref": "dnd5e:props:dark-fortress:sewer_grate_02",
+   "origin": {
+    "x": -95,
+    "y": -60.62177826491071
+   },
+   "elevation": 0,
+   "facing_degrees": -0,
+   "height_scale": 1,
+   "label": "Grate by the Hearth"
   },
   {
    "id": "ledger",

@@ -75,7 +75,7 @@ var (
 
 func answer() sdk.TableAnswer {
 	return sdk.TableAnswer{
-		Who: gate1, Option: "stand-aside", Key: "persuade", Word: "yield", Selector: "calm",
+		Who: gate1, Option: "stand-aside", Key: "persuade", Word: "yield", Selector: "calm", Narration: "He steps aside.",
 		Temperament: "wary", Entry: 2, Candidates: []sdk.TableCandidate{{Entry: 1, Weight: 2, Percent: 40, Loaded: 1}},
 		Roll: tableDie, Dealt: &sdk.Temper{Faction: guards, Temper: "wary", Roll: *tableDie},
 	}
@@ -83,7 +83,7 @@ func answer() sdk.TableAnswer {
 
 func answerP() *sessionpb.TableAnswer {
 	return &sessionpb.TableAnswer{
-		Who: gate1P, Option: "stand-aside", Key: "persuade", Word: "yield", Selector: "calm",
+		Who: gate1P, Option: "stand-aside", Key: "persuade", Word: "yield", Selector: "calm", Narration: "He steps aside.",
 		Temperament: "wary", Entry: 2, Candidates: []*sessionpb.TableCandidate{{Entry: 1, Weight: 2, Percent: 40, Loaded: 1}},
 		Roll: tableDieP, Dealt: &sessionpb.Temper{Faction: guardsP, Temper: "wary", Roll: tableDieP},
 	}
@@ -109,6 +109,12 @@ func act(family sessionpb.Family, body any) *sessionpb.Act {
 		out.Body = &sessionpb.Act_Activate{Activate: b}
 	case *sessionpb.Speech:
 		out.Body = &sessionpb.Act_Speech{Speech: b}
+	case *sessionpb.RelocateAct:
+		out.Body = &sessionpb.Act_Relocate{Relocate: b}
+	case *sessionpb.ArrestAct:
+		out.Body = &sessionpb.Act_Arrest{Arrest: b}
+	case *sessionpb.InteractAct:
+		out.Body = &sessionpb.Act_Interact{Interact: b}
 	case *sessionpb.DeathSaveAct:
 		out.Body = &sessionpb.Act_DeathSave{DeathSave: b}
 	case *sessionpb.LootAct:
@@ -206,6 +212,18 @@ func everyBody() map[string]bodyCase {
 				Place: cell, Loudness: "speak", Skill: "persuasion", Roll: d20, Fact: "feast-tonight"},
 			act(sessionpb.Family_FAMILY_ACT, &sessionpb.Speech{Utterance: "u-1", Speaker: aliceP, SpokenTo: gate1P, Words: strp("Stand aside."),
 				Option: "stand-aside", Place: cellP, Loudness: sessionpb.Loudness_LOUDNESS_SPEAK, Skill: "persuasion", Roll: d20P, Fact: "feast-tonight"})},
+		"relocate": {sdk.FamilyAct,
+			sdk.RelocateAct{Mover: alice, From: &cell, To: &spatial.Position{X: 4, Y: -2}, Cause: "site:interactions:front-gate", Words: "Come along.", End: sdk.RelocateBoth},
+			act(sessionpb.Family_FAMILY_ACT, &sessionpb.RelocateAct{Mover: aliceP, From: cellP, To: &sessionpb.Position{X: 4, Y: -2},
+				Cause: "site:interactions:front-gate", Words: "Come along.", End: sessionpb.RelocateEnd_RELOCATE_END_BOTH})},
+		"interact": {sdk.FamilyAct,
+			sdk.InteractAct{Actor: alice, Prop: chest, Option: "to-chapel", Words: "You lift the grate.", Place: &cell,
+				Beaten: &beatenTrue, Skill: "investigation", Roll: d20},
+			act(sessionpb.Family_FAMILY_ACT, &sessionpb.InteractAct{Actor: aliceP, Prop: chestP, Option: "to-chapel", Words: "You lift the grate.",
+				Place: cellP, Beaten: &beatenTrue, Skill: "investigation", Roll: d20P})},
+		"arrest": {sdk.FamilyAct,
+			sdk.ArrestAct{Interaction: "front-gate", Taken: []sdk.Party{alice}, Cell: "region-cells"},
+			act(sessionpb.Family_FAMILY_ACT, &sessionpb.ArrestAct{Interaction: "front-gate", Taken: []*sessionpb.Party{aliceP}, Cell: "region-cells"})},
 		"death_save": {sdk.FamilyAct,
 			sdk.DeathSaveAct{By: alice, Roll: d20, Outcome: "success", SuccessesAdded: 1, FailuresAdded: 0, Successes: 2, Failures: 1,
 				SuccessesNeeded: 1, FailuresRemaining: 2, Stabilized: false, Dead: false, Recovered: true, HPRestored: 1, Continuation: "end_turn", PresentationID: "p"},
@@ -868,4 +886,55 @@ func (s *ConvertActSuite) TestTableAnswerToProtoStrippedPickIsOnlyWho() {
 	s.Require().NoError(err)
 	s.True(proto.Equal(&sessionpb.TableAnswer{Who: gate1P, Activity: &sessionpb.ActivityCue{Ref: cue.Ref, Cycles: cue.Cycles}},
 		got.GetTableAnswer()), "who and the cue: %v", got.GetTableAnswer())
+}
+
+// TestRelocateToProtoKeepsAnAbsentEndAbsent pins rpg-project#925: a
+// recipient who saw only one end of a relocation is sent only that end; the
+// other crosses absent, never as the cell (0,0). An end this build cannot
+// spell refuses the act.
+func (s *ConvertActSuite) TestRelocateToProtoKeepsAnAbsentEndAbsent() {
+	left, err := actToProto(sdk.Act{ID: "id-1", Family: sdk.FamilyAct, Body: sdk.RelocateAct{Mover: alice, From: &cell, End: sdk.RelocateLeft}})
+	s.Require().NoError(err)
+	s.True(proto.Equal(cellP, left.GetRelocate().GetFrom()))
+	s.Nil(left.GetRelocate().GetTo(), "the arriving was not seen")
+	s.Equal(sessionpb.RelocateEnd_RELOCATE_END_LEFT, left.GetRelocate().GetEnd())
+
+	arrived, err := actToProto(sdk.Act{ID: "id-2", Family: sdk.FamilyAct, Body: sdk.RelocateAct{Mover: alice, To: &cell, End: sdk.RelocateArrived}})
+	s.Require().NoError(err)
+	s.Nil(arrived.GetRelocate().GetFrom(), "the leaving was not seen")
+	s.True(proto.Equal(cellP, arrived.GetRelocate().GetTo()))
+
+	refused, err := actToProto(sdk.Act{ID: "id-3", Family: sdk.FamilyAct, Body: sdk.RelocateAct{Mover: alice, End: "teleported"}})
+	s.Require().ErrorIs(err, errUnknownValue)
+	s.True(refused.GetRefused())
+}
+
+// TestArrestToProtoAWitnessIsToldNoCell pins rpg-project#925: at each their
+// own a witness who was not taken is told who was taken and not where they
+// are to be held -- the session's empty cell crosses as empty, never filled.
+func (s *ConvertActSuite) TestArrestToProtoAWitnessIsToldNoCell() {
+	witness, err := actToProto(sdk.Act{ID: "id-1", Family: sdk.FamilyAct, Body: sdk.ArrestAct{Interaction: "front-gate", Taken: []sdk.Party{alice}}})
+	s.Require().NoError(err)
+	s.Empty(witness.GetArrest().GetCell(), "the witness is told no cell")
+	s.Equal([]*sessionpb.Party{aliceP}, witness.GetArrest().GetTaken())
+
+	takenAct, err := actToProto(sdk.Act{ID: "id-2", Family: sdk.FamilyAct, Body: sdk.ArrestAct{Interaction: "front-gate", Taken: []sdk.Party{alice}, Cell: "region-cells"}})
+	s.Require().NoError(err)
+	s.Equal("region-cells", takenAct.GetArrest().GetCell(), "the taken are told the region")
+}
+
+var beatenTrue = true
+
+// TestInteractToProtoKeepsAbsentPartsAbsent pins rpg-project#959: a watcher
+// who saw the deed and not where, or no check, is sent no place, beaten,
+// skill or roll -- never the cell (0,0) or a false.
+func (s *ConvertActSuite) TestInteractToProtoKeepsAbsentPartsAbsent() {
+	got, err := actToProto(sdk.Act{ID: "id-1", Family: sdk.FamilyAct, Body: sdk.InteractAct{Actor: alice, Prop: chest, Words: "She lifts the grate."}})
+	s.Require().NoError(err)
+	in := got.GetInteract()
+	s.Nil(in.GetPlace(), "no place")
+	s.Nil(in.Beaten, "no verdict")
+	s.Empty(in.GetSkill())
+	s.Nil(in.GetRoll())
+	s.Empty(in.GetOption(), "a watcher is not told which option")
 }
