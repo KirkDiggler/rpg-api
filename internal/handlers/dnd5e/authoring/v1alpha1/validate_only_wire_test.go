@@ -125,6 +125,29 @@ func (s *ValidateOnlyWireSuite) TestActionAugmentsGradeThroughPutDungeon() {
 	s.Equal(authorKey, resp.GetAtlas().GetDungeonKey())
 }
 
+// TestAnOldWordNamesTheNewWord: the holding words (rpg-project#1005) renamed
+// `recognized` to `holds`. An author's file still carrying the old word is
+// graded, not refused as a status, and the grade carries the engine's own
+// sentence naming the new word, so the studio can show it as it stands.
+func (s *ValidateOnlyWireSuite) TestAnOldWordNamesTheNewWord() {
+	const castleCopyKey = "my-castle"
+
+	raw, err := os.ReadFile(filepath.Join(dungeonstest.ContentDir(s.T()), "the-mad-king.yaml")) //nolint:gosec // the shipped content dir
+	s.Require().NoError(err)
+	current := string(dungeonstest.AsKey(s.T(), raw, "the-mad-king", castleCopyKey))
+	old := strings.Replace(current, "pass: { holds: admitted }", "pass: { recognized: admitted }", 1)
+	s.Require().NotEqual(current, old, "the castle no longer holds a `pass: { holds: admitted }`")
+
+	resp, err := s.handler.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{
+		Key: castleCopyKey, Yaml: old, ValidateOnly: true,
+	})
+	s.Require().NoError(err, "a grade is never a status")
+	s.Require().Len(resp.GetErrors(), 1)
+	s.Contains(resp.GetErrors()[0].GetMessage(), "`recognized` is now `holds`",
+		"the engine's sentence reaches the author verbatim")
+	s.Nil(resp.GetAtlas(), "no map for a file that does not compile")
+}
+
 // TestMissingFactionNamesThePlacement is the design's first probe: a
 // placement standing in a faction nobody declared. The engine names the
 // placement by index and the word the author typed.
