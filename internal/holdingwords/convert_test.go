@@ -17,14 +17,21 @@ import (
 // rpg-project#1005: last week's file, every old word in it.
 const beforeCastle = "testdata/the-mad-king-before-holding-words.yaml"
 
-// shippedCastle is the castle in the new words, as this repository ships it.
+// afterCastle is the same castle in the new words and nothing else: the
+// shipped castle at encounter v0.221.0 (sha256 33a3d759…adb8e7), pinned
+// because the shipped castle has since gained the captain's walk back to his
+// gate (rpg-project#1000), which no conversion could produce.
+const afterCastle = "testdata/the-mad-king-after-holding-words.yaml"
+
+// shippedCastle is the castle as this repository ships it now.
 var shippedCastle = filepath.Join("..", "..", "content", "the-mad-king.yaml")
 
 type ConvertSuite struct {
 	suite.Suite
 
-	before []byte
-	after  []byte
+	before  []byte
+	after   []byte
+	shipped []byte
 }
 
 func TestConvertSuite(t *testing.T) {
@@ -35,7 +42,9 @@ func (s *ConvertSuite) SetupTest() {
 	var err error
 	s.before, err = os.ReadFile(beforeCastle)
 	s.Require().NoError(err)
-	s.after, err = os.ReadFile(shippedCastle) //nolint:gosec // the repository's own content
+	s.after, err = os.ReadFile(afterCastle)
+	s.Require().NoError(err)
+	s.shipped, err = os.ReadFile(shippedCastle) //nolint:gosec // the repository's own content
 	s.Require().NoError(err)
 }
 
@@ -47,8 +56,8 @@ func (s *ConvertSuite) convert(raw []byte) *holdingwords.ConvertOutput {
 }
 
 // TestLastWeeksCastleCompilesAsTheNewOne: the old castle, converted, is
-// refused nowhere and compiles to exactly what the shipped castle compiles
-// to; the only text that still differs is comments.
+// refused nowhere and compiles to exactly what the same castle written in the
+// new words by hand compiles to; the only text that still differs is comments.
 func (s *ConvertSuite) TestLastWeeksCastleCompilesAsTheNewOne() {
 	_, err := dungeonspec.Load(s.before)
 	s.Require().Error(err, "the engine refuses last week's castle as it is")
@@ -66,21 +75,23 @@ func (s *ConvertSuite) TestLastWeeksCastleCompilesAsTheNewOne() {
 
 	converted, err := dungeonspec.Load(out.Out)
 	s.Require().NoError(err, "the converted castle compiles")
-	shipped, err := dungeonspec.Load(s.after)
+	after, err := dungeonspec.Load(s.after)
 	s.Require().NoError(err)
-	s.Equal(shipped, converted, "and compiles to exactly the shipped castle")
+	s.Equal(after, converted, "and compiles to exactly the castle in the new words")
 
 	s.Equal(stripComments(s.after), stripComments(out.Out),
 		"comments are the only text the conversion does not reach")
 }
 
 // TestTheNewCastleIsANoOp: converting a converted file changes nothing, so
-// running twice is safe.
+// running twice is safe; the castle this repository ships converts to itself.
 func (s *ConvertSuite) TestTheNewCastleIsANoOp() {
-	out := s.convert(s.after)
-	s.Empty(out.Changes)
-	s.Empty(out.Ambiguous)
-	s.Equal(s.after, out.Out)
+	for _, raw := range [][]byte{s.after, s.shipped} {
+		out := s.convert(raw)
+		s.Empty(out.Changes)
+		s.Empty(out.Ambiguous)
+		s.Equal(raw, out.Out)
+	}
 
 	twice := s.convert(s.convert(s.before).Out)
 	s.Empty(twice.Changes, "a second run over a converted file is a no-op")
