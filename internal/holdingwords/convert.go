@@ -92,10 +92,10 @@ const guardHoldsAnyonePrefix = "holds.anyone:"
 
 // edit replaces the token at a node's position.
 type edit struct {
-	node   *yaml.Node
-	kind   Kind
-	from   string // the text of the token now (a prefix of the value for a guard)
-	to     string
+	node *yaml.Node
+	kind Kind
+	from string // the text of the token now (a prefix of the value for a guard)
+	to   string
 }
 
 // Convert rewrites raw's retired words. A file that is not YAML is an error;
