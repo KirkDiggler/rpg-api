@@ -1,23 +1,23 @@
 // Copyright (C) 2026 Kirk Diggler
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// holdingwords is a one-shot converter for dungeons written before the
-// holding words (rpg-project#1005): it rewrites the retired content words
-// (`recognized`, `recognize` with its `topic`/`holder`, `holds <prop>`, a
+// notedwords is a one-shot converter for dungeons written before the
+// noted words (rpg-project#1005): it rewrites the retired content words
+// (`recognized`, `recognize` with its `holder`, `holds <prop>`, a
 // state's `holds`, a guard's `topic:`) into the new ones, changing only those
 // tokens and leaving every other byte as it was. A converted file is a no-op,
 // so it is safe to run twice.
 //
 // A content folder (what RPG_CONTENT_DIR mounts), or single files:
 //
-//	holdingwords [--dry-run] <file-or-directory>...
+//	notedwords [--dry-run] <file-or-directory>...
 //
 // Each changed file is rewritten in place; the original is kept beside it as
-// <name>.yaml.before-holding-words.
+// <name>.yaml.before-noted-words.
 //
 // The dungeons authors saved through the studio (the world store in Redis):
 //
-//	holdingwords --world-store --backup-dir <dir> [--redis-addr host:port] [--dry-run]
+//	notedwords --world-store --backup-dir <dir> [--redis-addr host:port] [--dry-run]
 //
 // Each changed record's original is written to <dir>/<world>/<key>.yaml
 // BEFORE the record is replaced, and a record whose backup file already
@@ -36,14 +36,14 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/KirkDiggler/rpg-api/internal/holdingwords"
+	"github.com/KirkDiggler/rpg-api/internal/notedwords"
 	redisclient "github.com/KirkDiggler/rpg-api/internal/redis"
 	"github.com/KirkDiggler/rpg-api/internal/repositories/worlddungeons"
 )
 
 const (
 	yamlExt             = ".yaml"
-	backupSuffix        = ".before-holding-words"
+	backupSuffix        = ".before-noted-words"
 	envRedisAddr        = "REDIS_ADDR"
 	defaultRedisAddress = "localhost:6379"
 	backupFileMode      = 0o600
@@ -86,7 +86,7 @@ type config struct {
 }
 
 func parse(args []string, stderr io.Writer) (*config, error) {
-	fs := flag.NewFlagSet("holdingwords", flag.ContinueOnError)
+	fs := flag.NewFlagSet("notedwords", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	cfg := &config{}
 	fs.BoolVar(&cfg.dryRun, "dry-run", false, "print what would change, file and line; change nothing")
@@ -117,14 +117,14 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer,
 	open func(addr string) (*worldStoreHandle, error)) int {
 	cfg, err := parse(args, stderr)
 	if err != nil {
-		_, _ = fmt.Fprintln(stderr, "holdingwords:", err)
+		_, _ = fmt.Fprintln(stderr, "notedwords:", err)
 		return 2
 	}
 	r := &reporter{out: stdout, errOut: stderr, dryRun: cfg.dryRun}
 	if cfg.worldStore {
 		store, openErr := open(cfg.redisAddr)
 		if openErr != nil {
-			_, _ = fmt.Fprintln(stderr, "holdingwords:", openErr)
+			_, _ = fmt.Fprintln(stderr, "notedwords:", openErr)
 			return 1
 		}
 		r.worldStore(ctx, store, cfg.backupDir)
@@ -152,7 +152,7 @@ type reporter struct {
 
 func (r *reporter) failf(format string, args ...any) {
 	r.failed = true
-	_, _ = fmt.Fprintf(r.errOut, "holdingwords: "+format+"\n", args...)
+	_, _ = fmt.Fprintf(r.errOut, "notedwords: "+format+"\n", args...)
 }
 
 func (r *reporter) sayf(format string, args ...any) {
@@ -257,8 +257,8 @@ func (r *reporter) record(ctx context.Context, repo worlddungeons.Repository, ba
 }
 
 // convert converts and reports one source; ok is false when it was refused.
-func (r *reporter) convert(where string, raw []byte) (*holdingwords.ConvertOutput, bool) {
-	out, err := holdingwords.Convert(&holdingwords.ConvertInput{Source: raw})
+func (r *reporter) convert(where string, raw []byte) (*notedwords.ConvertOutput, bool) {
+	out, err := notedwords.Convert(&notedwords.ConvertInput{Source: raw})
 	if err != nil {
 		r.failf("%s: %v", where, err)
 		return nil, false
@@ -289,7 +289,7 @@ func (r *reporter) summary() {
 	r.sayf("%s %d, already in the new words %d, left for an author %d", verb, r.changed, r.unchanged, r.ambiguous)
 }
 
-func countsLine(counts map[holdingwords.Kind]int) string {
+func countsLine(counts map[notedwords.Kind]int) string {
 	parts := make([]string, 0, len(counts))
 	for k, n := range counts {
 		parts = append(parts, fmt.Sprintf("%s %d", k, n))

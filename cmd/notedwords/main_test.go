@@ -14,7 +14,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/repositories/worlddungeons"
 )
 
-const beforeCastle = "../../internal/holdingwords/testdata/the-mad-king-before-holding-words.yaml"
+const beforeCastle = "../../internal/notedwords/testdata/the-mad-king-v0.220.0.yaml"
 
 var shippedCastle = filepath.Join("..", "..", "content", "the-mad-king.yaml")
 
@@ -63,7 +63,7 @@ func (s *CommandSuite) TestAContentFolder() {
 
 	code, out, _ := s.run("--dry-run", dir)
 	s.Equal(0, code)
-	s.Contains(out, castle+":1589:17: recognized -> holds: recognized -> holds")
+	s.Contains(out, castle+":1589:17: recognized -> noted: recognized -> noted")
 	s.Contains(out, "would convert (dry run, nothing written) 1")
 	onDisk, err := os.ReadFile(castle) //nolint:gosec // a temp dir
 	s.Require().NoError(err)
@@ -71,7 +71,7 @@ func (s *CommandSuite) TestAContentFolder() {
 
 	code, out, errOut := s.run(dir)
 	s.Equal(0, code, errOut)
-	s.Contains(out, castle+": 46 changes")
+	s.Contains(out, castle+": 39 changes")
 	onDisk, err = os.ReadFile(castle) //nolint:gosec // a temp dir
 	s.Require().NoError(err)
 	s.NotEqual(s.before, onDisk)
@@ -94,7 +94,7 @@ func (s *CommandSuite) TestTheWorldStore() {
 
 	code, out, errOut := s.run("--world-store", "--backup-dir", backups)
 	s.Equal(0, code, errOut)
-	s.Contains(out, "world w1, dungeon my-castle (owner alice): 46 changes")
+	s.Contains(out, "world w1, dungeon my-castle (owner alice): 39 changes")
 	s.Contains(out, "converted 1, already in the new words 1")
 
 	got, err := s.store.repo.Get(s.ctx, &worlddungeons.GetInput{WorldID: "w1", Key: "my-castle"})

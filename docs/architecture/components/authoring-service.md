@@ -136,9 +136,11 @@ rpg-project#1005) still opens, and the studio's validate-only preview shows
 the engine's sentence. Playing a dungeon reads through `Registry.Get`, which
 compiles.
 
-`cmd/holdingwords` converts dungeons written in the words rpg-project#1005
-retired: a content folder or file in place (original kept as
-`<name>.yaml.before-holding-words`), or every saved dungeon in the world store
+`cmd/notedwords` converts dungeons written in the words rpg-project#1005
+retired (`recognized` → `noted`, `recognize` → `give` with `holder` → `to`,
+`holds <prop>` → `carries`, a guard's `topic:<id>` → `noted.anyone:<id>`, a
+state's `holds` → `post`): a content folder or file in place (original kept as
+`<name>.yaml.before-noted-words`), or every saved dungeon in the world store
 (`--world-store --backup-dir <dir>`); `--dry-run` prints what would change.
 
 `internal/dungeons/dungeonstest` builds registries for tests: `Shipped(t)`

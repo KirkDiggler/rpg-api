@@ -1,28 +1,36 @@
-// Package holdingwords rewrites a dungeon file written in the content words
+// Package notedwords rewrites a dungeon file written in the content words
 // rpg-project#1005 retired into the words that replaced them, changing only
 // the renamed tokens and leaving every other byte of the file as it was.
 //
-// The map, the same one the engine's refusals name:
+// The map, the same one the engine's refusals name (encounter v0.222.1):
 //
-//   - `recognized:` (a line's requires, a post's pass, inside `not:`) is `holds:`;
-//   - `recognize:` is `give:`, and inside it `topic:` is `holding:` and
-//     `holder:` is `to:`;
+//   - `recognized: <topic>` (a line's requires, a post's pass, inside `not:`)
+//     is `noted: <topic>`;
+//   - `recognize:` is `give:`, and inside it `holder:` is `to:` (its `topic:`
+//     stays);
 //   - a `holds: <scalar>` whose value is a prop of the same file is
 //     `carries:` (carrying a thing was the key's old meaning); a `holds:`
 //     whose value is a list is an NPC's records and is left alone;
 //   - a `holds:` whose value is a mapping with a `door` (a state's post) is
 //     `post:`;
-//   - a machine guard's fact `name: topic:<id>` is `name: holds.anyone:<id>`.
+//   - a machine guard's fact `name: topic:<id>` is `name: noted.anyone:<id>`.
+//
+// It also converts the words that lived briefly in encounter v0.221.0 and
+// v0.222.0 and were withdrawn: `holds: <topic>` (a value no prop has, that
+// the file gives or asks as a topic) is `noted:`, `holding:` inside a give is
+// `topic:`, and a guard's `holds:<id>` / `holds.anyone:<id>` is
+// `noted:<id>` / `noted.anyone:<id>`.
 //
 // The tokens are found by parsing, by the yaml node's line and column, never
 // by searching the text: a line someone says that contains "recognized" is a
-// value, not a key, and is never touched. An id that is both a prop and a
-// holding something gives makes `holds: <id>` read two ways; it is left as
-// written and reported, for the author to decide.
+// value, not a key, and is never touched. A `holds: <id>` is never guessed:
+// an id that is both a prop and a topic reads two ways, and an id that is
+// neither is not a word this converter knows; both are left as written and
+// reported, for the author to decide.
 //
 // A file already in the new words converts to itself, so running twice is
 // safe.
-package holdingwords
+package notedwords
 
 import (
 	"bytes"
@@ -40,13 +48,18 @@ type Kind string
 
 // The rewrites, one per renamed word.
 const (
-	RecognizedToHolds   Kind = "recognized -> holds"
-	RecognizeToGive     Kind = "recognize -> give"
-	TopicToHolding      Kind = "topic -> holding (in give)"
-	HolderToTo          Kind = "holder -> to (in give)"
-	HoldsPropToCarries  Kind = "holds <prop> -> carries"
-	StateHoldsToPost    Kind = "a state's holds -> post"
-	GuardTopicToHoldsAn Kind = "guard topic:<id> -> holds.anyone:<id>"
+	RecognizedToNoted  Kind = "recognized -> noted"
+	RecognizeToGive    Kind = "recognize -> give"
+	HolderToTo         Kind = "holder -> to (in give)"
+	HoldsPropToCarries Kind = "holds <prop> -> carries"
+	StateHoldsToPost   Kind = "a state's holds -> post"
+	GuardTopicToNoted  Kind = "guard topic:<id> -> noted.anyone:<id>"
+
+	// The withdrawn v0.221.0/v0.222.0 words.
+	HoldsTopicToNoted   Kind = "holds <topic> -> noted (withdrawn word)"
+	HoldingToTopic      Kind = "holding -> topic (in give; withdrawn word)"
+	GuardHoldsToNoted   Kind = "guard holds:<id> -> noted:<id> (withdrawn word)"
+	GuardHoldsAnyToNote Kind = "guard holds.anyone:<id> -> noted.anyone:<id> (withdrawn word)"
 )
 
 // Change is one rewrite: where, which kind, and the text before and after.
@@ -58,7 +71,7 @@ type Change struct {
 	To     string
 }
 
-// Ambiguity is a token left as written because it reads two ways.
+// Ambiguity is a token left as written because it cannot be read one way.
 type Ambiguity struct {
 	Line   int
 	Column int
@@ -87,8 +100,31 @@ func (r *ConvertOutput) Counts() map[Kind]int {
 	return out
 }
 
-const guardTopicPrefix = "topic:"
-const guardHoldsAnyonePrefix = "holds.anyone:"
+// guardPrefix is one guard-fact prefix rename. `holds.anyone:` is tried
+// before `holds:`, which is not its prefix, so the order only reads well.
+type guardPrefix struct {
+	from, to string
+	kind     Kind
+}
+
+// The guard-fact prefixes whose id is a topic, retired and current.
+const (
+	guardTopic       = "topic:"
+	guardHoldsAnyone = "holds.anyone:"
+	guardHolds       = "holds:"
+	guardNotedAnyone = "noted.anyone:"
+	guardNoted       = "noted:"
+)
+
+var guardPrefixes = []guardPrefix{
+	{from: guardTopic, to: guardNotedAnyone, kind: GuardTopicToNoted},
+	{from: guardHoldsAnyone, to: guardNotedAnyone, kind: GuardHoldsAnyToNote},
+	{from: guardHolds, to: guardNoted, kind: GuardHoldsToNoted},
+}
+
+// topicGuardPrefixes are the guard-fact prefixes, old and new, whose id is a
+// topic.
+var topicGuardPrefixes = []string{guardTopic, guardHoldsAnyone, guardHolds, guardNotedAnyone, guardNoted}
 
 // edit replaces the token at a node's position.
 type edit struct {
@@ -102,21 +138,20 @@ type edit struct {
 // one with nothing to rewrite comes back unchanged with no Changes.
 func Convert(in *ConvertInput) (*ConvertOutput, error) {
 	if in == nil {
-		return nil, errors.New("holdingwords: input is required")
+		return nil, errors.New("notedwords: input is required")
 	}
 	raw := in.Source
 	var doc yaml.Node
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
 		return nil, fmt.Errorf("parse: %w", err)
 	}
-	c := &converter{props: map[string]bool{}, holdings: map[string]bool{}, seen: map[*yaml.Node]bool{}}
+	c := &converter{props: map[string]bool{}, topics: map[string]bool{}, seen: map[*yaml.Node]bool{}}
 	c.collect(&doc, "")
 	c.seen = map[*yaml.Node]bool{}
 	c.walk(&doc)
 
-	res := &ConvertOutput{Out: raw}
+	res := &ConvertOutput{Out: raw, Ambiguous: c.ambiguous}
 	if len(c.edits) == 0 {
-		res.Ambiguous = c.ambiguous
 		return res, nil
 	}
 	lines := lineStarts(raw)
@@ -150,20 +185,21 @@ func Convert(in *ConvertInput) (*ConvertOutput, error) {
 		})
 	}
 	res.Out = out
-	res.Ambiguous = c.ambiguous
 	return res, nil
 }
 
 type converter struct {
 	props     map[string]bool
-	holdings  map[string]bool
+	topics    map[string]bool
 	edits     []edit
 	ambiguous []Ambiguity
 	seen      map[*yaml.Node]bool
 }
 
 // collect gathers the file's prop ids (a room object `kind: prop`, a key
-// under `propBindings`) and every holding it names, in either spelling.
+// under `propBindings`) and every topic it gives or asks, in any spelling.
+// A `holds: <scalar>` is not collected: whether it names a topic is the
+// question this answers for it.
 func (c *converter) collect(n *yaml.Node, parentKey string) {
 	if n == nil || c.seen[n] {
 		return
@@ -186,21 +222,22 @@ func (c *converter) collect(n *yaml.Node, parentKey string) {
 				c.props[k.Value] = true
 			}
 			switch k.Value {
-			case "recognized":
+			case "recognized", "noted":
 				if v.Kind == yaml.ScalarNode {
-					c.holdings[v.Value] = true
+					c.topics[v.Value] = true
 				}
 			case "recognize", "give":
 				for _, key := range []string{"topic", "holding"} {
-					if h := mapValue(v, key); h != nil && h.Kind == yaml.ScalarNode {
-						c.holdings[h.Value] = true
+					if t := mapValue(v, key); t != nil && t.Kind == yaml.ScalarNode {
+						c.topics[t.Value] = true
 					}
 				}
 			case "name":
 				if v.Kind == yaml.ScalarNode {
-					for _, p := range []string{guardTopicPrefix, guardHoldsAnyonePrefix} {
+					for _, p := range topicGuardPrefixes {
 						if strings.HasPrefix(v.Value, p) {
-							c.holdings[strings.TrimPrefix(v.Value, p)] = true
+							c.topics[strings.TrimPrefix(v.Value, p)] = true
+							break
 						}
 					}
 				}
@@ -228,7 +265,7 @@ func (c *converter) walk(n *yaml.Node) {
 			k, v := n.Content[i], n.Content[i+1]
 			switch k.Value {
 			case "recognized":
-				c.rename(k, "holds", RecognizedToHolds)
+				c.rename(k, "noted", RecognizedToNoted)
 			case "recognize":
 				c.rename(k, "give", RecognizeToGive)
 				c.renameInGive(v)
@@ -237,13 +274,21 @@ func (c *converter) walk(n *yaml.Node) {
 			case "holds":
 				c.holds(k, v)
 			case "fact":
-				if name := mapValue(v, "name"); name != nil && name.Kind == yaml.ScalarNode &&
-					strings.HasPrefix(name.Value, guardTopicPrefix) {
-					c.edits = append(c.edits, edit{node: name, kind: GuardTopicToHoldsAn,
-						from: guardTopicPrefix, to: guardHoldsAnyonePrefix})
-				}
+				c.guard(mapValue(v, "name"))
 			}
 			c.walk(v)
+		}
+	}
+}
+
+func (c *converter) guard(name *yaml.Node) {
+	if name == nil || name.Kind != yaml.ScalarNode {
+		return
+	}
+	for _, p := range guardPrefixes {
+		if strings.HasPrefix(name.Value, p.from) {
+			c.edits = append(c.edits, edit{node: name, kind: p.kind, from: p.from, to: p.to})
+			return
 		}
 	}
 }
@@ -254,10 +299,10 @@ func (c *converter) renameInGive(v *yaml.Node) {
 	}
 	for i := 0; i+1 < len(v.Content); i += 2 {
 		switch v.Content[i].Value {
-		case "topic":
-			c.rename(v.Content[i], "holding", TopicToHolding)
 		case "holder":
 			c.rename(v.Content[i], "to", HolderToTo)
+		case "holding":
+			c.rename(v.Content[i], "topic", HoldingToTopic)
 		}
 	}
 }
@@ -265,21 +310,28 @@ func (c *converter) renameInGive(v *yaml.Node) {
 func (c *converter) holds(k, v *yaml.Node) {
 	switch v.Kind {
 	case yaml.ScalarNode:
-		if !c.props[v.Value] {
-			return // a holding, already the new word
+		prop, topic := c.props[v.Value], c.topics[v.Value]
+		switch {
+		case prop && topic:
+			c.leave(k, fmt.Sprintf("%q is both a prop and a topic, so `holds: %s` reads two ways: left as written "+
+				"(write `carries: %s` for the prop, or `noted: %s` for the topic)", v.Value, v.Value, v.Value, v.Value))
+		case prop:
+			c.rename(k, "carries", HoldsPropToCarries)
+		case topic:
+			c.rename(k, "noted", HoldsTopicToNoted)
+		default:
+			c.leave(k, fmt.Sprintf("%q is neither a prop nor a topic of this file, so `holds: %s` is left as written",
+				v.Value, v.Value))
 		}
-		if c.holdings[v.Value] {
-			c.ambiguous = append(c.ambiguous, Ambiguity{Line: k.Line, Column: k.Column, Reason: fmt.Sprintf(
-				"%q is both a prop and a holding, so `holds: %s` reads two ways: left as written "+
-					"(write `carries: %s` for the prop, or rename the holding)", v.Value, v.Value, v.Value)})
-			return
-		}
-		c.rename(k, "carries", HoldsPropToCarries)
 	case yaml.MappingNode:
 		if mapValue(v, "door") != nil {
 			c.rename(k, "post", StateHoldsToPost)
 		}
 	}
+}
+
+func (c *converter) leave(k *yaml.Node, reason string) {
+	c.ambiguous = append(c.ambiguous, Ambiguity{Line: k.Line, Column: k.Column, Reason: reason})
 }
 
 func (c *converter) rename(k *yaml.Node, to string, kind Kind) {

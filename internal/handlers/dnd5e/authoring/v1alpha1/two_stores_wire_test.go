@@ -159,15 +159,15 @@ func (s *TwoStoresWireSuite) TestAMembersEncounterIsTheWorldsAndOnlyTheirs() {
 }
 
 // TestASavedDungeonTheEngineNowRefusesStillOpens: a dungeon saved before
-// rpg-project#1005 renamed `recognized` to `holds` is read back verbatim, so
+// rpg-project#1005 renamed `recognized` to `noted` is read back verbatim, so
 // the studio can open it, and the studio's own validate-only preview of
 // those bytes carries the engine's sentence naming the new word.
 func (s *TwoStoresWireSuite) TestASavedDungeonTheEngineNowRefusesStillOpens() {
 	raw, err := os.ReadFile(filepath.Join(dungeonstest.ContentDir(s.T()), "the-mad-king.yaml")) //nolint:gosec // the shipped content dir
 	s.Require().NoError(err)
 	current := string(dungeonstest.AsKey(s.T(), raw, "the-mad-king", wireMyCastle))
-	old := strings.Replace(current, "pass: { holds: admitted }", "pass: { recognized: admitted }", 1)
-	s.Require().NotEqual(current, old, "the fixture no longer holds a `pass: { holds: admitted }`")
+	old := strings.Replace(current, "pass: { noted: admitted }", "pass: { recognized: admitted }", 1)
+	s.Require().NotEqual(current, old, "the fixture no longer holds a `pass: { noted: admitted }`")
 	// Stored directly: PutDungeon would refuse it now, as it should; this
 	// is the file an author saved last week.
 	_, err = s.world.Put(context.Background(), &worlddungeons.PutInput{
@@ -184,7 +184,7 @@ func (s *TwoStoresWireSuite) TestASavedDungeonTheEngineNowRefusesStillOpens() {
 	})
 	s.Require().NoError(err)
 	s.Require().Len(graded.GetErrors(), 1)
-	s.Contains(graded.GetErrors()[0].GetMessage(), "`recognized` is now `holds`")
+	s.Contains(graded.GetErrors()[0].GetMessage(), "`recognized` is now `noted`")
 }
 
 func (s *TwoStoresWireSuite) TestAReferenceKeyIsRefusedAndTheFileUntouched() {

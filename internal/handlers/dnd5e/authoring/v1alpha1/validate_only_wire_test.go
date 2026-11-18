@@ -126,7 +126,7 @@ func (s *ValidateOnlyWireSuite) TestActionAugmentsGradeThroughPutDungeon() {
 }
 
 // TestAnOldWordNamesTheNewWord: the holding words (rpg-project#1005) renamed
-// `recognized` to `holds`. An author's file still carrying the old word is
+// `recognized` to `noted`. An author's file still carrying the old word is
 // graded, not refused as a status, and the grade carries the engine's own
 // sentence naming the new word, so the studio can show it as it stands.
 func (s *ValidateOnlyWireSuite) TestAnOldWordNamesTheNewWord() {
@@ -135,15 +135,15 @@ func (s *ValidateOnlyWireSuite) TestAnOldWordNamesTheNewWord() {
 	raw, err := os.ReadFile(filepath.Join(dungeonstest.ContentDir(s.T()), "the-mad-king.yaml")) //nolint:gosec // the shipped content dir
 	s.Require().NoError(err)
 	current := string(dungeonstest.AsKey(s.T(), raw, "the-mad-king", castleCopyKey))
-	old := strings.Replace(current, "pass: { holds: admitted }", "pass: { recognized: admitted }", 1)
-	s.Require().NotEqual(current, old, "the castle no longer holds a `pass: { holds: admitted }`")
+	old := strings.Replace(current, "pass: { noted: admitted }", "pass: { recognized: admitted }", 1)
+	s.Require().NotEqual(current, old, "the castle no longer holds a `pass: { noted: admitted }`")
 
 	resp, err := s.handler.PutDungeon(s.ctx, &authoringpb.PutDungeonRequest{
 		Key: castleCopyKey, Yaml: old, ValidateOnly: true,
 	})
 	s.Require().NoError(err, "a grade is never a status")
 	s.Require().Len(resp.GetErrors(), 1)
-	s.Contains(resp.GetErrors()[0].GetMessage(), "`recognized` is now `holds`",
+	s.Contains(resp.GetErrors()[0].GetMessage(), "`recognized` is now `noted`",
 		"the engine's sentence reaches the author verbatim")
 	s.Nil(resp.GetAtlas(), "no map for a file that does not compile")
 }

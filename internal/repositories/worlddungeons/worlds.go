@@ -25,7 +25,7 @@ type ListWorldIDsOutput struct {
 
 // ListWorldIDs walks the world store's hashes and names their worlds. It is
 // for operator tooling that must reach every author's saved dungeons (the
-// holding-words converter, rpg-project#1005), not for a request path: the
+// noted-words converter, rpg-project#1005), not for a request path: the
 // Repository is scoped to one world by design, and stays so.
 func ListWorldIDs(ctx context.Context, in *ListWorldIDsInput) (*ListWorldIDsOutput, error) {
 	if in == nil || in.Client == nil {

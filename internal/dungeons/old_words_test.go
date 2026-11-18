@@ -15,14 +15,14 @@ import (
 )
 
 // The holding words (rpg-project#1005) renamed content keys: a post's
-// `pass: { recognized: … }` is `pass: { holds: … }` now, and the engine
+// `pass: { recognized: … }` is `pass: { noted: … }` now, and the engine
 // refuses the old word with a sentence naming the new one. These tests pin
 // what THIS api does with a dungeon still written in the old words, wherever
 // it sits: the decision is the engine's refusal, and the api's part is where
 // that refusal lands. Nothing here changes that behavior; it records it.
 
 // oldWordsRefusal is the engine's sentence an operator or author reads.
-const oldWordsRefusal = "`recognized` is now `holds`"
+const oldWordsRefusal = "`recognized` is now `noted`"
 
 // oldWordsCastle is the shipped castle under key with one post's pass
 // written in the old word: last week's file, as far as the compiler cares.
@@ -34,8 +34,8 @@ func oldWordsCastle(t *testing.T, key string) []byte {
 	if key != dungeons.DefaultKey {
 		raw = dungeonstest.AsKey(t, raw, dungeons.DefaultKey, key)
 	}
-	old := bytes.Replace(raw, []byte("pass: { holds: admitted }"), []byte("pass: { recognized: admitted }"), 1)
-	require.NotEqual(t, raw, old, "the castle no longer holds a `pass: { holds: admitted }` to write back in the old word")
+	old := bytes.Replace(raw, []byte("pass: { noted: admitted }"), []byte("pass: { recognized: admitted }"), 1)
+	require.NotEqual(t, raw, old, "the castle no longer holds a `pass: { noted: admitted }` to write back in the old word")
 
 	return old
 }
@@ -75,10 +75,11 @@ func TestOldWords_MountedSiblingStopsTheBoot(t *testing.T) {
 	require.Contains(t, err.Error(), oldWordsRefusal)
 }
 
-// TestOldWords_SavedWorldDungeonListsButDoesNotOpen: an author's dungeon
-// saved in the world store before the rename is still listed (List never
-// compiles) and refused when opened, with the engine's sentence.
-func TestOldWords_SavedWorldDungeonListsButDoesNotOpen(t *testing.T) {
+// TestOldWords_SavedWorldDungeonListsOpensButDoesNotPlay: an author's
+// dungeon saved in the world store before the rename is still listed (List
+// never compiles), opens as saved (Source never compiles), and is refused by
+// the compiling read every play goes through, with the engine's sentence.
+func TestOldWords_SavedWorldDungeonListsOpensButDoesNotPlay(t *testing.T) {
 	ctx := context.Background()
 	world := dungeonstest.WorldStore(t)
 	_, err := world.Put(ctx, &worlddungeons.PutInput{
@@ -98,6 +99,10 @@ func TestOldWords_SavedWorldDungeonListsButDoesNotOpen(t *testing.T) {
 		keys = append(keys, s.Key)
 	}
 	require.Contains(t, keys, "my-castle", "listed: the list reads the stored name, it does not compile")
+
+	opened, err := r.Source(ctx, &dungeons.SourceInput{Caller: caller, Key: "my-castle"})
+	require.NoError(t, err, "opened: the author's read does not compile")
+	require.Equal(t, oldWordsCastle(t, "my-castle"), opened.YAML, "byte for byte as saved")
 
 	_, err = r.Get(ctx, caller, "my-castle")
 	require.Error(t, err)
