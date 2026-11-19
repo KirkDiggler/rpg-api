@@ -196,6 +196,30 @@ than a code change.
 | `RPG_AUTHORING_ENABLED=1` | registers `AuthoringService`; requires `RPG_CONTENT_DIR` |
 | `RPG_SHIPPED_CONTENT_DIR` | where the seed is read from; default `content`, the image sets `/usr/share/rpg-api/content` |
 
+## The machine words (`GetMachineWords`, rpg-project#997)
+
+`GetMachineWords` hands the studio every word a behaviour machine's step may
+use, as the engine this binary was built with publishes it
+(`encounter.MachineWords()`): beats, conditions, acts and comparisons, each
+with where it is written, what it takes and its labels. It takes no file, so
+the studio's dropdowns exist before any file compiles. The handler copies the
+table field for field (`get_machine_words.go`); four fields cross under the
+wire's names (`BeatWord.Names` → `names_someone`, `Written.In` → `part`,
+`Arg.Default` → `default_value`, a read-back connection's `Not` →
+`negated`). `encounter_version` is the encounter module's version from the
+binary's build info (`runtime/debug.ReadBuildInfo`): the pinned release, in
+the built server and under `go test` alike; empty only for a binary built
+without module info. Auth is every authoring read's: a signed-in player with
+the Build permission (`internal/auth/role_policy.go`), and only while
+`RPG_AUTHORING_ENABLED=1` registers the service.
+
+A read-back connection of kind `condition` carries `is`, `op`, `negated` and
+`at`: the value a step's condition compares, its comparison, whether the step
+needs it false, and where it sits in the step's `when`.
+`machine_words_test.go` compares the response and a fully set connection
+against the Go types by reflection, so a field the engine adds and this api
+does not copy fails there.
+
 ## Transport rules (the proto's, enforced in the handler)
 
 - A request that cannot name its target — empty key, bad charset, key/file

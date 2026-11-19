@@ -1237,6 +1237,11 @@ done in this PR.
 
 ## Recently landed (since Round 1, highlights)
 
+- **The engine's machine words over the wire** (rpg-project#997, 2026-11-19) —
+  `AuthoringService.GetMachineWords` maps `encounter.MachineWords()` field for
+  field, with the build's encounter version; read-back connections carry a
+  condition's `is` / `op` / `negated` / `at`. Encounter v0.224.1.
+
 - **Unified entity state** (PR #453, 2026-04-05) — `Entities` map added to
   `EncounterData`; `BuildEncounterStateData` snapshot builder; all events
   wire entity state through.

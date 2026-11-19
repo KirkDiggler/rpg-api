@@ -11,7 +11,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec/readback"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/scenarios"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
@@ -348,4 +350,59 @@ func (o *Orchestrator) ListWeapons(_ context.Context, in *ListWeaponsInput) (*Li
 	}
 
 	return &ListWeaponsOutput{Weapons: out}, nil
+}
+
+// encounterModule is the engine module whose machine words GetMachineWords
+// reports, as the binary's build info names it.
+const encounterModule = "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+
+// GetMachineWordsInput asks for the engine's machine words. No fields, for
+// ListScenariosInput's reason: the words are a property of the engine this
+// binary was built with, not of any dungeon or caller.
+type GetMachineWordsInput struct{}
+
+// GetMachineWordsOutput is the engine's published machine-words table,
+// handed through as the toolkit's own type, and the engine release the
+// binary was built with.
+type GetMachineWordsOutput struct {
+	// Words is encounter.MachineWords(): every word a machine's step may
+	// use, as a reader sees it.
+	Words encounter.MachineWordsTable
+
+	// EncounterVersion is the encounter module's version from the binary's
+	// build info ("v0.224.1"); empty when the build info does not say.
+	EncounterVersion string
+}
+
+// GetMachineWords reports the machine words of the engine this binary runs
+// (rpg-project#997, #1001), for the studio's dropdowns and labels.
+//
+// UNGATED, on GetDungeon's precedent and for ListScenarios' reason: it reads
+// a table compiled into the binary and mutates nothing.
+func (o *Orchestrator) GetMachineWords(_ context.Context, in *GetMachineWordsInput) (*GetMachineWordsOutput, error) {
+	if in == nil {
+		return nil, errors.New("authoring orchestrator: GetMachineWordsInput is required")
+	}
+
+	return &GetMachineWordsOutput{Words: encounter.MachineWords(), EncounterVersion: moduleVersion(encounterModule)}, nil
+}
+
+// moduleVersion is the version of the dependency path as the binary's build
+// info records it (a replace's version when one is in force); empty when the
+// binary carries no build info or does not depend on path.
+func moduleVersion(path string) string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	for _, dep := range info.Deps {
+		if dep.Path != path {
+			continue
+		}
+		if dep.Replace != nil {
+			return dep.Replace.Version
+		}
+		return dep.Version
+	}
+	return ""
 }
