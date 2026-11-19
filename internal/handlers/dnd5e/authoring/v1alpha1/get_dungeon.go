@@ -29,5 +29,5 @@ func (h *Handler) GetDungeon(ctx context.Context, req *authoringpb.GetDungeonReq
 		return nil, statusError(err)
 	}
 
-	return &authoringpb.GetDungeonResponse{Yaml: string(out.YAML)}, nil
+	return &authoringpb.GetDungeonResponse{Yaml: string(out.YAML), ContentHash: out.ContentHash}, nil
 }

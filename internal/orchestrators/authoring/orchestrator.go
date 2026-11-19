@@ -77,6 +77,10 @@ type PutDungeonOutput struct {
 	// Folded is ReadBack folded for one thing at a time (FoldedEach,
 	// rpg-project#980); present exactly when ReadBack is (rpg-project#978).
 	Folded []readback.FoldedSection
+
+	// ContentHash is the compiled file's content hash (rpg-project#1001), on
+	// a check and a save alike; empty beside Errors.
+	ContentHash string
 }
 
 // PutDungeon compiles and, unless ValidateOnly, stores a dungeon in the
@@ -102,7 +106,8 @@ func (o *Orchestrator) PutDungeon(ctx context.Context, in *PutDungeonInput) (*Pu
 		return &PutDungeonOutput{Errors: res.Errors}, nil
 	}
 
-	return &PutDungeonOutput{Atlas: res.Entry.Atlas, ReadBack: res.ReadBack, Folded: res.Folded}, nil
+	return &PutDungeonOutput{Atlas: res.Entry.Atlas, ReadBack: res.ReadBack, Folded: res.Folded,
+		ContentHash: res.Entry.ContentHash}, nil
 }
 
 // GetDungeonInput names a stored dungeon, resolved for the caller: their
@@ -112,9 +117,11 @@ type GetDungeonInput struct {
 	Key    string
 }
 
-// GetDungeonOutput is the stored file, verbatim.
+// GetDungeonOutput is the stored file, verbatim, and its content hash as
+// this server's engine compiles it now (empty when it does not compile).
 type GetDungeonOutput struct {
-	YAML []byte
+	YAML        []byte
+	ContentHash string
 }
 
 // GetDungeon returns the stored file for a key, verbatim and uncompiled.
@@ -132,7 +139,7 @@ func (o *Orchestrator) GetDungeon(ctx context.Context, in *GetDungeonInput) (*Ge
 		return nil, fmt.Errorf("get dungeon: %w", err)
 	}
 
-	return &GetDungeonOutput{YAML: got.YAML}, nil
+	return &GetDungeonOutput{YAML: got.YAML, ContentHash: got.ContentHash}, nil
 }
 
 // ListDungeonsInput asks for the caller's library.

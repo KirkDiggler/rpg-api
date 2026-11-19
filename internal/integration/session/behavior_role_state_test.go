@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"regexp"
 	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -117,4 +118,44 @@ func (s *BehaviorPatrolSuite) TestASecondRolesStateReachesTheRecordAndNoStreamBr
 	s.Contains(roles, roleState{Member: "court", Role: "duty", Recipe: "example:behaviors:patrol", From: "item/0/walk", To: "item/1/walk"})
 	s.True(observers["west"], "the guard's own sighting names it")
 	s.True(observers["alice"])
+
+	// A decision trace and its answer name the pick alike (rpg-project#1001,
+	// encounter v0.227.0): every trace that made a pick points at its
+	// `answered` beat, whose key is qualified by the role it came from
+	// ("behavior/4:duty/item/0/move"), the form a trace's own `selection`
+	// carries when it names a pick the story suppressed.
+	byID := map[string]*recordpb.RecordEvent{}
+	for _, e := range page.GetEvents() {
+		byID[e.GetId()] = e
+	}
+	qualified := regexp.MustCompile(`^behavior/\d+:[a-z-]+/`)
+	linked := 0
+	for _, e := range page.GetEvents() {
+		if e.GetBeat() != encounter.BeatBehaviorDecision {
+			continue
+		}
+		var trace struct {
+			PickRecord string `json:"pick_record"`
+			Selection  *struct {
+				Key string `json:"key"`
+			} `json:"selection"`
+		}
+		s.Require().NoError(json.Unmarshal(e.GetFieldsJson(), &trace))
+		if trace.Selection != nil {
+			s.Regexp(qualified, trace.Selection.Key, "a trace's own selection is role-qualified")
+		}
+		if trace.PickRecord == "" {
+			continue
+		}
+		answer, ok := byID[trace.PickRecord]
+		s.Require().True(ok, "the trace's pick_record is an event of the record")
+		s.Equal(encounter.BeatAnswered, answer.GetBeat())
+		var answered struct {
+			Key string `json:"key"`
+		}
+		s.Require().NoError(json.Unmarshal(answer.GetFieldsJson(), &answered))
+		s.Regexp(qualified, answered.Key, "the answer names the pick by its role")
+		linked++
+	}
+	s.Positive(linked, "the run's decisions made picks")
 }
