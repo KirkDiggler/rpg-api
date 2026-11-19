@@ -15,7 +15,6 @@ type recordServiceInput struct {
 	Development bool
 	Manager     sessionhandler.Manager
 	Broker      *sessionorch.RecordBroker
-	Gate        sessionhandler.Gate
 }
 
 // registerRecordService binds server-owned development mode to diagnostic
@@ -25,7 +24,7 @@ func registerRecordService(in *recordServiceInput) error {
 		return errors.New("record service: registrar is required")
 	}
 	handler, err := sessionhandler.New(&sessionhandler.HandlerConfig{
-		Manager: in.Manager, Broker: in.Broker, Gate: in.Gate, Enabled: in.Development,
+		Manager: in.Manager, Broker: in.Broker, Enabled: in.Development,
 	})
 	if err != nil {
 		return err

@@ -35,8 +35,9 @@ func (h *Handler) StreamRecord(req *sessionpb.StreamRecordRequest, stream sessio
 		return errRecordDisabled
 	}
 	ctx := stream.Context()
-	session, member := req.GetSession(), req.GetMember()
-	if err := h.gate.CallerMemberSeated(ctx, session, member); err != nil {
+	session := req.GetSession()
+	// Any signed-in caller naming the run, in development mode: no seat.
+	if err := readerOf(ctx, session); err != nil {
 		return err
 	}
 
@@ -95,7 +96,7 @@ func (h *Handler) StreamRecord(req *sessionpb.StreamRecordRequest, stream sessio
 			if !ok {
 				if lagged, _ := sub.Lagged(); lagged {
 					slog.WarnContext(ctx, "session record: subscriber lagged, stream ending",
-						"session", session, "member", member, "last_id", last)
+						"session", session, "member", req.GetMember(), "last_id", last)
 					return sendLagged(stream, last)
 				}
 				return nil

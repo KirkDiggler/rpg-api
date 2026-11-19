@@ -13,6 +13,7 @@ import (
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
+	"github.com/KirkDiggler/rpg-api/internal/auth"
 	sessionmock "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha2/mock"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 )
@@ -28,16 +29,15 @@ func TestRecordServiceWiringIsDevelopmentOnly(t *testing.T) {
 	for _, development := range []bool{false, true} {
 		t.Run(map[bool]string{false: "release", true: "development"}[development], func(t *testing.T) {
 			ctrl := gomock.NewController(t)
-			manager, gate := sessionmock.NewMockManager(ctrl), sessionmock.NewMockGate(ctrl)
+			manager := sessionmock.NewMockManager(ctrl)
 			var registrar recordRegistrar
 			err := registerRecordService(&recordServiceInput{Registrar: &registrar, Development: development,
-				Manager: manager, Broker: sessionorch.NewRecordBroker(1), Gate: gate})
+				Manager: manager, Broker: sessionorch.NewRecordBroker(1)})
 			require.NoError(t, err)
 			if development {
-				gate.EXPECT().CallerMemberSeated(gomock.Any(), "run", "alice").Return(nil)
 				manager.EXPECT().Record(gomock.Any(), gomock.Any()).Return(&sdk.RecordReadOutput{}, nil)
 			}
-			out, err := registrar.handler.GetRecord(context.Background(), &sessionpb.GetRecordRequest{Session: "run", Member: "alice"})
+			out, err := registrar.handler.GetRecord(auth.WithPlayerID(context.Background(), "alice"), &sessionpb.GetRecordRequest{Session: "run"})
 			if development {
 				require.NoError(t, err)
 				require.NotNil(t, out)

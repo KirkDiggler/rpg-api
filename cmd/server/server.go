@@ -379,11 +379,13 @@ func runServer(_ *cobra.Command, _ []string) error {
 	sessionv1alpha1pb.RegisterSessionServiceServer(srv, sessionHandlerImpl)
 
 	// RecordService, session v1alpha2 (rpg-project#628): the record stream
-	// for the debug panel. Same seat gate as the act stream; its own broker,
-	// which closes a lagging subscriber as lagged instead of skipping it.
+	// for the debug panel, served only in dev mode, where any signed-in
+	// caller naming a run reads its whole record, no seat asked
+	// (rpg-project#1001); its own broker, which closes a lagging subscriber
+	// as lagged instead of skipping it.
 	if recordErr := registerRecordService(&recordServiceInput{
 		Registrar: srv, Development: authConfig.DevMode,
-		Manager: sessionOrch.Manager, Broker: sessionOrch.RecordBroker, Gate: access,
+		Manager: sessionOrch.Manager, Broker: sessionOrch.RecordBroker,
 	}); recordErr != nil {
 		return fmt.Errorf("session record handler: %w", recordErr)
 	}
