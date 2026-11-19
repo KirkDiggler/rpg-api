@@ -14,7 +14,6 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/auth"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	recordhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha2"
-	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sessionaccess"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
@@ -88,9 +87,7 @@ func (s *BehaviorPatrolSuite) TestASecondRolesStateReachesTheRecordAndNoStreamBr
 	s.NotContains(protojson.Format(view), encounter.BeatRoleState)
 
 	// The record a watch reads: every role_state and sighted beat, whole.
-	access, err := sessionaccess.New(h.charRepo, h.manager.Manager)
-	s.Require().NoError(err)
-	reader, err := recordhandler.New(&recordhandler.HandlerConfig{Manager: h.manager.Manager, Broker: h.manager.RecordBroker, Gate: access, Enabled: true})
+	reader, err := recordhandler.New(&recordhandler.HandlerConfig{Manager: h.manager.Manager, Broker: h.manager.RecordBroker, Enabled: true})
 	s.Require().NoError(err)
 	page, err := reader.GetRecord(ctx, &recordpb.GetRecordRequest{Session: run, Member: "alice", Limit: 500})
 	s.Require().NoError(err)

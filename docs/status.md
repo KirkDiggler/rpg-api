@@ -40,8 +40,12 @@ play in the role policy (`StoryService`, `RecordService`).
 
 **The record stream, session v1alpha2 (rpg-project#628)** — `RecordService`
 (`StreamRecord`, `GetRecord`) in `internal/handlers/dnd5e/session/v1alpha2/`
-serves every beat the encounter writes, as written, to any caller seated as
-the member it names (the same `sessionaccess` gate as `StreamEvents`). Its
+serves every beat the encounter writes, as written: the run's whole record,
+one log, every creature's and every private beat. In dev mode
+(`AUTH_DEV_MODE`) any signed-in caller naming the run reads it, seated or
+not, live or ended (rpg-project#1001, ruled "in dev mode we can play any
+record"); `member` is not consulted. Outside dev mode both RPCs refuse, as
+before. Its
 `RecordBroker` (`internal/orchestrators/session/record_broker.go`) is keyed by
 session and closes a full subscriber as lagged; the stream then ends with
 `RecordLagged{last_id}` and the client catches up with `GetRecord`. That is

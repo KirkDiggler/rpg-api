@@ -19,7 +19,6 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	recordhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha2"
-	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sessionaccess"
 	sessionorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/session"
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
@@ -66,9 +65,7 @@ func (s *BehaviorPatrolSuite) TestMachineTraceCaptureSurvivesReload() {
 	}
 	s.Equal(4, die.choices)
 	s.Equal(original, s.storedBehavior(h, run, "west").Behaviors.Definition)
-	access, err := sessionaccess.New(h.charRepo, h.manager.Manager)
-	s.Require().NoError(err)
-	disabled, err := recordhandler.New(&recordhandler.HandlerConfig{Manager: h.manager.Manager, Broker: h.manager.RecordBroker, Gate: access})
+	disabled, err := recordhandler.New(&recordhandler.HandlerConfig{Manager: h.manager.Manager, Broker: h.manager.RecordBroker})
 	s.Require().NoError(err)
 	_, err = disabled.GetRecord(ctx, &recordpb.GetRecordRequest{Session: run, Member: "alice"})
 	s.Equal(codes.PermissionDenied, status.Code(err))
@@ -76,7 +73,7 @@ func (s *BehaviorPatrolSuite) TestMachineTraceCaptureSurvivesReload() {
 	s.Require().NoError(err, "ordinary play is independent of the debug gate")
 	s.NotContains(protojson.Format(view), "behavior_decision")
 	s.NotContains(protojson.Format(view), "item/0/walk")
-	reader, err := recordhandler.New(&recordhandler.HandlerConfig{Manager: h.manager.Manager, Broker: h.manager.RecordBroker, Gate: access, Enabled: true})
+	reader, err := recordhandler.New(&recordhandler.HandlerConfig{Manager: h.manager.Manager, Broker: h.manager.RecordBroker, Enabled: true})
 	s.Require().NoError(err)
 	page, err := reader.GetRecord(ctx, &recordpb.GetRecordRequest{Session: run, Member: "alice", Limit: 500})
 	s.Require().NoError(err)

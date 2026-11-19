@@ -19,15 +19,16 @@ const maxRecordPage = 500
 // further back than the record retains.
 const logRecordRestarted = "session record: catch-up restarted (older than retention)"
 
-// GetRecord reads one page of the retained record after an id (R15). The
-// caller must be seated as `member`. The page is at most maxRecordPage
+// GetRecord reads one page of the run's whole retained record after an id
+// (R15). In development mode any signed-in caller naming the run reads it,
+// seated or not, live or ended; `member` is not consulted. The page is at most maxRecordPage
 // events; `more` says retained events after it did not fit, and is the
 // client's only end signal.
 func (h *Handler) GetRecord(ctx context.Context, req *sessionpb.GetRecordRequest) (*sessionpb.GetRecordResponse, error) {
 	if !h.enabled {
 		return nil, errRecordDisabled
 	}
-	if err := h.gate.CallerMemberSeated(ctx, req.GetSession(), req.GetMember()); err != nil {
+	if err := readerOf(ctx, req.GetSession()); err != nil {
 		return nil, err
 	}
 	page := int(req.GetLimit())

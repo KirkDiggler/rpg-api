@@ -66,8 +66,10 @@ func GameMethodPermission(method string) (Permissions, bool) {
 			return PermissionPlay, true
 		}
 	case "dnd5e.api.session.v1alpha2.RecordService":
-		// Pre-release (event-stream R26): every seated player. R13 makes the
-		// record an entitlement at release (operator/dev); re-classify then.
+		// Pre-release (event-stream R26): any signed-in player; the handler
+		// answers only in dev mode, and there reads any run's whole record,
+		// no seat (rpg-project#1001). R13 makes the record an entitlement at
+		// release (operator/dev); re-classify then.
 		switch name {
 		case "StreamRecord", "GetRecord":
 			return PermissionPlay, true

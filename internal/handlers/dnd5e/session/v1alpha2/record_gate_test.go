@@ -9,9 +9,9 @@ import (
 )
 
 func (s *RecordHandlerSuite) TestDisabledRecordRefusesReadAndStreamBeforeAccessingData() {
-	h, err := New(&HandlerConfig{Manager: s.manager, Broker: sessionorch.NewRecordBroker(1), Gate: s.gate, Enabled: false})
+	h, err := New(&HandlerConfig{Manager: s.manager, Broker: sessionorch.NewRecordBroker(1), Enabled: false})
 	s.Require().NoError(err)
-	// No seat/data expectations: a disabled diagnostic surface cannot probe
+	// No data expectations: a disabled diagnostic surface cannot probe
 	// a session or subscribe, even for an authenticated caller.
 	out, err := h.GetRecord(s.ctx, &sessionpb.GetRecordRequest{Session: "sess-1", Member: "char-1"})
 	s.Nil(out)

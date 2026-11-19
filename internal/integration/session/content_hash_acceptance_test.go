@@ -21,7 +21,6 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/entities"
 	authoringhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1"
 	recordhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/v1alpha2"
-	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sessionaccess"
 	authoringorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
 	lobbyorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/lobby"
 	"github.com/KirkDiggler/rpg-api/internal/pkg/idgen"
@@ -88,10 +87,8 @@ func (s *ContentHashSuite) SetupSuite() {
 	})
 	s.Require().NoError(err)
 
-	access, err := sessionaccess.New(s.h.charRepo, s.h.manager.Manager)
-	s.Require().NoError(err)
 	s.record, err = recordhandler.New(&recordhandler.HandlerConfig{
-		Manager: s.h.manager.Manager, Broker: s.h.manager.RecordBroker, Gate: access, Enabled: true,
+		Manager: s.h.manager.Manager, Broker: s.h.manager.RecordBroker, Enabled: true,
 	})
 	s.Require().NoError(err)
 
