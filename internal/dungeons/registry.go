@@ -175,6 +175,13 @@ type Entry struct {
 	// placements StartEncounter seeds from.
 	Dungeon *sessionworld.Dungeon
 
+	// ContentHash is the engine's hash of the compiled dungeon
+	// (dungeonspec.Compiled.ContentHash(), rpg-project#1001): the value a run
+	// launched from this entry records on its scene_content beat. Empty only
+	// if the engine could not take it, which a compile never produces.
+	// Engine-release-specific.
+	ContentHash string
+
 	// Atlas is the map the game plays from, as GetAtlas would report it for a
 	// session started on this dungeon — PutDungeon's answer. Produced by the
 	// registry's AtlasProjector (the session Manager), never computed here:
@@ -255,9 +262,14 @@ type SourceInput struct {
 	Key    string
 }
 
-// SourceOutput is the stored file, verbatim.
+// SourceOutput is the stored file, verbatim, and its content hash.
 type SourceOutput struct {
 	YAML []byte
+
+	// ContentHash is the file's content hash as this server's engine
+	// compiles it now (see Entry.ContentHash); empty when it does not
+	// compile, which never fails the read.
+	ContentHash string
 }
 
 // RenameInput is one RenameDungeon call.
@@ -501,13 +513,39 @@ func compileEntry(ctx context.Context, projector AtlasProjector, raw []byte) (*E
 	}
 
 	return &Entry{
-		Key:        d.Key,
-		Name:       d.Name,
-		YAML:       raw,
-		Dungeon:    d,
-		Atlas:      atlas,
-		SingleRoom: isSingleRoom(raw),
+		Key:         d.Key,
+		Name:        d.Name,
+		YAML:        raw,
+		Dungeon:     d,
+		Atlas:       atlas,
+		SingleRoom:  isSingleRoom(raw),
+		ContentHash: contentHashOf(d),
 	}, nil, nil
+}
+
+// contentHashOf is the engine's hash of a compiled dungeon, empty when the
+// engine cannot take it: a hash is left off, never made up, and its absence
+// never fails what carries it (the session's launch treats it the same way).
+func contentHashOf(d *sessionworld.Dungeon) string {
+	if d == nil || d.Spec == nil {
+		return ""
+	}
+	h, err := d.Spec.ContentHash()
+	if err != nil {
+		return ""
+	}
+	return string(h)
+}
+
+// SourceHash is the content hash of a dungeon file as this server's engine
+// compiles it now, empty when it does not compile. It compiles the file and
+// nothing more: no atlas, no registry, no failure of its own.
+func SourceHash(raw []byte) string {
+	d, err := sessionworld.Compile(raw)
+	if err != nil {
+		return ""
+	}
+	return contentHashOf(d)
 }
 
 // singleRoomVersion is the first root `version` of the single-room dialect.

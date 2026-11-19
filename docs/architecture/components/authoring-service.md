@@ -196,6 +196,22 @@ than a code change.
 | `RPG_AUTHORING_ENABLED=1` | registers `AuthoringService`; requires `RPG_CONTENT_DIR` |
 | `RPG_SHIPPED_CONTENT_DIR` | where the seed is read from; default `content`, the image sets `/usr/share/rpg-api/content` |
 
+## The content hash (rpg-project#1001)
+
+`PutDungeon` (validate-only and save) and `GetDungeon` return
+`content_hash`: the engine's hash of the compiled dungeon
+(`dungeonspec.Compiled.ContentHash()`), the value a run launched from that
+content records on its `scene_content` beat (with its `key` and `engine`).
+A compiled entry holds it (`Entry.ContentHash`, taken in `compileEntry`), so a
+check, a save and a shipped reference cost nothing extra. `GetDungeon` still
+reads through `Registry.Source` and never compiles to open; for a world
+record it compiles once more only to hash (`dungeons.SourceHash`, about
+110 ms for the castle on a laptop), and a file that no longer compiles opens
+with an empty hash. `lobby.StartEncounter` passes the resolved dungeon key to
+the session's launch (`start_encounter_session_stack.go`), so the record's
+`scene_content.key` names it. `content_hash_acceptance_test.go` proves the
+record's hash equals what the studio was handed.
+
 ## The machine words (`GetMachineWords`, rpg-project#997)
 
 `GetMachineWords` hands the studio every word a behaviour machine's step may

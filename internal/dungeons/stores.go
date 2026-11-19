@@ -160,13 +160,16 @@ func (r *storeRegistry) Source(ctx context.Context, in *SourceInput) (*SourceOut
 		return nil, err
 	}
 	if found {
-		return &SourceOutput{YAML: bytes.Clone(rec.YAML)}, nil
+		// A world record is not held compiled, so its hash costs one compile
+		// here; one that no longer compiles opens with no hash.
+		return &SourceOutput{YAML: bytes.Clone(rec.YAML), ContentHash: SourceHash(rec.YAML)}, nil
 	}
 	entry, err := r.shipped.Get(ctx, in.Key)
 	if err != nil {
 		return nil, err
 	}
-	return &SourceOutput{YAML: entry.YAML}, nil
+	// A shipped entry was compiled at boot; its hash is held.
+	return &SourceOutput{YAML: entry.YAML, ContentHash: entry.ContentHash}, nil
 }
 
 // worldRecord reads key from the world store; absence is (false, nil).

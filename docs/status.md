@@ -1237,6 +1237,11 @@ done in this PR.
 
 ## Recently landed (since Round 1, highlights)
 
+- **A dungeon's content hash; the record names the dungeon it ran**
+  (rpg-project#1001, 2026-11-19) — `PutDungeon` and `GetDungeon` return
+  `content_hash`, equal to a launched run's `scene_content.content_hash`;
+  encounter v0.227.0, session v0.199.0.
+
 - **The engine's machine words over the wire** (rpg-project#997, 2026-11-19) —
   `AuthoringService.GetMachineWords` maps `encounter.MachineWords()` field for
   field, with the build's encounter version; read-back connections carry a

@@ -50,6 +50,11 @@ func (h *Handler) PutDungeon(ctx context.Context, req *authoringpb.PutDungeonReq
 	if len(out.Errors) == 0 && out.ReadBack != nil {
 		resp.ReadBack = readBackToProto(out.ReadBack, out.Folded)
 	}
+	if len(out.Errors) == 0 {
+		// The engine's hash of what was just compiled (rpg-project#1001),
+		// on a check and a save alike; a refused file has none.
+		resp.ContentHash = out.ContentHash
+	}
 
 	return resp, nil
 }
