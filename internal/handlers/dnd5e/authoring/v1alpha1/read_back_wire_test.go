@@ -38,6 +38,11 @@ type ReadBackWireSuite struct {
 	ctx     context.Context
 	shipped *dungeons.FileRegistry
 	castle  string
+
+	// castleGrade is the castle's validate-only check, made once for the
+	// suite: a grade writes nothing, so every probe of the castle's
+	// read-back reads the same answer and the castle is compiled once.
+	castleGrade *authoringpb.PutDungeonResponse
 }
 
 func TestReadBackWireSuite(t *testing.T) { suite.Run(t, new(ReadBackWireSuite)) }
@@ -78,6 +83,17 @@ func (s *ReadBackWireSuite) handler(authoring bool) *authoringhandler.Handler {
 	return h
 }
 
+// gradedCastle is the castle's validate-only check, graded on first use and
+// shared by every test of the suite after.
+func (s *ReadBackWireSuite) gradedCastle() *authoringpb.PutDungeonResponse {
+	s.T().Helper()
+	if s.castleGrade == nil {
+		s.castleGrade = s.grade(readBackCastleKey, s.castle)
+	}
+
+	return s.castleGrade
+}
+
 func (s *ReadBackWireSuite) grade(key, yaml string) *authoringpb.PutDungeonResponse {
 	s.T().Helper()
 
@@ -104,7 +120,7 @@ func statements(rb *authoringpb.ReadBack) []*authoringpb.ReadBackStatement {
 // the engine's sentences, each with its kind, subject, path and connections,
 // and nothing the engine cannot yet say.
 func (s *ReadBackWireSuite) TestPutDungeon_ValidateOnly_CarriesReadBack() {
-	resp := s.grade(readBackCastleKey, s.castle)
+	resp := s.gradedCastle()
 
 	s.Require().Empty(resp.GetErrors(), "the shipped castle compiles")
 	rb := resp.GetReadBack()

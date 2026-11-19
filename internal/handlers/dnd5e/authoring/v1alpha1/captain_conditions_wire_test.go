@@ -14,7 +14,7 @@ const captainHeardStep = "behaviorDefinitions.captain-policy.recipe.states.in-ha
 // its `when` reads as a `condition` connection, with the value it compares
 // and where it sits (rpg-project#997).
 func (s *ReadBackWireSuite) TestPutDungeon_ValidateOnly_CarriesAStepsConditions() {
-	resp := s.grade(readBackCastleKey, s.castle)
+	resp := s.gradedCastle()
 	s.Require().Empty(resp.GetErrors())
 
 	var step *authoringpb.ReadBackStatement

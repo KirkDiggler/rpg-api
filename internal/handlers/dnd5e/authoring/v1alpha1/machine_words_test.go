@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
@@ -19,7 +20,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec/readback"
 
 	authoringpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/authoring/v1alpha1"
-	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
+	dungeonsmock "github.com/KirkDiggler/rpg-api/internal/dungeons/mock"
 	authoringhandler "github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/authoring/v1alpha1"
 	authoringorch "github.com/KirkDiggler/rpg-api/internal/orchestrators/authoring"
 )
@@ -47,8 +48,11 @@ type MachineWordsSuite struct {
 
 func TestMachineWordsSuite(t *testing.T) { suite.Run(t, new(MachineWordsSuite)) }
 
-func (s *MachineWordsSuite) SetupTest() {
-	orch, err := authoringorch.New(&authoringorch.Config{Dungeons: dungeonstest.Shipped(s.T())})
+// SetupSuite builds one handler for the suite. The words are the engine's
+// table and read no dungeon, so the registry is a mock that expects no call:
+// compiling a shelf here would cost seconds and prove nothing about words.
+func (s *MachineWordsSuite) SetupSuite() {
+	orch, err := authoringorch.New(&authoringorch.Config{Dungeons: dungeonsmock.NewMockRegistry(gomock.NewController(s.T()))})
 	s.Require().NoError(err)
 	s.handler, err = authoringhandler.New(&authoringhandler.HandlerConfig{Orchestrator: orch})
 	s.Require().NoError(err)
