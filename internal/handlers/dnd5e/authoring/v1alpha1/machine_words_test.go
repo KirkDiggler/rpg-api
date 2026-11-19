@@ -30,10 +30,13 @@ import (
 // by the Go type's name and field; every other field crosses as its
 // snake_case.
 var wireNames = map[string]string{
-	"BeatWord.Names": "names_someone",
-	"Written.In":     "part",
-	"Arg.Default":    "default_value",
-	"Connection.Not": "negated",
+	"BeatWord.Names":        "names_someone",
+	"Written.In":            "part",
+	"Arg.Default":           "default_value",
+	"Connection.Not":        "negated",
+	"MachineWordsTable.Who": "who_words",
+	"WhoWord.Role":          "plays",
+	"WhoWord.Allowed":       "allowed_in",
 }
 
 // MachineWordsSuite proves the machine words cross the wire WHOLE: every
@@ -155,6 +158,17 @@ func (s *MachineWordsSuite) TestOverGRPC() {
 	s.Require().NotNil(n, "rounds takes a count")
 	s.True(n.GetOptional(), "the count may be left out (encounter v0.225.0)")
 	s.Equal("0", n.GetDefaultValue(), "and leaving it out means none")
+
+	var spokenTo *authoringpb.MachineWhoWord
+	for _, w := range resp.GetWhoWords() {
+		if w.GetWord() == "spoken_to" {
+			spokenTo = w
+		}
+	}
+	s.Require().NotNil(spokenTo, "the who-words cross the wire")
+	s.Equal("taker", spokenTo.GetPlays())
+	s.Equal("give.to", spokenTo.GetAllowedIn())
+	s.Equal("judgement", spokenTo.GetWay())
 
 	set := findWord(resp.GetActs(), "set")
 	s.Require().NotNil(set)

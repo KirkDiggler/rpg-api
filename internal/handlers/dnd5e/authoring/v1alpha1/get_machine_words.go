@@ -19,9 +19,10 @@ import (
 //
 // The table is the engine's; this file copies it and words nothing. Four
 // fields cross under a different name, because a wire name must survive
-// every target language: BeatWord.Names is `names_someone`, Written.In is
-// `part`, Arg.Default is `default_value` (and a read-back connection's Not is
-// `negated`, read_back.go). A reflection test fails the day the engine adds
+// every target language or would read as a neighbor: BeatWord.Names is
+// `names_someone`, Written.In is `part`, Arg.Default is `default_value`, the
+// table's Who is `who_words`, WhoWord.Role is `plays` and WhoWord.Allowed is
+// `allowed_in` (and a read-back connection's Not is `negated`, read_back.go). A reflection test fails the day the engine adds
 // a field this file does not copy.
 //
 // UNGATED. Reading a table mutates nothing -- ListWeapons' precedent -- so it
@@ -50,6 +51,7 @@ func machineWordsToProto(w encounter.MachineWordsTable, version string) *authori
 		Conditions:       make([]*authoringpb.MachineConditionWord, 0, len(w.Conditions)),
 		Acts:             make([]*authoringpb.MachineActWord, 0, len(w.Acts)),
 		Ops:              make([]*authoringpb.MachineOpWord, 0, len(w.Ops)),
+		WhoWords:         make([]*authoringpb.MachineWhoWord, 0, len(w.Who)),
 	}
 	for _, b := range w.Beats {
 		out.Beats = append(out.Beats, &authoringpb.MachineBeatWord{
@@ -100,6 +102,11 @@ func machineWordsToProto(w encounter.MachineWordsTable, version string) *authori
 	}
 	for _, o := range w.Ops {
 		out.Ops = append(out.Ops, &authoringpb.MachineOpWord{Op: o.Op, Words: o.Words})
+	}
+	for _, who := range w.Who {
+		out.WhoWords = append(out.WhoWords, &authoringpb.MachineWhoWord{
+			Word: who.Word, Plays: who.Role, Label: who.Label, AllowedIn: who.Allowed, Way: who.Way,
+		})
 	}
 	return out
 }

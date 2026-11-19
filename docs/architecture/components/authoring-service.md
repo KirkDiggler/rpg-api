@@ -229,6 +229,13 @@ without module info. Auth is every authoring read's: a signed-in player with
 the Build permission (`internal/auth/role_policy.go`), and only while
 `RPG_AUTHORING_ENABLED=1` registers the service.
 
+The table's who-words (`encounter.WhoWords()`, rpg-project#1001) cross as
+`who_words`, each `MachineWhoWord {word, plays, label, allowed_in, way}`
+(the engine's `Role` and `Allowed` under the wire's names). The read-back's
+who edges on a topic given or read (`about`, `takes`, `may-note`, `whose`,
+`on`, `enters`) need no mapping of their own: they ride the connection's
+existing fields.
+
 A read-back connection of kind `condition` carries `is`, `op`, `negated` and
 `at`: the value a step's condition compares, its comparison, whether the step
 needs it false, and where it sits in the step's `when`.
