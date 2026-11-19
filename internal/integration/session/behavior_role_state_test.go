@@ -17,17 +17,18 @@ import (
 	characterrepo "github.com/KirkDiggler/rpg-api/internal/repositories/character"
 	"github.com/KirkDiggler/rpg-api/internal/sessionworld"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
+	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
 
-// TestASecondRolesStateReachesTheRecordAndNoStreamBreaks is the ordering
-// proof for encounter v0.225.0 under session v0.197.0 (rpg-project#1001): a
-// creature's role beside its body writes a `role_state` beat the session
-// does not know yet. In the disturbance hall the alarm (alice's attack, a
-// clang) moves west's `investigate` role from idle to active, and court's
-// `duty` patrol walks its route. The run carries on without an error, a
-// player's story and view stay as they were (no role reaches a player), and
-// the record a watch reads carries every role_state whole, and every
-// `sighted` beat names its observer.
+// TestASecondRolesStateReachesTheRecordAndNoStreamBreaks is the proof for
+// encounter v0.225.0 under session v0.198.0 (rpg-project#1001): a creature's
+// role beside its body writes a `role_state` beat, which the session keeps
+// record-only. In the disturbance hall the alarm (alice's attack, a clang)
+// moves west's `investigate` role from idle to active, and court's `duty`
+// patrol walks its route. The run carries on without an error; no stream,
+// the player's or any creature's own, holds a refused or undecoded act, nor
+// a role; and the record a watch reads carries every role_state whole, and
+// every `sighted` beat names its observer.
 func (s *BehaviorPatrolSuite) TestASecondRolesStateReachesTheRecordAndNoStreamBreaks() {
 	ctx := auth.WithPlayerID(context.Background(), "player-alice")
 	const run = "role-state-run"
@@ -62,11 +63,24 @@ func (s *BehaviorPatrolSuite) TestASecondRolesStateReachesTheRecordAndNoStreamBr
 	defer cancel()
 	s.Require().NoError(h.manager.Drain(drain))
 
-	// A player: the story and the view read without error, and no role.
+	// A player: the story and the view read without error, refuse no act,
+	// and carry no role.
 	acts := storyOf(ctx, s.T(), h.story, run, "alice")
 	s.NotEmpty(acts)
 	for _, act := range acts {
+		s.False(act.GetRefused(), "no refused act on a player's story: %s", protojson.Format(act))
 		s.NotContains(protojson.Format(act), encounter.BeatRoleState, "no role reaches a player")
+	}
+	// Every member's own stream, the creatures' included: no act the
+	// session could not decode. Under session v0.197.0 west's and court's
+	// role_state each came out as one undecoded act here.
+	for _, member := range []string{"alice", "west", "court", "dummy"} {
+		own, actsErr := h.manager.Manager.Acts(ctx, &sdk.ActsInput{Session: run, Member: member})
+		s.Require().NoError(actsErr, member)
+		s.NotEmpty(own.Acts, member)
+		for _, act := range own.Acts {
+			s.Emptyf(act.Undecoded, "%s's stream: act %s %s", member, act.ID, act.Act)
+		}
 	}
 	view, err := h.handler.GetView(ctx, &sessionpb.GetViewRequest{Session: run, Member: "alice"})
 	s.Require().NoError(err)
