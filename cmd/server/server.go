@@ -146,10 +146,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 
 	// Check if dev mode is enabled (allows "Dev <player_id>" auth scheme).
 	// Keep stream credentials only when the role gate will consume them.
-	authConfig := &auth.InterceptorConfig{
-		DevMode:            os.Getenv(envAuthDevMode) == envEnabledValue,
-		WorldScopedStreams: worldAccessEnforced,
-	}
+	authConfig := newAuthConfig(worldAccessEnforced)
 	authoringEnabled := os.Getenv(envAuthoringEnabled) == "1"
 	development, err := configuredDevelopmentAccess(authConfig.DevMode)
 	if err != nil {
@@ -384,7 +381,7 @@ func runServer(_ *cobra.Command, _ []string) error {
 	// (rpg-project#1001); its own broker, which closes a lagging subscriber
 	// as lagged instead of skipping it.
 	if recordErr := registerRecordService(&recordServiceInput{
-		Registrar: srv, Development: authConfig.DevMode,
+		Registrar: srv, Auth: authConfig,
 		Manager: sessionOrch.Manager, Broker: sessionOrch.RecordBroker,
 	}); recordErr != nil {
 		return fmt.Errorf("session record handler: %w", recordErr)

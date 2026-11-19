@@ -13,7 +13,13 @@ whether or not they were ever seated, while it is live or after it ended
 (rpg-project#1001); no member is needed. The record lives beside the run's
 checkpoint in Redis and expires 24 hours after the run's last save; nothing
 deletes it when the run ends. Outside that mode both record RPCs refuse
-access, even for a seated caller. This does not disable ordinary StoryService or server
+access, even for a seated caller.
+
+Know what that reach is. In dev mode the `Dev <player_id>` scheme already
+counts as signed in, so anyone who can reach a dev-mode port can read any run
+whose id they know. That is the same reach dev mode already gives to act as
+any player. Dev mode is exactly `AUTH_DEV_MODE=true`, read once
+(`configuredDevMode`, `cmd/server/composition.go`); any other value is off. This does not disable ordinary StoryService or server
 capture. Do not enable development authentication on a production server merely
 to inspect a run; inspect its server-side capture instead.
 

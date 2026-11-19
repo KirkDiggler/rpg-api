@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -25,19 +27,49 @@ func (r *recordRegistrar) RegisterService(_ *grpc.ServiceDesc, impl any) {
 	r.handler = impl.(sessionpb.RecordServiceServer)
 }
 
-func TestRecordServiceWiringIsDevelopmentOnly(t *testing.T) {
-	for _, development := range []bool{false, true} {
-		t.Run(map[bool]string{false: "release", true: "development"}[development], func(t *testing.T) {
+// devModeValues is every AUTH_DEV_MODE value the parse must read as off,
+// and the one it reads as on. Unset is checked apart.
+var devModeValues = map[string]bool{
+	"": false, "false": false, "0": false, "TRUE": false, "True": false,
+	" true": false, "true ": false, "1": false, "yes": false, "on": false,
+	"true": true,
+}
+
+// TestDevModeIsExactlyTrue pins the one read of AUTH_DEV_MODE: exactly
+// "true" is development mode; anything else, unset included, is not.
+func TestDevModeIsExactlyTrue(t *testing.T) {
+	for value, want := range devModeValues {
+		t.Run(fmt.Sprintf("%q", value), func(t *testing.T) {
+			t.Setenv(envAuthDevMode, value)
+			require.Equal(t, want, configuredDevMode())
+			require.Equal(t, want, newAuthConfig(false).DevMode, "the auth configuration carries the same decision")
+		})
+	}
+	t.Run("unset", func(t *testing.T) {
+		t.Setenv(envAuthDevMode, "x")
+		require.NoError(t, os.Unsetenv(envAuthDevMode))
+		require.False(t, configuredDevMode())
+	})
+}
+
+// TestRecordServiceServesExactlyInDevMode is the composition, without a
+// server: AUTH_DEV_MODE is read once (newAuthConfig) and the record service
+// is built from that configuration. Off, every read is refused before any
+// data is touched; on, a signed-in caller reads a run with no seat.
+func TestRecordServiceServesExactlyInDevMode(t *testing.T) {
+	for value, development := range devModeValues {
+		t.Run(fmt.Sprintf("%q", value), func(t *testing.T) {
+			t.Setenv(envAuthDevMode, value)
 			ctrl := gomock.NewController(t)
 			manager := sessionmock.NewMockManager(ctrl)
 			var registrar recordRegistrar
-			err := registerRecordService(&recordServiceInput{Registrar: &registrar, Development: development,
-				Manager: manager, Broker: sessionorch.NewRecordBroker(1)})
-			require.NoError(t, err)
+			require.NoError(t, registerRecordService(&recordServiceInput{Registrar: &registrar,
+				Auth: newAuthConfig(false), Manager: manager, Broker: sessionorch.NewRecordBroker(1)}))
 			if development {
 				manager.EXPECT().Record(gomock.Any(), gomock.Any()).Return(&sdk.RecordReadOutput{}, nil)
 			}
-			out, err := registrar.handler.GetRecord(auth.WithPlayerID(context.Background(), "alice"), &sessionpb.GetRecordRequest{Session: "run"})
+			out, err := registrar.handler.GetRecord(auth.WithPlayerID(context.Background(), "alice"),
+				&sessionpb.GetRecordRequest{Session: "run"})
 			if development {
 				require.NoError(t, err)
 				require.NotNil(t, out)
@@ -47,4 +79,12 @@ func TestRecordServiceWiringIsDevelopmentOnly(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestRecordServiceNeedsTheAuthConfiguration: no configuration, no service.
+func TestRecordServiceNeedsTheAuthConfiguration(t *testing.T) {
+	var registrar recordRegistrar
+	err := registerRecordService(&recordServiceInput{Registrar: &registrar,
+		Manager: sessionmock.NewMockManager(gomock.NewController(t)), Broker: sessionorch.NewRecordBroker(1)})
+	require.Error(t, err)
 }
