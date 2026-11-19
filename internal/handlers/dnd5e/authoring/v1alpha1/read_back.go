@@ -63,11 +63,20 @@ func readBackStatementToProto(st readback.Statement) *authoringpb.ReadBackStatem
 		Connects: make([]*authoringpb.ReadBackConnection, 0, len(st.Connects)),
 	}
 	for _, c := range st.Connects {
-		out.Connects = append(out.Connects, &authoringpb.ReadBackConnection{
-			Kind: c.Kind, Id: c.ID, Role: c.Role, Value: int32(c.Value), //nolint:gosec // a check difficulty, far inside int32
-		})
+		out.Connects = append(out.Connects, readBackConnectionToProto(c))
 	}
 	return out
+}
+
+// readBackConnectionToProto is one connection on the wire, field for field.
+// The engine's Not crosses as `negated` (a wire name that survives every
+// target language); Is, Op, Not and At are set on a condition connection
+// only (rpg-project#997).
+func readBackConnectionToProto(c readback.Connection) *authoringpb.ReadBackConnection {
+	return &authoringpb.ReadBackConnection{
+		Kind: c.Kind, Id: c.ID, Role: c.Role, Value: int32(c.Value), //nolint:gosec // a check difficulty, far inside int32
+		Is: c.Is, Op: c.Op, Negated: c.Not, At: c.At,
+	}
 }
 
 func readBackSubjectToProto(s readback.Subject) *authoringpb.ReadBackSubject {
