@@ -147,6 +147,28 @@ func (r *storeRegistry) Get(ctx context.Context, caller Caller, key string) (*En
 	return entry, nil
 }
 
+// Source implements Registry: the bytes as stored, never compiled.
+func (r *storeRegistry) Source(ctx context.Context, in *SourceInput) (*SourceOutput, error) {
+	if in == nil {
+		return nil, errors.New("dungeons: SourceInput is required")
+	}
+	if !in.Caller.complete() {
+		return nil, ErrNoCaller
+	}
+	rec, found, err := r.worldRecord(ctx, in.Caller.WorldID, in.Key)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		return &SourceOutput{YAML: bytes.Clone(rec.YAML)}, nil
+	}
+	entry, err := r.shipped.Get(ctx, in.Key)
+	if err != nil {
+		return nil, err
+	}
+	return &SourceOutput{YAML: entry.YAML}, nil
+}
+
 // worldRecord reads key from the world store; absence is (false, nil).
 func (r *storeRegistry) worldRecord(ctx context.Context, worldID, key string) (worlddungeons.Record, bool, error) {
 	out, err := r.world.Get(ctx, &worlddungeons.GetInput{WorldID: worldID, Key: key})

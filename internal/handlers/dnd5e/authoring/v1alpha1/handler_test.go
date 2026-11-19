@@ -190,7 +190,7 @@ func (s *HandlerSuite) TestGetDungeon_EmptyKey_InvalidArgument() {
 }
 
 func (s *HandlerSuite) TestGetDungeon_Unknown_NotFound() {
-	s.registry.EXPECT().Get(gomock.Any(), testCaller, "nope").Return(nil, dungeons.ErrNotFound)
+	s.registry.EXPECT().Source(gomock.Any(), &dungeons.SourceInput{Caller: testCaller, Key: "nope"}).Return(nil, dungeons.ErrNotFound)
 	_, err := s.handler.GetDungeon(s.ctx, &authoringpb.GetDungeonRequest{Key: "nope"})
 	s.requireCode(err, codes.NotFound)
 }
@@ -199,7 +199,7 @@ func (s *HandlerSuite) TestGetDungeon_Unknown_NotFound() {
 // back exactly, because the handler hands the registry's bytes through.
 func (s *HandlerSuite) TestGetDungeon_ReturnsTheStoredBytesVerbatim() {
 	yaml := "version: 2\nkey: crypt   # trailing spaces and a comment\n"
-	s.registry.EXPECT().Get(gomock.Any(), testCaller, "crypt").Return(&dungeons.Entry{Key: "crypt", YAML: []byte(yaml)}, nil)
+	s.registry.EXPECT().Source(gomock.Any(), &dungeons.SourceInput{Caller: testCaller, Key: "crypt"}).Return(&dungeons.SourceOutput{YAML: []byte(yaml)}, nil)
 
 	resp, err := s.handler.GetDungeon(s.ctx, &authoringpb.GetDungeonRequest{Key: "crypt"})
 	s.Require().NoError(err)

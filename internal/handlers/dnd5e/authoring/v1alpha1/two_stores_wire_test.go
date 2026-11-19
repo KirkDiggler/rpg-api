@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,6 +49,7 @@ type TwoStoresWireSuite struct {
 	authoring *authoringhandler.Handler
 	lobby     *lobbyhandler.Handler
 	kitchen   []byte
+	world     worlddungeons.Repository
 
 	alice, bob, carol context.Context
 }
@@ -78,6 +80,7 @@ func (s *TwoStoresWireSuite) SetupTest() {
 	s.Require().NoError(err)
 	world, err := worlddungeons.NewRedis(&worlddungeons.RedisConfig{Client: client})
 	s.Require().NoError(err)
+	s.world = world
 	registry, err := dungeons.NewRegistry(&dungeons.RegistryConfig{
 		Shipped: shipped, World: world, Authoring: true, Projector: projector,
 	})
@@ -153,6 +156,35 @@ func (s *TwoStoresWireSuite) TestAMembersEncounterIsTheWorldsAndOnlyTheirs() {
 	got, err = s.authoring.GetDungeon(s.alice, &authoringpb.GetDungeonRequest{Key: wireMyCastle})
 	s.Require().NoError(err)
 	s.Equal(aliceYAML, got.GetYaml(), "two worlds hold the same key independently")
+}
+
+// TestASavedDungeonTheEngineNowRefusesStillOpens: a dungeon saved before
+// rpg-project#1005 renamed `recognized` to `noted` is read back verbatim, so
+// the studio can open it, and the studio's own validate-only preview of
+// those bytes carries the engine's sentence naming the new word.
+func (s *TwoStoresWireSuite) TestASavedDungeonTheEngineNowRefusesStillOpens() {
+	raw, err := os.ReadFile(filepath.Join(dungeonstest.ContentDir(s.T()), "the-mad-king.yaml")) //nolint:gosec // the shipped content dir
+	s.Require().NoError(err)
+	current := string(dungeonstest.AsKey(s.T(), raw, "the-mad-king", wireMyCastle))
+	old := strings.Replace(current, "pass: { noted: admitted }", "pass: { recognized: admitted }", 1)
+	s.Require().NotEqual(current, old, "the fixture no longer holds a `pass: { noted: admitted }`")
+	// Stored directly: PutDungeon would refuse it now, as it should; this
+	// is the file an author saved last week.
+	_, err = s.world.Put(context.Background(), &worlddungeons.PutInput{
+		WorldID: "w1", Owner: "alice", Key: wireMyCastle, Name: "My Castle", YAML: []byte(old),
+	})
+	s.Require().NoError(err)
+
+	got, err := s.authoring.GetDungeon(s.alice, &authoringpb.GetDungeonRequest{Key: wireMyCastle})
+	s.Require().NoError(err, "the author can open it")
+	s.Equal(old, got.GetYaml(), "byte for byte as saved")
+
+	graded, err := s.authoring.PutDungeon(s.alice, &authoringpb.PutDungeonRequest{
+		Key: wireMyCastle, Yaml: got.GetYaml(), ValidateOnly: true,
+	})
+	s.Require().NoError(err)
+	s.Require().Len(graded.GetErrors(), 1)
+	s.Contains(graded.GetErrors()[0].GetMessage(), "`recognized` is now `noted`")
 }
 
 func (s *TwoStoresWireSuite) TestAReferenceKeyIsRefusedAndTheFileUntouched() {

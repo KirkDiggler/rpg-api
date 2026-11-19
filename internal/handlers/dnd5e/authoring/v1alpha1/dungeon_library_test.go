@@ -97,8 +97,8 @@ func (s *HandlerSuite) TestADungeonRPCWithoutAWorldIsFailedPrecondition() {
 }
 
 func (s *HandlerSuite) TestGetDungeon_PassesTheCaller() {
-	s.registry.EXPECT().Get(gomock.Any(), testCaller, "my-castle").
-		Return(&dungeons.Entry{Key: "my-castle", YAML: []byte("bytes"), Source: dungeons.SourceWorld, Owner: "bob"}, nil)
+	s.registry.EXPECT().Source(gomock.Any(), &dungeons.SourceInput{Caller: testCaller, Key: "my-castle"}).
+		Return(&dungeons.SourceOutput{YAML: []byte("bytes")}, nil)
 	resp, err := s.handler.GetDungeon(s.ctx, &authoringpb.GetDungeonRequest{Key: "my-castle"})
 	s.Require().NoError(err)
 	s.Equal("bytes", resp.GetYaml())

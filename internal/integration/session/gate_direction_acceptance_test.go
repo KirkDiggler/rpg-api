@@ -79,13 +79,13 @@ func walk(t *testing.T, h *acceptanceHarness, run string, path []*sessionpb.Posi
 
 // TestAcceptance_TheGateGuardChecksArrivals is S1c of the guard holds the
 // gate on the server (rpg-project#857, R6; #928): every gate guard's post
-// holds the gate `against: entering`, letting through whom he recognizes as
-// admitted (`pass: { recognized: admitted }`). The view tells a viewer
+// holds the gate `against: entering`, letting through whom he has noted as
+// admitted (`pass: { noted: admitted }`). The view tells a viewer
 // in sight of the gate which door he holds, the direction, and the post's
 // side cells. An arrival is barred at the opening and at the door; a party
 // inside walks out past him unchallenged and is barred on the way back in;
-// and the troupe the captain let through, whom every gate guard now
-// recognizes, is told no hold and crosses in while gate-1 stays posted.
+// and the troupe the captain let through, whom every gate guard has now
+// noted as admitted, is told no hold and crosses in while gate-1 stays posted.
 func TestAcceptance_TheGateGuardChecksArrivals(t *testing.T) {
 	ctx := auth.WithPlayerID(context.Background(), "player-alice")
 

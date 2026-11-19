@@ -249,6 +249,17 @@ type PutResult struct {
 	Folded []readback.FoldedSection
 }
 
+// SourceInput names one dungeon to read back for the caller.
+type SourceInput struct {
+	Caller Caller
+	Key    string
+}
+
+// SourceOutput is the stored file, verbatim.
+type SourceOutput struct {
+	YAML []byte
+}
+
 // RenameInput is one RenameDungeon call.
 type RenameInput struct {
 	Caller Caller
@@ -269,6 +280,14 @@ type Registry interface {
 	// Get resolves key for the caller: their world store, then shipped; or
 	// ErrNotFound.
 	Get(ctx context.Context, caller Caller, key string) (*Entry, error)
+
+	// Source returns the file under key for the caller exactly as it is
+	// stored, WITHOUT compiling it: their world store, then shipped; or
+	// ErrNotFound. It is the author's read: a saved dungeon that no longer
+	// compiles (a word the engine retired since it was saved, rpg-project#1005)
+	// still opens, so the author can see the engine's refusal and fix it.
+	// Playing a dungeon goes through Get, which compiles.
+	Source(ctx context.Context, in *SourceInput) (*SourceOutput, error)
 
 	// Put compiles and, unless ValidateOnly, stores a dungeon in the
 	// caller's world, owned by the caller. A file that does not compile is a

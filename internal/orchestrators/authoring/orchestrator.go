@@ -115,19 +115,22 @@ type GetDungeonOutput struct {
 	YAML []byte
 }
 
-// GetDungeon returns the stored file for a key. dungeons.ErrNotFound passes
-// through for the handler to map.
+// GetDungeon returns the stored file for a key, verbatim and uncompiled.
+// dungeons.ErrNotFound passes through for the handler to map.
 func (o *Orchestrator) GetDungeon(ctx context.Context, in *GetDungeonInput) (*GetDungeonOutput, error) {
 	if in == nil {
 		return nil, errors.New("authoring orchestrator: GetDungeonInput is required")
 	}
 
-	entry, err := o.dungeons.Get(ctx, in.Caller, in.Key)
+	// Source, not Get: the author's read hands back what is stored without
+	// compiling it, so a saved dungeon the engine now refuses still opens
+	// and the studio's validate-only preview shows why (rpg-project#1005).
+	got, err := o.dungeons.Source(ctx, &dungeons.SourceInput{Caller: in.Caller, Key: in.Key})
 	if err != nil {
 		return nil, fmt.Errorf("get dungeon: %w", err)
 	}
 
-	return &GetDungeonOutput{YAML: entry.YAML}, nil
+	return &GetDungeonOutput{YAML: got.YAML}, nil
 }
 
 // ListDungeonsInput asks for the caller's library.
