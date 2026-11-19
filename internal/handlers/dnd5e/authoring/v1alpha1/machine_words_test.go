@@ -140,6 +140,18 @@ func (s *MachineWordsSuite) TestOverGRPC() {
 	s.Equal("value", claim.GetArgs()[0].GetName())
 	s.Equal("eq", claim.GetArgs()[1].GetFixed())
 
+	rounds := findWord(resp.GetConditions(), "rounds")
+	s.Require().NotNil(rounds)
+	var n *authoringpb.MachineArg
+	for _, a := range rounds.GetArgs() {
+		if a.GetName() == "n" {
+			n = a
+		}
+	}
+	s.Require().NotNil(n, "rounds takes a count")
+	s.True(n.GetOptional(), "the count may be left out (encounter v0.225.0)")
+	s.Equal("0", n.GetDefaultValue(), "and leaving it out means none")
+
 	set := findWord(resp.GetActs(), "set")
 	s.Require().NotNil(set)
 	s.Equal("do", set.GetWritten().GetPart())
