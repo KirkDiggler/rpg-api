@@ -86,10 +86,9 @@ func TestOldWords_SavedWorldDungeonListsOpensButDoesNotPlay(t *testing.T) {
 		WorldID: "w", Owner: "alice", Key: "my-castle", Name: "My Castle", YAML: oldWordsCastle(t, "my-castle"),
 	})
 	require.NoError(t, err)
-	r, err := dungeons.NewRegistry(&dungeons.RegistryConfig{
-		Shipped: dungeonstest.ShippedStore(t), World: world, Projector: dungeonstest.Projector(t),
-	})
-	require.NoError(t, err)
+	// The package's shared shelf (shelf_test.go), compiled once per binary:
+	// compiling the shipped content again here was most of this test's time.
+	r := joinShelf(t, world, false)
 	caller := dungeons.Caller{WorldID: "w", PlayerID: "alice"}
 
 	list, err := r.List(ctx, caller)

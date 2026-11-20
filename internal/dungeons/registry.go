@@ -498,6 +498,15 @@ func compileEntry(ctx context.Context, projector AtlasProjector, raw []byte) (*E
 		return nil, nil, err
 	}
 
+	// THE CONTENT CHECK (rpg-project#1024): what a launch of this file would
+	// refuse, refused here instead, so an author hears it on the check and the
+	// save rather than when the site is played. A status the rules refuse
+	// comes back as a field error at its place under `statuses:`; the rules'
+	// message names the place inside it.
+	if ferrs, checkErr := contentRefusals(d.Spec); checkErr != nil || len(ferrs) > 0 {
+		return nil, ferrs, checkErr
+	}
+
 	// The FILE's own key, which is the one this entry is stored and served
 	// under. A request key that disagrees with it is refused just after this
 	// (ErrKeyMismatch, on both the Put path and the load-from-disk path), so
@@ -521,6 +530,23 @@ func compileEntry(ctx context.Context, projector AtlasProjector, raw []byte) (*E
 		SingleRoom:  isSingleRoom(raw),
 		ContentHash: contentHashOf(d),
 	}, nil, nil
+}
+
+// contentRefusals is the session's content check on a compiled dungeon, as
+// field errors: one per status the rules refuse, at `statuses.<id>`.
+func contentRefusals(spec *tkdungeonspec.Compiled) ([]FieldError, error) {
+	if spec == nil {
+		return nil, nil
+	}
+	checked, err := sdk.CheckContent(&sdk.CheckContentInput{Dungeon: spec})
+	if err != nil {
+		return nil, fmt.Errorf("check content: %w", err)
+	}
+	var out []FieldError
+	for _, r := range checked.Refusals {
+		out = append(out, FieldError{Path: r.Path, Message: r.Message})
+	}
+	return out, nil
 }
 
 // contentHashOf is the engine's hash of a compiled dungeon, empty when the
