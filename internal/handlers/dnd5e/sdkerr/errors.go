@@ -109,6 +109,12 @@ func StatusErrorFor(err error, viewer string) error {
 	}
 
 	switch {
+	// ErrSavedByOlderVersion (rpg-project#1036) without its detail: the
+	// session's sentence for a game it can no longer load. Asked ahead of the
+	// ErrInvalidWorld case below, as the detail type above is.
+	case errors.Is(err, sdk.ErrSavedByOlderVersion):
+		return status.Error(codes.FailedPrecondition, (&sdk.SavedByOlderVersionError{}).Error())
+
 	// FAILED_PRECONDITION, AHEAD OF EVERY OTHER CASE (rpg-project#879 S5): a
 	// stored world names a compiled site that neither this process's site
 	// provider nor the stored site pieces hold. The SDK wraps it beside
