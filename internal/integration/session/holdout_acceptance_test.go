@@ -481,6 +481,16 @@ func TestAcceptance_TheLetterCarriedToTheChiefTurnsTheCamp(t *testing.T) {
 	fightEnded := holdoutActIndex(entries, holdoutIsClock(storypb.ClockMark_CLOCK_MARK_FIGHT_DISSOLVED))
 	endedAt := holdoutActIndex(entries, holdoutIsClock(storypb.ClockMark_CLOCK_MARK_ENDED))
 	require.NotEqual(t, -1, fightStarted, "a fight formed")
+	fight := entries[fightStarted].GetClock().GetFight()
+	require.Len(t, fight.GetRolls(), len(fight.GetOrder()), "every member's initiative roll rides the fight forming")
+	for i, r := range fight.GetRolls() {
+		require.Equal(t, fight.GetOrder()[i].GetId(), r.GetMember().GetId(), "the rolls follow the order")
+		require.Len(t, r.GetRoll().GetDice(), 1, "initiative is one d20")
+		require.GreaterOrEqual(t, r.GetRoll().GetDice()[0], int32(1))
+		require.LessOrEqual(t, r.GetRoll().GetDice()[0], int32(20))
+		require.NotEmpty(t, r.GetRoll().GetTerms())
+		require.Equal(t, "Initiative", r.GetRoll().GetTerms()[0].GetSourceName())
+	}
 	require.NotEqual(t, -1, stanceChanged, "the camp turned")
 	require.Less(t, fightStarted, arrivedAt, "mid-fight: the letter arrived while the fight was on")
 	require.Less(t, arrivedAt, held, "and was picked up after it arrived")
