@@ -1915,8 +1915,8 @@ room:
         options:
           # Hand edit (rpg-project#990), a small proof scene for the Keep's
           # hold: shoulder past the hall guard on his rounds. Fail, and he
-          # takes hold of the speaker, who is held where they stand; slip
-          # past, and he only grumbles.
+          # takes hold of everyone on the speaker's side he can see, who are
+          # held where they stand; slip past, and he only grumbles.
           - id: push-past
             say: (shoulder past him)
             check:
@@ -1925,8 +1925,8 @@ room:
             success:
               - say: Oi! Mind where you’re going.
             failure:
-              - say: Not so fast. You stay right there.
-                apply_status: held
+              - say: Not so fast. All of you, stay right there.
+                apply_status: { status: held, to: party_in_sight }
         behaviors:
           - id: policy
             use: hall-1-policy
@@ -2114,7 +2114,7 @@ room:
                 fact: caught-in-kitchen
             success:
               - say: Bless you. Here, eat.
-                apply_status: warmed-up
+                apply_status: { status: warmed-up, to: speaker }
             failure:
               - say: Mind the pastry! Out from under my feet.
           # Hand edit (rpg-project#1024): taste the feast. No check: she lets
@@ -2127,7 +2127,7 @@ room:
                 fact: caught-in-kitchen
             success:
               - say: Go on, then. One plate, mind.
-                apply_status: feasted
+                apply_status: { status: feasted, to: speaker }
       keep-1:
         faction: loyalists
         behaviors:

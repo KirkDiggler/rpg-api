@@ -159,16 +159,24 @@ func (s *MachineWordsSuite) TestOverGRPC() {
 	s.True(n.GetOptional(), "the count may be left out (encounter v0.225.0)")
 	s.Equal("0", n.GetDefaultValue(), "and leaving it out means none")
 
-	var spokenTo *authoringpb.MachineWhoWord
+	var spokenTo, receiver *authoringpb.MachineWhoWord
 	for _, w := range resp.GetWhoWords() {
-		if w.GetWord() == "spoken_to" {
+		if w.GetWord() != "spoken_to" {
+			continue
+		}
+		switch w.GetAllowedIn() {
+		case "give.to":
 			spokenTo = w
+		case "apply_status.to":
+			receiver = w
 		}
 	}
 	s.Require().NotNil(spokenTo, "the who-words cross the wire")
 	s.Equal("taker", spokenTo.GetPlays())
 	s.Equal("give.to", spokenTo.GetAllowedIn())
 	s.Equal("judgement", spokenTo.GetWay())
+	s.Require().NotNil(receiver, "spoken_to is also a who-word of apply_status.to")
+	s.Equal("receiver", receiver.GetPlays())
 
 	set := findWord(resp.GetActs(), "set")
 	s.Require().NotNil(set)

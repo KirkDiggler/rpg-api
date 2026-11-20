@@ -77,6 +77,16 @@ func StatusErrorFor(err error, viewer string) error {
 		return status.Error(codes.FailedPrecondition, stuck.Error())
 	}
 
+	// SAVED BY AN OLDER VERSION (rpg-project#1036): a stored game the engine
+	// refuses because an older version wrote it. Its sentence tells the
+	// player what happened and what to do, and is the whole message. The type
+	// also matches ErrInvalidWorld, so it is asked before that case below or
+	// the player would be told their request was malformed.
+	var old *sdk.SavedByOlderVersionError
+	if errors.As(err, &old) {
+		return status.Error(codes.FailedPrecondition, old.Error())
+	}
+
 	// SOMETHING DONE TO A THING, REFUSED (rpg-project#959): the session words
 	// the refusal for the player (ThingRefusal.Sentence) and keeps the
 	// sentinel it stands for. The sentence is the whole message, with no verb

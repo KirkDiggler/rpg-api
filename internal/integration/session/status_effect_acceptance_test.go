@@ -80,12 +80,12 @@ func kitchenRewards(t *testing.T) []byte {
             say: (lend a hand with the pies)
             success:
               - say: Bless you. Here, eat.
-                apply_status: warmed-up
+                apply_status: { status: warmed-up, to: speaker }
           - id: taste
             say: (taste the feast)
             success:
               - say: Go on, then. One plate, mind.
-                apply_status: feasted
+                apply_status: { status: feasted, to: speaker }
 `)
 }
 
