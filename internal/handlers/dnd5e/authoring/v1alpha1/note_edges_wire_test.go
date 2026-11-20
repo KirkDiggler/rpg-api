@@ -53,19 +53,31 @@ func (s *ReadBackWireSuite) TestPutDungeon_ValidateOnly_TracesOneNote() {
 	s.Require().Empty(resp.GetErrors())
 	rb := resp.GetReadBack()
 
-	// The vouch line's give at gate-1: about the party it sees; the one
-	// spoken to takes it by judgement, the other carriers by hearing it.
-	vouch := edgesAt(rb, "room.room.monsterBindings.gate-1.options[0].success[0].give", "line.grant")
+	// The vouch line's give, written once in the conversation the two gate
+	// guards carry (rpg-project#1025): about the party it sees, noted by
+	// whoever witnessed it, having heard.
+	//
+	// A GAP, NOT A RULING: the copy at gate-1 also said that the one spoken
+	// to takes it by judgement (gate-1 `may-note` judgement). Said once at
+	// the conversation's path, the read-back (encounter v0.232.0) names only
+	// the hearers; the compiled castle is unchanged. The judgement shape is
+	// asserted on the gate's own outcome below until the engine says it here.
+	vouch := edgesAt(rb, "conversations.past-the-gate.lines[0].success[0].give", "line.grant")
 	s.True(anyHolds(vouch,
 		edge{"topic", "admitted", "grants", "", ""},
 		edge{"who", "party_in_sight", "about", "", "admitted"},
-		edge{"who", "spoken_to", "takes", "judgement", "admitted"},
 		edge{"who", "carriers_who_witnessed", "takes", "heard", "admitted"},
-		edge{"creature", "gate-1", "may-note", "judgement", "admitted"},
+		edge{"creature", "gate-1", "may-note", "heard", "admitted"},
 		edge{"creature", "gate-2", "may-note", "heard", "admitted"},
 		edge{"creature", "captain", "may-note", "heard", "admitted"},
 		edge{"option", "vouch", "on", "said", ""},
 	), "the vouch give says whom, who may note it and how: %v", vouch)
+	s.True(anyHolds(edgesAt(rb, "interactions.front-gate.outcomes.admitted[0].give", "conversation.outcome"),
+		edge{"who", "spoken_to", "takes", "judgement", "admitted"},
+		edge{"who", "carriers_who_witnessed", "takes", "heard", "admitted"},
+		edge{"creature", "gate-1", "may-note", "judgement", "admitted"},
+		edge{"creature", "gate-2", "may-note", "heard", "admitted"},
+	), "the gate's admission: the one spoken to judges, the witnesses hear")
 
 	// The captain's two steps: one reads a note about anyone, one about
 	// the one the beat names.

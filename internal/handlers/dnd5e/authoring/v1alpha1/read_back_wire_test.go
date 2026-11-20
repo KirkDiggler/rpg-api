@@ -164,17 +164,23 @@ func (s *ReadBackWireSuite) TestPutDungeon_ValidateOnly_CarriesReadBack() {
 
 	// The fold is the one-thing fold (rpg-project#980): the studio shows one
 	// thing at a time, so no creature points at another's lines, the
-	// captain's own lines are said under him, and how far a loudness carries
-	// is said once per creature, never on each answer.
-	troupe := false
+	// captain's lines are named under him — `troupe` through the conversation
+	// `the-gate` he carries, its lines said once under that conversation
+	// (rpg-project#1025) — and how far a loudness carries is said once per
+	// creature, never on each answer.
+	troupe, troupeWritten := false, false
 	walkFolded(rb.GetFolded(), func(it *authoringpb.ReadBackFoldedItem) {
 		s.NotContains(it.GetText(), "has the same", "a folded item points at another thing's lines")
 		if strings.Contains(it.GetText(), "words reach everyone") {
 			s.True(strings.HasPrefix(it.GetText(), "At `"),
 				"only a loudness item explains what words reach: %q", it.GetText())
 		}
-		if strings.Contains(it.GetText(), "(`troupe`)") && carriesUnder(it, captainBindings) {
+		if strings.Contains(it.GetText(), "conversation `the-gate`") &&
+			strings.Contains(it.GetText(), "`troupe`") && carriesUnder(it, captainBindings) {
 			troupe = true
+		}
+		if strings.Contains(it.GetText(), "(`troupe`)") && carriesUnder(it, theGateLines) {
+			troupeWritten = true
 		}
 		said := map[string]bool{}
 		for _, child := range it.GetItems() {
@@ -186,7 +192,8 @@ func (s *ReadBackWireSuite) TestPutDungeon_ValidateOnly_CarriesReadBack() {
 			said[loud] = true
 		}
 	})
-	s.True(troupe, "the captain's `troupe` line is said under him")
+	s.True(troupe, "the captain's `troupe` line is named under him, through `the-gate`")
+	s.True(troupeWritten, "the `troupe` line is said under the conversation that writes it")
 
 	s.waysOnTheWire(rb, all)
 	s.hubsOnTheWire(rb, all)
@@ -413,6 +420,10 @@ func (s *ReadBackWireSuite) kindsAbout(rb *authoringpb.ReadBack, aboutKind, id, 
 
 // captainBindings is where the castle sets the guard captain's own lines.
 const captainBindings = "room.room.monsterBindings.captain."
+
+// theGateLines is where the castle writes the gate's shared lines once
+// (rpg-project#1025).
+const theGateLines = "conversations.the-gate.lines"
 
 // walkFolded calls fn on every folded item at every depth.
 func walkFolded(secs []*authoringpb.ReadBackFoldedSection, fn func(*authoringpb.ReadBackFoldedItem)) {
