@@ -1004,6 +1004,9 @@ func clockToProto(b sdk.ClockEntry) (*sessionpb.ClockEntry, error) {
 	}
 	if f := b.Fight; f != nil {
 		out.Fight = &sessionpb.FightFormed{Order: p.many(f.Order), Surprised: p.many(f.Surprised)}
+		for _, r := range f.Rolls {
+			out.Fight.Rolls = append(out.Fight.Rolls, &sessionpb.InitiativeRoll{Member: p.one(r.Member), Roll: p.roll(r.Roll)})
+		}
 	}
 	if d := b.Dissolved; d != nil {
 		out.Dissolved = &sessionpb.FightDissolved{Members: p.many(d.Members), Cause: d.Cause}
