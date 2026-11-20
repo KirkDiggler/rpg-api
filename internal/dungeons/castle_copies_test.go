@@ -9,7 +9,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons/dungeonstest"
 )
@@ -21,9 +22,15 @@ const encounterModule = "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/enco
 // TestCastleCopiesAgree is THE QA CASTLE, ONE CASTLE (rpg-project#639): the
 // shipped the-mad-king and the toolkit's castle — the copy the toolkit's
 // `TestMadKingScript*` route tests play, read from the encounter module this
-// one pins — are the same document apart from comments. A content change
-// lands in the toolkit's copy first, under its tests, and is copied here; a
-// shipped file that drifts from what was tested fails here.
+// one pins — are the same castle. A content change lands in the toolkit's copy
+// first, under its tests, and is copied here; a shipped file that drifts from
+// what was tested fails here.
+//
+// SAME CASTLE MEANS SAME COMPILED CASTLE, content hash and all
+// (rpg-project#1025). The shipped file writes the lines several creatures say
+// alike once, under `conversations:`, where the toolkit's copy writes each
+// carrier's copy out; both compile to the same world, so the documents are
+// compared as the engine runs them, not as they are written.
 func TestCastleCopiesAgree(t *testing.T) {
 	out, err := exec.CommandContext(context.Background(), "go", "list", "-m", "-f", "{{.Dir}}", encounterModule).Output()
 	require.NoError(t, err, "the encounter module is pinned")
@@ -33,10 +40,14 @@ func TestCastleCopiesAgree(t *testing.T) {
 	shipped, err := os.ReadFile(filepath.Join(dungeonstest.ContentDir(t), "the-mad-king.yaml"))
 	require.NoError(t, err)
 
-	// Decoded, so the comments — which differ, because the toolkit's name its
-	// own tests — are not compared and every value is.
-	var want, got any
-	require.NoError(t, yaml.Unmarshal(toolkit, &want))
-	require.NoError(t, yaml.Unmarshal(shipped, &got))
-	require.Equal(t, want, got, "content/the-mad-king.yaml is the toolkit's castle apart from comments")
+	want, err := dungeonspec.Load(toolkit)
+	require.NoError(t, err, "the toolkit's castle compiles")
+	got, err := dungeonspec.Load(shipped)
+	require.NoError(t, err, "content/the-mad-king.yaml compiles")
+	require.Equal(t, want, got, "content/the-mad-king.yaml compiles to the toolkit's castle")
+	wantHash, err := want.ContentHash()
+	require.NoError(t, err)
+	gotHash, err := got.ContentHash()
+	require.NoError(t, err)
+	require.Equal(t, wantHash, gotHash, "content/the-mad-king.yaml has the toolkit's castle's content hash")
 }

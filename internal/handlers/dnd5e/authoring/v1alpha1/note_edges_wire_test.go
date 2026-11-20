@@ -53,19 +53,24 @@ func (s *ReadBackWireSuite) TestPutDungeon_ValidateOnly_TracesOneNote() {
 	s.Require().Empty(resp.GetErrors())
 	rb := resp.GetReadBack()
 
-	// The vouch line's give at gate-1: about the party it sees; the one
-	// spoken to takes it by judgement, the other carriers by hearing it.
-	vouch := edgesAt(rb, "room.room.monsterBindings.gate-1.options[0].success[0].give", "line.grant")
-	s.True(anyHolds(vouch,
-		edge{"topic", "admitted", "grants", "", ""},
-		edge{"who", "party_in_sight", "about", "", "admitted"},
-		edge{"who", "spoken_to", "takes", "judgement", "admitted"},
-		edge{"who", "carriers_who_witnessed", "takes", "heard", "admitted"},
-		edge{"creature", "gate-1", "may-note", "judgement", "admitted"},
-		edge{"creature", "gate-2", "may-note", "heard", "admitted"},
-		edge{"creature", "captain", "may-note", "heard", "admitted"},
-		edge{"option", "vouch", "on", "said", ""},
-	), "the vouch give says whom, who may note it and how: %v", vouch)
+	// The vouch line's give, written once in the conversation `past-the-gate`
+	// that gate-1 and gate-2 carry (rpg-project#1025): about the party it
+	// sees; the guard it is said to takes it by judgement, the other
+	// carriers by hearing it. Each carrier's copy said so at its own path;
+	// written once, the conversation's path says it for each carrier.
+	vouch := edgesAt(rb, "conversations.past-the-gate.lines[0].success[0].give", "line.grant")
+	for _, judged := range []struct{ by, heard string }{{"gate-1", "gate-2"}, {"gate-2", "gate-1"}} {
+		s.True(anyHolds(vouch,
+			edge{"topic", "admitted", "grants", "", ""},
+			edge{"who", "party_in_sight", "about", "", "admitted"},
+			edge{"who", "spoken_to", "takes", "judgement", "admitted"},
+			edge{"who", "carriers_who_witnessed", "takes", "heard", "admitted"},
+			edge{"creature", judged.by, "may-note", "judgement", "admitted"},
+			edge{"creature", judged.heard, "may-note", "heard", "admitted"},
+			edge{"creature", "captain", "may-note", "heard", "admitted"},
+			edge{"option", "vouch", "on", "said", ""},
+		), "the vouch give said to %s says whom, who may note it and how: %v", judged.by, vouch)
+	}
 
 	// The captain's two steps: one reads a note about anyone, one about
 	// the one the beat names.
