@@ -289,6 +289,7 @@ func sentinelCases() []sentinelCase {
 		{"ErrLineReserved", sdk.ErrLineReserved, codes.FailedPrecondition},
 		{"ErrSharingNotBuilt", sdk.ErrSharingNotBuilt, codes.FailedPrecondition},
 		{"ErrInCustody", sdk.ErrInCustody, codes.FailedPrecondition},
+		{"ErrCannotMove", sdk.ErrCannotMove, codes.FailedPrecondition},
 		{"ErrJailRefused", sdk.ErrJailRefused, codes.FailedPrecondition},
 		{"ErrNoRoom", sdk.ErrNoRoom, codes.FailedPrecondition},
 		{"ErrStaleOption", sdk.ErrStaleOption, codes.Aborted},
@@ -517,6 +518,9 @@ func TestStatusError_CustodyRefusalsAreTheSentenceAlone(t *testing.T) {
 		{"the cells refuse, by the alias", "alice", "There is no room for you there now.", fmt.Errorf("speak: %w", sdk.ErrJailRefused)},
 		{"a move imposed on yourself", "alice", "The guards hold you; you cannot be moved.", fmt.Errorf("cast: %w", &sdk.CustodyMoveError{Member: "alice"})},
 		{"a move imposed on another", "bob", "The guards hold alice; they cannot be moved.", fmt.Errorf("attack: %w", &sdk.CustodyMoveError{Member: "alice"})},
+		// HELD BY AN EFFECT (rpg-project#990): the hold's own sentence, naming it.
+		{"held by a status", "alice", "You are Held; you cannot move.", fmt.Errorf("move: %w", &sdk.CannotMoveError{Member: "alice", HeldBy: []string{"Held"}})},
+		{"held, the bare sentinel", "alice", "You cannot move.", fmt.Errorf("move: %w", sdk.ErrCannotMove)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			st, ok := status.FromError(StatusErrorFor(tc.err, tc.viewer))

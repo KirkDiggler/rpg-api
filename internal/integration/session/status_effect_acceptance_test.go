@@ -50,11 +50,10 @@ func rowsNamed(view *characterpb.GetCharacterDataResponse, name string) int {
 	return rows
 }
 
-// kitchenRewards is the castle kitchen with the castle's own `statuses:`
-// section, read from the-mad-king.yaml, and the castle's two lines on its
-// first cook that give them: help (warmed-up) and taste (feasted), both
-// plain here so no die decides them.
-func kitchenRewards(t *testing.T) []byte {
+// kitchenWithCookLines is the castle kitchen with the castle's own
+// `statuses:` section, read from the-mad-king.yaml, and lines (the YAML of an
+// `options:` list, at its indent) on its first cook.
+func kitchenWithCookLines(t *testing.T, lines string) []byte {
 	t.Helper()
 	castle := madKingRaw(t)
 	start := bytes.Index(castle, []byte("\nstatuses:\n"))
@@ -69,10 +68,15 @@ func kitchenRewards(t *testing.T) []byte {
 	raw = bytes.Replace(raw, room, append(append([]byte("\n"), statuses...), room[1:]...), 1)
 	cook := []byte("      cook-1: {faction: kitchen}\n")
 	require.Equal(t, 1, bytes.Count(raw, cook))
-	return bytes.Replace(raw, cook, []byte(`      cook-1:
-        faction: kitchen
-        options:
-          - id: help
+	return bytes.Replace(raw, cook, []byte("      cook-1:\n        faction: kitchen\n        options:\n"+lines), 1)
+}
+
+// kitchenRewards is the kitchen with the castle's two lines that give its
+// rewards: help (warmed-up) and taste (feasted), both plain here so no die
+// decides them.
+func kitchenRewards(t *testing.T) []byte {
+	t.Helper()
+	return kitchenWithCookLines(t, `          - id: help
             say: (lend a hand with the pies)
             success:
               - say: Bless you. Here, eat.
@@ -82,7 +86,7 @@ func kitchenRewards(t *testing.T) []byte {
             success:
               - say: Go on, then. One plate, mind.
                 apply_status: feasted
-`), 1)
+`)
 }
 
 // TestAcceptance_TheKitchensRewardsLandOnAlicesSheet is rpg-project#1024
