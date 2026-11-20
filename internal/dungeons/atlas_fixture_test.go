@@ -84,6 +84,13 @@ import (
 // the one `grate` entry. Nothing else in the castle's atlas moved, and the
 // other files answer their fixtures unchanged.
 //
+// the-mad-king.atlas.json was recaptured at rpg-toolkit encounter v0.230.0
+// (rpg-project#1023, the rightful king in the cells): the castle places the
+// concealed drain at the back of the cell, so `placed` and
+// `prop_presentations` each gain the one `cell-drain` entry. Nothing else in
+// the castle's atlas moved, and the other files answer their fixtures
+// unchanged.
+//
 // The courtyard ground fold (rpg-project#874) was captured using reviewed API
 // 2355058 with the new Studio-authored castle source. Only region-courtyard's
 // ground field changed; a structural comparison kept every other atlas fact.
