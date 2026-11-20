@@ -6,7 +6,7 @@ One line per entry. Every line ends with a link: a PR, an issue comment, a commi
 
 ## Shipped
 
-- The act stream's fight-formed entry carries each member's initiative roll; pins: session v0.204.0, encounter v0.237.0, dnd5e v0.224.0, wire format v0.1.285 — [PR_LINK](PR_URL).
+- The act stream's fight-formed entry carries each member's initiative roll; pins: session v0.204.0, encounter v0.237.0, dnd5e v0.224.0, wire format v0.1.285 — [rpg-api#1267](https://github.com/KirkDiggler/rpg-api/pull/1267).
 
 ## Decided
 
