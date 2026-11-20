@@ -26,9 +26,9 @@ func (s *StoresSuite) kitchenGivingAStatus(key, changeWord string) []byte {
 	end := bytes.Index(castle[start:], []byte("\nexits:\n"))
 	s.Require().Positive(end, "the statuses section ends at exits")
 	statuses := bytes.Clone(castle[start+1 : start+end+1])
-	good := []byte("      - advantage: checks\n")
-	s.Require().Equal(1, bytes.Count(statuses, good), "precondition: the castle's well-fed change is written once")
-	statuses = bytes.Replace(statuses, good, []byte("      - "+changeWord+": checks\n"), 1)
+	good := []byte("      - initiative: 1\n")
+	s.Require().Equal(1, bytes.Count(statuses, good), "precondition: the castle's warmed-up change is written once")
+	statuses = bytes.Replace(statuses, good, []byte("      - "+changeWord+": 1\n"), 1)
 
 	raw := s.file(key)
 	room := []byte("\nroom:\n")
@@ -43,14 +43,14 @@ func (s *StoresSuite) kitchenGivingAStatus(key, changeWord string) []byte {
             say: (lend a hand with the pies)
             success:
               - say: Bless you. Here, eat.
-                apply_status: well-fed
+                apply_status: warmed-up
 `), 1)
 }
 
 func (s *StoresSuite) TestPutRefusesAStatusTheRulesRefuseAndStoresNothing() {
 	r := s.registry(true)
 	good, err := r.Put(s.ctx, &dungeons.PutInput{
-		Caller: alice, Key: storeMyCastle, YAML: s.kitchenGivingAStatus(storeMyCastle, "advantage"), ValidateOnly: true,
+		Caller: alice, Key: storeMyCastle, YAML: s.kitchenGivingAStatus(storeMyCastle, "initiative"), ValidateOnly: true,
 	})
 	s.Require().NoError(err)
 	s.Require().Empty(good.Errors, "control: the castle's own status, given by a line, is taken")
@@ -60,7 +60,7 @@ func (s *StoresSuite) TestPutRefusesAStatusTheRulesRefuseAndStoresNothing() {
 		out, putErr := r.Put(s.ctx, &dungeons.PutInput{Caller: alice, Key: storeMyCastle, YAML: raw, ValidateOnly: validateOnly})
 		s.Require().NoErrorf(putErr, "validate-only %v: a refusal is an answer, not an error", validateOnly)
 		s.Require().Lenf(out.Errors, 1, "validate-only %v", validateOnly)
-		s.Equal("statuses.well-fed", out.Errors[0].Path, "at the author's place")
+		s.Equal("statuses.warmed-up", out.Errors[0].Path, "at the author's place")
 		s.Contains(out.Errors[0].Message, "changes[0].luckier", "the message names the place inside the status")
 		s.Nil(out.Entry)
 	}
@@ -69,9 +69,9 @@ func (s *StoresSuite) TestPutRefusesAStatusTheRulesRefuseAndStoresNothing() {
 }
 
 // TestTheShippedCastlesStatusPasses: the castle on the shelf, whose cook gives
-// well-fed, compiled through the same check (the shelf's own compile).
+// warmed-up and feasted, compiled through the same check (the shelf's own compile).
 func (s *StoresSuite) TestTheShippedCastlesStatusPasses() {
 	entry, err := s.registry(true).Get(s.ctx, alice, "the-mad-king")
 	s.Require().NoError(err)
-	s.Contains(string(entry.YAML), "apply_status: well-fed", "precondition: the castle gives the status")
+	s.Contains(string(entry.YAML), "apply_status: warmed-up", "precondition: the castle gives the status")
 }
