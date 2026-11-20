@@ -1079,6 +1079,9 @@ func TestShortfallReasonToProto(t *testing.T) {
 		{sdk.ShortfallWindowOpen, sessionpb.ShortfallReason_SHORTFALL_REASON_WINDOW_OPEN},
 		// A Speak row nobody in sight offers a line on (rpg-project#569).
 		{sdk.ShortfallNoOption, sessionpb.ShortfallReason_SHORTFALL_REASON_NO_OPTION},
+		// A Move a hold takes away (rpg-project#990): no wire value names it
+		// yet, so it is UNSPECIFIED, its sentence in the Shortfall's text.
+		{sdk.ShortfallHeld, sessionpb.ShortfallReason_SHORTFALL_REASON_UNSPECIFIED},
 		{sdk.ShortfallReason("bogus"), sessionpb.ShortfallReason_SHORTFALL_REASON_UNSPECIFIED},
 	}
 	for _, tt := range tests {

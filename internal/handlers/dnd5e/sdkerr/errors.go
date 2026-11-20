@@ -68,6 +68,15 @@ func StatusErrorFor(err error, viewer string) error {
 		return status.Error(codes.FailedPrecondition, custody.Sentence(viewer))
 	}
 
+	// HELD BY AN EFFECT (rpg-project#990): a member a status holds trying to
+	// move by their own will. The session's sentence names what holds them
+	// ("You are Held; you cannot move.") and is the whole message, with no
+	// verb prefix, as custody's is. The bare sentinel has its case below.
+	var stuck *sdk.CannotMoveError
+	if errors.As(err, &stuck) {
+		return status.Error(codes.FailedPrecondition, stuck.Error())
+	}
+
 	// SOMETHING DONE TO A THING, REFUSED (rpg-project#959): the session words
 	// the refusal for the player (ThingRefusal.Sentence) and keeps the
 	// sentinel it stands for. The sentence is the whole message, with no verb
@@ -560,6 +569,10 @@ func StatusErrorFor(err error, viewer string) error {
 	// whole message, without the verb's "move: " or "speak: ".
 	case errors.Is(err, sdk.ErrInCustody):
 		return status.Error(codes.FailedPrecondition, sdk.ErrInCustody.Error())
+	// ErrCannotMove (rpg-project#990) without its detail: the session's
+	// sentence for a hold it does not name.
+	case errors.Is(err, sdk.ErrCannotMove):
+		return status.Error(codes.FailedPrecondition, (&sdk.CannotMoveError{}).Error())
 	// ErrNoRoom (rpg-project#959): a line or a thing done that would set its
 	// doer down where nobody can stand now -- the cells full, a passage's far
 	// end crowded. ErrJailRefused is its alias, the arrest's name for it.

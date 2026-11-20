@@ -1553,6 +1553,13 @@ func shortfallReasonToProto(r sdk.ShortfallReason) sessionpb.ShortfallReason {
 		// much as on anybody else's. NOT NOT_YOUR_TURN, which would tell a
 		// player to wait for a clock that is not what is holding them.
 		return sessionpb.ShortfallReason_SHORTFALL_REASON_WINDOW_OPEN
+	case sdk.ShortfallHeld:
+		// A Move a hold takes away (rpg-project#990). The wire has no value
+		// for it yet (a protos change: SHORTFALL_REASON_HELD), so it goes out
+		// as UNSPECIFIED, the way a reason newer than the wire does; the
+		// Shortfall's text carries the player's sentence, "You are Held; you
+		// cannot move."
+		return sessionpb.ShortfallReason_SHORTFALL_REASON_UNSPECIFIED
 	default:
 		return sessionpb.ShortfallReason_SHORTFALL_REASON_UNSPECIFIED
 	}
