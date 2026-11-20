@@ -49,7 +49,7 @@ func TestAcceptance_AHeldCharacterCannotMoveAndAFightFreesThem(t *testing.T) {
               - say: Oi! Mind where you’re going.
             failure:
               - say: Not so fast. You stay right there.
-                apply_status: held
+                apply_status: { status: held, to: speaker }
 `))
 	require.NoError(t, err)
 	out := h.launch(t, run, dungeon.Spec, seatAt("alice", 0, 1))

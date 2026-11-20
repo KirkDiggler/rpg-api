@@ -290,6 +290,7 @@ func sentinelCases() []sentinelCase {
 		{"ErrSharingNotBuilt", sdk.ErrSharingNotBuilt, codes.FailedPrecondition},
 		{"ErrInCustody", sdk.ErrInCustody, codes.FailedPrecondition},
 		{"ErrCannotMove", sdk.ErrCannotMove, codes.FailedPrecondition},
+		{"ErrSavedByOlderVersion", sdk.ErrSavedByOlderVersion, codes.FailedPrecondition},
 		{"ErrJailRefused", sdk.ErrJailRefused, codes.FailedPrecondition},
 		{"ErrNoRoom", sdk.ErrNoRoom, codes.FailedPrecondition},
 		{"ErrStaleOption", sdk.ErrStaleOption, codes.Aborted},
@@ -521,6 +522,9 @@ func TestStatusError_CustodyRefusalsAreTheSentenceAlone(t *testing.T) {
 		// HELD BY AN EFFECT (rpg-project#990): the hold's own sentence, naming it.
 		{"held by a status", "alice", "You are Held; you cannot move.", fmt.Errorf("move: %w", &sdk.CannotMoveError{Member: "alice", HeldBy: []string{"Held"}})},
 		{"held, the bare sentinel", "alice", "You cannot move.", fmt.Errorf("move: %w", sdk.ErrCannotMove)},
+		// SAVED BY AN OLDER VERSION (rpg-project#1036): the one plain sentence.
+		{"saved by an older version, the bare sentinel", "alice", "This game was saved by an older version of the game and can no longer be loaded. Start a new game.", fmt.Errorf("where: %w", sdk.ErrSavedByOlderVersion)},
+		{"saved by an older version", "alice", "This game was saved by an older version of the game and can no longer be loaded. Start a new game.", fmt.Errorf("where: %w", &sdk.SavedByOlderVersionError{Why: "no status receiver"})},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			st, ok := status.FromError(StatusErrorFor(tc.err, tc.viewer))
@@ -529,6 +533,15 @@ func TestStatusError_CustodyRefusalsAreTheSentenceAlone(t *testing.T) {
 			require.Equal(t, tc.want, st.Message())
 		})
 	}
+}
+
+// TestStatusError_PlainInvalidWorldStaysInvalidArgument pins that the older-
+// version case ahead of it does not take every broken world: a plain
+// ErrInvalidWorld still maps to INVALID_ARGUMENT.
+func TestStatusError_PlainInvalidWorldStaysInvalidArgument(t *testing.T) {
+	st, ok := status.FromError(StatusErrorFor(fmt.Errorf("load: %w", sdk.ErrInvalidWorld), "alice"))
+	require.True(t, ok)
+	require.Equal(t, codes.InvalidArgument, st.Code())
 }
 
 // TestStatusError_AThingRefusedIsItsSentenceWithItsSentinelsCode pins

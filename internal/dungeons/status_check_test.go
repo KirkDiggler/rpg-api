@@ -43,7 +43,7 @@ func (s *StoresSuite) kitchenGivingAStatus(key, changeWord string) []byte {
             say: (lend a hand with the pies)
             success:
               - say: Bless you. Here, eat.
-                apply_status: warmed-up
+                apply_status: { status: warmed-up, to: speaker }
 `), 1)
 }
 
@@ -73,5 +73,5 @@ func (s *StoresSuite) TestPutRefusesAStatusTheRulesRefuseAndStoresNothing() {
 func (s *StoresSuite) TestTheShippedCastlesStatusPasses() {
 	entry, err := s.registry(true).Get(s.ctx, alice, "the-mad-king")
 	s.Require().NoError(err)
-	s.Contains(string(entry.YAML), "apply_status: warmed-up", "precondition: the castle gives the status")
+	s.Contains(string(entry.YAML), "apply_status: { status: warmed-up, to: speaker }", "precondition: the castle gives the status")
 }
