@@ -51,7 +51,7 @@ func GameMethodPermission(method string) (Permissions, bool) {
 	case "dnd5e.api.session.v1alpha1.SessionService":
 		switch name {
 		case "Join", "Exit", "Move", "Attack", "DeathSave", "OpenDoor", "CloseDoor", "Unlock", "Search", "SetDiscoverySharing", "SetSneaking", "Interact",
-			"Trade", "Unpack", "Loot", "Hold", "Turn", "Rest",
+			"Trade", "Unpack", "Loot", "Hold", "Turn", "Rest", "Wait",
 			"Afford", "Activate", "Cast", "React", "Speak", "Intimidate", "Persuade", "EndTurn", "Dissolve", "End", "GetStatus", "GetView",
 			"GetWhere", "GetAtlas", "GetRoster", "GetDoors", "GetKnowledge", "GetSeat":
 			return PermissionPlay, true
