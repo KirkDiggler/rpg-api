@@ -77,6 +77,12 @@ func (s *PolicySuite) TestCloseDoorRequiresPlayPermission() {
 	s.Equal(auth.PermissionPlay, permission)
 }
 
+func (s *PolicySuite) TestWaitRequiresPlayPermission() {
+	permission, known := auth.GameMethodPermission(sessionpb.SessionService_Wait_FullMethodName)
+	s.Require().True(known)
+	s.Equal(auth.PermissionPlay, permission)
+}
+
 func (s *PolicySuite) TestWritesRequireBuildAndRenderingReadsRequirePlay() {
 	for method, want := range map[string]auth.Permissions{
 		"/api.composition.v1alpha1.CompositionService/CreateComposition": auth.PermissionBuild,

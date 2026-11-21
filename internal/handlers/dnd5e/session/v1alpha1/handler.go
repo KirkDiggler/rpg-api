@@ -54,6 +54,7 @@ type Manager interface {
 	SetSneaking(ctx context.Context, in *sdk.SetSneakingInput) (*sdk.SetSneakingOutput, error)
 	Interact(ctx context.Context, in *sdk.InteractInput) (*sdk.InteractOutput, error)
 	Loot(ctx context.Context, in *sdk.LootInput) (*sdk.LootOutput, error)
+	Wait(ctx context.Context, in *sdk.WaitInput) (*sdk.WaitOutput, error)
 	Hold(ctx context.Context, in *sdk.HoldInput) (*sdk.HoldOutput, error)
 	Trade(ctx context.Context, in *sdk.TradeInput) (*sdk.TradeOutput, error)
 	Unpack(ctx context.Context, in *sdk.UnpackInput) (*sdk.UnpackOutput, error)
