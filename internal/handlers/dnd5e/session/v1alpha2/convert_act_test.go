@@ -945,3 +945,30 @@ func (s *ConvertActSuite) TestClockToProto_AFightWithNoRollsCarriesNone() {
 	s.Len(got.GetFight().GetOrder(), 2)
 	s.Empty(got.GetFight().GetRolls())
 }
+
+func (s *ConvertActSuite) TestClockToProto_AFightJoinCarriesItsRoll() {
+	got, err := clockToProto(sdk.ClockEntry{Mark: sdk.ClockFightJoined, Joined: &sdk.FightJoined{
+		Member: alice, Roll: &sdk.InitiativeRoll{Member: alice, Roll: d20}, Round: 3, FirstRound: 4,
+	}})
+	s.Require().NoError(err)
+	s.Equal(sessionpb.ClockMark_CLOCK_MARK_FIGHT_JOINED, got.GetMark())
+	j := got.GetFightJoined()
+	s.Require().NotNil(j)
+	s.Equal(aliceP.GetId(), j.GetMember().GetId())
+	s.Equal(aliceP.GetKind(), j.GetMember().GetKind())
+	s.Equal(int32(3), j.GetRound())
+	s.Equal(int32(4), j.GetFirstRound())
+	s.Require().NotNil(j.GetRoll())
+	s.Equal(aliceP.GetId(), j.GetRoll().GetMember().GetId())
+	s.Equal(d20P, j.GetRoll().GetRoll())
+}
+
+func (s *ConvertActSuite) TestClockToProto_APlacedFightJoinCarriesNoRoll() {
+	got, err := clockToProto(sdk.ClockEntry{Mark: sdk.ClockFightJoined, Joined: &sdk.FightJoined{Member: alice, Round: 3, FirstRound: 4}})
+	s.Require().NoError(err)
+	j := got.GetFightJoined()
+	s.Require().NotNil(j)
+	s.Nil(j.GetRoll())
+	s.Equal(int32(3), j.GetRound())
+	s.Equal(int32(4), j.GetFirstRound())
+}

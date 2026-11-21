@@ -269,6 +269,7 @@ var clockMarkToProto = map[sdk.ClockMark]sessionpb.ClockMark{
 	sdk.ClockTick:             sessionpb.ClockMark_CLOCK_MARK_TICK,
 	sdk.ClockTurnEnded:        sessionpb.ClockMark_CLOCK_MARK_TURN_ENDED,
 	sdk.ClockFightFormed:      sessionpb.ClockMark_CLOCK_MARK_FIGHT_FORMED,
+	sdk.ClockFightJoined:      sessionpb.ClockMark_CLOCK_MARK_FIGHT_JOINED,
 	sdk.ClockFightDissolved:   sessionpb.ClockMark_CLOCK_MARK_FIGHT_DISSOLVED,
 	sdk.ClockJoined:           sessionpb.ClockMark_CLOCK_MARK_JOINED,
 	sdk.ClockExited:           sessionpb.ClockMark_CLOCK_MARK_EXITED,
@@ -1006,6 +1007,16 @@ func clockToProto(b sdk.ClockEntry) (*sessionpb.ClockEntry, error) {
 		out.Fight = &sessionpb.FightFormed{Order: p.many(f.Order), Surprised: p.many(f.Surprised)}
 		for _, r := range f.Rolls {
 			out.Fight.Rolls = append(out.Fight.Rolls, &sessionpb.InitiativeRoll{Member: p.one(r.Member), Roll: p.roll(r.Roll)})
+		}
+	}
+	if j := b.Joined; j != nil {
+		out.FightJoined = &sessionpb.FightJoined{
+			Member:     p.one(j.Member),
+			Round:      int32(j.Round),      //nolint:gosec // a round count is small
+			FirstRound: int32(j.FirstRound), //nolint:gosec // a round count is small
+		}
+		if j.Roll != nil {
+			out.FightJoined.Roll = &sessionpb.InitiativeRoll{Member: p.one(j.Roll.Member), Roll: p.roll(j.Roll.Roll)}
 		}
 	}
 	if d := b.Dissolved; d != nil {
