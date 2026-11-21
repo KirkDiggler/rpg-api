@@ -9,6 +9,7 @@ package authoring
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"runtime/debug"
@@ -18,6 +19,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/scenarios"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/status"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/weapons"
 
 	"github.com/KirkDiggler/rpg-api/internal/dungeons"
@@ -392,6 +394,80 @@ func (o *Orchestrator) GetMachineWords(_ context.Context, in *GetMachineWordsInp
 	}
 
 	return &GetMachineWordsOutput{Words: encounter.MachineWords(), EncounterVersion: moduleVersion(encounterModule)}, nil
+}
+
+// rulebookModule is the engine module whose status words GetStatusWords
+// reports, as the binary's build info names it.
+const rulebookModule = "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e"
+
+// GetStatusWordsInput asks for the engine's status words. No fields, for
+// GetMachineWordsInput's reason.
+type GetStatusWordsInput struct{}
+
+// GetStatusWordsOutput is the engine's published status-words table, handed
+// through as the toolkit's own type, and the rulebook release the binary was
+// built with.
+type GetStatusWordsOutput struct {
+	// Words is status.Words(): every word an author may write in a status.
+	Words []status.Word
+
+	// RulebookVersion is the rulebooks/dnd5e module's version from the
+	// binary's build info; empty when the build info does not say.
+	RulebookVersion string
+}
+
+// GetStatusWords reports the status words of the engine this binary runs
+// (rpg-project#1036, #1097), for the studio's status form.
+//
+// UNGATED, for GetMachineWords' reason: it reads a table compiled into the
+// binary and mutates nothing.
+func (o *Orchestrator) GetStatusWords(_ context.Context, in *GetStatusWordsInput) (*GetStatusWordsOutput, error) {
+	if in == nil {
+		return nil, errors.New("authoring orchestrator: GetStatusWordsInput is required")
+	}
+
+	return &GetStatusWordsOutput{
+		Words:           status.Words(&status.WordsInput{}).Words,
+		RulebookVersion: moduleVersion(rulebookModule),
+	}, nil
+}
+
+// SayStatusInput is one status as the author wrote it.
+type SayStatusInput struct {
+	// ID is the status's key in the document; may be empty.
+	ID string
+
+	// Status is the status as JSON, handed to the rules untouched.
+	Status json.RawMessage
+}
+
+// SayStatusOutput is the status said, or the rules' refusal of it. Exactly
+// one is set.
+type SayStatusOutput struct {
+	// Said is the sentence and its parts; nil when the rules refused.
+	Said *status.SayOutput
+
+	// Refusal is the rules' own refusal; nil when the status was said.
+	Refusal *status.Refusal
+}
+
+// SayStatus says a status with the rules' labels (status.Say). A refusal is
+// part of the answer; any other error fails closed and is returned.
+func (o *Orchestrator) SayStatus(_ context.Context, in *SayStatusInput) (*SayStatusOutput, error) {
+	if in == nil {
+		return nil, errors.New("authoring orchestrator: SayStatusInput is required")
+	}
+
+	said, err := status.Say(&status.SayInput{ID: in.ID, Status: in.Status})
+	if err != nil {
+		var refusal *status.Refusal
+		if errors.As(err, &refusal) {
+			return &SayStatusOutput{Refusal: refusal}, nil
+		}
+		return nil, err
+	}
+
+	return &SayStatusOutput{Said: said}, nil
 }
 
 // moduleVersion is the version of the dependency path as the binary's build

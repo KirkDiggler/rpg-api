@@ -58,6 +58,17 @@ func (s *PolicySuite) TestEveryGameRPCIsExplicitlyClassified() {
 	}
 }
 
+func (s *PolicySuite) TestStatusWordsRequireBuildPermission() {
+	for _, method := range []string{
+		"/dnd5e.api.authoring.v1alpha1.AuthoringService/GetStatusWords",
+		"/dnd5e.api.authoring.v1alpha1.AuthoringService/SayStatus",
+	} {
+		permission, known := auth.GameMethodPermission(method)
+		s.True(known, method)
+		s.Equal(auth.PermissionBuild, permission, method)
+	}
+}
+
 func (s *PolicySuite) TestTheActStreamAndTheRecordRequirePlayPermission() {
 	for _, method := range []string{
 		"/dnd5e.api.session.v1alpha2.StoryService/StreamEvents",
