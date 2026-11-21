@@ -243,6 +243,22 @@ needs it false, and where it sits in the step's `when`.
 against the Go types by reflection, so a field the engine adds and this api
 does not copy fails there.
 
+## The status words (`GetStatusWords`, `SayStatus`, rpg-project#1097)
+
+`GetStatusWords` hands the studio every word an author may write in a status
+effect, as the rules this binary was built with publish them
+(`status.Words()`): where each is written, what it takes, its closed values,
+bounds and labels. `SayStatus` says one whole status in a sentence built from
+those labels (`status.Say()`), one part per row. The handlers
+(`get_status_words.go`, `say_status.go`) copy field for field and word
+nothing; `status_json` goes to the rules untouched. A refusal is one
+`FieldError{path, message}` carrying the rules' `Path` and `Says` exactly, so
+a refusal about the whole status has an empty path. Any other failure is an
+RPC error, never an empty sentence. `rulebook_version` is the
+`rulebooks/dnd5e` module's version from the binary's build info. Both are a
+signed-in player's with the Build permission, like the machine words.
+`status_words_test.go` compares the response with the Go types by reflection.
+
 ## Transport rules (the proto's, enforced in the handler)
 
 - A request that cannot name its target — empty key, bad charset, key/file
