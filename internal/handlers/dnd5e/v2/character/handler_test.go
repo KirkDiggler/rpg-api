@@ -115,7 +115,7 @@ func (s *HandlerTestSuite) fighterCharacterEntity() *entities.Character {
 			Features: []json.RawMessage{
 				s.mustJSON(features.SecondWindData{
 					Ref: refs.Features.SecondWind(), ID: "second-wind", Name: "Second Wind",
-					CharacterID: s.testCharacterID, Uses: 1, MaxUses: 1,
+					CharacterID: s.testCharacterID,
 				}),
 				s.mustJSON(features.ActionSurgeData{
 					Ref: refs.Features.ActionSurge(), ID: "action-surge", Name: "Action Surge",
@@ -128,7 +128,8 @@ func (s *HandlerTestSuite) fighterCharacterEntity() *entities.Character {
 				}),
 			},
 			Resources: map[coreResources.ResourceKey]character.RecoverableResourceData{
-				resources.HitDice: {Current: 2, Maximum: 3, ResetType: coreResources.ResetLongRest},
+				resources.HitDice:    {Current: 2, Maximum: 3, ResetType: coreResources.ResetLongRest},
+				resources.SecondWind: {Current: 1, Maximum: 1, ResetType: coreResources.ResetShortRest},
 			},
 		},
 	}
