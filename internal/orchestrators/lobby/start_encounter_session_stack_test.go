@@ -815,10 +815,9 @@ func (s *SessionStackSuite) TestStartEncounter_FirstAdmissionPersistsCompleteLon
 		Current: 3, Maximum: 3, ResetType: coreResources.ResetLongRest,
 	}, gotFighter.Resources[dnd5eResources.SpellSlotLevel1])
 
-	var secondWind features.SecondWindData
-	s.Require().NoError(json.Unmarshal(effectWithRef(s.T(), gotFighter.Features, refs.Features.SecondWind()), &secondWind))
-	s.Equal(1, secondWind.Uses, "feature-owned Second Wind hears the normal rest event")
-	s.Equal(1, secondWind.MaxUses)
+	s.Equal(tkcharacter.RecoverableResourceData{
+		Current: 1, Maximum: 1, ResetType: coreResources.ResetShortRest,
+	}, gotFighter.Resources[dnd5eResources.SecondWind], "the shared Second Wind pool hears the normal rest")
 
 	var defense conditions.FightingStyleDefenseData
 	s.Require().NoError(json.Unmarshal(
@@ -864,7 +863,7 @@ func (s *SessionStackSuite) TestStartEncounter_FirstAdmissionPersistsCompleteLon
 func (s *SessionStackSuite) spentFighter(id, playerID string) (*entities.Character, *customization.Appearance) {
 	secondWind, err := json.Marshal(features.SecondWindData{
 		Ref: refs.Features.SecondWind(), ID: id + "-second-wind", Name: "Second Wind",
-		CharacterID: id, Uses: 0, MaxUses: 1,
+		CharacterID: id,
 	})
 	s.Require().NoError(err)
 	defense, err := json.Marshal(conditions.FightingStyleDefenseData{
@@ -902,6 +901,7 @@ func (s *SessionStackSuite) spentFighter(id, playerID string) (*entities.Charact
 		Resources: map[coreResources.ResourceKey]tkcharacter.RecoverableResourceData{
 			dnd5eResources.HitDice:         {Current: 0, Maximum: 4, ResetType: coreResources.ResetLongRest},
 			dnd5eResources.SpellSlotLevel1: {Current: 0, Maximum: 3, ResetType: coreResources.ResetLongRest},
+			dnd5eResources.SecondWind:      {Current: 0, Maximum: 1, ResetType: coreResources.ResetShortRest},
 		},
 		Features:   []json.RawMessage{secondWind},
 		Conditions: []json.RawMessage{defense, opportunity, prone},
