@@ -29,6 +29,12 @@ const (
 	// in assetref so this seam and the session seam cannot drift about what a
 	// shield is called (rpg-toolkit#1615).
 	refTypeItem = assetref.TypeItem
+
+	// refModuleSite and refTypeSiteItems name an item an author wrote in a
+	// site file (rpg-project#850): the ref the rules give it, which its
+	// inventory row and the slot that holds it both carry.
+	refModuleSite    = "site"
+	refTypeSiteItems = "items"
 )
 
 // BuildCharacterData maps the complete detached owner-private View onto the
@@ -84,22 +90,42 @@ func mapIdentity(cd *encounterv2pb.CharacterData, view *orchcharacter.View) {
 // resolved a Name/StatLine from that same catalog when the toolkit's own
 // EquipmentView was built -- which is also why the second lookup for
 // equipment_type (ResolveEquipmentDetail) needs no error path of its own.
+// A row the view marks Custom (an owned item with its own record,
+// rpg-project#850) is in no catalog: it is mapped with no lookup, no price
+// and no equipment type, under the `site` ref its slot also carries.
 func mapEquipment(cd *encounterv2pb.CharacterData, view *orchcharacter.View) error {
 	if view.Equipment == nil {
 		return nil
 	}
 
+	// A slot points at the row that holds its item, so it takes that row's ref:
+	// found by whether the id is a Custom row's id, never by the slot's name.
+	custom := make(map[string]bool, len(view.Equipment.Items))
+	for _, item := range view.Equipment.Items {
+		if item.Custom {
+			custom[item.ItemID] = true
+		}
+	}
 	equipped := make(map[string]*encounterv2pb.Ref, len(view.Equipment.Equipped))
 	for slot, itemID := range view.Equipment.Equipped {
-		equipped[string(slot)] = &encounterv2pb.Ref{
-			Module: refModuleDnd5e,
-			Type:   refTypeItem,
-			Id:     itemID,
-		}
+		equipped[string(slot)] = itemRef(itemID, custom[itemID])
 	}
 
 	inventory := make([]*encounterv2pb.Item, 0, len(view.Equipment.Items))
 	for _, item := range view.Equipment.Items {
+		if item.Custom {
+			// An owned item with its own record is not in the rulebook's
+			// catalog: no price and no equipment type to look up.
+			inventory = append(inventory, &encounterv2pb.Item{
+				Ref:      itemRef(item.ItemID, true),
+				Name:     item.Name,
+				StatLine: item.StatLine,
+				Kind:     item.Kind,
+				SlotKeys: item.SlotKeys,
+				Quantity: int32(item.Quantity),
+			})
+			continue
+		}
 		price, err := equipment.PriceOf(item.ItemID)
 		if err != nil {
 			return fmt.Errorf("inventory item %q: %w", item.ItemID, err)
@@ -108,7 +134,7 @@ func mapEquipment(cd *encounterv2pb.CharacterData, view *orchcharacter.View) err
 		// resolved the same id against the same catalog and succeeded.
 		detail := equipment.ResolveEquipmentDetail(item.ItemID)
 		inventory = append(inventory, &encounterv2pb.Item{
-			Ref:           &encounterv2pb.Ref{Module: refModuleDnd5e, Type: refTypeItem, Id: item.ItemID},
+			Ref:           itemRef(item.ItemID, false),
 			Name:          item.Name,
 			StatLine:      item.StatLine,
 			Kind:          item.Kind,
@@ -136,6 +162,15 @@ func mapEquipment(cd *encounterv2pb.CharacterData, view *orchcharacter.View) err
 	}
 	cd.MainHandDamage = view.Equipment.MainHandDamage
 	return nil
+}
+
+// itemRef is the wire ref of an item: an item with its own record is a
+// `site` item, a catalog id is the rulebook's.
+func itemRef(id string, custom bool) *encounterv2pb.Ref {
+	if custom {
+		return &encounterv2pb.Ref{Module: refModuleSite, Type: refTypeSiteItems, Id: id}
+	}
+	return &encounterv2pb.Ref{Module: refModuleDnd5e, Type: refTypeItem, Id: id}
 }
 
 func mapStatus(cd *encounterv2pb.CharacterData, view *orchcharacter.View) {
