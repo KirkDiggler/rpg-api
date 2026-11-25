@@ -7,6 +7,11 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	characterpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
+	"github.com/KirkDiggler/rpg-api/internal/auth"
+	"github.com/KirkDiggler/rpg-api/internal/entities"
+	orchcharacter "github.com/KirkDiggler/rpg-api/internal/orchestrators/character"
+
 	"github.com/KirkDiggler/rpg-toolkit/core"
 	coreResources "github.com/KirkDiggler/rpg-toolkit/core/resources"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/character"
@@ -138,4 +143,34 @@ func (s *HandlerTestSuite) TestBuildCharacterData_ACharacterWithNoCustomItemsIsB
 	want, err := os.ReadFile(capturedFighterData)
 	s.Require().NoError(err)
 	s.Equal(want, got)
+}
+
+// TestEquipItem_ACustomItemIsHandedOverAsItIsAndAnswersAtItsOwnRef: the item's
+// id and the slot go to the orchestrator exactly as sent, whatever the ref's
+// module and type say (there is no catalog check here), and the response's
+// equipped slot carries the `site`/`items` ref when the returned view has the
+// cloak worn.
+func (s *HandlerTestSuite) TestEquipItem_ACustomItemIsHandedOverAsItIsAndAnswersAtItsOwnRef() {
+	ctx := auth.WithPlayerID(s.ctx, s.testPlayerID)
+	charEntity := s.fighterCharacterEntity()
+	s.mockService.EXPECT().
+		GetCharacterRecord(ctx, &orchcharacter.GetCharacterRecordInput{CharacterID: s.testCharacterID}).
+		Return(&orchcharacter.GetCharacterRecordOutput{Character: charEntity}, nil)
+
+	worn := s.fighterOwningTheCloak(true)
+	s.mockService.EXPECT().
+		EquipItem(ctx, &orchcharacter.EquipItemInput{
+			CharacterID: s.testCharacterID,
+			ItemID:      cloakID,
+			Slot:        character.InventorySlot(cloakSlot),
+		}).
+		Return(&orchcharacter.EquipItemOutput{Character: &entities.Character{Data: worn}, View: s.project(worn)}, nil)
+
+	resp, err := s.handler.EquipItem(ctx, &characterpb.EquipItemRequest{
+		CharacterId: s.testCharacterID,
+		Item:        &encounterv2pb.Ref{Module: "site", Type: "items", Id: cloakID},
+		SlotKey:     cloakSlot,
+	})
+	s.Require().NoError(err)
+	s.Equal(&encounterv2pb.Ref{Module: "site", Type: "items", Id: cloakID}, resp.GetCharacter().GetEquipped()[cloakSlot])
 }

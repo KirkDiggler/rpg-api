@@ -13,6 +13,8 @@ Slice [rpg-project#1172](https://github.com/KirkDiggler/rpg-project/issues/1172)
 - The encounter pin is v0.258.1, not v0.258.0, so an empty item leaves nothing in a compiled site (the issue's Amendment 1) — [amendment](https://github.com/KirkDiggler/rpg-project/issues/1172#issuecomment-7174435147).
 - A slot's ref is chosen by whether its id is a Custom row's id, never by the slot's name (the issue's Design 3) — [rpg-project#1172](https://github.com/KirkDiggler/rpg-project/issues/1172).
 
+- Equip through the v2 handler is pinned without a server (Amendment 2): the real session verb under the orchestrator over an in-process miniredis, and the handler's hand-off in its mock suite — [amendment 2](https://github.com/KirkDiggler/rpg-project/issues/1172#issuecomment-7174840897).
+
 ## Found
 
 - F1 to F6 held at `8c2e3719`; the newest encounter tag was v0.258.1 after the fix and the newest session tag is v0.212.0 — [rests-on comment](https://github.com/KirkDiggler/rpg-project/issues/1172#issuecomment-7173981998).
@@ -23,6 +25,9 @@ Slice [rpg-project#1172](https://github.com/KirkDiggler/rpg-project/issues/1172)
 - No existing test was changed — [rpg-project#1172](https://github.com/KirkDiggler/rpg-project/issues/1172).
 - Whole suite (`go test ./... -count=1`) green at the final head; lint gate is `make lint` (golangci-lint) — [rpg-project#1172](https://github.com/KirkDiggler/rpg-project/issues/1172).
 
+- The two new equip tests run in 0.00s each: `TestEquipItem_ACustomItemRidesTheRealVerb` (orchestrator, real verb) and `TestHandlerSuite/TestEquipItem_ACustomItemIsHandedOverAsItIsAndAnswersAtItsOwnRef` — [amendment 2](https://github.com/KirkDiggler/rpg-project/issues/1172#issuecomment-7174840897).
+
 ## Mistaken
 
 - F8 claimed the engine's new compiled fields were left out when empty; it had not been checked against the tag, and the gap was caught by running the whole suite rather than the three named packages — [gap](https://github.com/KirkDiggler/rpg-project/issues/1172#issuecomment-7174145331).
+- The first equip test started a whole server (10.14s against the 10s hard line in CI); the brief said "through the v2 handler" without saying how, and the time budget was not run locally — [amendment 2](https://github.com/KirkDiggler/rpg-project/issues/1172#issuecomment-7174840897).
