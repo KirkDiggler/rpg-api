@@ -1,5 +1,7 @@
 # Run — 2026-11-24 — one way to pay for an ability S pins second wind at the door
 
+processed: 2026-11-25T190427Z
+
 Slice [rpg-project#1148](https://github.com/KirkDiggler/rpg-project/issues/1148) of story [rpg-project#1131](https://github.com/KirkDiggler/rpg-project/issues/1131). Base: `rpg-api` `dev` at [`7dc38c59`](https://github.com/KirkDiggler/rpg-api/commit/7dc38c59).
 
 ## Shipped

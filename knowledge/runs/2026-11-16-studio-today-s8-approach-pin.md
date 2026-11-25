@@ -1,5 +1,7 @@
 # Run — 2026-11-16 — studio today S8 approach pin (api)
 
+processed: 2026-11-25T190427Z
+
 Slice [rpg-project#974](https://github.com/KirkDiggler/rpg-project/issues/974) of story [rpg-project#966](https://github.com/KirkDiggler/rpg-project/issues/966). Base: `rpg-api` `dev` at [`e54e2749`](https://github.com/KirkDiggler/rpg-api/commit/e54e2749).
 
 ## Shipped

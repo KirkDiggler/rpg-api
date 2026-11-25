@@ -1,5 +1,7 @@
 # Run — 2026-11-16 — studio today S10 folded read-back (api)
 
+processed: 2026-11-25T190427Z
+
 Slice [rpg-project#978](https://github.com/KirkDiggler/rpg-project/issues/978) of story [rpg-project#966](https://github.com/KirkDiggler/rpg-project/issues/966). Base: `rpg-api` `dev` at [`186dcf8f`](https://github.com/KirkDiggler/rpg-api/commit/186dcf8f).
 
 ## Shipped

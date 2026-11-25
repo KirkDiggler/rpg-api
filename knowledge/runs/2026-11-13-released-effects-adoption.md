@@ -1,5 +1,7 @@
 # Run — 2026-11-13 — Composable conditions S18 API adoption
 
+processed: 2026-11-25T190427Z
+
 Slice [rpg-project#951](https://github.com/KirkDiggler/rpg-project/issues/951), story [#703](https://github.com/KirkDiggler/rpg-project/issues/703). Base: API dev [aaccd36b](https://github.com/KirkDiggler/rpg-api/commit/aaccd36b).
 
 ## Shipped

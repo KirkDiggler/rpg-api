@@ -1,5 +1,7 @@
 # Run — 2026-11-22 — Machine story S-api the captain remembers the lie
 
+processed: 2026-11-25T190427Z
+
 Slice [rpg-project#1107](https://github.com/KirkDiggler/rpg-project/issues/1107) of story [rpg-project#989](https://github.com/KirkDiggler/rpg-project/issues/989). Base: `rpg-api` `dev` at [`ed4bfc65`](https://github.com/KirkDiggler/rpg-api/commit/ed4bfc65).
 
 One line per entry. Every line ends with a link.

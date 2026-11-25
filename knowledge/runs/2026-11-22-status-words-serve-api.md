@@ -1,5 +1,7 @@
 # Run — 2026-11-22 — Status effect powers on a player S-words the api
 
+processed: 2026-11-25T190427Z
+
 Slice [rpg-project#1097](https://github.com/KirkDiggler/rpg-project/issues/1097) of story [rpg-project#1036](https://github.com/KirkDiggler/rpg-project/issues/1036). Base: `rpg-api` `dev` at [`560b1ee1`](https://github.com/KirkDiggler/rpg-api/commit/560b1ee1).
 
 ## Shipped
