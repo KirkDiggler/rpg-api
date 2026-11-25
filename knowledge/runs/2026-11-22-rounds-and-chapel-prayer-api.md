@@ -1,5 +1,7 @@
 # Run — 2026-11-22 — rounds and chapel prayer api pins
 
+processed: 2026-11-25T190427Z
+
 Slice [rpg-project#1101](https://github.com/KirkDiggler/rpg-project/issues/1101) of stories [rpg-project#1080](https://github.com/KirkDiggler/rpg-project/issues/1080) and [rpg-project#1036](https://github.com/KirkDiggler/rpg-project/issues/1036). Base: `rpg-api` `dev` at [`81d2f264`](https://github.com/KirkDiggler/rpg-api/commit/81d2f264).
 
 ## Shipped

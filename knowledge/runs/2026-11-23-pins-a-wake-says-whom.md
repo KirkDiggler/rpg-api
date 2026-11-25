@@ -1,5 +1,7 @@
 # Run — 2026-11-23 — a wake says whom S-pins the engine pins
 
+processed: 2026-11-25T190427Z
+
 Slice [rpg-project#1129](https://github.com/KirkDiggler/rpg-project/issues/1129) of story [rpg-project#1123](https://github.com/KirkDiggler/rpg-project/issues/1123). Base: `rpg-api` `dev` at [`246af973`](https://github.com/KirkDiggler/rpg-api/commit/246af973).
 
 ## Shipped

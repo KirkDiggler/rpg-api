@@ -1,5 +1,7 @@
 # Run — 2026-11-24 — one way to pay for an ability, pins: second wind's old code retired
 
+processed: 2026-11-25T190427Z
+
 Slice [rpg-project#1153](https://github.com/KirkDiggler/rpg-project/issues/1153) of story [rpg-project#1131](https://github.com/KirkDiggler/rpg-project/issues/1131). Base: `rpg-api` `dev` at [`2c57e373`](https://github.com/KirkDiggler/rpg-api/commit/2c57e37334a8f6238921d5cdbb07ed3d551f5cf0).
 
 ## Shipped

@@ -1,5 +1,7 @@
 # Run — 2026-11-16 — studio today S7 hubs pin (api)
 
+processed: 2026-11-25T190427Z
+
 Slice [rpg-project#973](https://github.com/KirkDiggler/rpg-project/issues/973) of story [rpg-project#966](https://github.com/KirkDiggler/rpg-project/issues/966). Base: `rpg-api` `dev` at [`dccd03c1`](https://github.com/KirkDiggler/rpg-api/commit/dccd03c1).
 
 ## Shipped

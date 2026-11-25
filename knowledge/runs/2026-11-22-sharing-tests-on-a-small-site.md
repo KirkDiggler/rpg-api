@@ -1,5 +1,7 @@
 # Run — 2026-11-22 — sharing tests on a small site
 
+processed: 2026-11-25T190427Z
+
 Issue [rpg-api#1274](https://github.com/KirkDiggler/rpg-api/issues/1274). Base: `rpg-api` `dev` at [`ed4bfc65`](https://github.com/KirkDiggler/rpg-api/commit/ed4bfc65).
 
 ## Shipped
