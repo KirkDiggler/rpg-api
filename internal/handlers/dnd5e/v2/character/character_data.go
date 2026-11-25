@@ -91,7 +91,7 @@ func mapIdentity(cd *encounterv2pb.CharacterData, view *orchcharacter.View) {
 // EquipmentView was built -- which is also why the second lookup for
 // equipment_type (ResolveEquipmentDetail) needs no error path of its own.
 // A row the view marks Custom (an owned item with its own record,
-// rpg-project#850) is in no catalogue: it is mapped with no lookup, no price
+// rpg-project#850) is in no catalog: it is mapped with no lookup, no price
 // and no equipment type, under the `site` ref its slot also carries.
 func mapEquipment(cd *encounterv2pb.CharacterData, view *orchcharacter.View) error {
 	if view.Equipment == nil {
@@ -115,7 +115,7 @@ func mapEquipment(cd *encounterv2pb.CharacterData, view *orchcharacter.View) err
 	for _, item := range view.Equipment.Items {
 		if item.Custom {
 			// An owned item with its own record is not in the rulebook's
-			// catalogue: no price and no equipment type to look up.
+			// catalog: no price and no equipment type to look up.
 			inventory = append(inventory, &encounterv2pb.Item{
 				Ref:      itemRef(item.ItemID, true),
 				Name:     item.Name,
@@ -165,7 +165,7 @@ func mapEquipment(cd *encounterv2pb.CharacterData, view *orchcharacter.View) err
 }
 
 // itemRef is the wire ref of an item: an item with its own record is a
-// `site` item, a catalogue id is the rulebook's.
+// `site` item, a catalog id is the rulebook's.
 func itemRef(id string, custom bool) *encounterv2pb.Ref {
 	if custom {
 		return &encounterv2pb.Ref{Module: refModuleSite, Type: refTypeSiteItems, Id: id}

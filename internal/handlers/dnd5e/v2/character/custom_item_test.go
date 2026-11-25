@@ -18,7 +18,7 @@ import (
 
 // A CUSTOM ITEM ON THE SHEET (rpg-project#850): a character who owns an item
 // with its own record gets a row for it, never looked up in the rulebook's
-// catalogue, and a slot that holds it points at that row.
+// catalog, and a slot that holds it points at that row.
 
 const (
 	cloakID   = "lieutenants-cloak"
@@ -69,11 +69,11 @@ func (s *HandlerTestSuite) TestBuildCharacterData_ACloakNotWornIsAnInventoryRowW
 	s.Require().NoError(err)
 
 	cd, err := BuildCharacterData(s.project(s.fighterOwningTheCloak(false)))
-	s.Require().NoError(err, "a custom row is not looked up in the catalogue")
+	s.Require().NoError(err, "a custom row is not looked up in the catalog")
 
 	s.Require().Len(cd.GetInventory(), len(plain.GetInventory())+1)
 	for i, row := range plain.GetInventory() {
-		s.True(proto.Equal(row, cd.GetInventory()[i]), "the catalogue rows are exactly as before: %s", row.GetRef().GetId())
+		s.True(proto.Equal(row, cd.GetInventory()[i]), "the catalog rows are exactly as before: %s", row.GetRef().GetId())
 	}
 
 	row := cd.GetInventory()[len(cd.GetInventory())-1]
@@ -86,7 +86,7 @@ func (s *HandlerTestSuite) TestBuildCharacterData_ACloakNotWornIsAnInventoryRowW
 	s.Nil(row.GetPrice(), "no price: the rulebook has none for it")
 	s.Empty(row.GetEquipmentType())
 
-	var keys []string
+	keys := make([]string, 0, len(cd.GetSlots()))
 	for _, slot := range cd.GetSlots() {
 		keys = append(keys, slot.GetKey())
 	}

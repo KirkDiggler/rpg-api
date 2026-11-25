@@ -29,10 +29,10 @@ import (
 )
 
 // TestEquippingACustomItemThroughTheV2Handler pins rpg-project#850: the item's
-// id goes straight to the session's equip verb, with no catalogue check on
+// id goes straight to the session's equip verb, with no catalog check on
 // the way. Worn in a slot it names it is answered, and the sheet carries it at
 // its own ref; named for a slot it does not fit the verb's own refusal comes
-// back, not a catalogue error.
+// back, not a catalog error.
 func TestEquippingACustomItemThroughTheV2Handler(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -90,7 +90,7 @@ func TestEquippingACustomItemThroughTheV2Handler(t *testing.T) {
 	_, err = equip("ring_left")
 	require.Error(t, err)
 	require.Equal(t, codes.InvalidArgument, status.Code(err), "%v", err)
-	require.NotContains(t, status.Convert(err).Message(), "not found", "the equip verb's refusal, not a catalogue error")
+	require.NotContains(t, status.Convert(err).Message(), "not found", "the equip verb's refusal, not a catalog error")
 
 	resp, err := equip("cloak")
 	require.NoError(t, err)
