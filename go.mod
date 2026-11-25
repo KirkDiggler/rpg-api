@@ -3,7 +3,7 @@ module github.com/KirkDiggler/rpg-api
 go 1.27.0
 
 require (
-	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20261121010049-200e4b5d6efd
+	github.com/KirkDiggler/rpg-api-protos/gen/go v0.0.0-20261121214704-45b0314d255f
 	github.com/KirkDiggler/rpg-toolkit/core v0.12.1
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.3
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.4
@@ -11,15 +11,15 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/mind/behavior v0.25.0
 	github.com/KirkDiggler/rpg-toolkit/mind/machine v0.3.0
 	github.com/KirkDiggler/rpg-toolkit/npc v0.2.1
-	github.com/KirkDiggler/rpg-toolkit/play/clock v0.1.0
+	github.com/KirkDiggler/rpg-toolkit/play/clock v0.2.0
 	github.com/KirkDiggler/rpg-toolkit/play/intel v0.5.0
 	github.com/KirkDiggler/rpg-toolkit/play/interrupt v0.1.0
 	github.com/KirkDiggler/rpg-toolkit/play/record v0.4.0
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.3
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.224.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.237.1-0.20261125020319-6ca5b3529deb
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.78.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.204.1-0.20261125020616-6112681b6a5c
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.233.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.255.1-0.20261125182439-b8a3133aa43b
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.82.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.211.1-0.20261125183807-34fbd0df2348
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.17.0
 	github.com/KirkDiggler/rpg-toolkit/world v0.4.3
 	github.com/alicebob/miniredis/v2 v2.35.0

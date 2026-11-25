@@ -399,7 +399,10 @@ func TestAcceptance_SecondWindActivationEventsAndHealingCrossTheWire(t *testing.
 	fighter.Features = []json.RawMessage{json.RawMessage(
 		`{"ref":{"module":"dnd5e","type":"features","id":"second_wind"},` +
 			`"id":"second-wind-1","name":"Second Wind","level":1,` +
-			`"character_id":"alice","uses":1,"max_uses":1}`)}
+			`"character_id":"alice"}`)}
+	fighter.Resources = map[coreResources.ResourceKey]tkcharacter.RecoverableResourceData{
+		resources.SecondWind: {Current: 1, Maximum: 1, ResetType: coreResources.ResetShortRest},
+	}
 
 	dice := newAcceptanceSequenceDice(
 		acceptanceDie{size: 20, value: 10},

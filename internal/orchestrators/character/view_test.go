@@ -88,6 +88,7 @@ func TestProjectView_AMonksEquipmentCarriesTheWisdomInclusiveAC(t *testing.T) {
 	data.Inventory = []tkcharacter.InventoryItemData{{Type: "weapon", ID: "quarterstaff", Quantity: 1}}
 	data.EquipmentSlots = tkcharacter.EquipmentSlots{tkcharacter.SlotMainHand: "quarterstaff"}
 	data.Features = nil
+	delete(data.Resources, resources.SecondWind) // a monk has no fighter pool
 	unarmoredDefense, err := (&conditions.UnarmoredDefenseCondition{
 		MemberID: data.ID,
 		Type:     conditions.UnarmoredDefenseMonk,
@@ -256,7 +257,7 @@ func level3FighterData(t *testing.T, id string) *tkcharacter.Data {
 		Features: []json.RawMessage{
 			mustJSON(t, features.SecondWindData{
 				Ref: refs.Features.SecondWind(), ID: "second-wind", Name: "Second Wind",
-				CharacterID: id, Uses: 1, MaxUses: 1,
+				CharacterID: id,
 			}),
 			mustJSON(t, features.ActionSurgeData{
 				Ref: refs.Features.ActionSurge(), ID: "action-surge", Name: "Action Surge",
@@ -271,6 +272,9 @@ func level3FighterData(t *testing.T, id string) *tkcharacter.Data {
 		Resources: map[coreResources.ResourceKey]tkcharacter.RecoverableResourceData{
 			resources.HitDice: {
 				Current: 2, Maximum: 3, ResetType: coreResources.ResetLongRest,
+			},
+			resources.SecondWind: {
+				Current: 1, Maximum: 1, ResetType: coreResources.ResetShortRest,
 			},
 		},
 	}

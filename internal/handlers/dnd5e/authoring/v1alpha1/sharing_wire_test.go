@@ -17,37 +17,41 @@ import (
 
 // sharing_wire_test.go drives the party's sharing setting (rpg-project#935,
 // `party: { sharing: own | view | knowledge }`) through PutDungeon and
-// GetDungeon over a real registry: a shelf holding only the castle and a
-// fresh world store per test, authoring on, so a test pays only the castle it saves. The setting is
-// carried, never read: nothing in the api decides by it.
+// GetDungeon over a real registry: a shelf holding only the small kitchen
+// site and a fresh world store per test, authoring on, so a test pays only
+// the site it saves. The setting is a root key that is carried and never
+// read, so the castle's size proves nothing more (rpg-api#1274).
 
 const (
-	sharingCastleKey  = "the-mad-king"
-	sharingCastleCopy = "my-sharing-castle"
+	sharingSiteKey  = dungeonstest.CastleKitchenKey
+	sharingSiteCopy = "my-sharing-site"
 )
 
-// sharingHandler is an authoring handler over the shared shipped store and
-// a fresh world store, and the shipped castle under the copy's key.
+// sharingHandler is an authoring handler over a shelf and a fresh world
+// store, and the kitchen site under the copy's key. The registry refuses a
+// shelf with no default dungeon, so the shelf's default file is the kitchen
+// standing in for the castle, rekeyed to dungeons.DefaultKey; the copy the
+// tests save is the same kitchen under its own key.
 func sharingHandler(t *testing.T) (*authoringhandler.Handler, string) {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(dungeonstest.ContentDir(t), sharingCastleKey+".yaml")) //nolint:gosec // the shipped content directory
-	require.NoError(t, err)
+	raw := dungeonstest.CastleKitchenYAML(t)
 	shelf := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(shelf, sharingCastleKey+".yaml"), raw, 0o600))
-	castleOnly, err := dungeons.NewFileRegistry(shelf, dungeonstest.Projector(t))
+	standIn := dungeonstest.AsKey(t, raw, sharingSiteKey, dungeons.DefaultKey)
+	require.NoError(t, os.WriteFile(filepath.Join(shelf, dungeons.DefaultKey+".yaml"), standIn, 0o600))
+	siteOnly, err := dungeons.NewFileRegistry(shelf, dungeonstest.Projector(t))
 	require.NoError(t, err)
-	orch, err := authoringorch.New(&authoringorch.Config{Dungeons: dungeonstest.Join(t, castleOnly, true)})
+	orch, err := authoringorch.New(&authoringorch.Config{Dungeons: dungeonstest.Join(t, siteOnly, true)})
 	require.NoError(t, err)
 	h, err := authoringhandler.New(&authoringhandler.HandlerConfig{Orchestrator: orch})
 	require.NoError(t, err)
-	return h, string(dungeonstest.AsKey(t, raw, sharingCastleKey, sharingCastleCopy))
+	return h, string(dungeonstest.AsKey(t, raw, sharingSiteKey, sharingSiteCopy))
 }
 
-// markedSharing is castle with `party: { sharing: word }` at its root.
-func markedSharing(t *testing.T, castle, word string) string {
+// markedSharing is site with `party: { sharing: word }` at its root.
+func markedSharing(t *testing.T, site, word string) string {
 	t.Helper()
-	require.Equal(t, 1, strings.Count(castle, "\nroom:"), "precondition: one root room key")
-	return strings.Replace(castle, "\nroom:", "\nparty:\n  sharing: "+word+"\nroom:", 1)
+	require.Equal(t, 1, strings.Count(site, "\nroom:"), "precondition: one root room key")
+	return strings.Replace(site, "\nroom:", "\nparty:\n  sharing: "+word+"\nroom:", 1)
 }
 
 // requireSavesAndReloads grades doc, saves it, and reads it back byte for
@@ -56,12 +60,12 @@ func requireSavesAndReloads(t *testing.T, h *authoringhandler.Handler, doc, what
 	t.Helper()
 	ctx := worldCtx("alice")
 	for _, validateOnly := range []bool{true, false} {
-		resp, err := h.PutDungeon(ctx, &authoringpb.PutDungeonRequest{Key: sharingCastleCopy, Yaml: doc, ValidateOnly: validateOnly})
+		resp, err := h.PutDungeon(ctx, &authoringpb.PutDungeonRequest{Key: sharingSiteCopy, Yaml: doc, ValidateOnly: validateOnly})
 		require.NoError(t, err, "%s (validate only %v)", what, validateOnly)
 		require.Empty(t, resp.GetErrors(), "%s compiles", what)
 		require.NotNil(t, resp.GetAtlas(), "%s projects its atlas", what)
 	}
-	saved, err := h.GetDungeon(ctx, &authoringpb.GetDungeonRequest{Key: sharingCastleCopy})
+	saved, err := h.GetDungeon(ctx, &authoringpb.GetDungeonRequest{Key: sharingSiteCopy})
 	require.NoError(t, err)
 	require.Equal(t, doc, saved.GetYaml(), "%s reloads unchanged", what)
 }
@@ -69,30 +73,30 @@ func requireSavesAndReloads(t *testing.T, h *authoringhandler.Handler, doc, what
 // TestSharingEachTheirOwnValidatesSavesAndReloads: `own` grades clean with
 // its atlas, saves, and reloads unchanged.
 func TestSharingEachTheirOwnValidatesSavesAndReloads(t *testing.T) {
-	h, castle := sharingHandler(t)
-	requireSavesAndReloads(t, h, markedSharing(t, castle, "own"), "own")
+	h, site := sharingHandler(t)
+	requireSavesAndReloads(t, h, markedSharing(t, site, "own"), "own")
 }
 
 // TestSharingSharedViewValidatesSavesAndReloads: so does `view`.
 func TestSharingSharedViewValidatesSavesAndReloads(t *testing.T) {
-	h, castle := sharingHandler(t)
-	requireSavesAndReloads(t, h, markedSharing(t, castle, "view"), "view")
+	h, site := sharingHandler(t)
+	requireSavesAndReloads(t, h, markedSharing(t, site, "view"), "view")
 }
 
-// TestSharingUnmarkedCastleIsUnchanged: the castle with no party block
+// TestSharingAnUnmarkedSiteIsUnchanged: the site with no party block
 // still grades clean and reloads byte for byte; omitted is the default.
-func TestSharingUnmarkedCastleIsUnchanged(t *testing.T) {
-	h, castle := sharingHandler(t)
-	requireSavesAndReloads(t, h, castle, "unmarked")
+func TestSharingAnUnmarkedSiteIsUnchanged(t *testing.T) {
+	h, site := sharingHandler(t)
+	requireSavesAndReloads(t, h, site, "unmarked")
 }
 
 // TestSharingAnUnknownWordIsRefusedAtItsPath: a word the dial does not have
 // is a defect at party.sharing in the engine's own sentence, which names the
 // words there are. The passthrough is pinned, not the engine's wording.
 func TestSharingAnUnknownWordIsRefusedAtItsPath(t *testing.T) {
-	h, castle := sharingHandler(t)
+	h, site := sharingHandler(t)
 	resp, err := h.PutDungeon(worldCtx("alice"), &authoringpb.PutDungeonRequest{
-		Key: sharingCastleCopy, Yaml: markedSharing(t, castle, "shout"), ValidateOnly: true,
+		Key: sharingSiteCopy, Yaml: markedSharing(t, site, "shout"), ValidateOnly: true,
 	})
 	require.NoError(t, err, "a grade is never a status")
 	require.Len(t, resp.GetErrors(), 1)
@@ -108,6 +112,6 @@ func TestSharingAnUnknownWordIsRefusedAtItsPath(t *testing.T) {
 // and not built (rpg-project#937). It is valid content: it grades clean with
 // its atlas, saves, and reloads unchanged; only a launch refuses it.
 func TestSharingSharedKnowledgeValidatesSavesAndReloads(t *testing.T) {
-	h, castle := sharingHandler(t)
-	requireSavesAndReloads(t, h, markedSharing(t, castle, "knowledge"), "knowledge")
+	h, site := sharingHandler(t)
+	requireSavesAndReloads(t, h, markedSharing(t, site, "knowledge"), "knowledge")
 }

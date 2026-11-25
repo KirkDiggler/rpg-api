@@ -521,6 +521,21 @@ func (mr *MockManagerMockRecorder) View(ctx, in any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "View", reflect.TypeOf((*MockManager)(nil).View), ctx, in)
 }
 
+// Wait mocks base method.
+func (m *MockManager) Wait(ctx context.Context, in *session.WaitInput) (*session.WaitOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Wait", ctx, in)
+	ret0, _ := ret[0].(*session.WaitOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Wait indicates an expected call of Wait.
+func (mr *MockManagerMockRecorder) Wait(ctx, in any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Wait", reflect.TypeOf((*MockManager)(nil).Wait), ctx, in)
+}
+
 // Where mocks base method.
 func (m *MockManager) Where(ctx context.Context, in *session.WhereInput) (*session.WhereOutput, error) {
 	m.ctrl.T.Helper()
