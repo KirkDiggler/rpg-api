@@ -55,7 +55,7 @@ func (h *Handler) Interact(ctx context.Context, req *sessionpb.InteractRequest) 
 		if err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
-		resp.Descriptor_ = descriptor
+		resp.NpcDescriptor = descriptor
 	}
 	return resp, nil
 }

@@ -67,7 +67,7 @@ func TestTrade_HappyPath_ReturnsDecrementedDescriptor(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	d := resp.GetDescriptor_()
+	d := resp.GetNpcDescriptor()
 	require.Equal(t, "demo-merchant-1", d.GetTargetId())
 	require.Len(t, d.GetInventory(), 1, "the bought longsword is gone, the longbow remains")
 	require.Equal(t, "longbow", d.GetInventory()[0].GetEquipmentId())
@@ -153,7 +153,7 @@ func TestTrade_Sell_ForwardsGiveItemsAndReceiveCurrency(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	d := resp.GetDescriptor_()
+	d := resp.GetNpcDescriptor()
 	require.Len(t, d.GetInventory(), 1)
 	require.Equal(t, "longsword", d.GetInventory()[0].GetEquipmentId())
 	require.True(t, d.GetInventory()[0].GetPlayerSold())

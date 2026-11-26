@@ -57,7 +57,7 @@ func TestInteract_HappyPath_ReturnsDescriptor(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	d := resp.GetDescriptor_()
+	d := resp.GetNpcDescriptor()
 	require.Equal(t, "demo-merchant-1", d.GetTargetId())
 	require.Equal(t, "dnd5e:npcs:merchant", d.GetRef())
 	require.Equal(t, "Demo Merchant", d.GetDisplayName())
@@ -157,7 +157,7 @@ func TestInteract_APropDeedCarriesWhatWasDone(t *testing.T) {
 		Session: "sess-1", Actor: "char-1", Prop: "altar", OptionId: "examine", Revision: 4,
 	})
 	require.NoError(t, err)
-	require.Nil(t, resp.GetDescriptor_(), "a prop is not a world NPC")
+	require.Nil(t, resp.GetNpcDescriptor(), "a prop is not a world NPC")
 	done := resp.GetDone()
 	require.Equal(t, "altar", done.GetProp())
 	require.Equal(t, "examine", done.GetOptionId())
