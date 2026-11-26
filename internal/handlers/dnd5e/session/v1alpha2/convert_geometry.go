@@ -124,6 +124,7 @@ func structuralWallsToProto(ws []sdk.AtlasStructuralWall) []*sessionpb.AtlasStru
 			FootprintCells: positionsToProto(w.FootprintCells), Openings: openingsToProto(w.Openings),
 			MaterialOverrides: materialOverridesToProto(w.MaterialOverrides),
 			FaceFinishes:      wallFaceFinishesToProto(w.FaceFinishes),
+			Sections:          wallSectionsToProto(w.Sections),
 		}
 	})
 }

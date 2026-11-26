@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec"
 
 	"github.com/KirkDiggler/rpg-api/internal/notedwords"
@@ -49,6 +50,7 @@ func (s *ConvertSuite) SetupTest() {
 	s.Require().NoError(err)
 	s.compiled, err = os.ReadFile(beforeCompiled)
 	s.Require().NoError(err)
+	s.compiled = s.historicalShape(s.compiled)
 	s.shipped, err = os.ReadFile(shippedCastle) //nolint:gosec // the repository's own content
 	s.Require().NoError(err)
 }
@@ -67,6 +69,33 @@ func (s *ConvertSuite) compile(raw []byte) []byte {
 	c, err := dungeonspec.Load(raw)
 	s.Require().NoError(err)
 	out, err := json.MarshalIndent(c, "", " ")
+	s.Require().NoError(err)
+	return s.historicalShape(out)
+}
+
+// historicalShape compares the same semantic picture without rewriting the
+// v0.220.0 oracle. The newer optional wall Sections:null is absence, not a
+// changed world. Strip only that absent field at its exact owner; keep every
+// nonempty section and every other value so real compiler changes still fail.
+// Canonical key order is applied to BOTH sides; numbers retain their spelling.
+func (s *ConvertSuite) historicalShape(raw []byte) []byte {
+	s.T().Helper()
+	var shape map[string]interface{}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	s.Require().NoError(decoder.Decode(&shape))
+	field, ok := shape["Field"].(map[string]interface{})
+	s.Require().True(ok)
+	walls, ok := field["StructuralWalls"].([]interface{})
+	s.Require().True(ok)
+	for _, value := range walls {
+		wall, valid := value.(map[string]interface{})
+		s.Require().True(valid)
+		if sections, exists := wall["Sections"]; exists && sections == nil {
+			delete(wall, "Sections")
+		}
+	}
+	out, err := json.MarshalIndent(shape, "", " ")
 	s.Require().NoError(err)
 	return append(out, '\n')
 }
@@ -91,6 +120,19 @@ func (s *ConvertSuite) TestLastWeeksCastleCompilesAsItDid() {
 
 	s.Equal(string(s.compiled), string(s.compile(out.Out)),
 		"converted, it compiles to exactly what encounter v0.220.0 compiled last week's castle to")
+}
+
+func (s *ConvertSuite) TestAuthoredWallSectionsStillChangeTheHistoricalComparison() {
+	converted := s.convert(s.before)
+	compiled, err := dungeonspec.Load(converted.Out)
+	s.Require().NoError(err)
+	s.Require().NotEmpty(compiled.Field.StructuralWalls)
+	compiled.Field.StructuralWalls[0].Sections = []encounter.WallSection{{ID: "window", Ref: "test:window", Position: 2, Width: 1}}
+	raw, err := json.Marshal(compiled)
+	s.Require().NoError(err)
+	actual := s.historicalShape(raw)
+	s.Contains(string(actual), "test:window")
+	s.NotEqual(string(s.compiled), string(actual))
 }
 
 // TestTheComparisonCanFail: one changed number in the converted castle is a
