@@ -17,6 +17,7 @@ import (
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/dungeonspec/readback"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter/scenarios"
+	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/magicitems"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/refs"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/status"
@@ -468,6 +469,38 @@ func (o *Orchestrator) SayStatus(_ context.Context, in *SayStatusInput) (*SaySta
 	}
 
 	return &SayStatusOutput{Said: said}, nil
+}
+
+// GetItemWordsInput asks for the rules' item words. No fields, for
+// GetMachineWordsInput's reason.
+type GetItemWordsInput struct{}
+
+// GetItemWordsOutput is the rules' published item-words table, handed through
+// as the toolkit's own type, and the rulebook release the binary was built
+// with.
+type GetItemWordsOutput struct {
+	// Words is magicitems.Words(): every word an author may write for an item.
+	Words []magicitems.Word
+
+	// RulebookVersion is the rulebooks/dnd5e module's version from the
+	// binary's build info; empty when the build info does not say.
+	RulebookVersion string
+}
+
+// GetItemWords reports the item words of the rules this binary runs
+// (rpg-project#850), for the studio's item form.
+//
+// UNGATED, for GetMachineWords' reason: it reads a table compiled into the
+// binary and mutates nothing.
+func (o *Orchestrator) GetItemWords(_ context.Context, in *GetItemWordsInput) (*GetItemWordsOutput, error) {
+	if in == nil {
+		return nil, errors.New("authoring orchestrator: GetItemWordsInput is required")
+	}
+
+	return &GetItemWordsOutput{
+		Words:           magicitems.Words(&magicitems.WordsInput{}).Words,
+		RulebookVersion: moduleVersion(rulebookModule),
+	}, nil
 }
 
 // moduleVersion is the version of the dependency path as the binary's build
