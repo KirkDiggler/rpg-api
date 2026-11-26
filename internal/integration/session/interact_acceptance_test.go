@@ -128,7 +128,7 @@ func TestAcceptance_InteractIsDoneToAThing(t *testing.T) {
 	})
 	require.Equal(t, kitchenGrate, resp.GetDone().GetProp())
 	require.Equal(t, toChapelLine, resp.GetDone().GetOptionId())
-	require.Nil(t, resp.GetDescriptor_(), "a prop is not a world NPC")
+	require.Nil(t, resp.GetNpcDescriptor(), "a prop is not a world NPC")
 	for who, acts := range streams {
 		requireNothingRefused(t, acts, who)
 	}
