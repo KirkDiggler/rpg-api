@@ -14,8 +14,8 @@ The interim for [rpg-api#1287](https://github.com/KirkDiggler/rpg-api/issues/128
 
 ## Found
 
-- `make test` with the file in place: 44 packages ok, 0 failed, 409 seconds; alone and unset, the test skips in 0.007 seconds — [this PR](https://github.com/KirkDiggler/rpg-api/pull/1288).
+- `make test` with the file in place: 44 packages ok, 0 failed, 409 seconds; alone and unset, the test skips in 0.007 seconds — [this PR](https://github.com/KirkDiggler/rpg-api/pull/1289).
 
 ## Mistaken
 
-- none observed — [this PR](https://github.com/KirkDiggler/rpg-api/pull/1288).
+- The record linked this PR by a number written before the PR existed, and was wrong until this commit; a number is written down after the thing exists — [this PR](https://github.com/KirkDiggler/rpg-api/pull/1289).
