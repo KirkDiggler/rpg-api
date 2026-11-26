@@ -259,6 +259,20 @@ RPC error, never an empty sentence. `rulebook_version` is the
 signed-in player's with the Build permission, like the machine words.
 `status_words_test.go` compares the response with the Go types by reflection.
 
+## The item words (`GetItemWords`, rpg-project#850)
+
+`GetItemWords` hands the studio every word an author may write for an item, as
+the rules this binary was built with publish them (`magicitems.Words()`): where
+each is written, what it takes, its closed values, bounds and labels, and for
+each ability an item can let its wearer use, the words that ability takes. The
+handler (`get_item_words.go`) copies field for field and words nothing and
+reorders nothing; a value's `with` is copied by the same function, so the copy
+is recursive, and a nil `Bounds` stays unset. `rulebook_version` is the
+`rulebooks/dnd5e` module's version from the binary's build info. It is a
+signed-in player's with the Build permission, like the status words.
+`item_words_test.go` compares the response with the Go types by reflection, so
+a field the rules add and this api does not copy fails there.
+
 ## Transport rules (the proto's, enforced in the handler)
 
 - A request that cannot name its target — empty key, bad charset, key/file
