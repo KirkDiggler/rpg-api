@@ -546,6 +546,9 @@ func contentRefusals(spec *tkdungeonspec.Compiled) ([]FieldError, error) {
 	for _, r := range checked.Refusals {
 		out = append(out, FieldError{Path: r.Path, Message: r.Message})
 	}
+	for _, r := range checked.Items {
+		out = append(out, FieldError{Path: r.Path, Message: r.Message})
+	}
 	return out, nil
 }
 

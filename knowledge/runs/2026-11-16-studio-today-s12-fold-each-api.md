@@ -1,5 +1,7 @@
 # Run — 2026-11-16 — studio today S12 one-thing fold and ways (api)
 
+processed: 2026-11-25T190427Z
+
 Slice [rpg-project#980](https://github.com/KirkDiggler/rpg-project/issues/980) of story [rpg-project#966](https://github.com/KirkDiggler/rpg-project/issues/966). Base: `rpg-api` `dev` at [`be41d848`](https://github.com/KirkDiggler/rpg-api/commit/be41d848).
 
 ## Shipped

@@ -1,5 +1,7 @@
 # Run — 2026-11-21 — Status effect powers S7 initiative rolls through the api
 
+processed: 2026-11-25T190427Z
+
 Slice [rpg-project#1060](https://github.com/KirkDiggler/rpg-project/issues/1060) of story [rpg-project#1036](https://github.com/KirkDiggler/rpg-project/issues/1036). Base: `rpg-api` `dev` at [`2cddb1a3`](https://github.com/KirkDiggler/rpg-api/commit/2cddb1a3def63fdff3e8a4ce58e9d4d3bdf136ef).
 
 One line per entry. Every line ends with a link: a PR, an issue comment, a commit, or a design section anchor. This file rides on the work PR, under the `knowledge/runs/` of the lowest directory that contains everything the PR changed. The ingest reads it once and adds a `processed:` line at the top; nobody else edits it after merge.

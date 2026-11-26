@@ -1,5 +1,7 @@
 # Run — 2026-11-22 — machine story S the-liar-loses-the-lie (rpg-api)
 
+processed: 2026-11-25T190427Z
+
 Slice [rpg-project#1111](https://github.com/KirkDiggler/rpg-project/issues/1111) of story [rpg-project#989](https://github.com/KirkDiggler/rpg-project/issues/989). Base: `rpg-api` `dev` at [`d3e7c12e`](https://github.com/KirkDiggler/rpg-api/commit/d3e7c12e).
 
 ## Shipped
