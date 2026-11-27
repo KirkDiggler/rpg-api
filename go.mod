@@ -8,7 +8,7 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/dice v0.3.3
 	github.com/KirkDiggler/rpg-toolkit/events v0.6.4
 	github.com/KirkDiggler/rpg-toolkit/mechanics/effects v0.8.0
-	github.com/KirkDiggler/rpg-toolkit/mind/behavior v0.26.0
+	github.com/KirkDiggler/rpg-toolkit/mind/behavior v0.28.0
 	github.com/KirkDiggler/rpg-toolkit/mind/machine v0.3.0
 	github.com/KirkDiggler/rpg-toolkit/npc v0.2.1
 	github.com/KirkDiggler/rpg-toolkit/play/clock v0.2.0
@@ -17,9 +17,9 @@ require (
 	github.com/KirkDiggler/rpg-toolkit/play/record v0.4.0
 	github.com/KirkDiggler/rpg-toolkit/rpgerr v0.1.3
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e v0.244.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.265.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/encounter v0.267.0
 	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/resolution v0.85.0
-	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.219.0
+	github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session v0.221.0
 	github.com/KirkDiggler/rpg-toolkit/tools/spatial v0.17.0
 	github.com/KirkDiggler/rpg-toolkit/world v0.4.3
 	github.com/alicebob/miniredis/v2 v2.35.0
