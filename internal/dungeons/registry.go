@@ -31,6 +31,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -503,7 +504,7 @@ func compileEntry(ctx context.Context, projector AtlasProjector, raw []byte) (*E
 	// save rather than when the site is played. A status the rules refuse
 	// comes back as a field error at its place under `statuses:`; the rules'
 	// message names the place inside it.
-	if ferrs, checkErr := contentRefusals(d.Spec); checkErr != nil || len(ferrs) > 0 {
+	if ferrs, checkErr := contentRefusals(d.Spec, raw); checkErr != nil || len(ferrs) > 0 {
 		return nil, ferrs, checkErr
 	}
 
@@ -533,8 +534,22 @@ func compileEntry(ctx context.Context, projector AtlasProjector, raw []byte) (*E
 }
 
 // contentRefusals is the session's content check on a compiled dungeon, as
-// field errors: one per status the rules refuse, at `statuses.<id>`.
-func contentRefusals(spec *tkdungeonspec.Compiled) ([]FieldError, error) {
+// field errors, and where each one lands:
+//
+//   - a status the rules refuse: at `statuses.<id>`, the place the session says;
+//   - a custom item the rules refuse: at its place under `customItems:`;
+//   - a table row whose `activate` word is no ability: at the row, for EVERY row
+//     of the file that says the word (`behaviorDefinitions.<id>.table.<answer>[n]`,
+//     in path order, one error each, the session's message at each, in the file's order). The
+//     session's refusal has no place, because a compiled row no longer knows its
+//     line, so raw, the file's bytes, is read back to find the rows (see
+//     activationPlaces). A word no row can be found for (a creature's own direct
+//     table, which the read-back does not say, or a read-back that fails) is
+//     reported once on no path: a refusal is never dropped for want of a place.
+//
+// A stat block's own `lets` is not asked about here: a save refuses one when it
+// builds the stat block, at the stat block (rpg-project#1230).
+func contentRefusals(spec *tkdungeonspec.Compiled, raw []byte) ([]FieldError, error) {
 	if spec == nil {
 		return nil, nil
 	}
@@ -549,7 +564,64 @@ func contentRefusals(spec *tkdungeonspec.Compiled) ([]FieldError, error) {
 	for _, r := range checked.Items {
 		out = append(out, FieldError{Path: r.Path, Message: r.Message})
 	}
+	if len(checked.Activations) > 0 {
+		// The read-back decodes and compiles the file a second time, so it is
+		// made only when there is something to place.
+		rb := activationReadBack(raw)
+		for _, r := range checked.Activations {
+			places := activationPlaces(rb, r.Word)
+			if len(places) == 0 {
+				places = []string{""}
+			}
+			for _, path := range places {
+				out = append(out, FieldError{Path: path, Message: r.Message})
+			}
+		}
+	}
 	return out, nil
+}
+
+// activationReadBack is the engine's read-back of raw, or nil: it is made to
+// place a refusal and nothing more, so a read-back that fails or panics (it
+// runs code the compile did not) is logged and yields no places, never a
+// failure of the check that found the refusal (as readBackOf contains it).
+func activationReadBack(raw []byte) (rb *readback.ReadBack) {
+	defer func() {
+		if p := recover(); p != nil {
+			slog.Error("dungeons: read-back panicked while placing a refused activation", "panic", p)
+			rb = nil
+		}
+	}()
+	rb, err := readback.Of(raw)
+	if err != nil {
+		slog.Warn("dungeons: read-back failed while placing a refused activation", "error", err)
+		return nil
+	}
+	return rb
+}
+
+// activationPlaces is the path of every read-back statement that connects to
+// the ability word as a row that activates it, distinct, in the read-back's reading order (the file's: `time[0]` before
+// `time[3]`, `time[2]` before `time[10]`).
+func activationPlaces(rb *readback.ReadBack, word string) []string {
+	if rb == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var paths []string
+	for _, st := range rb.Statements() {
+		if seen[st.Path] {
+			continue
+		}
+		for _, c := range st.Connects {
+			if c.Kind == readback.ConnAbility && c.ID == word && c.Role == readback.RoleActivates {
+				seen[st.Path] = true
+				paths = append(paths, st.Path)
+				break
+			}
+		}
+	}
+	return paths
 }
 
 // contentHashOf is the engine's hash of a compiled dungeon, empty when the
