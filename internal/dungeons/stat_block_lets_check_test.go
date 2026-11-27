@@ -16,7 +16,7 @@ import (
 	"github.com/KirkDiggler/rpg-api/internal/repositories/worlddungeons"
 )
 
-// THE CONTENT CHECK ON A STAT BLOCK THAT SAYS WHAT ITS CREATURE CAN USE
+// A STAT BLOCK THAT SAYS WHAT ITS CREATURE CAN USE
 // (rpg-project#1131, slice 2e): a stat block's `lets` is taken by the site
 // format, the read-back and the rules; the rules refuse a stat block they
 // cannot run when the site is checked or saved, at `templates.<id>.lets`, and
@@ -25,6 +25,9 @@ import (
 const (
 	statBlockLetsKey  = "lieutenant-holds-second-wind-walk"
 	statBlockLetsPath = "templates.gate-lieutenant.lets"
+	// a save assembles every stat block before the content check, so the rules'
+	// refusal of one arrives at the stat block itself.
+	statBlockPath = "templates.gate-lieutenant"
 )
 
 // statBlockLetsSite is the fixture with one piece of its text replaced; the
@@ -75,6 +78,39 @@ func TestPutTakesAStatBlockThatSaysWhatItsCreatureCanUse(t *testing.T) {
 		} else {
 			require.NotNil(t, out.Entry, "the save stored the site")
 		}
+	}
+}
+
+func TestPutRefusesAStatBlockTheRulesCannotRunAndStoresNothing(t *testing.T) {
+	ctx := context.Background()
+
+	cases := []struct {
+		name     string
+		from, to string
+		contains []string
+	}{
+		{"an ability the rules do not have", "use: second wind", "use: fireball", []string{"gate-lieutenant", "lets[0]", "second wind"}},
+		{"a count of none", "max: 1,", "max: 0,", []string{"gate-lieutenant", "uses.max"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			world := dungeonstest.WorldStore(t)
+			r := joinShelf(t, world, true)
+			for _, validateOnly := range []bool{true, false} {
+				out, err := r.Put(ctx, &dungeons.PutInput{Caller: alice, Key: statBlockLetsKey, YAML: statBlockLetsSite(t, c.from, c.to), ValidateOnly: validateOnly})
+				require.NoErrorf(t, err, "validate-only %v: a refusal is an answer, not an error", validateOnly)
+				require.Lenf(t, out.Errors, 1, "validate-only %v", validateOnly)
+				t.Logf("validate-only %v: %q: %s", validateOnly, out.Errors[0].Path, out.Errors[0].Message)
+				require.Equal(t, statBlockPath, out.Errors[0].Path, "at the stat block")
+				for _, want := range c.contains {
+					require.Contains(t, out.Errors[0].Message, want)
+				}
+				require.Nil(t, out.Entry)
+				t.Logf("validate-only %v: %s", validateOnly, out.Errors[0].Message)
+			}
+			_, err := world.Get(ctx, &worlddungeons.GetInput{WorldID: alice.WorldID, Key: statBlockLetsKey})
+			require.ErrorIs(t, err, worlddungeons.ErrNotFound, "nothing was stored")
+		})
 	}
 }
 
