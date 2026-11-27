@@ -79,16 +79,6 @@ func fighterEndsTurn(ctx context.Context, t *testing.T, h *acceptanceHarness, ru
 	})
 }
 
-func activationsBy(acts []*storypb.Act, by string) []*storypb.Act {
-	var out []*storypb.Act
-	for _, a := range acts {
-		if a.GetActivate() != nil && a.GetActivate().GetBy().GetId() == by {
-			out = append(out, a)
-		}
-	}
-	return out
-}
-
 func TestAcceptance_AnUnhurtLieutenantDoesNotUseSecondWind(t *testing.T) {
 	const run = "lieutenant-unhurt-run"
 	// every d20 rolls 1: nothing lands, so nobody is hurt in three rounds.
