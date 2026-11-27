@@ -69,6 +69,13 @@ func (s *PolicySuite) TestStatusWordsRequireBuildPermission() {
 	}
 }
 
+func (s *PolicySuite) TestItemWordsRequireBuildPermission() {
+	method := "/dnd5e.api.authoring.v1alpha1.AuthoringService/GetItemWords"
+	permission, known := auth.GameMethodPermission(method)
+	s.True(known, method)
+	s.Equal(auth.PermissionBuild, permission, method)
+}
+
 func (s *PolicySuite) TestTheActStreamAndTheRecordRequirePlayPermission() {
 	for _, method := range []string{
 		"/dnd5e.api.session.v1alpha2.StoryService/StreamEvents",
