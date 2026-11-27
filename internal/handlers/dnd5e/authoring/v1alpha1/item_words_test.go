@@ -99,6 +99,17 @@ func (s *ItemWordsSuite) TestTheTableIsTheRulesOwn() {
 	s.Equal(int32(1), charges.GetBounds().GetMin())
 	s.Equal(int32(1000), charges.GetBounds().GetMax())
 	s.False(charges.GetBounds().GetNoMax())
+
+	// An entry's own count (rpg-project#1131): the word `uses` of a lets
+	// entry holds the place `uses`, whose `max` runs from 1 to 1000.
+	entryUses := s.find(resp.GetWords(), "lets entry", "uses")
+	s.Equal("lets entry", entryUses.GetPlace())
+	s.Equal("uses", entryUses.GetHolds(), "the word uses holds the place uses")
+	entryMax := s.find(resp.GetWords(), "uses", "max")
+	s.Equal("uses", entryMax.GetPlace())
+	s.Require().NotNil(entryMax.GetBounds())
+	s.Equal(int32(1), entryMax.GetBounds().GetMin())
+	s.Equal(int32(1000), entryMax.GetBounds().GetMax())
 }
 
 // TestRulebookVersionIsFilled: the rulebook release comes from the binary's
