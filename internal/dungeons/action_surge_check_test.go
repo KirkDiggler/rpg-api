@@ -110,7 +110,7 @@ func TestPutRefusesARowThatMisspellsActionSurgeAndOffersTheAbilities(t *testing.
 		require.Lenf(t, out.Errors, 1, "validate-only %v", validateOnly)
 		require.Equal(t, activateRowPath0, out.Errors[0].Path, "at the row")
 		require.Contains(t, out.Errors[0].Message, "actoin surge")
-		require.Contains(t, out.Errors[0].Message, "action surge, second wind", "the abilities are offered")
+		require.Contains(t, out.Errors[0].Message, "action surge, rage, second wind", "the abilities are offered")
 		require.Nil(t, out.Entry)
 	}
 	_, err := world.Get(ctx, &worlddungeons.GetInput{WorldID: alice.WorldID, Key: actionSurgeKey})

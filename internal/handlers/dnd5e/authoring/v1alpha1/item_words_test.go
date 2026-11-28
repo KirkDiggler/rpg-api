@@ -147,3 +147,36 @@ func (s *ItemWordsSuite) TestAValueSaysWhetherItNeedsACount() {
 	s.Require().Len(wind.GetWith(), 1)
 	s.Equal("level", wind.GetWith()[0].GetWord())
 }
+
+// TestRageIsAValueWithOneWord (rpg-project#1131, slice 8f): the word `use` of
+// a lets entry has the value `rage`, which needs no count and has one word of
+// its own, `damage_bonus`: required, at least 1, with no top. The other two
+// values are as they were.
+func (s *ItemWordsSuite) TestRageIsAValueWithOneWord() {
+	use := s.find(s.words().GetWords(), "lets entry", "use")
+	values := map[string]*authoringpb.ItemWordValue{}
+	order := make([]string, 0, len(use.GetValues()))
+	for _, v := range use.GetValues() {
+		values[v.GetWord()] = v
+		order = append(order, v.GetWord())
+	}
+	s.Equal([]string{"action surge", "rage", "second wind"}, order, "the values, in the rules' order")
+
+	rage := values["rage"]
+	s.Require().NotNil(rage, "use has the value rage")
+	s.False(rage.GetNeedsCount(), "rage needs no count")
+	s.Require().Len(rage.GetWith(), 1, "rage has exactly one word of its own")
+	bonus := rage.GetWith()[0]
+	s.Equal("damage_bonus", bonus.GetWord())
+	s.True(bonus.GetRequired(), "damage_bonus is required")
+	s.Require().NotNil(bonus.GetBounds())
+	s.Equal(int32(1), bonus.GetBounds().GetMin())
+	s.True(bonus.GetBounds().GetNoMax(), "damage_bonus has no top")
+	s.T().Logf("rage: label %q, with %q label %q", rage.GetLabel(), bonus.GetWord(), bonus.GetLabel())
+
+	s.True(values["action surge"].GetNeedsCount(), "action surge is as it was")
+	s.Empty(values["action surge"].GetWith())
+	s.False(values["second wind"].GetNeedsCount(), "second wind is as it was")
+	s.Require().Len(values["second wind"].GetWith(), 1)
+	s.Equal("level", values["second wind"].GetWith()[0].GetWord())
+}
