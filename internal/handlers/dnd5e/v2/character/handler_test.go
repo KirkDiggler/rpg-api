@@ -119,7 +119,7 @@ func (s *HandlerTestSuite) fighterCharacterEntity() *entities.Character {
 				}),
 				s.mustJSON(features.ActionSurgeData{
 					Ref: refs.Features.ActionSurge(), ID: "action-surge", Name: "Action Surge",
-					CharacterID: s.testCharacterID, Uses: 1, MaxUses: 1,
+					CharacterID: s.testCharacterID,
 				}),
 			},
 			Conditions: []json.RawMessage{
@@ -128,8 +128,9 @@ func (s *HandlerTestSuite) fighterCharacterEntity() *entities.Character {
 				}),
 			},
 			Resources: map[coreResources.ResourceKey]character.RecoverableResourceData{
-				resources.HitDice:    {Current: 2, Maximum: 3, ResetType: coreResources.ResetLongRest},
-				resources.SecondWind: {Current: 1, Maximum: 1, ResetType: coreResources.ResetShortRest},
+				resources.ActionSurge: {Current: 1, Maximum: 1, ResetType: coreResources.ResetShortRest},
+				resources.HitDice:     {Current: 2, Maximum: 3, ResetType: coreResources.ResetLongRest},
+				resources.SecondWind:  {Current: 1, Maximum: 1, ResetType: coreResources.ResetShortRest},
 			},
 		},
 	}

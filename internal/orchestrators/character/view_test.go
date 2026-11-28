@@ -89,6 +89,7 @@ func TestProjectView_AMonksEquipmentCarriesTheWisdomInclusiveAC(t *testing.T) {
 	data.EquipmentSlots = tkcharacter.EquipmentSlots{tkcharacter.SlotMainHand: "quarterstaff"}
 	data.Features = nil
 	delete(data.Resources, resources.SecondWind) // a monk has no fighter pool
+	delete(data.Resources, resources.ActionSurge)
 	unarmoredDefense, err := (&conditions.UnarmoredDefenseCondition{
 		MemberID: data.ID,
 		Type:     conditions.UnarmoredDefenseMonk,
@@ -261,7 +262,7 @@ func level3FighterData(t *testing.T, id string) *tkcharacter.Data {
 			}),
 			mustJSON(t, features.ActionSurgeData{
 				Ref: refs.Features.ActionSurge(), ID: "action-surge", Name: "Action Surge",
-				CharacterID: id, Uses: 1, MaxUses: 1,
+				CharacterID: id,
 			}),
 		},
 		Conditions: []json.RawMessage{
@@ -270,6 +271,9 @@ func level3FighterData(t *testing.T, id string) *tkcharacter.Data {
 			}),
 		},
 		Resources: map[coreResources.ResourceKey]tkcharacter.RecoverableResourceData{
+			resources.ActionSurge: {
+				Current: 1, Maximum: 1, ResetType: coreResources.ResetShortRest,
+			},
 			resources.HitDice: {
 				Current: 2, Maximum: 3, ResetType: coreResources.ResetLongRest,
 			},
