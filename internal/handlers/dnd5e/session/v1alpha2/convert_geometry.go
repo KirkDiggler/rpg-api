@@ -1,6 +1,7 @@
 package sessionv1alpha2
 
 import (
+	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/materialchannels"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
@@ -123,6 +124,7 @@ func structuralWallsToProto(ws []sdk.AtlasStructuralWall) []*sessionpb.AtlasStru
 			Height: w.Height, Thickness: w.Thickness, Elevation: w.Elevation,
 			FootprintCells: positionsToProto(w.FootprintCells), Openings: openingsToProto(w.Openings),
 			MaterialOverrides: materialOverridesToProto(w.MaterialOverrides),
+			MaterialChannels:  materialchannels.Convert(materialchannels.Input{Values: w.MaterialChannels}).Values,
 			FaceFinishes:      wallFaceFinishesToProto(w.FaceFinishes),
 			Sections:          wallSectionsToProto(w.Sections),
 		}
@@ -151,6 +153,7 @@ func propPresentationsToProto(ps []sdk.PropPresentation) []*sessionpb.PropPresen
 			Id: p.ID, Ref: p.Ref, Origin: footprintPointToProto(p.Origin), Elevation: p.Elevation,
 			FacingDegrees: p.FacingDegrees, HeightScale: p.HeightScale, DoorId: p.DoorID, Label: p.Label,
 			MaterialOverrides: materialOverridesToProto(p.MaterialOverrides),
+			MaterialChannels:  materialchannels.Convert(materialchannels.Input{Values: p.MaterialChannels}).Values,
 		}
 		if l := p.PointLight; l != nil {
 			out.PointLight = &sessionpb.PropPointLight{

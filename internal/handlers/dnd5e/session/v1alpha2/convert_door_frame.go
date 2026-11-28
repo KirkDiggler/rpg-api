@@ -2,6 +2,7 @@ package sessionv1alpha2
 
 import (
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha2"
+	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/materialchannels"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
 
@@ -18,7 +19,10 @@ func doorFrameToProto(frame *sdk.DoorFramePresentation) *sessionpb.DoorFramePres
 	if frame == nil {
 		return nil
 	}
-	out := &sessionpb.DoorFramePresentation{Span: frameSpanToProto(frame.Span)}
+	out := &sessionpb.DoorFramePresentation{
+		Span:             frameSpanToProto(frame.Span),
+		MaterialChannels: materialchannels.Convert(materialchannels.Input{Values: frame.MaterialChannels}).Values,
+	}
 	for _, face := range frame.FaceFinishes {
 		value := &sessionpb.DoorFrameFaceFinish{Side: face.Side, MaterialRef: face.MaterialRef}
 		if face.PhaseU != nil {

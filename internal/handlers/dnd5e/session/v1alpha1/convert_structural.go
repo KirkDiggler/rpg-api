@@ -2,6 +2,7 @@ package sessionv1alpha1
 
 import (
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/materialchannels"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 	"github.com/KirkDiggler/rpg-toolkit/tools/spatial"
 )
@@ -19,6 +20,7 @@ func atlasStructuralWallsToProto(walls []sdk.AtlasStructuralWall) []*sessionpb.A
 			Openings:          atlasStructuralOpeningsToProto(wall.Openings),
 			FootprintCells:    atlasFootprintCellsToProto(wall.FootprintCells),
 			MaterialOverrides: materialOverridesToProto(wall.MaterialOverrides),
+			MaterialChannels:  materialchannels.Convert(materialchannels.Input{Values: wall.MaterialChannels}).Values,
 			FaceFinishes:      wallFaceFinishesToProto(wall.FaceFinishes),
 			Sections:          wallSectionsToProto(wall.Sections),
 		})

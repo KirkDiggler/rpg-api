@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/materialchannels"
+
 	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/sdkerr"
 
 	"google.golang.org/protobuf/proto"
@@ -65,6 +67,7 @@ func publicMemberToProto(member sdk.PublicMember) *sessionpb.PublicMemberInfo {
 		MonsterRef:         member.MonsterRef,
 		AppearanceRef:      member.AppearanceRef,
 		DefaultActivityRef: member.DefaultActivityRef,
+		MaterialChannels:   materialchannels.Convert(materialchannels.Input{Values: member.MaterialChannels}).Values,
 		Customization:      customizationToProto(member.Customization),
 		// The side this member is on (rpg-project#375, design §6): the
 		// dungeon file's own faction id, or the reserved `party` /

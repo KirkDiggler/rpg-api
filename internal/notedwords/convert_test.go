@@ -74,9 +74,9 @@ func (s *ConvertSuite) compile(raw []byte) []byte {
 }
 
 // historicalShape compares the same semantic picture without rewriting the
-// v0.220.0 oracle. The newer optional wall Sections:null is absence, not a
-// changed world. Strip only that absent field at its exact owner; keep every
-// nonempty section and every other value so real compiler changes still fail.
+// v0.220.0 oracle. Optional wall Sections:null and wall/prop MaterialChannels:null
+// are absence, not a changed world. Strip only absent fields at those exact
+// owners; retain authored intent and every other value so real changes fail.
 // Canonical key order is applied to BOTH sides; numbers retain their spelling.
 func (s *ConvertSuite) historicalShape(raw []byte) []byte {
 	s.T().Helper()
@@ -93,6 +93,18 @@ func (s *ConvertSuite) historicalShape(raw []byte) []byte {
 		s.Require().True(valid)
 		if sections, exists := wall["Sections"]; exists && sections == nil {
 			delete(wall, "Sections")
+		}
+		if channels, exists := wall["MaterialChannels"]; exists && channels == nil {
+			delete(wall, "MaterialChannels")
+		}
+	}
+	props, ok := field["PropPresentations"].([]interface{})
+	s.Require().True(ok)
+	for _, value := range props {
+		prop, valid := value.(map[string]interface{})
+		s.Require().True(valid)
+		if channels, exists := prop["MaterialChannels"]; exists && channels == nil {
+			delete(prop, "MaterialChannels")
 		}
 	}
 	out, err := json.MarshalIndent(shape, "", " ")
@@ -133,6 +145,28 @@ func (s *ConvertSuite) TestAuthoredWallSectionsStillChangeTheHistoricalCompariso
 	actual := s.historicalShape(raw)
 	s.Contains(string(actual), "test:window")
 	s.NotEqual(string(s.compiled), string(actual))
+}
+
+func (s *ConvertSuite) TestAuthoredMaterialChannelsStillChangeTheHistoricalComparison() {
+	compiled, err := dungeonspec.Load(s.convert(s.before).Out)
+	s.Require().NoError(err)
+	s.Require().NotEmpty(compiled.Field.StructuralWalls)
+	s.Require().NotEmpty(compiled.Field.PropPresentations)
+	for _, owner := range []*[]encounter.MaterialChannelAdjustment{
+		&compiled.Field.StructuralWalls[0].MaterialChannels,
+		&compiled.Field.PropPresentations[0].MaterialChannels,
+	} {
+		*owner = []encounter.MaterialChannelAdjustment{{TargetID: "test:channel",
+			Normal:   &encounter.ChannelAdjustment{Mode: encounter.ChannelScale, Multiplier: 1},
+			Emissive: &encounter.ChannelAdjustment{Mode: encounter.ChannelOff},
+		}}
+		raw, marshalErr := json.Marshal(compiled)
+		s.Require().NoError(marshalErr)
+		actual := s.historicalShape(raw)
+		s.Contains(string(actual), "test:channel")
+		s.NotEqual(string(s.compiled), string(actual))
+		*owner = nil
+	}
 }
 
 // TestTheComparisonCanFail: one changed number in the converted castle is a

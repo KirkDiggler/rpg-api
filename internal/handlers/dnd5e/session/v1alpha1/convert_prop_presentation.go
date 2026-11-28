@@ -2,6 +2,7 @@ package sessionv1alpha1
 
 import (
 	sessionpb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/session/v1alpha1"
+	"github.com/KirkDiggler/rpg-api/internal/handlers/dnd5e/session/materialchannels"
 	sdk "github.com/KirkDiggler/rpg-toolkit/rulebooks/dnd5e/session"
 )
 
@@ -13,6 +14,7 @@ func propPresentationToProto(p sdk.PropPresentation) *sessionpb.PropPresentation
 		Elevation: p.Elevation, FacingDegrees: p.FacingDegrees, HeightScale: p.HeightScale,
 		DoorId: p.DoorID, Label: p.Label,
 		MaterialOverrides: materialOverridesToProto(p.MaterialOverrides),
+		MaterialChannels:  materialchannels.Convert(materialchannels.Input{Values: p.MaterialChannels}).Values,
 	}
 	if l := p.PointLight; l != nil {
 		out.PointLight = &sessionpb.PropPointLight{
