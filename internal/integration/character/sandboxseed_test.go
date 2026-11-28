@@ -5,6 +5,7 @@ package characterintegration
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -17,6 +18,8 @@ import (
 
 	lobbyv1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/lobby/v1alpha1"
 	dnd5ev1alpha1 "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha1"
+	characterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/character"
+	encounterv2pb "github.com/KirkDiggler/rpg-api-protos/gen/go/dnd5e/api/v1alpha2/encounter"
 	"github.com/KirkDiggler/rpg-api/internal/integration/harness"
 	"github.com/KirkDiggler/rpg-api/internal/sandboxseed"
 )
@@ -252,6 +255,65 @@ func (s *SandboxSeedSuite) TestSandboxSeed_LevelUpFixturesHoldTheLevelTwoThresho
 	require.Equal(s.T(), int32(0), sandboxFighter.GetExperiencePoints())
 	require.Equal(s.T(), int32(1), sandboxFighter.GetEntitledLevel())
 	require.Equal(s.T(), int32(300), sandboxFighter.GetNextLevelThreshold())
+}
+
+// TestSandboxSeed_TheLevelUpFighterArrivesAtLevelTwoWithHerActionSurge is
+// rpg-project#1131 slice 6d: the seeded level-up fighter takes level 2 through
+// the production LevelUp RPC, and the pool her Action Surge is counted in
+// arrives with the level. The response names the feature and reports the pool's
+// maximum going 0 to 1, and the sheet the server then serves holds the pool
+// full, 1 of 1 -- where before the level it held none.
+func (s *SandboxSeedSuite) TestSandboxSeed_TheLevelUpFighterArrivesAtLevelTwoWithHerActionSurge() {
+	require.NoError(s.T(), s.seed(s.server.CharacterClient))
+	ctx := s.authCtx(levelUpFighterID)
+	fighter := s.listExactlyOne(levelUpFighterID)
+
+	poolOf := func() []*encounterv2pb.ResourceView {
+		data, err := s.server.CharacterClientV2.GetCharacterData(ctx,
+			&characterv2pb.GetCharacterDataRequest{CharacterId: fighter.GetId()})
+		require.NoError(s.T(), err)
+		return data.GetCharacter().GetResources()
+	}
+	surgeOf := func(views []*encounterv2pb.ResourceView) *encounterv2pb.ResourceView {
+		for _, view := range views {
+			if view.GetKey() == "action_surge" {
+				return view
+			}
+		}
+		return nil
+	}
+	require.Nil(s.T(), surgeOf(poolOf()), "a level-1 fighter holds no Action Surge pool")
+
+	out, err := s.server.CharacterClient.LevelUp(ctx, &dnd5ev1alpha1.LevelUpRequest{
+		CharacterId:    fighter.GetId(),
+		HitPointMethod: dnd5ev1alpha1.HitPointMethod_HIT_POINT_METHOD_AVERAGE,
+	})
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), int32(2), out.GetGained().GetLevel())
+
+	gained := make([]string, 0, len(out.GetGained().GetFeatures()))
+	for _, feature := range out.GetGained().GetFeatures() {
+		gained = append(gained, feature.GetName())
+	}
+	require.Contains(s.T(), gained, "Action Surge", "the level's gained features name it, as before")
+
+	var change *dnd5ev1alpha1.ResourceMaximumChange
+	changes := make([]string, 0, len(out.GetGained().GetResourceChanges()))
+	for _, c := range out.GetGained().GetResourceChanges() {
+		changes = append(changes, fmt.Sprintf("%s %d to %d", c.GetKey(), c.GetPreviousMaximum(), c.GetNewMaximum()))
+		if c.GetKey() == "action_surge" {
+			change = c
+		}
+	}
+	s.T().Logf("wire: gained features %v, resource changes %v", gained, changes)
+	require.NotNil(s.T(), change, "the level's resource changes include the pool: %v", changes)
+	require.Equal(s.T(), int32(0), change.GetPreviousMaximum())
+	require.Equal(s.T(), int32(1), change.GetNewMaximum())
+
+	surge := surgeOf(poolOf())
+	require.NotNil(s.T(), surge, "the sheet the server now serves shows the pool")
+	require.Equal(s.T(), int32(1), surge.GetCurrent(), "it arrives full")
+	require.Equal(s.T(), int32(1), surge.GetMaximum(), "1 of 1")
 }
 
 // recordingCharacterClient proves Seed keeps each call under its fixed Dev
