@@ -68,9 +68,9 @@ func TestUESpikeServe(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, dungeons.DefaultKey+".yaml"),
-		dungeonstest.AsKey(t, raw, hashSiteKey, dungeons.DefaultKey), 0o600); err != nil {
-		t.Fatal(err)
+	if writeErr := os.WriteFile(filepath.Join(dir, dungeons.DefaultKey+".yaml"),
+		dungeonstest.AsKey(t, raw, hashSiteKey, dungeons.DefaultKey), 0o600); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	shipped, err := dungeons.NewFileRegistry(dir, projector)
 	if err != nil {
@@ -87,17 +87,17 @@ func TestUESpikeServe(t *testing.T) {
 		t.Fatal(err)
 	}
 	member, host := "reader-alice", "player-reader-alice"
-	if _, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
+	if _, createErr := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
 		Character: &entities.Character{Data: armedFighter(member, host)},
-	}); err != nil {
-		t.Fatal(err)
+	}); createErr != nil {
+		t.Fatal(createErr)
 	}
-	if err := lobbies.Save(context.Background(), &lobbyrepo.Data{
+	if saveErr := lobbies.Save(context.Background(), &lobbyrepo.Data{
 		ID: "lobby-reader", HostPlayerID: host, Status: lobbyrepo.StatusWaiting,
 		Members:     map[string]*lobbyrepo.Member{host: {PlayerID: host, CharacterID: member, IsHost: true, IsReady: true}},
 		MemberOrder: []string{host},
-	}); err != nil {
-		t.Fatal(err)
+	}); saveErr != nil {
+		t.Fatal(saveErr)
 	}
 	out, err := lobby.StartEncounter(context.Background(), &lobbyorch.StartEncounterInput{
 		WorldID: dungeonstest.Caller.WorldID, PlayerID: host, LobbyID: "lobby-reader",
@@ -119,12 +119,12 @@ func TestUESpikeServe(t *testing.T) {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".yaml" {
 			continue
 		}
-		raw, err := os.ReadFile(filepath.Join(castleSrc, entry.Name())) //nolint:gosec // a fixture entry under the repo
-		if err != nil {
-			t.Fatal(err)
+		entryRaw, readErr := os.ReadFile(filepath.Join(castleSrc, entry.Name())) //nolint:gosec // a fixture entry under the repo
+		if readErr != nil {
+			t.Fatal(readErr)
 		}
-		if err := os.WriteFile(filepath.Join(castleDir, entry.Name()), raw, 0o600); err != nil {
-			t.Fatal(err)
+		if writeErr := os.WriteFile(filepath.Join(castleDir, entry.Name()), entryRaw, 0o600); writeErr != nil {
+			t.Fatal(writeErr)
 		}
 	}
 	shippedCastle, err := dungeons.NewFileRegistry(castleDir, projector)
@@ -142,17 +142,17 @@ func TestUESpikeServe(t *testing.T) {
 		t.Fatal(err)
 	}
 	castleMember, castleHost := "alice", "player-alice"
-	if _, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
+	if _, createErr := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
 		Character: &entities.Character{Data: armedFighter(castleMember, castleHost)},
-	}); err != nil {
-		t.Fatal(err)
+	}); createErr != nil {
+		t.Fatal(createErr)
 	}
-	if err := castleLobbies.Save(context.Background(), &lobbyrepo.Data{
+	if saveErr := castleLobbies.Save(context.Background(), &lobbyrepo.Data{
 		ID: "lobby-castle", HostPlayerID: castleHost, Status: lobbyrepo.StatusWaiting,
 		Members:     map[string]*lobbyrepo.Member{castleHost: {PlayerID: castleHost, CharacterID: castleMember, IsHost: true, IsReady: true}},
 		MemberOrder: []string{castleHost},
-	}); err != nil {
-		t.Fatal(err)
+	}); saveErr != nil {
+		t.Fatal(saveErr)
 	}
 	castleOut, err := castleLobby.StartEncounter(context.Background(), &lobbyorch.StartEncounterInput{
 		WorldID: dungeonstest.Caller.WorldID, PlayerID: castleHost, LobbyID: "lobby-castle", DungeonKey: "the-mad-king",
@@ -171,12 +171,12 @@ func TestUESpikeServe(t *testing.T) {
 		len(atlas.GetDoorways()), len(atlas.GetProps()), len(atlas.GetPlaced()), len(atlas.GetStructuralWalls()),
 		len(atlas.GetStructuralDoors()), len(atlas.GetExits()), len(atlas.GetSegments()))
 	if dumpPath := os.Getenv("UE_SPIKE_ATLAS"); dumpPath != "" {
-		document, err := protojson.MarshalOptions{Multiline: true}.Marshal(atlas)
-		if err != nil {
-			t.Fatal(err)
+		document, marshalErr := protojson.MarshalOptions{Multiline: true}.Marshal(atlas)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
 		}
-		if err := os.WriteFile(dumpPath, document, 0o600); err != nil {
-			t.Fatal(err)
+		if writeErr := os.WriteFile(dumpPath, document, 0o600); writeErr != nil {
+			t.Fatal(writeErr)
 		}
 		t.Logf("castle atlas written to %s", dumpPath)
 	}
@@ -193,10 +193,10 @@ func TestUESpikeServe(t *testing.T) {
 	for _, seeded := range []struct{ member, host string }{
 		{"ue-fighter", "player-ue-fighter"}, {"ue-archer", "player-ue-archer"}, {"ue-walker", "player-ue-walker"},
 	} {
-		if _, err := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
+		if _, createErr := h.charRepo.Create(context.Background(), characterrepo.CreateInput{
 			Character: &entities.Character{Data: armedFighter(seeded.member, seeded.host)},
-		}); err != nil {
-			t.Fatal(err)
+		}); createErr != nil {
+			t.Fatal(createErr)
 		}
 	}
 	skeleton := refs.Monsters.Skeleton().String()
@@ -231,7 +231,8 @@ func TestUESpikeServe(t *testing.T) {
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
 
-	tcp, err := net.Listen("tcp", addr)
+	listenConfig := net.ListenConfig{}
+	tcp, err := listenConfig.Listen(context.Background(), "tcp", addr)
 	if err != nil {
 		t.Fatal(err)
 	}
