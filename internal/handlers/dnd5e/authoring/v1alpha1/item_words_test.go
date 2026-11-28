@@ -124,3 +124,26 @@ func (s *ItemWordsSuite) TestGatedOnSignIn() {
 	_, err := s.handler.GetItemWords(s.T().Context(), &authoringpb.GetItemWordsRequest{})
 	s.Require().Error(err)
 }
+
+// TestAValueSaysWhetherItNeedsACount (rpg-project#1131, slice 5d-3): the word
+// `use` of a lets entry has the value `action surge`, which must be paid from
+// a count and has no words of its own; `second wind` needs none and keeps its
+// one `level`.
+func (s *ItemWordsSuite) TestAValueSaysWhetherItNeedsACount() {
+	use := s.find(s.words().GetWords(), "lets entry", "use")
+	values := map[string]*authoringpb.ItemWordValue{}
+	for _, v := range use.GetValues() {
+		values[v.GetWord()] = v
+	}
+
+	surge := values["action surge"]
+	s.Require().NotNil(surge, "use has the value action surge")
+	s.True(surge.GetNeedsCount(), "action surge must be paid from a count")
+	s.Empty(surge.GetWith(), "action surge has no words of its own")
+
+	wind := values["second wind"]
+	s.Require().NotNil(wind, "use has the value second wind")
+	s.False(wind.GetNeedsCount(), "second wind needs no count")
+	s.Require().Len(wind.GetWith(), 1)
+	s.Equal("level", wind.GetWith()[0].GetWord())
+}

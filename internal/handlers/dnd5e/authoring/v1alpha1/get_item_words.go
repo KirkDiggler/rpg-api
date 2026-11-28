@@ -58,7 +58,7 @@ func itemWordList(words []magicitems.Word) []*authoringpb.ItemWord {
 		}
 		for _, v := range w.Values {
 			word.Values = append(word.Values, &authoringpb.ItemWordValue{
-				Word: v.Word, Label: v.Label, With: itemWordList(v.With),
+				Word: v.Word, Label: v.Label, With: itemWordList(v.With), NeedsCount: v.NeedsCount,
 			})
 		}
 		if w.Bounds != nil {
